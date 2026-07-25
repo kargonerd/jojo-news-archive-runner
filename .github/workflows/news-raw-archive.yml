@@ -423,7 +423,7 @@ jobs:
                   "$LOCAL_ROOT/raw/objects" \
                   "${REMOTE_ROOT}/raw/objects" \
                   --exclude '*.tmp' \
-                  --checksum --immutable \
+                  --checksum --immutable --no-traverse \
                   --transfers 8 --checkers 16 \
                   --retries 8 --low-level-retries 20; then
                 echo "::warning::Live object upload failed; state withheld."
@@ -431,11 +431,13 @@ jobs:
               fi
             fi
             if [ -d "$LOCAL_ROOT/raw/records" ]; then
+              # Records are URL-addressed and may change after a bad capture
+              # is requeued; B2 keeps prior object versions for recovery.
               if ! rclone copy \
                   "$LOCAL_ROOT/raw/records" \
                   "${REMOTE_ROOT}/raw/records" \
                   --exclude '*.tmp' \
-                  --checksum --immutable \
+                  --checksum --no-traverse \
                   --transfers 8 --checkers 16 \
                   --retries 8 --low-level-retries 20; then
                 echo "::warning::Live record upload failed; state withheld."
@@ -537,17 +539,19 @@ jobs:
               "$LOCAL_ROOT/raw/objects" \
               "${REMOTE_ROOT}/raw/objects" \
               --exclude '*.tmp' \
-              --checksum --immutable \
+              --checksum --immutable --no-traverse \
               --transfers 8 --checkers 16 \
               --retries 8 --low-level-retries 20 \
               --stats 30s
           fi
           if [ -d "$LOCAL_ROOT/raw/records" ]; then
+            # Records are URL-addressed and intentionally replaceable after
+            # recapture; raw HTML objects above remain content-addressed.
             rclone copy \
               "$LOCAL_ROOT/raw/records" \
               "${REMOTE_ROOT}/raw/records" \
               --exclude '*.tmp' \
-              --checksum --immutable \
+              --checksum --no-traverse \
               --transfers 8 --checkers 16 \
               --retries 8 --low-level-retries 20 \
               --stats 30s
