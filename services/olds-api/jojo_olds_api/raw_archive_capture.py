@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import sqlite3
 from typing import Iterable
+from urllib.parse import urlencode, urlsplit
 
 from .bloomberg_archive_download import ArchiveClient
 from .news_models import (
@@ -21,6 +22,9 @@ from .news_models import (
 
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 ACCEPTED_HTTP_STATUSES = {200, 206}
+WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"
+WAYBACK_TIMEMAP_MAXIMUM_BYTES = 2_000_000
+WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES = 8
 _HTML_MARKERS = (
     b"<!doctype html",
     b"<html",
@@ -376,6 +380,7 @@ def capture_item(
     maximum_html_bytes: int,
 ) -> dict:
     failures: list[str] = []
+    candidates_considered = list(item.candidates)
     best_response: tuple[
         CaptureCandidate,
         int,
@@ -386,49 +391,52 @@ def capture_item(
         dict[str, object],
     ] | None = None
     for candidate in item.candidates:
+        response, failure = _fetch_usable_candidate(
+            candidate,
+            archive_client=archive_client,
+            maximum_html_bytes=maximum_html_bytes,
+        )
+        if failure:
+            failures.append(failure)
+        if response is None:
+            continue
+        if best_response is None or response[5] > best_response[5]:
+            best_response = response
+        if response[5] == 100:
+            break
+
+    if best_response is None and item.publisher == "bloomberg":
         try:
-            status_code, headers, content, final_url = archive_client.fetch(
-                candidate.snapshot_url,
-                maximum_bytes=maximum_html_bytes,
+            fallback_candidates = discover_wayback_timemap_candidates(
+                item,
+                archive_client=archive_client,
             )
         except Exception as exc:
-            failures.append(f"{candidate.provider.value}:{type(exc).__name__}")
-            continue
-        content_type = headers.get("content-type", "").split(";", 1)[0].strip()
-        quality_score, signals = score_raw_capture(
-            content,
-            http_status=status_code,
-            content_type=content_type,
-            final_url=final_url,
+            failures.append(f"wayback-timemap:{type(exc).__name__}")
+            fallback_candidates = ()
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        fallback_candidates = tuple(
+            candidate
+            for candidate in fallback_candidates
+            if candidate.snapshot_url not in existing_urls
         )
-        if (
-            status_code not in ACCEPTED_HTTP_STATUSES
-            or not content
-            or not signals["looksLikeHtml"]
-            or signals["archiveErrorPage"]
-            or signals["authenticationShell"]
-            or signals["accessChallengeShell"]
-            or signals["subscriptionShell"]
-            or signals["redirectShell"]
-        ):
-            failures.append(
-                f"{candidate.provider.value}:http-{status_code}:score-{quality_score}"
+        candidates_considered.extend(fallback_candidates)
+        for candidate in fallback_candidates:
+            response, failure = _fetch_usable_candidate(
+                candidate,
+                archive_client=archive_client,
+                maximum_html_bytes=maximum_html_bytes,
             )
-            continue
-
-        response = (
-            candidate,
-            status_code,
-            content,
-            final_url,
-            content_type,
-            quality_score,
-            signals,
-        )
-        if best_response is None or quality_score > best_response[5]:
-            best_response = response
-        if quality_score == 100:
-            break
+            if failure:
+                failures.append(failure)
+            if response is None:
+                continue
+            if best_response is None or response[5] > best_response[5]:
+                best_response = response
+            if response[5] == 100:
+                break
 
     if best_response is not None:
         (
@@ -456,7 +464,7 @@ def capture_item(
             published_at=item.published_at,
             section=item.section,
             selected_candidate=selected_candidate,
-            candidates_considered=list(item.candidates),
+            candidates_considered=candidates_considered,
             retrieved_at=retrieved_at,
             final_url=final_url,
             http_status=status_code,
@@ -480,6 +488,194 @@ def capture_item(
         "recordPath": None,
         "error": "; ".join(failures[-8:]) or "no usable capture candidates",
     }
+
+
+def _fetch_usable_candidate(
+    candidate: CaptureCandidate,
+    *,
+    archive_client: ArchiveClient,
+    maximum_html_bytes: int,
+) -> tuple[
+    tuple[
+        CaptureCandidate,
+        int,
+        bytes,
+        str,
+        str,
+        int,
+        dict[str, object],
+    ]
+    | None,
+    str | None,
+]:
+    try:
+        status_code, headers, content, final_url = archive_client.fetch(
+            candidate.snapshot_url,
+            maximum_bytes=maximum_html_bytes,
+        )
+    except Exception as exc:
+        return None, f"{candidate.provider.value}:{type(exc).__name__}"
+    content_type = headers.get("content-type", "").split(";", 1)[0].strip()
+    quality_score, signals = score_raw_capture(
+        content,
+        http_status=status_code,
+        content_type=content_type,
+        final_url=final_url,
+    )
+    if (
+        status_code not in ACCEPTED_HTTP_STATUSES
+        or not content
+        or not signals["looksLikeHtml"]
+        or signals["archiveErrorPage"]
+        or signals["authenticationShell"]
+        or signals["accessChallengeShell"]
+        or signals["subscriptionShell"]
+        or signals["redirectShell"]
+    ):
+        return (
+            None,
+            f"{candidate.provider.value}:http-{status_code}:score-{quality_score}",
+        )
+    return (
+        (
+            candidate,
+            status_code,
+            content,
+            final_url,
+            content_type,
+            quality_score,
+            signals,
+        ),
+        None,
+    )
+
+
+def discover_wayback_timemap_candidates(
+    item: ManifestItem,
+    *,
+    archive_client: ArchiveClient,
+) -> tuple[CaptureCandidate, ...]:
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?" + urlencode(
+        {"url": item.canonical_url}
+    )
+    status_code, headers, content, _ = archive_client.fetch(
+        timemap_url,
+        maximum_bytes=WAYBACK_TIMEMAP_MAXIMUM_BYTES,
+    )
+    content_type = headers.get("content-type", "").casefold()
+    if status_code != 200 or not content:
+        raise ValueError(f"Wayback timemap returned HTTP {status_code}")
+    if "json" not in content_type and not content.lstrip().startswith(b"["):
+        raise ValueError("Wayback timemap did not return JSON")
+    payload = json.loads(content)
+    if not isinstance(payload, list) or not payload:
+        return ()
+    header = payload[0]
+    if not isinstance(header, list):
+        raise ValueError("Wayback timemap header is invalid")
+    columns = {str(value).casefold(): index for index, value in enumerate(header)}
+    required = {"timestamp", "original", "mimetype", "statuscode"}
+    if not required.issubset(columns):
+        raise ValueError("Wayback timemap is missing required columns")
+
+    candidates: list[CaptureCandidate] = []
+    seen: set[str] = set()
+    for row in payload[1:]:
+        if not isinstance(row, list):
+            continue
+        timestamp = _timemap_value(row, columns, "timestamp")
+        original = _timemap_value(row, columns, "original")
+        mime_type = _timemap_value(row, columns, "mimetype")
+        status = _optional_int(_timemap_value(row, columns, "statuscode"))
+        if (
+            _wayback_datetime(timestamp) is None
+            or status != 200
+            or mime_type.casefold() != "text/html"
+            or not _same_bloomberg_article_url(
+                original,
+                item.canonical_url,
+            )
+        ):
+            continue
+        digest = _optional_string(_timemap_value(row, columns, "digest"))
+        deduplication_key = digest or f"{timestamp}:{original}"
+        if deduplication_key in seen:
+            continue
+        seen.add(deduplication_key)
+        candidates.append(
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=(
+                    f"https://web.archive.org/web/{timestamp}id_/{original}"
+                ),
+                captured_at=_wayback_datetime(timestamp),
+                digest=digest,
+                mime_type=mime_type,
+                status_code=status,
+                byte_count=_optional_int(
+                    _timemap_value(row, columns, "length")
+                ),
+            )
+        )
+
+    candidates.sort(
+        key=lambda candidate: _timemap_candidate_sort_key(
+            candidate,
+            published_at=item.published_at,
+        )
+    )
+    return tuple(candidates[:WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES])
+
+
+def _timemap_value(
+    row: list[object],
+    columns: dict[str, int],
+    name: str,
+) -> str:
+    index = columns.get(name)
+    if index is None or index >= len(row):
+        return ""
+    return str(row[index]).strip()
+
+
+def _same_bloomberg_article_url(first: str, second: str) -> bool:
+    first_parts = urlsplit(first)
+    second_parts = urlsplit(second)
+    first_host = (first_parts.hostname or "").casefold().removeprefix("www.")
+    second_host = (second_parts.hostname or "").casefold().removeprefix("www.")
+    return (
+        first_host == second_host == "bloomberg.com"
+        and first_parts.path.rstrip("/") == second_parts.path.rstrip("/")
+    )
+
+
+def _timemap_candidate_sort_key(
+    candidate: CaptureCandidate,
+    *,
+    published_at: str | None,
+) -> tuple[float, str]:
+    timestamp = candidate.captured_at
+    if timestamp is None:
+        return (float("inf"), candidate.snapshot_url)
+    published = _parse_iso_datetime(published_at)
+    if published is None:
+        return (timestamp.timestamp(), candidate.snapshot_url)
+    return (
+        abs((timestamp - published).total_seconds()),
+        candidate.snapshot_url,
+    )
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def resolved_capture_candidate(

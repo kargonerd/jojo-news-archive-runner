@@ -13,6 +13,7 @@ from jojo_olds_api.news_models import (
 )
 from jojo_olds_api.raw_archive_capture import (
     ManifestItem,
+    WAYBACK_TIMEMAP_ENDPOINT,
     capture_item,
     capture_summary,
     completed_capture_rejection_reason,
@@ -302,6 +303,146 @@ def test_capture_keeps_strong_article_instead_of_first_html_shell(
     assert capture.quality_score == 100
     assert capture.raw_html.byte_count == len(ARTICLE)
     assert len(list((tmp_path / "objects").rglob("*.html.gz"))) == 1
+
+
+def test_bloomberg_capture_falls_back_to_exact_timemap_snapshot(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2024-01-09/"
+        "white-house-example"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20240110000000id_/" + canonical_url
+    )
+    exact_url = (
+        "https://web.archive.org/web/20240109091704id_/" + canonical_url
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.bloomberg.com%2Fnews%2Farticles%2F"
+        "2024-01-09%2Fwhite-house-example"
+    )
+    shell = (
+        b"<html><head><title>Bloomberg - Are you a robot?</title></head>"
+        b"<body>We've detected unusual activity.</body></html>"
+        + (b" " * 2_048)
+    )
+    timemap = json.dumps(
+        [
+            [
+                "urlkey",
+                "timestamp",
+                "original",
+                "mimetype",
+                "statuscode",
+                "digest",
+                "length",
+            ],
+            [
+                "com,bloomberg)/news/articles/example",
+                "20240109091704",
+                canonical_url,
+                "text/html",
+                "200",
+                "EXACT-DIGEST",
+                str(len(ARTICLE)),
+            ],
+            [
+                "com,bloomberg)/news/articles/example",
+                "20240110000000",
+                "https://www.bloomberg.com/tosv2.html",
+                "text/html",
+                "200",
+                "SHELL-DIGEST",
+                "12345",
+            ],
+        ]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                200,
+                {"content-type": "text/html"},
+                shell,
+                (
+                    "https://web.archive.org/web/20240110000000id_/"
+                    "https://www.bloomberg.com/tosv2.html"
+                ),
+            ),
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                timemap,
+                timemap_url,
+            ),
+            exact_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                exact_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        published_at="2024-01-09T09:00:00Z",
+        section="politics",
+        candidates=(candidate(guessed_url, "20240110000000"),),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [guessed_url, timemap_url, exact_url]
+    capture = result["capture"]
+    assert capture.selected_candidate.snapshot_url == exact_url
+    assert capture.selected_candidate.digest == "EXACT-DIGEST"
+    assert [value.snapshot_url for value in capture.candidates_considered] == [
+        guessed_url,
+        exact_url,
+    ]
+
+
+def test_non_bloomberg_capture_does_not_query_wayback_timemap(
+    tmp_path: Path,
+):
+    canonical_url = "https://apnews.com/article/example"
+    guessed_url = (
+        "https://web.archive.org/web/20240110000000id_/" + canonical_url
+    )
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                404,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="ap",
+        canonical_url=canonical_url,
+        published_at="2024-01-09T09:00:00Z",
+        section=None,
+        candidates=(candidate(guessed_url, "20240110000000"),),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "error"
+    assert client.requests == [guessed_url]
 
 
 def test_capture_state_records_result_and_summary(tmp_path: Path):
