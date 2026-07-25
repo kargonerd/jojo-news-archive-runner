@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 import gzip
 import hashlib
 import json
@@ -10,6 +11,7 @@ import re
 import sqlite3
 import time
 from typing import Iterable
+from xml.etree import ElementTree
 
 import httpx
 
@@ -26,6 +28,23 @@ WSJ_BLUESKY_ENDPOINT = (
 )
 WSJ_BLUESKY_START_YEAR = 2024
 WSJ_CATALOG_TARGET_PER_YEAR = 750
+WSJ_RSS_ENDPOINTS = (
+    "https://feeds.content.dowjones.io/public/rss/RSSOpinion",
+    "https://feeds.content.dowjones.io/public/rss/RSSWorldNews",
+    "https://feeds.content.dowjones.io/public/rss/WSJcomUSBusiness",
+    "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain",
+    "https://feeds.content.dowjones.io/public/rss/RSSWSJD",
+    "https://feeds.content.dowjones.io/public/rss/RSSLifestyle",
+    "https://feeds.content.dowjones.io/public/rss/RSSUSnews",
+    "https://feeds.content.dowjones.io/public/rss/socialpoliticsfeed",
+    "https://feeds.content.dowjones.io/public/rss/socialeconomyfeed",
+    "https://feeds.content.dowjones.io/public/rss/RSSArtsCulture",
+    "https://feeds.content.dowjones.io/public/rss/latestnewsrealestate",
+    "https://feeds.content.dowjones.io/public/rss/RSSPersonalFinance",
+    "https://feeds.content.dowjones.io/public/rss/socialhealth",
+    "https://feeds.content.dowjones.io/public/rss/RSSStyle",
+    "https://feeds.content.dowjones.io/public/rss/rsssportsfeed",
+)
 
 
 @dataclass(frozen=True)
@@ -302,6 +321,133 @@ def initialize_wsj_bluesky_schema(
     connection.commit()
 
 
+def initialize_wsj_rss_schema(
+    connection: sqlite3.Connection,
+) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS wsj_rss_state (
+            singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+            polls INTEGER NOT NULL DEFAULT 0,
+            feeds_checked INTEGER NOT NULL DEFAULT 0,
+            items_seen INTEGER NOT NULL DEFAULT 0,
+            urls_accepted INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS wsj_rss_articles (
+            canonical_url TEXT PRIMARY KEY,
+            published_at TEXT NOT NULL,
+            feed_url TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO wsj_rss_state(
+            singleton,
+            updated_at
+        ) VALUES (1, ?)
+        """,
+        (_now_iso(),),
+    )
+    connection.commit()
+
+
+def process_wsj_rss_feeds(
+    connection: sqlite3.Connection,
+    *,
+    spec: ArchiveSourceSpec,
+    http_client: httpx.Client,
+    from_year: int,
+    to_year: int,
+    feed_urls: Iterable[str] = WSJ_RSS_ENDPOINTS,
+) -> dict[str, object]:
+    if spec.publisher != "wsj":
+        raise ValueError("RSS discovery is only supported for WSJ")
+    initialize_wsj_rss_schema(connection)
+    rows: list[tuple[str, str, str, str]] = []
+    feeds_checked = 0
+    items_seen = 0
+    errors: list[str] = []
+    for feed_url in feed_urls:
+        try:
+            response = http_client.get(feed_url)
+            response.raise_for_status()
+            root = ElementTree.fromstring(response.content)
+            items = root.findall("./channel/item")
+            feeds_checked += 1
+            items_seen += len(items)
+            for item in items:
+                original_url = (
+                    (item.findtext("link") or "").strip()
+                    or (item.findtext("guid") or "").strip()
+                )
+                canonical_url = normalize_article_url(spec, original_url)
+                if canonical_url is None:
+                    continue
+                published_at = _parse_rss_datetime(
+                    item.findtext("pubDate")
+                )
+                if published_at is None:
+                    continue
+                if not from_year <= published_at.year <= to_year:
+                    continue
+                rows.append(
+                    (
+                        canonical_url,
+                        published_at.isoformat(),
+                        feed_url,
+                        _now_iso(),
+                    )
+                )
+        except Exception as exc:
+            errors.append(
+                f"{feed_url}: {type(exc).__name__}: {exc}"
+            )
+    with connection:
+        before = connection.total_changes
+        connection.executemany(
+            """
+            INSERT OR IGNORE INTO wsj_rss_articles(
+                canonical_url,
+                published_at,
+                feed_url,
+                updated_at
+            ) VALUES (?, ?, ?, ?)
+            """,
+            rows,
+        )
+        accepted = connection.total_changes - before
+        connection.execute(
+            """
+            UPDATE wsj_rss_state
+            SET polls=polls+1,
+                feeds_checked=feeds_checked+?,
+                items_seen=items_seen+?,
+                urls_accepted=urls_accepted+?,
+                last_error=?,
+                updated_at=?
+            WHERE singleton=1
+            """,
+            (
+                feeds_checked,
+                items_seen,
+                accepted,
+                "; ".join(errors) if errors else None,
+                _now_iso(),
+            ),
+        )
+    return {
+        "feedsChecked": feeds_checked,
+        "itemsSeen": items_seen,
+        "accepted": accepted,
+        "errors": errors,
+    }
+
+
 def wsj_bluesky_should_continue(
     connection: sqlite3.Connection,
     *,
@@ -506,33 +652,56 @@ def wsj_catalog_count_for_year(
     connection: sqlite3.Connection,
     year: int,
 ) -> int:
-    bluesky_select = (
+    selects = [
         """
-        UNION
         SELECT canonical_url
-        FROM wsj_bluesky_articles
+        FROM candidates
         WHERE substr(published_at, 1, 4)=?
         """
-        if _table_exists(connection, "wsj_bluesky_articles")
-        else ""
-    )
+    ]
     parameters: list[object] = [str(year)]
-    if bluesky_select:
+    for table in ("wsj_bluesky_articles", "wsj_rss_articles"):
+        if not _table_exists(connection, table):
+            continue
+        selects.append(
+            f"""
+            SELECT canonical_url
+            FROM {table}
+            WHERE substr(published_at, 1, 4)=?
+            """
+        )
         parameters.append(str(year))
     return int(
         connection.execute(
             f"""
             SELECT COUNT(*)
             FROM (
-                SELECT canonical_url
-                FROM candidates
-                WHERE substr(published_at, 1, 4)=?
-                {bluesky_select}
+                {" UNION ".join(selects)}
             )
             """,
             parameters,
         ).fetchone()[0]
     )
+
+
+def _wsj_external_articles(
+    connection: sqlite3.Connection,
+) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for table in ("wsj_bluesky_articles", "wsj_rss_articles"):
+        if not _table_exists(connection, table):
+            continue
+        for canonical_url, published_at in connection.execute(
+            f"""
+            SELECT canonical_url, published_at
+            FROM {table}
+            ORDER BY canonical_url
+            """
+        ):
+            previous = result.get(str(canonical_url))
+            if previous is None or str(published_at) < previous:
+                result[str(canonical_url)] = str(published_at)
+    return result
 
 
 def next_discovery_query(
@@ -687,20 +856,7 @@ def export_capture_manifest(
     opener = gzip.open if destination.suffix == ".gz" else open
     article_count = 0
     candidate_count = 0
-    external_articles = (
-        {
-            str(row[0]): str(row[1])
-            for row in connection.execute(
-                """
-                SELECT canonical_url, published_at
-                FROM wsj_bluesky_articles
-                ORDER BY canonical_url
-                """
-            ).fetchall()
-        }
-        if _table_exists(connection, "wsj_bluesky_articles")
-        else {}
-    )
+    external_articles = _wsj_external_articles(connection)
     written_urls: set[str] = set()
     with opener(temporary, "wt", encoding="utf-8") as handle:
         current_url: str | None = None
@@ -818,26 +974,19 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
         FROM discovery_queries
         """
     ).fetchone()
-    articles = connection.execute(
-        "SELECT COUNT(DISTINCT canonical_url) FROM candidates"
-    ).fetchone()[0]
-    if _table_exists(connection, "wsj_bluesky_articles"):
-        articles = connection.execute(
-            """
-            SELECT COUNT(*)
-            FROM (
-                SELECT canonical_url FROM candidates
-                UNION
-                SELECT canonical_url FROM wsj_bluesky_articles
-            )
-            """
-        ).fetchone()[0]
+    article_urls = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT DISTINCT canonical_url FROM candidates"
+        )
+    }
+    article_urls.update(_wsj_external_articles(connection))
     result = {
         "queriesByStatus": query_counts,
         "pages": int(totals[0]),
         "rowsSeen": int(totals[1]),
         "rowsAccepted": int(totals[2]),
-        "articles": int(articles),
+        "articles": len(article_urls),
         "shouldContinue": sum(
             count
             for status, count in query_counts.items()
@@ -870,6 +1019,26 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
         result["shouldContinue"] = bool(result["shouldContinue"]) or not str(
             row[0]
         ).startswith("complete")
+    if _table_exists(connection, "wsj_rss_state"):
+        row = connection.execute(
+            """
+            SELECT
+                polls,
+                feeds_checked,
+                items_seen,
+                urls_accepted,
+                last_error
+            FROM wsj_rss_state
+            WHERE singleton=1
+            """
+        ).fetchone()
+        result["wsjRss"] = {
+            "polls": int(row[0]),
+            "feedsChecked": int(row[1]),
+            "itemsSeen": int(row[2]),
+            "urlsAccepted": int(row[3]),
+            "lastError": row[4],
+        }
     return result
 
 
@@ -1015,6 +1184,18 @@ def _parse_iso_datetime(value: object) -> datetime | None:
         return None
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _parse_rss_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
     except (TypeError, ValueError, OverflowError):
         return None
     if parsed.tzinfo is None:

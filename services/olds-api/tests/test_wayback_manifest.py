@@ -19,9 +19,11 @@ from jojo_olds_api.wayback_manifest import (
     infer_published_at,
     initialize_discovery_schema,
     initialize_wsj_bluesky_schema,
+    initialize_wsj_rss_schema,
     next_discovery_query,
     parse_cdx_json,
     process_wsj_bluesky_page,
+    process_wsj_rss_feeds,
     record_discovery_page,
     wsj_catalog_count_for_year,
 )
@@ -328,6 +330,79 @@ def test_wsj_bluesky_discovers_modern_section_urls(tmp_path: Path):
         candidate["provider"] == "wayback"
         for candidate in row["candidates"]
     )
+
+
+class StubRSSResponse:
+    content = b"""
+    <rss version="2.0">
+      <channel>
+        <item>
+          <link>https://www.wsj.com/finance/stocks/modern-rss-story-a1b2c3d4?mod=rss</link>
+          <pubDate>Sat, 25 Jul 2026 12:34:56 GMT</pubDate>
+        </item>
+        <item>
+          <link>https://www.wsj.com/podcasts/example</link>
+          <pubDate>Sat, 25 Jul 2026 12:34:56 GMT</pubDate>
+        </item>
+      </channel>
+    </rss>
+    """
+
+    def raise_for_status(self):
+        return None
+
+
+class StubRSSClient:
+    def get(self, url):
+        assert url == "https://feeds.example/wsj"
+        return StubRSSResponse()
+
+
+def test_wsj_official_rss_discovers_current_section_urls(
+    tmp_path: Path,
+):
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2024,
+        to_year=2026,
+        collapse="urlkey",
+    )
+    initialize_wsj_rss_schema(connection)
+
+    result = process_wsj_rss_feeds(
+        connection,
+        spec=spec,
+        http_client=StubRSSClient(),
+        from_year=2024,
+        to_year=2026,
+        feed_urls=("https://feeds.example/wsj",),
+    )
+    destination = tmp_path / "wsj-rss-manifest.jsonl.gz"
+    summary = export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=destination,
+        from_year=2024,
+        to_year=2026,
+    )
+
+    assert result["feedsChecked"] == 1
+    assert result["itemsSeen"] == 2
+    assert result["accepted"] == 1
+    assert result["errors"] == []
+    assert wsj_catalog_count_for_year(connection, 2026) == 1
+    assert summary["articles"] == 1
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        row = json.loads(handle.readline())
+    assert row["canonicalUrl"].endswith(
+        "/modern-rss-story-a1b2c3d4"
+    )
+    assert row["publishedAt"] == "2026-07-25T12:34:56+00:00"
+    assert len(row["candidates"]) == 4
+    assert row["candidates"][-1]["provider"] == "live-origin"
 
 
 def test_digest_discovery_keeps_exhausting_current_pattern():

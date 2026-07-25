@@ -21,8 +21,10 @@ from jojo_olds_api.wayback_manifest import (
     export_capture_manifest,
     initialize_discovery_schema,
     initialize_wsj_bluesky_schema,
+    initialize_wsj_rss_schema,
     next_discovery_query,
     process_wsj_bluesky_page,
+    process_wsj_rss_feeds,
     record_discovery_page,
     wsj_bluesky_should_continue,
 )
@@ -73,6 +75,7 @@ def main() -> int:
     deferred_errors: list[str] = []
     if args.publisher == "wsj" and args.collapse == "urlkey":
         initialize_wsj_bluesky_schema(connection)
+        initialize_wsj_rss_schema(connection)
         with httpx.Client(
             headers={
                 "User-Agent": (
@@ -83,6 +86,28 @@ def main() -> int:
             follow_redirects=True,
             timeout=args.timeout,
         ) as http_client:
+            rss_result = process_wsj_rss_feeds(
+                connection,
+                spec=spec,
+                http_client=http_client,
+                from_year=args.from_year,
+                to_year=args.to_year,
+            )
+            rss_errors = rss_result.pop("errors")
+            deferred_errors.extend(
+                f"WSJ RSS: {error}" for error in rss_errors
+            )
+            print(
+                json.dumps(
+                    {
+                        "event": "wsj-rss-poll",
+                        **rss_result,
+                        "errors": len(rss_errors),
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
             while (
                 args.max_pages is None
                 or bluesky_pages_this_run < args.max_pages
