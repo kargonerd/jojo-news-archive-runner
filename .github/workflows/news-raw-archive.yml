@@ -423,8 +423,8 @@ jobs:
                   "$LOCAL_ROOT/raw/objects" \
                   "${REMOTE_ROOT}/raw/objects" \
                   --exclude '*.tmp' \
-                  --checksum --immutable --no-traverse \
-                  --transfers 8 --checkers 16 \
+                  --checksum --immutable --fast-list \
+                  --transfers 32 --checkers 64 \
                   --retries 8 --low-level-retries 20; then
                 echo "::warning::Live object upload failed; state withheld."
                 return 0
@@ -437,8 +437,8 @@ jobs:
                   "$LOCAL_ROOT/raw/records" \
                   "${REMOTE_ROOT}/raw/records" \
                   --exclude '*.tmp' \
-                  --checksum --no-traverse \
-                  --transfers 8 --checkers 16 \
+                  --checksum --fast-list \
+                  --transfers 32 --checkers 64 \
                   --retries 8 --low-level-retries 20; then
                 echo "::warning::Live record upload failed; state withheld."
                 return 0
@@ -539,8 +539,8 @@ jobs:
               "$LOCAL_ROOT/raw/objects" \
               "${REMOTE_ROOT}/raw/objects" \
               --exclude '*.tmp' \
-              --checksum --immutable --no-traverse \
-              --transfers 8 --checkers 16 \
+              --checksum --immutable --fast-list \
+              --transfers 32 --checkers 64 \
               --retries 8 --low-level-retries 20 \
               --stats 30s
           fi
@@ -551,8 +551,8 @@ jobs:
               "$LOCAL_ROOT/raw/records" \
               "${REMOTE_ROOT}/raw/records" \
               --exclude '*.tmp' \
-              --checksum --no-traverse \
-              --transfers 8 --checkers 16 \
+              --checksum --fast-list \
+              --transfers 32 --checkers 64 \
               --retries 8 --low-level-retries 20 \
               --stats 30s
           fi
