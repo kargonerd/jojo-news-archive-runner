@@ -495,7 +495,10 @@ def score_raw_capture(
         and (
             any(marker in prefix for marker in _AUTH_SHELL_MARKERS)
             or "/auth/login" in final_url_lower
+            or "/auth/enter-email" in final_url_lower
             or "/account/login" in final_url_lower
+            or "/signin" in final_url_lower
+            or "/sign-in" in final_url_lower
         )
     )
     access_challenge_shell = (

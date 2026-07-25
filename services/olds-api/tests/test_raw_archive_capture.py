@@ -331,6 +331,24 @@ def test_raw_quality_rejects_access_challenge_shell():
     assert signals["accessChallengeShell"] is True
 
 
+def test_raw_quality_rejects_email_login_redirect_with_empty_shell():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>The New York Times</title></head>
+        <body></body></html>
+        """ + (b" " * 20_000),
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://myaccount.nytimes.com/auth/enter-email"
+            "?response_type=cookie"
+        ),
+    )
+
+    assert score < 85
+    assert signals["authenticationShell"] is True
+
+
 def test_wayback_candidate_records_actual_redirected_snapshot():
     requested = candidate(
         (
