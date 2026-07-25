@@ -93,7 +93,7 @@ PUBLISHER_SPECS = {
     ),
     "nyt": PublisherSpec(
         publisher="nyt",
-        parser_version="nyt-parser/0.5.0",
+        parser_version="nyt-parser/0.6.0",
         domains=("nytimes.com", "www.nytimes.com"),
         default_language="en",
         edition="us",
@@ -126,7 +126,7 @@ PUBLISHER_SPECS = {
     ),
     "ft": PublisherSpec(
         publisher="ft",
-        parser_version="ft-parser/0.5.0",
+        parser_version="ft-parser/0.6.0",
         domains=("ft.com", "www.ft.com"),
         default_language="en",
         edition="global",

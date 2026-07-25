@@ -16,8 +16,12 @@ from jojo_olds_api.parser_validation import (
     pending_completed_parser_validation_files,
     record_parser_validation,
 )
-from jojo_olds_api.raw_archive_capture import completed_raw_capture
-from jojo_olds_api.raw_archive_capture import capture_summary
+from jojo_olds_api.raw_archive_capture import (
+    capture_summary,
+    completed_capture_rejection_reason,
+    completed_raw_capture,
+    reset_completed_capture_for_retry,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,6 +51,7 @@ def main() -> int:
     )
     processed = 0
     parser_errors = 0
+    requeued = 0
     missing: list[str] = []
     for canonical_url, raw_path in pending:
         if not (args.archive_root / raw_path).is_file():
@@ -61,6 +66,26 @@ def main() -> int:
                 f"capture publisher {capture.publisher!r} does not match "
                 f"{args.publisher!r}"
             )
+        rejection_reason = completed_capture_rejection_reason(
+            capture,
+            archive_root=args.archive_root,
+        )
+        if rejection_reason:
+            reset_completed_capture_for_retry(
+                connection,
+                canonical_url=canonical_url,
+                reason=rejection_reason,
+            )
+            with connection:
+                connection.execute(
+                    """
+                    DELETE FROM parser_validation_results
+                    WHERE canonical_url=?
+                    """,
+                    (canonical_url,),
+                )
+            requeued += 1
+            continue
         result = record_parser_validation(
             connection,
             capture=capture,
@@ -75,6 +100,7 @@ def main() -> int:
                         "event": "parser-validation-replay",
                         "processed": processed,
                         "parserErrors": parser_errors,
+                        "requeued": requeued,
                     },
                     ensure_ascii=False,
                 ),
@@ -103,6 +129,7 @@ def main() -> int:
         "requested": len(pending),
         "processed": processed,
         "parserErrors": parser_errors,
+        "requeued": requeued,
         "missingRawObjects": len(missing),
         "ready": summary["ready"],
     }

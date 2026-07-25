@@ -38,12 +38,22 @@ _AUTH_SHELL_MARKERS = (
     b"/auth/login?",
     b"sign in to continue",
     b"log in to continue",
+    b'id="myaccountauth"',
+    b'sourceapp" content="nyt-lire"',
+    b"/lire_ui/",
 )
 _ACCESS_CHALLENGE_MARKERS = (
     b"are you a robot?",
     b"we've detected unusual activity",
     b"verify you are human",
     b"checking if the site connection is secure",
+    b"<title>client challenge</title>",
+    b"javascript is disabled in your browser",
+    b"a required part of this site couldn",
+)
+_REDIRECT_SHELL_MARKERS = (
+    b"window.location = fullurl",
+    b"window.location=fullurl",
 )
 _SUBSCRIPTION_SHELL_MARKERS = (
     b"<title>subscribe to read",
@@ -396,6 +406,7 @@ def capture_item(
             or signals["authenticationShell"]
             or signals["accessChallengeShell"]
             or signals["subscriptionShell"]
+            or signals["redirectShell"]
         ):
             failures.append(
                 f"{candidate.provider.value}:http-{status_code}:score-{quality_score}"
@@ -526,6 +537,9 @@ def score_raw_capture(
     subscription_shell = not has_strong_body_marker and any(
         marker in prefix for marker in _SUBSCRIPTION_SHELL_MARKERS
     )
+    redirect_shell = not has_strong_body_marker and any(
+        marker in prefix for marker in _REDIRECT_SHELL_MARKERS
+    )
     substantial = len(content) >= 2_048
     score = 0
     if http_status in ACCEPTED_HTTP_STATUSES:
@@ -538,7 +552,12 @@ def score_raw_capture(
         score += 15
     if not archive_error_page:
         score += 10
-    if authentication_shell or access_challenge_shell or subscription_shell:
+    if (
+        authentication_shell
+        or access_challenge_shell
+        or subscription_shell
+        or redirect_shell
+    ):
         score = max(0, score - 60)
     return score, {
         "looksLikeHtml": looks_like_html,
@@ -548,6 +567,7 @@ def score_raw_capture(
         "authenticationShell": authentication_shell,
         "accessChallengeShell": access_challenge_shell,
         "subscriptionShell": subscription_shell,
+        "redirectShell": redirect_shell,
         "substantialResponse": substantial,
         "rawBytes": len(content),
     }
@@ -751,6 +771,79 @@ def completed_raw_capture(
             content_encoding="gzip",
         ),
     )
+
+
+def completed_capture_rejection_reason(
+    capture: RawCapture,
+    *,
+    archive_root: Path,
+) -> str | None:
+    content = _read_capture_html(capture, archive_root=archive_root)
+    _, signals = score_raw_capture(
+        content,
+        http_status=capture.http_status,
+        content_type=capture.content_type,
+        final_url=capture.final_url,
+    )
+    checks = (
+        ("empty-response", not content),
+        ("not-html", not bool(signals["looksLikeHtml"])),
+        ("archive-error-page", bool(signals["archiveErrorPage"])),
+        ("authentication-shell", bool(signals["authenticationShell"])),
+        ("access-challenge-shell", bool(signals["accessChallengeShell"])),
+        ("subscription-shell", bool(signals["subscriptionShell"])),
+        ("redirect-shell", bool(signals["redirectShell"])),
+    )
+    for reason, rejected in checks:
+        if rejected:
+            return reason
+    if capture.http_status not in ACCEPTED_HTTP_STATUSES:
+        return f"http-{capture.http_status}"
+    return None
+
+
+def reset_completed_capture_for_retry(
+    connection: sqlite3.Connection,
+    *,
+    canonical_url: str,
+    reason: str,
+) -> None:
+    with connection:
+        connection.execute(
+            """
+            UPDATE captures
+            SET status='pending',
+                attempts=0,
+                last_error=?,
+                updated_at=?
+            WHERE canonical_url=? AND status='complete'
+            """,
+            (
+                f"raw quality policy rejected stored capture: {reason}",
+                _now_iso(),
+                canonical_url,
+            ),
+        )
+
+
+def _read_capture_html(
+    capture: RawCapture,
+    *,
+    archive_root: Path,
+) -> bytes:
+    path = archive_root / capture.raw_html.path
+    if capture.raw_html.content_encoding == "gzip":
+        with gzip.open(path, "rb") as handle:
+            content = handle.read()
+    else:
+        content = path.read_bytes()
+    actual = hashlib.sha256(content).hexdigest()
+    if actual != capture.raw_html.sha256:
+        raise ValueError(
+            "raw HTML checksum mismatch: "
+            f"expected {capture.raw_html.sha256}, got {actual}"
+        )
+    return content
 
 
 def capture_summary(

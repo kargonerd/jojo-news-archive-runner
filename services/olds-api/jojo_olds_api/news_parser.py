@@ -46,6 +46,9 @@ _EXACT_NOISE_TEXT = {
     "advertiser content",
     "sponsored content",
 }
+_NYT_ATTENDEE_RE = re.compile(
+    r'name:"((?:\\.|[^"\\])*)",caption:"((?:\\.|[^"\\])*)"'
+)
 
 
 def stable_article_id(publisher: str, canonical_url: str) -> str:
@@ -72,6 +75,10 @@ def parse_article(
         )
     if body is None and spec.use_structured_article_body:
         body = _structured_article_body(news_article)
+    if spec.publisher == "nyt":
+        birdkit_body = _nyt_birdkit_attendee_body(soup)
+        if birdkit_body is not None:
+            body = birdkit_body
     clean_body = BeautifulSoup(str(body), "html.parser") if body else BeautifulSoup("", "html.parser")
     _remove_noise(clean_body, spec)
 
@@ -331,6 +338,37 @@ def _structured_article_body(
         node = document.new_tag("p")
         node.string = paragraph
         article.append(node)
+    return article
+
+
+def _nyt_birdkit_attendee_body(
+    soup: BeautifulSoup,
+) -> Tag | None:
+    rows: list[tuple[str, str]] = []
+    for script in soup.find_all("script"):
+        value = script.string or script.get_text()
+        if not value or "sheets:{attendees:[" not in value:
+            continue
+        for match in _NYT_ATTENDEE_RE.finditer(value):
+            try:
+                name = json.loads(f'"{match.group(1)}"')
+                caption = json.loads(f'"{match.group(2)}"')
+            except (json.JSONDecodeError, TypeError):
+                continue
+            name = _clean_text(str(name))
+            caption = _clean_text(str(caption))
+            if name:
+                rows.append((name, caption))
+    if len(rows) < 3:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for name, caption in rows:
+        paragraph = document.new_tag("p")
+        paragraph.string = f"{name} — {caption}" if caption else name
+        article.append(paragraph)
     return article
 
 

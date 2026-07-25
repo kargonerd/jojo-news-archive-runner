@@ -6,16 +6,22 @@ import json
 from pathlib import Path
 import sqlite3
 
-from jojo_olds_api.news_models import CaptureCandidate, CaptureProvider
+from jojo_olds_api.news_models import (
+    CaptureCandidate,
+    CaptureProvider,
+    RawCapture,
+)
 from jojo_olds_api.raw_archive_capture import (
     ManifestItem,
     capture_item,
     capture_summary,
+    completed_capture_rejection_reason,
     initialize_capture_schema,
     load_capture_manifest,
     mark_capture_downloading,
     pending_captures,
     record_capture_result,
+    reset_completed_capture_for_retry,
     resolved_capture_candidate,
     score_raw_capture,
     store_raw_html,
@@ -432,6 +438,142 @@ def test_raw_quality_rejects_email_login_redirect_with_empty_shell():
 
     assert score < 85
     assert signals["authenticationShell"] is True
+
+
+def test_raw_quality_rejects_nyt_lire_shell_without_login_title():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>The New York Times</title>
+        <meta name="sourceApp" content="nyt-lire"></head>
+        <body><div id="myAccountAuth" class="full-page"></div>
+        <script src="/lire_ui/js/unified-lire.bundle.js"></script></body>
+        </html>
+        """ + (b" " * 20_000),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["authenticationShell"] is True
+
+
+def test_raw_quality_rejects_client_challenge_shell():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Client Challenge</title></head>
+        <body><p>JavaScript is disabled in your browser. A required part of
+        this site couldn't load.</p></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["accessChallengeShell"] is True
+
+
+def test_raw_quality_rejects_javascript_redirect_shell():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Archived interactive</title></head>
+        <body><article><div class="interactive-graphic"><script>
+        var destUrl = "https://www.nytimes.com/guides/privacy";
+        window.location = fullUrl;
+        </script></div></article></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["redirectShell"] is True
+
+
+def test_stored_challenge_shell_is_requeued_by_current_policy(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.ft.com/content/example"
+    snapshot_url = (
+        "https://web.archive.org/web/20240101000000id_/" + canonical_url
+    )
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "publisher": "ft",
+                "canonicalUrl": canonical_url,
+                "publishedAt": "2024-01-01T00:00:00Z",
+                "candidates": [
+                    {
+                        "provider": "wayback",
+                        "snapshotUrl": snapshot_url,
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="ft",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="ft",
+    )
+    shell = (
+        b"<html><head><title>Client Challenge</title></head>"
+        b"<body>JavaScript is disabled in your browser.</body></html>"
+    )
+    blob = store_raw_html(tmp_path, shell)
+    capture = RawCapture(
+        article_id="ft:" + ("a" * 64),
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=snapshot_url,
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=snapshot_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=85,
+        raw_html=blob,
+    )
+    record_capture_result(
+        connection,
+        {
+            "canonicalUrl": canonical_url,
+            "status": "complete",
+            "capture": capture,
+            "recordPath": "records/example.json",
+            "error": None,
+        },
+    )
+
+    reason = completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    )
+    reset_completed_capture_for_retry(
+        connection,
+        canonical_url=canonical_url,
+        reason=str(reason),
+    )
+    row = connection.execute(
+        "SELECT status, attempts, last_error FROM captures"
+    ).fetchone()
+
+    assert reason == "access-challenge-shell"
+    assert row[0:2] == ("pending", 0)
+    assert "access-challenge-shell" in row[2]
 
 
 def test_raw_quality_rejects_subscription_shell_without_article_body():

@@ -446,7 +446,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.5.0"
+    assert article.extraction.parser_version == "ft-parser/0.6.0"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -589,4 +589,48 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.5.0"
+    assert result.extraction.parser_version == "nyt-parser/0.6.0"
+
+
+def test_nyt_parser_extracts_birdkit_attendee_sheet():
+    canonical_url = (
+        "https://www.nytimes.com/interactive/2025/04/26/world/"
+        "pope-funeral.html"
+    )
+    attendees = ",".join(
+        (
+            f'{{name:"Attendee {index}",'
+            f'caption:"Public role number {index}"}}'
+        )
+        for index in range(30)
+    )
+    html = f"""
+    <html>
+      <head>
+        <meta property="og:title" content="Funeral attendees">
+        <meta property="article:published_time"
+              content="2025-04-26T12:00:00Z">
+      </head>
+      <body>
+        <article>
+          <div class="interactive-body">
+            <p>Explore the photo.</p>
+            <script>
+              const data = {{sheets:{{attendees:[{attendees}]}}}};
+            </script>
+          </div>
+        </article>
+      </body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.block_count == 30
+    assert "Attendee 0 — Public role number 0" in result.plain_text
+    assert "Attendee 29 — Public role number 29" in result.plain_text
