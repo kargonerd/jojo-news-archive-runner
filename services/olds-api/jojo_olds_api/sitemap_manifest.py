@@ -483,6 +483,14 @@ def sitemap_wayback_candidates(
                 continue
             seen.add(snapshot_url)
             result.append(candidate)
+    if publisher == "ap":
+        result.append(
+            {
+                "provider": "live-origin",
+                "snapshotUrl": canonical_url,
+            }
+        )
+        return result
     return with_current_year_live_fallback(
         result,
         canonical_url=canonical_url,

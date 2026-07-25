@@ -154,3 +154,26 @@ def test_current_year_sitemap_candidates_include_live_fallback():
         "provider": "live-origin",
         "snapshotUrl": canonical_url,
     }
+
+
+def test_ap_historical_sitemap_candidates_include_live_fallback():
+    canonical_url = (
+        "https://apnews.com/article/"
+        "historical-story-0123456789abcdef0123456789abcdef"
+    )
+
+    result = sitemap_wayback_candidates(
+        "ap",
+        canonical_url,
+        published_at="2016-01-15T12:00:00+00:00",
+    )
+
+    assert len(result) == 4
+    assert all(
+        candidate["provider"] == "wayback"
+        for candidate in result[:3]
+    )
+    assert result[-1] == {
+        "provider": "live-origin",
+        "snapshotUrl": canonical_url,
+    }
