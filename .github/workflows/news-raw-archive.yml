@@ -31,6 +31,7 @@ on:
         type: choice
         options:
           - sitemap-wayback
+          - reuters-sitemap-wayback
           - wayback
           - committed-bloomberg-2020
       max_discovery_pages:
@@ -125,6 +126,16 @@ jobs:
               exit 2
             fi
           fi
+          if [ "$MANIFEST_MODE" = "reuters-sitemap-wayback" ] &&
+             [ "$PUBLISHER" != "reuters" ]; then
+            echo "reuters-sitemap-wayback is only valid for Reuters." >&2
+            exit 2
+          fi
+          if [ "$MANIFEST_MODE" = "sitemap-wayback" ] &&
+             [[ ! "$PUBLISHER" =~ ^(ap|bloomberg|nyt|ft)$ ]]; then
+            echo "sitemap-wayback supports AP, Bloomberg, NYT, and FT." >&2
+            exit 2
+          fi
           shard="${PUBLISHER}/${FROM_YEAR}-${TO_YEAR}/${MANIFEST_MODE}"
           local_root="${ARCHIVE_ROOT}/${shard}"
           remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${shard}"
@@ -210,6 +221,16 @@ jobs:
               --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
               --max-sitemaps "$MAX_DISCOVERY_PAGES" \
               --min-request-interval 1.0 \
+              --github-output "$GITHUB_OUTPUT"
+          elif [ "$MANIFEST_MODE" = "reuters-sitemap-wayback" ]; then
+            python services/olds-api/tools/build_reuters_sitemap_manifest.py \
+              --publisher "$PUBLISHER" \
+              --from-year "$FROM_YEAR" \
+              --to-year "$TO_YEAR" \
+              --output "$manifest" \
+              --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
+              --max-sitemaps "$MAX_DISCOVERY_PAGES" \
+              --min-request-interval 0.5 \
               --github-output "$GITHUB_OUTPUT"
           else
             python services/olds-api/tools/build_wayback_manifest.py \

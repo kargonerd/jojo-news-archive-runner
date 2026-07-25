@@ -106,17 +106,17 @@ ARCHIVE_SOURCE_SPECS = {
     "reuters": ArchiveSourceSpec(
         publisher="reuters",
         canonical_host="www.reuters.com",
-        wayback_patterns=(
-            "www.reuters.com/article/*",
-            "www.reuters.com/world/*",
-            "www.reuters.com/business/*",
-            "www.reuters.com/markets/*",
-            "www.reuters.com/technology/*",
-            "www.reuters.com/legal/*",
+        wayback_patterns=tuple(
+            f"www.reuters.com/article/{prefix}*"
+            for prefix in _SLUG_PREFIXES
         ),
         accepted_path_patterns=_patterns(
             r"^/article/",
-            r"^/(?:world|business|markets|technology|legal)/.+",
+            (
+                r"^/(?:world|business|markets|technology|legal|sports|"
+                r"lifestyle|science|fact-check|breakingviews|"
+                r"investigates)/.+"
+            ),
         ),
         rejected_path_patterns=_patterns(
             r"/(?:video|pictures|graphics)(?:/|$)",

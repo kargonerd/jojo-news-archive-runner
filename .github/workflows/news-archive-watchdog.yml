@@ -1,0 +1,79 @@
+name: News archive watchdog
+
+on:
+  schedule:
+    - cron: "37 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: news-archive-watchdog
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        archive:
+          - publisher: ap
+            from_year: "2016"
+            to_year: "2026"
+            manifest_mode: sitemap-wayback
+            discovery_units: "10"
+          - publisher: bloomberg
+            from_year: "2016"
+            to_year: "2026"
+            manifest_mode: sitemap-wayback
+            discovery_units: "10"
+          - publisher: nyt
+            from_year: "2016"
+            to_year: "2026"
+            manifest_mode: sitemap-wayback
+            discovery_units: "10"
+          - publisher: ft
+            from_year: "2016"
+            to_year: "2026"
+            manifest_mode: sitemap-wayback
+            discovery_units: "10"
+          - publisher: wsj
+            from_year: "2016"
+            to_year: "2026"
+            manifest_mode: wayback
+            discovery_units: "5"
+          - publisher: reuters
+            from_year: "2016"
+            to_year: "2020"
+            manifest_mode: wayback
+            discovery_units: "5"
+          - publisher: reuters
+            from_year: "2021"
+            to_year: "2026"
+            manifest_mode: reuters-sitemap-wayback
+            discovery_units: "25"
+    steps:
+      - name: Advance archive shard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISHER: ${{ matrix.archive.publisher }}
+          FROM_YEAR: ${{ matrix.archive.from_year }}
+          TO_YEAR: ${{ matrix.archive.to_year }}
+          MANIFEST_MODE: ${{ matrix.archive.manifest_mode }}
+          DISCOVERY_UNITS: ${{ matrix.archive.discovery_units }}
+        run: |
+          gh workflow run news-raw-archive.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f publisher="$PUBLISHER" \
+            -f from_year="$FROM_YEAR" \
+            -f to_year="$TO_YEAR" \
+            -f manifest_mode="$MANIFEST_MODE" \
+            -f max_discovery_pages="$DISCOVERY_UNITS" \
+            -f max_captures=500 \
+            -f workers=4 \
+            -f max_runtime_minutes=300 \
+            -f auto_continue=true
