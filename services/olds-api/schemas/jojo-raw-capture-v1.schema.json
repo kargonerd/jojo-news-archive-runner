@@ -1,0 +1,235 @@
+{
+  "$defs": {
+    "BlobReference": {
+      "additionalProperties": false,
+      "properties": {
+        "byteCount": {
+          "minimum": 0,
+          "title": "Bytecount",
+          "type": "integer"
+        },
+        "contentEncoding": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contentencoding"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "storedByteCount": {
+          "minimum": 0,
+          "title": "Storedbytecount",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "byteCount",
+        "storedByteCount"
+      ],
+      "title": "BlobReference",
+      "type": "object"
+    },
+    "CaptureCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "byteCount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bytecount"
+        },
+        "capturedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturedat"
+        },
+        "digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Digest"
+        },
+        "mimeType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mimetype"
+        },
+        "provider": {
+          "$ref": "#/$defs/CaptureProvider"
+        },
+        "snapshotUrl": {
+          "title": "Snapshoturl",
+          "type": "string"
+        },
+        "statusCode": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Statuscode"
+        }
+      },
+      "required": [
+        "provider",
+        "snapshotUrl"
+      ],
+      "title": "CaptureCandidate",
+      "type": "object"
+    },
+    "CaptureProvider": {
+      "enum": [
+        "wayback",
+        "commoncrawl",
+        "live-origin",
+        "other"
+      ],
+      "title": "CaptureProvider",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "articleId": {
+      "title": "Articleid",
+      "type": "string"
+    },
+    "candidatesConsidered": {
+      "items": {
+        "$ref": "#/$defs/CaptureCandidate"
+      },
+      "title": "Candidatesconsidered",
+      "type": "array"
+    },
+    "canonicalUrl": {
+      "title": "Canonicalurl",
+      "type": "string"
+    },
+    "contentType": {
+      "title": "Contenttype",
+      "type": "string"
+    },
+    "finalUrl": {
+      "title": "Finalurl",
+      "type": "string"
+    },
+    "formatVersion": {
+      "default": "jojo-raw-capture/1",
+      "title": "Formatversion",
+      "type": "string"
+    },
+    "httpStatus": {
+      "title": "Httpstatus",
+      "type": "integer"
+    },
+    "publishedAt": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publishedat"
+    },
+    "publisher": {
+      "title": "Publisher",
+      "type": "string"
+    },
+    "qualityScore": {
+      "title": "Qualityscore",
+      "type": "integer"
+    },
+    "qualitySignals": {
+      "title": "Qualitysignals",
+      "type": "object"
+    },
+    "rawHtml": {
+      "$ref": "#/$defs/BlobReference"
+    },
+    "retrievedAt": {
+      "format": "date-time",
+      "title": "Retrievedat",
+      "type": "string"
+    },
+    "section": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Section"
+    },
+    "selectedCandidate": {
+      "$ref": "#/$defs/CaptureCandidate"
+    }
+  },
+  "required": [
+    "articleId",
+    "publisher",
+    "canonicalUrl",
+    "selectedCandidate",
+    "retrievedAt",
+    "finalUrl",
+    "httpStatus",
+    "contentType",
+    "qualityScore",
+    "rawHtml"
+  ],
+  "title": "RawCapture",
+  "type": "object"
+}

@@ -1,0 +1,135 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+COMMON_REMOVE_SELECTORS = (
+    "script",
+    "style",
+    "noscript",
+    "template",
+    "[aria-label*='advertisement' i]",
+    "[class*='advertisement' i]",
+    "[class*='recommended' i]",
+    "[class*='related-' i]",
+    "[data-testid*='ad-' i]",
+    "[data-testid*='related' i]",
+    "[data-component*='newsletter' i]",
+    "[data-component*='paywall' i]",
+    "nav",
+    "footer",
+)
+
+
+@dataclass(frozen=True)
+class PublisherSpec:
+    publisher: str
+    parser_version: str
+    domains: tuple[str, ...]
+    default_language: str
+    edition: str | None
+    body_selectors: tuple[str, ...]
+    remove_selectors: tuple[str, ...] = ()
+    preferred_image_hosts: tuple[str, ...] = ()
+
+
+PUBLISHER_SPECS = {
+    "ap": PublisherSpec(
+        publisher="ap",
+        parser_version="ap-parser/0.1.0",
+        domains=("apnews.com",),
+        default_language="en",
+        edition="us",
+        body_selectors=(
+            "[data-key='article']",
+            ".RichTextStoryBody",
+            "[data-testid='article-body']",
+            "article",
+        ),
+        preferred_image_hosts=("dims.apnews.com", "storage.googleapis.com"),
+    ),
+    "wsj": PublisherSpec(
+        publisher="wsj",
+        parser_version="wsj-parser/0.1.0",
+        domains=("wsj.com", "www.wsj.com"),
+        default_language="en",
+        edition="us",
+        body_selectors=(
+            "[data-type='article-body']",
+            "[data-testid='article-body']",
+            ".article-content",
+            "article",
+        ),
+        preferred_image_hosts=("images.wsj.net", "s.wsj.net"),
+    ),
+    "bloomberg": PublisherSpec(
+        publisher="bloomberg",
+        parser_version="bloomberg-parser/0.1.0",
+        domains=("bloomberg.com", "www.bloomberg.com"),
+        default_language="en",
+        edition="global",
+        body_selectors=(
+            ".body-copy-v2",
+            "[data-component='article-body']",
+            "article .body-content",
+            "article [itemprop='articleBody']",
+            "article",
+        ),
+        remove_selectors=(
+            "[data-position='in-article']",
+            "[data-position='mobile-box']",
+        ),
+        preferred_image_hosts=("assets.bwbx.io", "assets.bwbx.com"),
+    ),
+    "nyt": PublisherSpec(
+        publisher="nyt",
+        parser_version="nyt-parser/0.1.0",
+        domains=("nytimes.com", "www.nytimes.com"),
+        default_language="en",
+        edition="us",
+        body_selectors=(
+            "section[name='articleBody']",
+            "[data-testid='article-body']",
+            ".StoryBodyCompanionColumn",
+            "article",
+        ),
+        preferred_image_hosts=("static01.nyt.com", "static.nytimes.com"),
+    ),
+    "reuters": PublisherSpec(
+        publisher="reuters",
+        parser_version="reuters-parser/0.1.0",
+        domains=("reuters.com", "www.reuters.com"),
+        default_language="en",
+        edition="global",
+        body_selectors=(
+            "[data-testid='article-body']",
+            ".article-body__content",
+            "article",
+        ),
+        preferred_image_hosts=("cloudfront-us-east-2.images.arcpublishing.com",),
+    ),
+    "ft": PublisherSpec(
+        publisher="ft",
+        parser_version="ft-parser/0.1.0",
+        domains=("ft.com", "www.ft.com"),
+        default_language="en",
+        edition="global",
+        body_selectors=(
+            ".article__content-body",
+            "#article-body",
+            "[data-trackable='article-body']",
+            "article",
+        ),
+        preferred_image_hosts=("www.ft.com", "d1e00ek4ebabms.cloudfront.net"),
+    ),
+}
+
+
+def publisher_spec(publisher: str) -> PublisherSpec:
+    try:
+        return PUBLISHER_SPECS[publisher]
+    except KeyError as exc:
+        supported = ", ".join(sorted(PUBLISHER_SPECS))
+        raise ValueError(
+            f"unsupported publisher {publisher!r}; expected one of: {supported}"
+        ) from exc

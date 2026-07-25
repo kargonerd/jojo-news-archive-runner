@@ -4,34 +4,59 @@ Open-source research tooling for building reproducible, resumable news archives
 from publicly indexed web snapshots.
 
 This temporary runner repository supports the nonprofit JOJO Platform research
-project while the main platform is being prepared for open-source release. It
-currently runs a bounded Bloomberg 2020 archive job on GitHub Actions.
+project while the main platform is being prepared for open-source release.
+
+## Current scope
+
+The generic pipeline supports these publisher adapters:
+
+- AP News
+- The Wall Street Journal
+- Bloomberg
+- The New York Times
+- Reuters
+- Financial Times
+
+The archive is intentionally split into two independent stages:
+
+1. **Raw capture** discovers archive candidates and stores the selected original
+   HTML response plus provenance metadata. It does not parse the article or
+   download images.
+2. **Versioned parsing** replays a raw capture into `jojo-article/1`, preserving
+   ordered content blocks and classifying image references before any image is
+   selected for archival.
+
+This lets parser changes run against stable source bytes without repeatedly
+requesting the upstream archive.
 
 ## What is public
 
-- Downloader and extraction source code
+- Downloader, discovery, parser, and storage source code
 - Tests and GitHub Actions workflows
-- Snapshot URL manifest and archive metadata
+- JSON Schemas for raw captures and normalized articles
+- Snapshot URL manifests and archive metadata
 
 ## What stays private
 
-Downloaded HTML, extracted article bodies, images, and SQLite checkpoints are
+Downloaded HTML, normalized article bodies, images, and SQLite checkpoints are
 written to a B2 bucket that the workflow verifies is private. Downloaded content
 is never committed to Git and is not uploaded as a GitHub Actions artifact.
 
-## How the continuous job works
+## Storage and workflow
 
-1. Restore the latest checkpoint from B2.
-2. Process a bounded batch with a fixed runtime limit.
-3. Upload content-addressed archive objects.
-4. Upload the SQLite checkpoint last.
-5. Dispatch the next bounded batch.
+The generic `News raw archive` workflow:
 
-A six-hour schedule acts as a watchdog, and a concurrency lock prevents two
-workers from writing the same archive at once.
+1. Restores its Wayback discovery and raw-capture checkpoints from B2.
+2. Advances a bounded discovery or capture batch.
+3. Uploads immutable, content-addressed raw HTML and capture records.
+4. Uploads the SQLite checkpoint last.
+5. Optionally dispatches the next bounded run.
 
-See [the Bloomberg Actions runbook](services/olds-api/BLOOMBERG_ACTIONS.md) for
-configuration and operating details.
+See [NEWS_ARCHIVE.md](services/olds-api/NEWS_ARCHIVE.md) for the schema, storage
+layout, local commands, and GitHub Actions inputs.
+
+The older Bloomberg-only downloader remains for migration and regression
+testing, but new archives use the capture-only pipeline.
 
 ## License and content notice
 
