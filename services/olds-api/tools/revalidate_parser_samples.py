@@ -17,6 +17,7 @@ from jojo_olds_api.parser_validation import (
     record_parser_validation,
 )
 from jojo_olds_api.raw_archive_capture import completed_raw_capture
+from jojo_olds_api.raw_archive_capture import capture_summary
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--archive-root", type=Path, required=True)
     parser.add_argument("--max-replays", type=int, default=500)
     parser.add_argument("--progress-every", type=int, default=50)
+    parser.add_argument("--summary", type=Path)
     return parser.parse_args()
 
 
@@ -79,6 +81,22 @@ def main() -> int:
                 flush=True,
             )
     summary = parser_validation_summary(connection)
+    if args.summary:
+        args.summary.parent.mkdir(parents=True, exist_ok=True)
+        temporary = args.summary.with_suffix(args.summary.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(
+                capture_summary(
+                    connection,
+                    output_dir=args.archive_root,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(args.summary)
     connection.close()
     result = {
         "publisher": args.publisher,

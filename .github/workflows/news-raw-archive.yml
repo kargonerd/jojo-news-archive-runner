@@ -378,7 +378,27 @@ jobs:
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
             --archive-root "$LOCAL_ROOT/raw" \
             --max-replays 500 \
-            --progress-every 50
+            --progress-every 50 \
+            --summary "$LOCAL_ROOT/raw/summary.json"
+
+      - name: Publish parser validation replay checkpoint
+        if: ${{ steps.validation_replay.outputs.replays != '0' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+        run: |
+          python services/olds-api/tools/checkpoint_capture_state.py \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --output "$RUNNER_TEMP/parser-replay.sqlite3.gz"
+          rclone copyto \
+            "$LOCAL_ROOT/raw/summary.json" \
+            "${REMOTE_ROOT}/state/summary.json" \
+            --retries 8 --low-level-retries 20
+          rclone copyto \
+            "$RUNNER_TEMP/parser-replay.sqlite3.gz" \
+            "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
+            --retries 8 --low-level-retries 20
 
       - name: Capture bounded raw HTML batch
         id: capture
