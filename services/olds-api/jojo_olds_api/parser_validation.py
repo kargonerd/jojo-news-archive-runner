@@ -328,6 +328,7 @@ def record_parser_validation(
         return {"sample": False}
 
     sample_year = int(sample_row[0])
+    planned_year = sample_year
     parsed_at = datetime.now(timezone.utc)
     values: dict[str, object] = {
         "canonical_url": capture.canonical_url,
@@ -358,6 +359,18 @@ def record_parser_validation(
             raw_capture=capture,
             parsed_at=parsed_at,
         )
+        if article.published_at is not None:
+            sample_year = article.published_at.year
+            values["sample_year"] = sample_year
+            if sample_year != planned_year:
+                connection.execute(
+                    """
+                    UPDATE parser_validation_samples
+                    SET sample_year=?
+                    WHERE canonical_url=?
+                    """,
+                    (sample_year, capture.canonical_url),
+                )
         text_blocks = [
             _normalize_text(block.text)
             for block in article.blocks
@@ -476,6 +489,7 @@ def record_parser_validation(
     return {
         "sample": True,
         "year": sample_year,
+        "plannedYear": planned_year,
         "status": values["extraction_status"],
         "qaPass": bool(values["qa_pass"]),
         "issues": json.loads(str(values["issues_json"])),

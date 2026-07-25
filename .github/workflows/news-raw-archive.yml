@@ -36,6 +36,7 @@ on:
           - sitemap-wayback
           - reuters-sitemap-wayback
           - wayback
+          - wayback-urlkey
           - committed-bloomberg-2020
       max_discovery_pages:
         description: "Maximum CDX pages or sitemap files in this run."
@@ -132,6 +133,11 @@ jobs:
           if [ "$MANIFEST_MODE" = "reuters-sitemap-wayback" ] &&
              [ "$PUBLISHER" != "reuters" ]; then
             echo "reuters-sitemap-wayback is only valid for Reuters." >&2
+            exit 2
+          fi
+          if [ "$MANIFEST_MODE" = "wayback-urlkey" ] &&
+             [[ ! "$PUBLISHER" =~ ^(wsj|reuters)$ ]]; then
+            echo "wayback-urlkey supports WSJ and Reuters." >&2
             exit 2
           fi
           if [ "$MANIFEST_MODE" = "sitemap-wayback" ] &&
@@ -234,6 +240,18 @@ jobs:
               --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
               --max-sitemaps "$MAX_DISCOVERY_PAGES" \
               --min-request-interval 0.5 \
+              --github-output "$GITHUB_OUTPUT"
+          elif [ "$MANIFEST_MODE" = "wayback-urlkey" ]; then
+            python services/olds-api/tools/build_wayback_manifest.py \
+              --publisher "$PUBLISHER" \
+              --from-year "$FROM_YEAR" \
+              --to-year "$TO_YEAR" \
+              --output "$manifest" \
+              --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
+              --page-limit 2000 \
+              --max-pages "$MAX_DISCOVERY_PAGES" \
+              --min-request-interval 1.0 \
+              --collapse urlkey \
               --github-output "$GITHUB_OUTPUT"
           else
             python services/olds-api/tools/build_wayback_manifest.py \

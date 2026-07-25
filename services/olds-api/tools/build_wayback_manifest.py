@@ -36,6 +36,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-request-interval", type=float, default=1.0)
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument("--attempts", type=int, default=6)
+    parser.add_argument(
+        "--collapse",
+        choices=("digest", "urlkey"),
+        default="digest",
+        help="CDX deduplication key; urlkey is the fast unique-URL mode.",
+    )
     parser.add_argument("--github-output", type=Path)
     return parser.parse_args()
 
@@ -55,12 +61,14 @@ def main() -> int:
         spec=spec,
         from_year=args.from_year,
         to_year=args.to_year,
+        collapse=args.collapse,
     )
     client = WaybackCDXClient(
         minimum_interval=args.min_request_interval,
         timeout=args.timeout,
         attempts=args.attempts,
         page_limit=args.page_limit,
+        collapse=args.collapse,
     )
     pages_this_run = 0
     try:

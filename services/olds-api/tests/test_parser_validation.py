@@ -198,3 +198,73 @@ def test_completed_validation_sample_records_parser_quality(tmp_path: Path):
     assert summary["years"]["2020"]["evaluated"] == 1
     assert summary["years"]["2020"]["complete"] == 1
     assert summary["years"]["2020"]["qaPassed"] == 1
+
+
+def test_validation_uses_parsed_publication_year_not_capture_year(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2022,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    selected = pending_captures(
+        connection,
+        retry_errors=False,
+        maximum=1,
+        maximum_record_attempts=3,
+        prioritize_parser_validation=True,
+    )[0]
+    body = " ".join(["Cross-year reporting sentence."] * 30)
+    html = f"""
+    <html>
+      <head>
+        <script type="application/ld+json">
+          {{
+            "@type": "NewsArticle",
+            "headline": "A cross-year archived article",
+            "datePublished": "2021-06-15T00:00:00Z"
+          }}
+        </script>
+      </head>
+      <body><article><p>{body}</p></article></body>
+    </html>
+    """.encode()
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id=selected.article_id,
+        publisher="ap",
+        canonical_url=selected.canonical_url,
+        published_at=datetime.fromisoformat(selected.published_at),
+        selected_candidate=selected.candidates[0],
+        candidates_considered=list(selected.candidates),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=selected.candidates[0].snapshot_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    stored_year = connection.execute(
+        """
+        SELECT sample_year
+        FROM parser_validation_results
+        WHERE canonical_url=?
+        """,
+        (selected.canonical_url,),
+    ).fetchone()[0]
+
+    assert result["plannedYear"] == 2020
+    assert result["year"] == 2021
+    assert stored_year == 2021

@@ -151,3 +151,42 @@ def test_discovery_queries_follow_configured_order_not_lexical_order():
     pattern, _ = next_discovery_query(connection)
 
     assert pattern == "www.wsj.com/articles/a*"
+
+
+def test_no_date_url_uses_capture_time_for_year_stratification():
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2020,
+        to_year=2020,
+        collapse="urlkey",
+    )
+    pattern, _ = next_discovery_query(connection)
+    original = "https://www.wsj.com/articles/example-slug"
+    record_discovery_page(
+        connection,
+        spec=spec,
+        pattern=pattern,
+        page=CDXPage(
+            captures=(
+                CDXCapture(
+                    timestamp="20200615120000",
+                    original=original,
+                    mimetype="text/html",
+                    status_code=200,
+                    digest="DIGEST",
+                    length=50_000,
+                ),
+            ),
+            resume_key=None,
+        ),
+    )
+
+    published_at = connection.execute(
+        "SELECT published_at FROM candidates WHERE canonical_url=?",
+        (original,),
+    ).fetchone()[0]
+
+    assert published_at == "2020-06-15T12:00:00+00:00"

@@ -53,12 +53,16 @@ class WaybackCDXClient:
         timeout: float = 90.0,
         attempts: int = 6,
         page_limit: int = 10_000,
+        collapse: str = "digest",
         client: httpx.Client | None = None,
     ) -> None:
+        if collapse not in {"digest", "urlkey"}:
+            raise ValueError("collapse must be 'digest' or 'urlkey'")
         self.rate_limiter = GlobalRateLimiter(minimum_interval)
         self.timeout = timeout
         self.attempts = attempts
         self.page_limit = page_limit
+        self.collapse = collapse
         self._provided_client = client
         self._client = client or httpx.Client(
             headers={
@@ -92,7 +96,7 @@ class WaybackCDXClient:
             ),
             ("filter", "statuscode:200"),
             ("filter", "mimetype:text/html"),
-            ("collapse", "digest"),
+            ("collapse", self.collapse),
             ("from", str(from_year)),
             ("to", str(to_year)),
             ("limit", str(self.page_limit)),
@@ -164,6 +168,7 @@ def initialize_discovery_schema(
     spec: ArchiveSourceSpec,
     from_year: int,
     to_year: int,
+    collapse: str = "digest",
 ) -> None:
     connection.executescript(
         """
@@ -202,7 +207,12 @@ def initialize_discovery_schema(
             ON candidates(canonical_url, rank_score, timestamp);
         """
     )
-    fingerprint = _spec_fingerprint(spec, from_year=from_year, to_year=to_year)
+    fingerprint = _spec_fingerprint(
+        spec,
+        from_year=from_year,
+        to_year=to_year,
+        collapse=collapse,
+    )
     existing = connection.execute(
         "SELECT value FROM discovery_metadata WHERE key='fingerprint'"
     ).fetchone()
@@ -215,6 +225,7 @@ def initialize_discovery_schema(
         "publisher": spec.publisher,
         "from_year": str(from_year),
         "to_year": str(to_year),
+        "collapse": collapse,
         "fingerprint": fingerprint,
     }
     connection.executemany(
@@ -268,7 +279,10 @@ def record_discovery_page(
         canonical_url = normalize_article_url(spec, capture.original)
         if not canonical_url:
             continue
-        published_at = infer_published_at(canonical_url)
+        published_at = (
+            infer_published_at(canonical_url)
+            or _timestamp_datetime(capture.timestamp).isoformat()
+        )
         rows.append(
             (
                 canonical_url,
@@ -540,17 +554,24 @@ def _spec_fingerprint(
     *,
     from_year: int,
     to_year: int,
+    collapse: str = "digest",
 ) -> str:
+    payload = {
+        "publisher": spec.publisher,
+        "fromYear": from_year,
+        "toYear": to_year,
+        "patterns": spec.expanded_wayback_patterns(
+            from_year=from_year,
+            to_year=to_year,
+        ),
+    }
+    # Preserve the original digest-mode fingerprint so deployed checkpoints
+    # remain resumable. Alternate collapse modes get isolated fingerprints and
+    # B2 shards.
+    if collapse != "digest":
+        payload["collapse"] = collapse
     value = json.dumps(
-        {
-            "publisher": spec.publisher,
-            "fromYear": from_year,
-            "toYear": to_year,
-            "patterns": spec.expanded_wayback_patterns(
-                from_year=from_year,
-                to_year=to_year,
-            ),
-        },
+        payload,
         sort_keys=True,
         separators=(",", ":"),
     )

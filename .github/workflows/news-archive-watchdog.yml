@@ -45,11 +45,21 @@ jobs:
             to_year: "2026"
             manifest_mode: wayback
             discovery_units: "5"
+          - publisher: wsj
+            from_year: "2016"
+            to_year: "2026"
+            manifest_mode: wayback-urlkey
+            discovery_units: "25"
           - publisher: reuters
             from_year: "2016"
             to_year: "2020"
             manifest_mode: wayback
             discovery_units: "5"
+          - publisher: reuters
+            from_year: "2016"
+            to_year: "2020"
+            manifest_mode: wayback-urlkey
+            discovery_units: "25"
           - publisher: reuters
             from_year: "2021"
             to_year: "2026"

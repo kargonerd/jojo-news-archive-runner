@@ -149,6 +149,14 @@ Use `manifest_mode: wayback` for partitioned CDX adapters such as WSJ. Discovery
 checkpoints are published after each bounded run. Capture begins only after
 every configured query for that publisher window is complete.
 
+WSJ and legacy Reuters also run a parallel `wayback-urlkey` shard. It asks CDX
+for one first capture per unique URL, instead of paging through every distinct
+HTML digest. This provides the cross-year parser-validation corpus much sooner
+while the original digest-mode shards continue the deeper, three-candidate
+archive discovery. When a canonical URL has no embedded date, the first capture
+timestamp supplies the provisional sampling year; the parser still prefers the
+publication metadata contained in the archived page.
+
 Reuters uses two catalog shards because its URL design changed:
 
 - `wayback` for the legacy `/article/` catalog (2016–2020);
