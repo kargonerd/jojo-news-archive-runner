@@ -22,7 +22,7 @@ downloaded by `capture_archive_batch.py`.
 For a publisher and discovery window, the workflow writes:
 
 ```text
-news-archive/v1/{publisher}/{fromYear}-{toYear}/
+news-archive/v1/{publisher}/{fromYear}-{toYear}/{manifestMode}/
   catalog/
     discovery.sqlite3.gz
     manifest.jsonl.gz
@@ -117,6 +117,11 @@ max_captures: 2
 auto_continue: false
 ```
 
-For normal operation, use `manifest_mode: wayback`. Discovery checkpoints are
-published after each bounded run. Capture begins only after every configured CDX
-query for that publisher window is complete.
+For AP, Bloomberg, NYT, and FT, use `manifest_mode: sitemap-wayback`. It obtains
+the canonical URL and publication month from the publisher's historical
+sitemaps, then asks Wayback for snapshots near publication. This avoids large
+CDX prefix queries and tends to select better article versions.
+
+Use `manifest_mode: wayback` for partitioned CDX adapters such as WSJ. Discovery
+checkpoints are published after each bounded run. Capture begins only after
+every configured query for that publisher window is complete.

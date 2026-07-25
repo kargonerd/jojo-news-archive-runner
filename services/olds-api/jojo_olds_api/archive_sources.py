@@ -35,6 +35,9 @@ def _patterns(*values: str) -> tuple[re.Pattern[str], ...]:
     return tuple(re.compile(value, re.IGNORECASE) for value in values)
 
 
+_SLUG_PREFIXES = tuple("abcdefghijklmnopqrstuvwxyz0123456789")
+
+
 ARCHIVE_SOURCE_SPECS = {
     "ap": ArchiveSourceSpec(
         publisher="ap",
@@ -55,9 +58,11 @@ ARCHIVE_SOURCE_SPECS = {
     "wsj": ArchiveSourceSpec(
         publisher="wsj",
         canonical_host="www.wsj.com",
-        wayback_patterns=(
-            "www.wsj.com/articles/*",
-            "www.wsj.com/news/*",
+        wayback_patterns=tuple(
+            f"www.wsj.com/articles/{prefix}*"
+            for prefix in _SLUG_PREFIXES
+        )
+        + (
             "online.wsj.com/article/*",
         ),
         accepted_path_patterns=_patterns(

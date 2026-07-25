@@ -32,6 +32,10 @@ _ARCHIVE_ERROR_MARKERS = (
     b"this url has been excluded from the wayback machine",
     b"cannot be crawled or displayed due to robots.txt",
 )
+_WAYBACK_FINAL_RE = re.compile(
+    r"https?://web\.archive\.org/web/(\d{14})(?:id_|im_|js_|cs_)?/",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -308,13 +312,20 @@ def capture_item(
 
         raw_reference = store_raw_html(output_dir, content)
         retrieved_at = datetime.now(timezone.utc)
+        selected_candidate = resolved_capture_candidate(
+            candidate,
+            final_url=final_url,
+            http_status=status_code,
+            content_type=content_type,
+            byte_count=len(content),
+        )
         capture = RawCapture(
             article_id=item.article_id,
             publisher=item.publisher,
             canonical_url=item.canonical_url,
             published_at=item.published_at,
             section=item.section,
-            selected_candidate=candidate,
+            selected_candidate=selected_candidate,
             candidates_considered=list(item.candidates),
             retrieved_at=retrieved_at,
             final_url=final_url,
@@ -339,6 +350,27 @@ def capture_item(
         "recordPath": None,
         "error": "; ".join(failures[-8:]) or "no usable capture candidates",
     }
+
+
+def resolved_capture_candidate(
+    candidate: CaptureCandidate,
+    *,
+    final_url: str,
+    http_status: int,
+    content_type: str,
+    byte_count: int,
+) -> CaptureCandidate:
+    updates: dict[str, object] = {
+        "status_code": http_status,
+        "mime_type": content_type or candidate.mime_type,
+        "byte_count": byte_count,
+    }
+    if candidate.provider == CaptureProvider.WAYBACK:
+        match = _WAYBACK_FINAL_RE.search(final_url)
+        if match:
+            updates["snapshot_url"] = final_url
+            updates["captured_at"] = _wayback_datetime(match.group(1))
+    return candidate.model_copy(update=updates)
 
 
 def score_raw_capture(

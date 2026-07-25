@@ -16,6 +16,7 @@ from jojo_olds_api.raw_archive_capture import (
     mark_capture_downloading,
     pending_captures,
     record_capture_result,
+    resolved_capture_candidate,
     score_raw_capture,
     store_raw_html,
 )
@@ -240,3 +241,37 @@ def test_raw_quality_rejects_archive_error_page():
     assert score < 100
     assert signals["looksLikeHtml"] is True
     assert signals["archiveErrorPage"] is True
+
+
+def test_wayback_candidate_records_actual_redirected_snapshot():
+    requested = candidate(
+        (
+            "https://web.archive.org/web/20200115000000id_/"
+            "https://example.com/article"
+        ),
+        "20200115000000",
+    )
+    resolved = resolved_capture_candidate(
+        requested,
+        final_url=(
+            "https://web.archive.org/web/20200114235538id_/"
+            "https://example.com/article"
+        ),
+        http_status=200,
+        content_type="text/html",
+        byte_count=1234,
+    )
+
+    assert resolved.snapshot_url.startswith(
+        "https://web.archive.org/web/20200114235538id_/"
+    )
+    assert resolved.captured_at == datetime(
+        2020,
+        1,
+        14,
+        23,
+        55,
+        38,
+        tzinfo=timezone.utc,
+    )
+    assert resolved.byte_count == 1234
