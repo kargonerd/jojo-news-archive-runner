@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/olds-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/olds-api/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate committed manifest
+        shell: python
+        run: |
+          import gzip
+          import json
+          from pathlib import Path
+
+          path = Path("services/olds-api/data/bloomberg-2020-archive-manifest.jsonl.gz")
+          rows = 0
+          downloadable = 0
+          required = {"url", "wayback_timestamp", "wayback_snapshot_url"}
+
+          with gzip.open(path, "rt", encoding="utf-8") as handle:
+              for line in handle:
+                  row = json.loads(line)
+                  rows += 1
+                  if row.get("wayback_snapshot_url"):
+                      downloadable += 1
+                      missing = required.difference(row)
+                      if missing:
+                          raise SystemExit(f"row {rows} missing: {sorted(missing)}")
+
+          if rows != 83_258 or downloadable != 69_629:
+              raise SystemExit(
+                  f"unexpected manifest counts: rows={rows}, downloadable={downloadable}"
+              )
+
+          print(f"validated {rows} rows ({downloadable} downloadable snapshots)")
