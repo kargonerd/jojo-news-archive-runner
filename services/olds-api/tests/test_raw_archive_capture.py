@@ -105,6 +105,91 @@ def test_legacy_manifest_loads_into_generic_capture_state(tmp_path: Path):
     )
 
 
+def test_manifest_refresh_retries_errors_when_candidates_change(
+    tmp_path: Path,
+):
+    canonical_url = "https://apnews.com/article/manifest-refresh"
+    wayback_url = (
+        "https://web.archive.org/web/20260102000000id_/"
+        f"{canonical_url}"
+    )
+    manifest = tmp_path / "manifest.jsonl"
+
+    def write_manifest(candidates: list[dict[str, object]]) -> None:
+        manifest.write_text(
+            json.dumps(
+                {
+                    "publisher": "ap",
+                    "canonicalUrl": canonical_url,
+                    "publishedAt": "2026-01-01T00:00:00Z",
+                    "candidates": candidates,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    write_manifest(
+        [
+            {
+                "provider": "wayback",
+                "snapshotUrl": wayback_url,
+            }
+        ]
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="ap",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="ap",
+    )
+    connection.execute(
+        """
+        UPDATE captures
+        SET status='error',
+            attempts=3,
+            last_error='old candidates exhausted'
+        """
+    )
+    connection.commit()
+
+    write_manifest(
+        [
+            {
+                "provider": "wayback",
+                "snapshotUrl": wayback_url,
+            },
+            {
+                "provider": "live-origin",
+                "snapshotUrl": canonical_url,
+            },
+        ]
+    )
+    result = load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="ap",
+    )
+    row = connection.execute(
+        """
+        SELECT status, attempts, last_error, candidates_json
+        FROM captures
+        """
+    ).fetchone()
+
+    assert result == {"manifestRows": 1, "inserted": 1}
+    assert row[0:3] == ("pending", 0, None)
+    assert [
+        candidate["provider"]
+        for candidate in json.loads(row[3])
+    ] == ["wayback", "live-origin"]
+
+
 def test_capture_tries_fallback_and_stores_only_usable_raw_html(tmp_path: Path):
     first_url = "https://web.archive.org/web/20200101000000id_/https://example.com/a"
     second_url = "https://web.archive.org/web/20200102000000id_/https://example.com/a"

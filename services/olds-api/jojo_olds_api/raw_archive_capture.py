@@ -728,7 +728,7 @@ def _insert_manifest_batch(
     before = connection.total_changes
     connection.executemany(
         """
-        INSERT OR IGNORE INTO captures(
+        INSERT INTO captures(
             canonical_url,
             article_id,
             publisher,
@@ -737,6 +737,44 @@ def _insert_manifest_batch(
             candidates_json,
             updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(canonical_url) DO UPDATE SET
+            published_at=COALESCE(
+                excluded.published_at,
+                captures.published_at
+            ),
+            section=COALESCE(excluded.section, captures.section),
+            candidates_json=excluded.candidates_json,
+            status=CASE
+                WHEN captures.status='error'
+                 AND captures.candidates_json != excluded.candidates_json
+                THEN 'pending'
+                ELSE captures.status
+            END,
+            attempts=CASE
+                WHEN captures.status='error'
+                 AND captures.candidates_json != excluded.candidates_json
+                THEN 0
+                ELSE captures.attempts
+            END,
+            last_error=CASE
+                WHEN captures.status='error'
+                 AND captures.candidates_json != excluded.candidates_json
+                THEN NULL
+                ELSE captures.last_error
+            END,
+            updated_at=excluded.updated_at
+        WHERE captures.status IN ('pending', 'error')
+          AND (
+            (
+                excluded.published_at IS NOT NULL
+                AND captures.published_at IS NOT excluded.published_at
+            )
+            OR (
+                excluded.section IS NOT NULL
+                AND captures.section IS NOT excluded.section
+            )
+            OR captures.candidates_json != excluded.candidates_json
+          )
         """,
         rows,
     )
