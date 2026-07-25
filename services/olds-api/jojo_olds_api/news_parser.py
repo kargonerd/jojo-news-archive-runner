@@ -163,18 +163,12 @@ def parse_article(
                     block.asset_id = existing.asset_id
         blocks = _deduplicate_blocks(blocks)
 
+    if content_type == ContentType.ARTICLE and _looks_like_gallery(blocks):
+        content_type = ContentType.GALLERY
     plain_text = "\n\n".join(
-        block.text
+        value
         for block in blocks
-        if block.text
-        and block.type
-        in {
-            BlockType.PARAGRAPH,
-            BlockType.HEADING,
-            BlockType.QUOTE,
-            BlockType.LIST,
-            BlockType.TABLE,
-        }
+        if (value := _block_plain_text(block))
     )
     body_html = _inner_html(clean_body)
     images = list(images_by_url.values())
@@ -776,9 +770,62 @@ def _content_type(article: dict[str, Any], canonical_url: str) -> ContentType:
         return ContentType.OPINION
     if "video" in url:
         return ContentType.VIDEO
+    if "interactive" in url or "/features/" in url:
+        return ContentType.INTERACTIVE
     if isinstance(article_type, str) and article_type == "ReportageNewsArticle":
         return ContentType.ARTICLE
     return ContentType.ARTICLE
+
+
+def _looks_like_gallery(blocks: list[ContentBlock]) -> bool:
+    image_blocks = [
+        block for block in blocks if block.type == BlockType.IMAGE
+    ]
+    text_blocks = [
+        block
+        for block in blocks
+        if block.type
+        in {
+            BlockType.PARAGRAPH,
+            BlockType.HEADING,
+            BlockType.QUOTE,
+            BlockType.LIST,
+            BlockType.TABLE,
+        }
+    ]
+    caption_characters = sum(
+        len(_clean_text(block.caption or ""))
+        for block in image_blocks
+    )
+    text_characters = sum(
+        len(_clean_text(block.text or ""))
+        for block in text_blocks
+    )
+    return bool(
+        image_blocks
+        and len(text_blocks) <= 2
+        and caption_characters >= 100
+        and caption_characters >= text_characters
+    )
+
+
+def _block_plain_text(block: ContentBlock) -> str | None:
+    if block.text and block.type in {
+        BlockType.PARAGRAPH,
+        BlockType.HEADING,
+        BlockType.QUOTE,
+        BlockType.LIST,
+        BlockType.TABLE,
+    }:
+        return _clean_text(block.text)
+    if block.type == BlockType.IMAGE:
+        parts: list[str] = []
+        for value in (block.caption, block.credit):
+            clean = _clean_text(value or "")
+            if clean and clean not in parts:
+                parts.append(clean)
+        return "\n".join(parts) or None
+    return None
 
 
 def _document_language(soup: BeautifulSoup, *, default: str) -> str:

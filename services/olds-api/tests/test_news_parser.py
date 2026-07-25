@@ -407,3 +407,68 @@ def test_parser_deduplicates_responsive_text_and_image_blocks():
     assert [block.position for block in result.blocks] == list(
         range(len(result.blocks))
     )
+
+
+def test_parser_includes_gallery_captions_in_plain_text():
+    canonical_url = (
+        "https://www.nytimes.com/2023/09/20/t-magazine/example.html"
+    )
+    caption = (
+        "Clockwise from top left: a bag, a pair of shoes, a coat and another "
+        "bag, with complete product details and photography credit."
+    )
+    html = f"""
+    <html>
+      <head>
+        <meta property="og:title" content="Cozy Accessories">
+        <meta property="og:description" content="A visual fashion report.">
+        <meta name="pub_date" content="20230920">
+      </head>
+      <body>
+        <section name="articleBody">
+          <figure>
+            <img src="https://static01.nyt.com/gallery.jpg">
+            <figcaption>{caption}</figcaption>
+          </figure>
+          <p>Set design and photography production credits.</p>
+        </section>
+      </body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "gallery"
+    assert caption in result.plain_text
+    assert "production credits" in result.plain_text
+
+
+def test_parser_classifies_interactive_urls():
+    canonical_url = (
+        "https://www.nytimes.com/interactive/2020/05/12/example.html"
+    )
+    body = " ".join(["Interactive election reporting."] * 20)
+    html = f"""
+    <html>
+      <head>
+        <meta property="og:title" content="Election results">
+        <meta name="pub_date" content="20200512">
+      </head>
+      <body>
+        <section name="articleBody"><p>{body}</p></section>
+      </body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+    )
+
+    assert result.content_type.value == "interactive"
