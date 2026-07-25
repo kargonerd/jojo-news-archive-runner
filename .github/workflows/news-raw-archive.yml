@@ -348,7 +348,7 @@ jobs:
             --to-year "$TO_YEAR" \
             --target-per-year 500 \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
-            --max-replays 500 \
+            --max-replays 2000 \
             --files-from "$RUNNER_TEMP/parser-validation-files.txt" \
             --github-output "$GITHUB_OUTPUT"
 
@@ -377,7 +377,7 @@ jobs:
             --publisher "$PUBLISHER" \
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
             --archive-root "$LOCAL_ROOT/raw" \
-            --max-replays 500 \
+            --max-replays 2000 \
             --progress-every 50 \
             --summary "$LOCAL_ROOT/raw/summary.json"
 
