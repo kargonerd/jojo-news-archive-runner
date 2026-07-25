@@ -333,6 +333,53 @@ jobs:
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
             --github-output "$GITHUB_OUTPUT"
 
+      - name: Plan replay of previously captured parser samples
+        id: validation_replay
+        if: ${{ steps.catalog.outputs.complete == 'true' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python \
+            services/olds-api/tools/prepare_parser_validation_replay.py \
+            --publisher "$PUBLISHER" \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --from-year "$FROM_YEAR" \
+            --to-year "$TO_YEAR" \
+            --target-per-year 500 \
+            --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+            --max-replays 500 \
+            --files-from "$RUNNER_TEMP/parser-validation-files.txt" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Restore previously captured parser sample HTML
+        if: ${{ steps.validation_replay.outputs.replays != '0' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+        run: |
+          rclone copy \
+            "${REMOTE_ROOT}/raw" \
+            "$LOCAL_ROOT/raw" \
+            --files-from "$RUNNER_TEMP/parser-validation-files.txt" \
+            --transfers 16 --checkers 32 \
+            --retries 8 --low-level-retries 20 \
+            --stats 30s
+
+      - name: Replay current parser against restored sample HTML
+        if: ${{ steps.validation_replay.outputs.replays != '0' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python services/olds-api/tools/revalidate_parser_samples.py \
+            --publisher "$PUBLISHER" \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --archive-root "$LOCAL_ROOT/raw" \
+            --max-replays 500 \
+            --progress-every 50
+
       - name: Capture bounded raw HTML batch
         id: capture
         if: ${{ steps.catalog.outputs.complete == 'true' }}

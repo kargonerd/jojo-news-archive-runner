@@ -61,3 +61,63 @@ def test_retry_errors_after_pending_finishes(tmp_path: Path):
 
     assert result["retryErrors"] is True
     assert result["shouldContinue"] is True
+
+
+def test_stale_completed_parser_sample_keeps_chain_running(
+    tmp_path: Path,
+):
+    state = tmp_path / "capture.sqlite3"
+    connection = sqlite3.connect(state)
+    connection.executescript(
+        """
+        CREATE TABLE captures (
+            canonical_url TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            raw_path TEXT
+        );
+        CREATE TABLE parser_validation_config (
+            sample_year INTEGER PRIMARY KEY,
+            target_size INTEGER NOT NULL,
+            parser_version TEXT NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL,
+            parser_version TEXT
+        );
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO captures
+        VALUES ('https://example.com/article', 'complete', 1, 'objects/a.gz')
+        """
+    )
+    connection.execute(
+        "INSERT INTO parser_validation_config VALUES (2024, 1, 'parser/2')"
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples
+        VALUES ('https://example.com/article', 2024)
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_results
+        VALUES ('https://example.com/article', 2024, 'parser/1')
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    result = MODULE.action_state(state, maximum_record_attempts=3)
+
+    assert result["validationReplays"] == 1
+    assert result["actionable"] == 1
+    assert result["shouldContinue"] is True

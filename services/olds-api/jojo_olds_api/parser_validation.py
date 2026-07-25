@@ -179,6 +179,11 @@ def ensure_parser_validation_plan(
                 WHERE sample.sample_year=?
                   AND result.canonical_url IS NULL
                   AND (
+                    (
+                      capture.status='complete'
+                      AND capture.raw_path IS NOT NULL
+                    )
+                    OR
                     capture.status='pending'
                     OR (
                       capture.status='error'
@@ -289,6 +294,63 @@ def pending_parser_validation_urls(
         parameters.append(maximum)
     return [
         str(row[0])
+        for row in connection.execute(query, parameters).fetchall()
+    ]
+
+
+def pending_completed_parser_validation_files(
+    connection: sqlite3.Connection,
+    *,
+    maximum: int | None,
+) -> list[tuple[str, str]]:
+    initialize_parser_validation_schema(connection)
+    query = """
+        WITH active_years AS (
+            SELECT
+                config.sample_year,
+                config.target_size,
+                config.parser_version
+            FROM parser_validation_config AS config
+            LEFT JOIN parser_validation_results AS result
+              ON result.sample_year=config.sample_year
+             AND result.parser_version=config.parser_version
+            GROUP BY
+                config.sample_year,
+                config.target_size,
+                config.parser_version
+            HAVING COUNT(result.canonical_url) < config.target_size
+        ),
+        ranked AS (
+            SELECT
+                sample.canonical_url,
+                capture.raw_path,
+                sample.sample_year,
+                ROW_NUMBER() OVER (
+                    PARTITION BY sample.sample_year
+                    ORDER BY sample.sample_priority
+                ) AS sample_rank
+            FROM parser_validation_samples AS sample
+            JOIN active_years
+              ON active_years.sample_year=sample.sample_year
+            JOIN captures AS capture
+              ON capture.canonical_url=sample.canonical_url
+            LEFT JOIN parser_validation_results AS result
+              ON result.canonical_url=sample.canonical_url
+             AND result.parser_version=active_years.parser_version
+            WHERE result.canonical_url IS NULL
+              AND capture.status='complete'
+              AND capture.raw_path IS NOT NULL
+        )
+        SELECT canonical_url, raw_path
+        FROM ranked
+        ORDER BY sample_rank, sample_year
+    """
+    parameters: list[object] = []
+    if maximum is not None:
+        query += " LIMIT ?"
+        parameters.append(maximum)
+    return [
+        (str(row[0]), str(row[1]))
         for row in connection.execute(query, parameters).fetchall()
     ]
 

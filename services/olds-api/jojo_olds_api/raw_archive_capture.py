@@ -670,6 +670,89 @@ def record_capture_result(
         )
 
 
+def completed_raw_capture(
+    connection: sqlite3.Connection,
+    *,
+    canonical_url: str,
+) -> RawCapture:
+    row = connection.execute(
+        """
+        SELECT
+            article_id,
+            publisher,
+            canonical_url,
+            published_at,
+            section,
+            selected_candidate_json,
+            candidates_json,
+            retrieved_at,
+            final_url,
+            http_status,
+            content_type,
+            quality_score,
+            quality_signals_json,
+            raw_path,
+            raw_sha256,
+            raw_bytes,
+            stored_bytes
+        FROM captures
+        WHERE canonical_url=? AND status='complete'
+        """,
+        (canonical_url,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(
+            f"completed capture not found for {canonical_url}"
+        )
+    required = {
+        "selected_candidate_json": row[5],
+        "retrieved_at": row[7],
+        "final_url": row[8],
+        "http_status": row[9],
+        "content_type": row[10],
+        "quality_score": row[11],
+        "raw_path": row[13],
+        "raw_sha256": row[14],
+        "raw_bytes": row[15],
+        "stored_bytes": row[16],
+    }
+    missing = [name for name, value in required.items() if value is None]
+    if missing:
+        raise ValueError(
+            "completed capture is missing state fields: "
+            + ", ".join(missing)
+        )
+    return RawCapture(
+        article_id=str(row[0]),
+        publisher=str(row[1]),
+        canonical_url=str(row[2]),
+        published_at=row[3],
+        section=row[4],
+        selected_candidate=CaptureCandidate.model_validate_json(
+            str(row[5])
+        ),
+        candidates_considered=[
+            CaptureCandidate.model_validate(candidate)
+            for candidate in json.loads(str(row[6]))
+        ],
+        retrieved_at=str(row[7]),
+        final_url=str(row[8]),
+        http_status=int(row[9]),
+        content_type=str(row[10]),
+        quality_score=int(row[11]),
+        quality_signals=(
+            json.loads(str(row[12])) if row[12] is not None else {}
+        ),
+        raw_html=BlobReference(
+            path=str(row[13]),
+            sha256=str(row[14]),
+            byte_count=int(row[15]),
+            stored_byte_count=int(row[16]),
+            content_encoding="gzip",
+        ),
+    )
+
+
 def capture_summary(
     connection: sqlite3.Connection,
     *,

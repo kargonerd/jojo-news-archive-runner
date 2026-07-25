@@ -13,12 +13,15 @@ from jojo_olds_api.news_models import (
 from jojo_olds_api.parser_validation import (
     ensure_parser_validation_plan,
     parser_validation_summary,
+    pending_completed_parser_validation_files,
     record_parser_validation,
 )
 from jojo_olds_api.raw_archive_capture import (
+    completed_raw_capture,
     initialize_capture_schema,
     load_capture_manifest,
     pending_captures,
+    record_capture_result,
     store_raw_html,
 )
 
@@ -271,3 +274,85 @@ def test_validation_uses_parsed_publication_year_not_capture_year(
     assert result["plannedYear"] == 2020
     assert result["year"] == 2021
     assert stored_year == 2021
+
+
+def test_completed_sample_can_be_replayed_from_capture_state(tmp_path: Path):
+    connection = _state_with_years(tmp_path)
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2022,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    selected = pending_captures(
+        connection,
+        retry_errors=False,
+        maximum=1,
+        maximum_record_attempts=3,
+        prioritize_parser_validation=True,
+    )[0]
+    body = " ".join(["Replayable reporting sentence."] * 40)
+    html = f"""
+    <html>
+      <head>
+        <script type="application/ld+json">
+          {{
+            "@type": "NewsArticle",
+            "headline": "A replayed archived article",
+            "datePublished": "2020-01-01T00:00:00Z"
+          }}
+        </script>
+      </head>
+      <body><article><p>{body}</p></article></body>
+    </html>
+    """.encode()
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id=selected.article_id,
+        publisher="ap",
+        canonical_url=selected.canonical_url,
+        published_at=datetime.fromisoformat(selected.published_at),
+        selected_candidate=selected.candidates[0],
+        candidates_considered=list(selected.candidates),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=selected.candidates[0].snapshot_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+    record_capture_result(
+        connection,
+        {
+            "canonicalUrl": selected.canonical_url,
+            "status": "complete",
+            "capture": capture,
+            "recordPath": None,
+            "error": None,
+        },
+    )
+
+    pending = pending_completed_parser_validation_files(
+        connection,
+        maximum=10,
+    )
+    restored = completed_raw_capture(
+        connection,
+        canonical_url=selected.canonical_url,
+    )
+    result = record_parser_validation(
+        connection,
+        capture=restored,
+        archive_root=tmp_path,
+    )
+
+    assert pending == [(selected.canonical_url, blob.path)]
+    assert restored == capture
+    assert result["qaPass"] is True
+    assert pending_completed_parser_validation_files(
+        connection,
+        maximum=10,
+    ) == []

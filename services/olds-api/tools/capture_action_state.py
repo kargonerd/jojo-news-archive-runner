@@ -51,17 +51,69 @@ def action_state(
             """,
             (maximum_record_attempts,),
         ).fetchone()[0]
+        validation_replays = 0
+        validation_tables = {
+            str(row[0])
+            for row in connection.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type='table'
+                  AND name IN (
+                    'parser_validation_config',
+                    'parser_validation_samples',
+                    'parser_validation_results'
+                  )
+                """
+            ).fetchall()
+        }
+        if len(validation_tables) == 3:
+            validation_replays = int(
+                connection.execute(
+                    """
+                    WITH active_years AS (
+                        SELECT
+                            config.sample_year,
+                            config.target_size,
+                            config.parser_version
+                        FROM parser_validation_config AS config
+                        LEFT JOIN parser_validation_results AS result
+                          ON result.sample_year=config.sample_year
+                         AND result.parser_version=config.parser_version
+                        GROUP BY
+                            config.sample_year,
+                            config.target_size,
+                            config.parser_version
+                        HAVING COUNT(result.canonical_url)
+                             < config.target_size
+                    )
+                    SELECT COUNT(*)
+                    FROM parser_validation_samples AS sample
+                    JOIN active_years
+                      ON active_years.sample_year=sample.sample_year
+                    JOIN captures AS capture
+                      ON capture.canonical_url=sample.canonical_url
+                    LEFT JOIN parser_validation_results AS result
+                      ON result.canonical_url=sample.canonical_url
+                     AND result.parser_version=active_years.parser_version
+                    WHERE result.canonical_url IS NULL
+                      AND capture.status='complete'
+                      AND capture.raw_path IS NOT NULL
+                    """
+                ).fetchone()[0]
+            )
     finally:
         connection.close()
     pending = counts.get("pending", 0)
     downloading = counts.get("downloading", 0)
     unresolved = counts.get("error", 0)
-    actionable = pending + downloading + recoverable
+    actionable = pending + downloading + recoverable + validation_replays
     return {
         "stateExists": True,
         "capturesByStatus": counts,
         "retryErrors": pending == 0 and downloading == 0 and recoverable > 0,
         "actionable": actionable,
+        "validationReplays": validation_replays,
         "terminalUnresolved": max(0, unresolved - recoverable),
         "shouldContinue": actionable > 0,
     }
@@ -73,6 +125,7 @@ def write_github_output(path: Path, result: dict[str, object]) -> None:
         "should_continue": str(bool(result["shouldContinue"])).lower(),
         "actionable": str(result["actionable"]),
         "terminal_unresolved": str(result["terminalUnresolved"]),
+        "validation_replays": str(result.get("validationReplays", 0)),
     }
     with path.open("a", encoding="utf-8") as handle:
         for key, value in values.items():
