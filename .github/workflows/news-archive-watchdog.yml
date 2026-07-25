@@ -2,7 +2,7 @@ name: News archive watchdog
 
 on:
   schedule:
-    - cron: "37 */6 * * *"
+    - cron: "37 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -65,6 +65,23 @@ jobs:
           MANIFEST_MODE: ${{ matrix.archive.manifest_mode }}
           DISCOVERY_UNITS: ${{ matrix.archive.discovery_units }}
         run: |
+          target_title="news-raw-${PUBLISHER}-${FROM_YEAR}-${TO_YEAR}-${MANIFEST_MODE}"
+          active_titles="$(
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow news-raw-archive.yml \
+              --limit 100 \
+              --json displayTitle,status \
+              --jq '.[] |
+                select(
+                  .status == "in_progress" or .status == "queued"
+                ) |
+                .displayTitle'
+          )"
+          if grep -Fxq "$target_title" <<<"$active_titles"; then
+            echo "Shard already active: $target_title"
+            exit 0
+          fi
           gh workflow run news-raw-archive.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main \

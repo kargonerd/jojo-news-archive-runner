@@ -138,7 +138,7 @@ Reuters uses two catalog shards because its URL design changed:
   snapshots of Reuters' rolling sitemap, extracts canonical article URLs, and
   then selects publication-near Wayback captures.
 
-`News archive watchdog` dispatches all seven configured shards every six hours.
-The target workflow's per-shard concurrency lock prevents simultaneous writers;
-the watchdog restarts a chain if a transient discovery, archive, or Actions
-failure stops automatic continuation.
+`News archive watchdog` checks all seven configured shards every hour. It skips
+shards that already have a queued or running workflow and restarts only stopped
+chains. The target workflow's per-shard concurrency lock remains a second guard
+against simultaneous writers.
