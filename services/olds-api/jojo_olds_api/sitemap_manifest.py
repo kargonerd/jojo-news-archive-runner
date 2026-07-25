@@ -24,6 +24,7 @@ from .bloomberg_archive_download import GlobalRateLimiter
 from .wayback_manifest import (
     MANIFEST_FORMAT_VERSION,
     infer_published_at,
+    with_current_year_live_fallback,
 )
 
 
@@ -482,7 +483,11 @@ def sitemap_wayback_candidates(
                 continue
             seen.add(snapshot_url)
             result.append(candidate)
-    return result
+    return with_current_year_live_fallback(
+        result,
+        canonical_url=canonical_url,
+        published_at=published_at,
+    )
 
 
 def _published_from_sitemap(

@@ -13,6 +13,7 @@ from dateutil.parser import isoparse
 from .archive_sources import archive_source_spec, normalize_article_url
 from .bloomberg_archive_download import ArchiveClient
 from .sitemap_manifest import parse_url_sitemap, wayback_candidates
+from .wayback_manifest import with_current_year_live_fallback
 from .wayback_manifest import (
     CDX_ENDPOINT,
     MANIFEST_FORMAT_VERSION,
@@ -352,6 +353,11 @@ def export_reuters_manifest(
         ):
             candidate_rows = wayback_candidates(
                 canonical_url,
+                published_at=published_at,
+            )
+            candidate_rows = with_current_year_live_fallback(
+                candidate_rows,
+                canonical_url=canonical_url,
                 published_at=published_at,
             )
             row = {

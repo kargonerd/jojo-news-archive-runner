@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import gzip
 import json
 from pathlib import Path
@@ -134,3 +135,22 @@ def test_ft_sitemap_candidates_try_amp_before_canonical():
     assert result[3]["snapshotUrl"].endswith(
         "https://www.ft.com/content/fd3df9ba-4480-11ea-abea-0c7a29cd66fe"
     )
+
+
+def test_current_year_sitemap_candidates_include_live_fallback():
+    year = datetime.now(timezone.utc).year
+    canonical_url = (
+        f"https://www.nytimes.com/{year}/01/02/world/example.html"
+    )
+
+    result = sitemap_wayback_candidates(
+        "nyt",
+        canonical_url,
+        published_at=f"{year}-01-02T00:00:00+00:00",
+    )
+
+    assert len(result) == 4
+    assert result[-1] == {
+        "provider": "live-origin",
+        "snapshotUrl": canonical_url,
+    }

@@ -536,6 +536,11 @@ def _write_manifest_row(
     published_at: str | None,
     candidates: list[dict],
 ) -> None:
+    candidates = with_current_year_live_fallback(
+        candidates,
+        canonical_url=canonical_url,
+        published_at=published_at,
+    )
     row = {
         "formatVersion": MANIFEST_FORMAT_VERSION,
         "publisher": spec.publisher,
@@ -551,6 +556,34 @@ def _write_manifest_row(
         )
         + "\n"
     )
+
+
+def with_current_year_live_fallback(
+    candidates: list[dict[str, object]],
+    *,
+    canonical_url: str,
+    published_at: str | None,
+) -> list[dict[str, object]]:
+    if not published_at:
+        return candidates
+    try:
+        published = datetime.fromisoformat(published_at)
+    except (TypeError, ValueError, OverflowError):
+        return candidates
+    if published.year != datetime.now(timezone.utc).year:
+        return candidates
+    if any(
+        candidate.get("provider") == "live-origin"
+        for candidate in candidates
+    ):
+        return candidates
+    return [
+        *candidates,
+        {
+            "provider": "live-origin",
+            "snapshotUrl": canonical_url,
+        },
+    ]
 
 
 def _timestamp_datetime(timestamp: str) -> datetime:
