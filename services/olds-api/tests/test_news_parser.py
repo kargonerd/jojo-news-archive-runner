@@ -449,6 +449,49 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.extraction.parser_version == "ft-parser/0.5.0"
 
 
+def test_ap_parser_extracts_story_html_from_embedded_state():
+    story_html = "".join(
+        f"<p>Embedded AP reporting paragraph {index} provides substantive "
+        "details about the archived story.</p>"
+        for index in range(1, 7)
+    )
+    state = {
+        "content": {
+            "data": {
+                "urn:publicid:ap.org:example": {
+                    "storyHTML": story_html,
+                }
+            }
+        }
+    }
+    html = f"""
+    <html>
+      <head>
+        <meta property="og:title" content="Embedded AP article">
+        <meta property="article:published_time"
+              content="2021-05-28T07:24:28Z">
+      </head>
+      <body>
+        <script>
+          window['titanium-config'] = {{"env": "prod"}};
+          window['titanium-state'] = {json.dumps(state)};
+        </script>
+      </body>
+    </html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/article/example",
+    )
+
+    assert article.quality.status.value == "complete"
+    assert len(article.blocks) == 6
+    assert "paragraph 6" in article.plain_text
+    assert article.extraction.parser_version == "ap-parser/0.5.0"
+
+
 def test_parser_includes_gallery_captions_in_plain_text():
     canonical_url = (
         "https://www.nytimes.com/2023/09/20/t-magazine/example.html"

@@ -33,12 +33,13 @@ class PublisherSpec:
     text_block_selectors: tuple[str, ...] = ()
     preferred_image_hosts: tuple[str, ...] = ()
     use_structured_article_body: bool = False
+    embedded_html_body_keys: tuple[str, ...] = ()
 
 
 PUBLISHER_SPECS = {
     "ap": PublisherSpec(
         publisher="ap",
-        parser_version="ap-parser/0.4.0",
+        parser_version="ap-parser/0.5.0",
         domains=("apnews.com",),
         default_language="en",
         edition="us",
@@ -49,6 +50,7 @@ PUBLISHER_SPECS = {
             "article",
         ),
         preferred_image_hosts=("dims.apnews.com", "storage.googleapis.com"),
+        embedded_html_body_keys=("storyHTML",),
     ),
     "wsj": PublisherSpec(
         publisher="wsj",

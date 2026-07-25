@@ -65,6 +65,11 @@ def parse_article(
     soup = BeautifulSoup(html_bytes, "html.parser")
     news_article = _find_news_article_json(soup)
     body = _select_body(soup, spec)
+    if body is None and spec.embedded_html_body_keys:
+        body = _embedded_html_body(
+            soup,
+            keys=spec.embedded_html_body_keys,
+        )
     if body is None and spec.use_structured_article_body:
         body = _structured_article_body(news_article)
     clean_body = BeautifulSoup(str(body), "html.parser") if body else BeautifulSoup("", "html.parser")
@@ -327,6 +332,48 @@ def _structured_article_body(
         node.string = paragraph
         article.append(node)
     return article
+
+
+def _embedded_html_body(
+    soup: BeautifulSoup,
+    *,
+    keys: tuple[str, ...],
+) -> Tag | None:
+    decoder = json.JSONDecoder()
+    quoted_keys = tuple(f'"{key}"' for key in keys)
+    for script in soup.find_all("script"):
+        value = script.string or script.get_text()
+        if not value or not any(key in value for key in quoted_keys):
+            continue
+        starts = [
+            match.end()
+            for match in re.finditer(r"=\s*(?=\{)", value)
+        ]
+        if not starts:
+            first_object = value.find("{")
+            if first_object >= 0:
+                starts.append(first_object)
+        for start in starts:
+            try:
+                payload, _ = decoder.raw_decode(value[start:])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            for item in _walk_json_objects(payload):
+                for key in keys:
+                    html_value = item.get(key)
+                    if (
+                        not isinstance(html_value, str)
+                        or not html_value.strip()
+                    ):
+                        continue
+                    document = BeautifulSoup(
+                        f"<article>{html_value}</article>",
+                        "html.parser",
+                    )
+                    article = document.article
+                    if isinstance(article, Tag):
+                        return article
+    return None
 
 
 def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
