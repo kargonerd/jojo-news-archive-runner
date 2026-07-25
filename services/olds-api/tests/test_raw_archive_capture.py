@@ -303,6 +303,10 @@ def test_capture_keeps_strong_article_instead_of_first_html_shell(
     assert result["status"] == "complete"
     assert client.requests == [
         "https://index.commoncrawl.org/collinfo.json",
+        (
+            "https://web.archive.org/web/timemap/json?"
+            "url=https%3A%2F%2Fwww.ft.com%2Fcontent%2Fexample"
+        ),
         shell_url,
         article_url,
     ]

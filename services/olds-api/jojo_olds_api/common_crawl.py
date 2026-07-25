@@ -77,9 +77,12 @@ def discover_common_crawl_candidates(
             ]
         )
         try:
-            status, _, content, _ = archive_client.fetch(
+            status, _, content, _ = _fetch_limited(
+                archive_client,
                 query_url,
                 maximum_bytes=INDEX_RESULT_MAXIMUM_BYTES,
+                attempts=2,
+                timeout=35.0,
             )
         except Exception as exc:
             last_error = exc
@@ -175,9 +178,12 @@ def _load_collections(
         )
         if cached is not None:
             return cached
-        status, headers, content, _ = archive_client.fetch(
+        status, headers, content, _ = _fetch_limited(
+            archive_client,
             COLLECTION_INFO_URL,
             maximum_bytes=COLLECTION_INFO_MAXIMUM_BYTES,
+            attempts=2,
+            timeout=35.0,
         )
         content_type = headers.get("content-type", "").casefold()
         if status != 200 or not content:
@@ -468,3 +474,25 @@ def _optional_string(value: object) -> str | None:
         return None
     result = str(value).strip()
     return result or None
+
+
+def _fetch_limited(
+    archive_client: CommonCrawlClient,
+    url: str,
+    *,
+    maximum_bytes: int,
+    attempts: int,
+    timeout: float,
+) -> tuple[int, dict[str, str], bytes, str]:
+    limited = getattr(archive_client, "fetch_limited", None)
+    if callable(limited):
+        return limited(
+            url,
+            maximum_bytes=maximum_bytes,
+            attempts=attempts,
+            timeout=timeout,
+        )
+    return archive_client.fetch(
+        url,
+        maximum_bytes=maximum_bytes,
+    )

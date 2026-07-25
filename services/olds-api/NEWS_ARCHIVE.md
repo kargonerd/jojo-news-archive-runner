@@ -52,14 +52,14 @@ deterministic (`mtime=0`), so repeated identical captures produce the same B2
 object. Each canonical publisher URL appears once in a manifest with ranked
 fallback snapshots. The capture worker evaluates usable candidates and stores
 only the highest-quality response; it stops early when a response reaches the
-maximum raw quality score. FT manifests try archived AMP article pages before
-canonical pages because canonical snapshots can contain only a subscription
-shell. When those candidates are unusable, FT capture also queries the nearest
-Common Crawl indexes for the exact canonical URL. It range-downloads only the
-indexed WARC record, validates the WARC target URL, reconstructs the original
-HTTP response, and applies the same subscription-shell and raw-quality gates.
-The raw record retains the Common Crawl object URL, WARC filename, offset, and
-length.
+maximum raw quality score. FT capture first queries the nearest Common Crawl
+indexes for the exact canonical URL. It range-downloads only the indexed WARC
+record, validates the WARC target URL, reconstructs the original HTTP response,
+and applies the same subscription-shell and raw-quality gates. It then uses an
+exact Wayback timemap and finally the manifest's publication-near AMP and
+canonical guesses. Common Crawl and Wayback use separate host circuit breakers
+and bounded retries so one unhealthy archive cannot stall every source. The raw
+record retains the Common Crawl object URL, WARC filename, offset, and length.
 
 Objects and records are uploaded before the capture checkpoint. A restored
 checkpoint therefore never references data that has not reached B2.

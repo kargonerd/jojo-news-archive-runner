@@ -84,8 +84,8 @@ class ArchiveClient:
         self._clients: list[httpx.Client] = []
         self._clients_lock = threading.Lock()
         self._circuit_lock = threading.Lock()
-        self._consecutive_failures = 0
-        self._blocked_until = 0.0
+        self._consecutive_failures: dict[str, int] = {}
+        self._blocked_until: dict[str, float] = {}
 
     def close(self) -> None:
         if self._provided_client is not None:
@@ -120,25 +120,37 @@ class ArchiveClient:
                 self._clients.append(client)
         return client
 
-    def _wait_for_circuit(self) -> None:
+    def _wait_for_circuit(self, url: str) -> None:
+        host = (urlsplit(url).hostname or "").casefold()
         with self._circuit_lock:
-            delay = max(0.0, self._blocked_until - time.monotonic())
+            delay = max(
+                0.0,
+                self._blocked_until.get(host, 0.0) - time.monotonic(),
+            )
         if delay:
             time.sleep(delay)
 
-    def _record_success(self) -> None:
+    def _record_success(self, url: str) -> None:
+        host = (urlsplit(url).hostname or "").casefold()
         with self._circuit_lock:
-            self._consecutive_failures = 0
-            self._blocked_until = 0.0
+            self._consecutive_failures.pop(host, None)
+            self._blocked_until.pop(host, None)
 
-    def _record_failure(self, *, retry_after: float | None = None) -> None:
+    def _record_failure(
+        self,
+        url: str,
+        *,
+        retry_after: float | None = None,
+    ) -> None:
+        host = (urlsplit(url).hostname or "").casefold()
         with self._circuit_lock:
-            self._consecutive_failures += 1
-            if self._consecutive_failures >= 3:
-                exponent = min(3, self._consecutive_failures - 3)
+            failures = self._consecutive_failures.get(host, 0) + 1
+            self._consecutive_failures[host] = failures
+            if failures >= 3:
+                exponent = min(3, failures - 3)
                 circuit_delay = max(retry_after or 0.0, 15.0 * (2**exponent))
-                self._blocked_until = max(
-                    self._blocked_until,
+                self._blocked_until[host] = max(
+                    self._blocked_until.get(host, 0.0),
                     time.monotonic() + circuit_delay,
                 )
 
@@ -153,6 +165,29 @@ class ArchiveClient:
             maximum_bytes=maximum_bytes,
             request_headers=None,
             require_partial_content=False,
+            maximum_attempts=self.attempts,
+            request_timeout=self.timeout,
+        )
+
+    def fetch_limited(
+        self,
+        url: str,
+        *,
+        maximum_bytes: int,
+        attempts: int,
+        timeout: float,
+    ) -> tuple[int, dict[str, str], bytes, str]:
+        if attempts < 1:
+            raise ValueError("attempts must be positive")
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        return self._fetch(
+            url,
+            maximum_bytes=maximum_bytes,
+            request_headers=None,
+            require_partial_content=False,
+            maximum_attempts=attempts,
+            request_timeout=timeout,
         )
 
     def fetch_range(
@@ -178,6 +213,8 @@ class ArchiveClient:
                 "Range": f"bytes={offset}-{offset + length - 1}",
             },
             require_partial_content=True,
+            maximum_attempts=min(self.attempts, 3),
+            request_timeout=min(self.timeout, 60.0),
         )
 
     def _fetch(
@@ -187,16 +224,19 @@ class ArchiveClient:
         maximum_bytes: int,
         request_headers: dict[str, str] | None,
         require_partial_content: bool,
+        maximum_attempts: int,
+        request_timeout: float,
     ) -> tuple[int, dict[str, str], bytes, str]:
         last_error: Exception | None = None
-        for attempt in range(self.attempts):
-            self._wait_for_circuit()
+        for attempt in range(maximum_attempts):
+            self._wait_for_circuit(url)
             self.rate_limiter.wait()
             try:
                 with self._get_client().stream(
                     "GET",
                     url,
                     headers=request_headers,
+                    timeout=request_timeout,
                 ) as response:
                     status_code = response.status_code
                     headers = {
@@ -205,16 +245,19 @@ class ArchiveClient:
                     }
                     if status_code in RETRYABLE_STATUS_CODES:
                         retry_after = _parse_retry_after(headers.get("retry-after"))
-                        self._record_failure(retry_after=retry_after)
+                        self._record_failure(
+                            url,
+                            retry_after=retry_after,
+                        )
                         raise RetryableArchiveError(
                             f"retryable HTTP {status_code}",
                             retry_after=retry_after,
                         )
                     if status_code not in {200, 206}:
-                        self._record_success()
+                        self._record_success(url)
                         return status_code, headers, b"", str(response.url)
                     if require_partial_content and status_code != 206:
-                        self._record_success()
+                        self._record_success(url)
                         return status_code, headers, b"", str(response.url)
                     chunks = []
                     byte_count = 0
@@ -225,16 +268,16 @@ class ArchiveClient:
                                 f"response exceeds {maximum_bytes} bytes"
                             )
                         chunks.append(chunk)
-                    self._record_success()
+                    self._record_success(url)
                     return status_code, headers, b"".join(chunks), str(response.url)
             except RetryableArchiveError as exc:
                 last_error = exc
-                if attempt + 1 < self.attempts:
+                if attempt + 1 < maximum_attempts:
                     time.sleep(exc.retry_after or min(60.0, 2.0 ** attempt))
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_error = exc
-                self._record_failure()
-                if attempt + 1 < self.attempts:
+                self._record_failure(url)
+                if attempt + 1 < maximum_attempts:
                     time.sleep(min(60.0, 2.0 ** (attempt + 1)))
         if last_error:
             raise last_error

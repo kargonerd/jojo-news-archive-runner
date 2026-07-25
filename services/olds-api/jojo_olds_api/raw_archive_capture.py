@@ -413,7 +413,36 @@ def capture_item(
 ) -> dict:
     failures: list[str] = []
     candidates_considered = list(item.candidates)
-    candidates_to_try = list(item.candidates)
+    best_response: tuple[
+        CaptureCandidate,
+        int,
+        bytes,
+        str,
+        str,
+        int,
+        dict[str, object],
+    ] | None = None
+
+    def consider_candidates(
+        candidates: Iterable[CaptureCandidate],
+    ) -> None:
+        nonlocal best_response
+        for candidate in candidates:
+            response, failure = _fetch_usable_candidate(
+                candidate,
+                archive_client=archive_client,
+                maximum_html_bytes=maximum_html_bytes,
+                canonical_url=item.canonical_url,
+            )
+            if failure:
+                failures.append(failure)
+            if response is None:
+                continue
+            if best_response is None or response[5] > best_response[5]:
+                best_response = response
+            if response[5] == 100:
+                break
+
     if item.publisher in COMMON_CRAWL_FALLBACK_PUBLISHERS:
         try:
             common_crawl_candidates = discover_common_crawl_candidates(
@@ -443,37 +472,37 @@ def capture_item(
             not in existing_urls
         )
         candidates_considered.extend(common_crawl_candidates)
-        # FT archive snapshots frequently contain only a subscription shell.
-        # Try publication-near Common Crawl records first, then retain Wayback
-        # as the deterministic fallback and provenance source.
-        candidates_to_try = [
-            *common_crawl_candidates,
-            *candidates_to_try,
-        ]
-    best_response: tuple[
-        CaptureCandidate,
-        int,
-        bytes,
-        str,
-        str,
-        int,
-        dict[str, object],
-    ] | None = None
-    for candidate in candidates_to_try:
-        response, failure = _fetch_usable_candidate(
-            candidate,
-            archive_client=archive_client,
-            maximum_html_bytes=maximum_html_bytes,
-            canonical_url=item.canonical_url,
-        )
-        if failure:
-            failures.append(failure)
-        if response is None:
-            continue
-        if best_response is None or response[5] > best_response[5]:
-            best_response = response
-        if response[5] == 100:
-            break
+        consider_candidates(common_crawl_candidates)
+
+        # FT's publication-near guessed Wayback timestamps often spend most of
+        # their time on missing captures. Ask the exact timemap only when
+        # Common Crawl did not already produce a maximum-quality response.
+        if best_response is None or best_response[5] < 100:
+            try:
+                timemap_candidates = discover_wayback_timemap_candidates(
+                    item,
+                    archive_client=archive_client,
+                )
+            except Exception as exc:
+                failures.append(f"wayback-timemap:{type(exc).__name__}")
+                timemap_candidates = ()
+            existing_urls = {
+                candidate.snapshot_url
+                for candidate in candidates_considered
+            }
+            timemap_candidates = tuple(
+                candidate
+                for candidate in timemap_candidates
+                if candidate.snapshot_url not in existing_urls
+            )
+            candidates_considered.extend(timemap_candidates)
+            consider_candidates(timemap_candidates)
+
+        # Retain manifest candidates as the final deterministic fallback.
+        if best_response is None or best_response[5] < 100:
+            consider_candidates(item.candidates)
+    else:
+        consider_candidates(item.candidates)
 
     if (
         best_response is None
@@ -704,6 +733,19 @@ def _fetch_usable_candidate(
                     maximum_html_bytes=maximum_html_bytes,
                 )
             )
+        elif (
+            candidate.provider == CaptureProvider.WAYBACK
+            and (urlsplit(canonical_url).hostname or "").casefold().endswith(
+                "ft.com"
+            )
+        ):
+            status_code, headers, content, final_url = _fetch_limited_archive(
+                archive_client,
+                candidate.snapshot_url,
+                maximum_bytes=maximum_html_bytes,
+                attempts=2,
+                timeout=30.0,
+            )
         else:
             status_code, headers, content, final_url = archive_client.fetch(
                 candidate.snapshot_url,
@@ -766,9 +808,12 @@ def discover_wayback_timemap_candidates(
     timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?" + urlencode(
         {"url": item.canonical_url}
     )
-    status_code, headers, content, _ = archive_client.fetch(
+    status_code, headers, content, _ = _fetch_limited_archive(
+        archive_client,
         timemap_url,
         maximum_bytes=WAYBACK_TIMEMAP_MAXIMUM_BYTES,
+        attempts=2,
+        timeout=35.0,
     )
     content_type = headers.get("content-type", "").casefold()
     if status_code != 200 or not content:
@@ -1233,6 +1278,28 @@ def _timemap_value(
     if index is None or index >= len(row):
         return ""
     return str(row[index]).strip()
+
+
+def _fetch_limited_archive(
+    archive_client: ArchiveClient,
+    url: str,
+    *,
+    maximum_bytes: int,
+    attempts: int,
+    timeout: float,
+) -> tuple[int, dict[str, str], bytes, str]:
+    limited = getattr(archive_client, "fetch_limited", None)
+    if callable(limited):
+        return limited(
+            url,
+            maximum_bytes=maximum_bytes,
+            attempts=attempts,
+            timeout=timeout,
+        )
+    return archive_client.fetch(
+        url,
+        maximum_bytes=maximum_bytes,
+    )
 
 
 def _same_article_url(first: str, second: str) -> bool:

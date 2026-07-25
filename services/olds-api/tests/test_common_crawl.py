@@ -4,10 +4,15 @@ from datetime import datetime, timezone
 import gzip
 import json
 from pathlib import Path
+import time
 
 import httpx
+import pytest
 
-from jojo_olds_api.bloomberg_archive_download import ArchiveClient
+from jojo_olds_api.bloomberg_archive_download import (
+    ArchiveClient,
+    RetryableArchiveError,
+)
 from jojo_olds_api.common_crawl import (
     COLLECTION_INFO_URL,
     DATA_BASE_URL,
@@ -331,6 +336,73 @@ def test_archive_client_sends_bounded_http_range():
     assert status == 206
     assert content == b"range-response"
     assert seen_range == ["bytes=100-113"]
+    http_client.close()
+
+
+def test_archive_client_circuit_breaker_is_isolated_by_host():
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = 503 if request.url.host == "bad.example" else 200
+        return httpx.Response(
+            status,
+            content=b"ok" if status == 200 else b"",
+            request=request,
+        )
+
+    http_client = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        follow_redirects=True,
+    )
+    client = ArchiveClient(
+        client=http_client,
+        attempts=1,
+        minimum_interval=0,
+    )
+    for _ in range(3):
+        with pytest.raises(RetryableArchiveError):
+            client.fetch(
+                "https://bad.example/archive",
+                maximum_bytes=100,
+            )
+
+    started = time.monotonic()
+    status, _, content, _ = client.fetch(
+        "https://good.example/archive",
+        maximum_bytes=100,
+    )
+
+    assert time.monotonic() - started < 1
+    assert status == 200
+    assert content == b"ok"
+    http_client.close()
+
+
+def test_archive_client_limited_fetch_caps_transport_attempts():
+    requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        raise httpx.ConnectTimeout("timed out", request=request)
+
+    http_client = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        follow_redirects=True,
+    )
+    client = ArchiveClient(
+        client=http_client,
+        attempts=6,
+        minimum_interval=0,
+    )
+
+    with pytest.raises(httpx.ConnectTimeout):
+        client.fetch_limited(
+            "https://index.commoncrawl.org/example",
+            maximum_bytes=100,
+            attempts=2,
+            timeout=0.1,
+        )
+
+    assert requests == 2
     http_client.close()
 
 
