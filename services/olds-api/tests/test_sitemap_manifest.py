@@ -169,11 +169,11 @@ def test_ap_historical_sitemap_candidates_include_live_fallback():
     )
 
     assert len(result) == 4
-    assert all(
-        candidate["provider"] == "wayback"
-        for candidate in result[:3]
-    )
-    assert result[-1] == {
+    assert result[0] == {
         "provider": "live-origin",
         "snapshotUrl": canonical_url,
     }
+    assert all(
+        candidate["provider"] == "wayback"
+        for candidate in result[1:]
+    )
