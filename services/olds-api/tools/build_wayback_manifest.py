@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 import sqlite3
 import sys
+import time
+
+import httpx
 
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
@@ -17,8 +20,11 @@ from jojo_olds_api.wayback_manifest import (
     discovery_summary,
     export_capture_manifest,
     initialize_discovery_schema,
+    initialize_wsj_bluesky_schema,
     next_discovery_query,
+    process_wsj_bluesky_page,
     record_discovery_page,
+    wsj_bluesky_should_continue,
 )
 
 
@@ -63,6 +69,55 @@ def main() -> int:
         to_year=args.to_year,
         collapse=args.collapse,
     )
+    bluesky_pages_this_run = 0
+    deferred_errors: list[str] = []
+    if args.publisher == "wsj" and args.collapse == "urlkey":
+        initialize_wsj_bluesky_schema(connection)
+        with httpx.Client(
+            headers={
+                "User-Agent": (
+                    "JOJO-News-Archive-Research/0.1 "
+                    "(nonprofit academic archive; contact via repository)"
+                )
+            },
+            follow_redirects=True,
+            timeout=args.timeout,
+        ) as http_client:
+            while (
+                args.max_pages is None
+                or bluesky_pages_this_run < args.max_pages
+            ) and wsj_bluesky_should_continue(
+                connection,
+                from_year=args.from_year,
+                to_year=args.to_year,
+            ):
+                try:
+                    result = process_wsj_bluesky_page(
+                        connection,
+                        spec=spec,
+                        http_client=http_client,
+                        from_year=args.from_year,
+                        to_year=args.to_year,
+                    )
+                except Exception as exc:
+                    deferred_errors.append(
+                        f"WSJ Bluesky: {type(exc).__name__}: {exc}"
+                    )
+                    break
+                bluesky_pages_this_run += 1
+                print(
+                    json.dumps(
+                        {
+                            "event": "wsj-bluesky-page",
+                            "page": bluesky_pages_this_run,
+                            **result,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                if args.min_request_interval:
+                    time.sleep(args.min_request_interval)
     client = WaybackCDXClient(
         minimum_interval=args.min_request_interval,
         timeout=args.timeout,
@@ -73,7 +128,10 @@ def main() -> int:
     pages_this_run = 0
     deferred_error = None
     try:
-        while args.max_pages is None or pages_this_run < args.max_pages:
+        while (
+            args.max_pages is None
+            or bluesky_pages_this_run + pages_this_run < args.max_pages
+        ):
             query = next_discovery_query(connection)
             if query is None:
                 break
@@ -87,6 +145,7 @@ def main() -> int:
                 )
             except RuntimeError as exc:
                 deferred_error = str(exc)
+                deferred_errors.append(deferred_error)
                 print(
                     json.dumps(
                         {
@@ -135,7 +194,10 @@ def main() -> int:
         **manifest,
         "state": str(state),
         "pagesThisRun": pages_this_run,
-        "deferredError": deferred_error,
+        "blueskyPagesThisRun": bluesky_pages_this_run,
+        "deferredError": (
+            "; ".join(deferred_errors) if deferred_errors else None
+        ),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if args.github_output:

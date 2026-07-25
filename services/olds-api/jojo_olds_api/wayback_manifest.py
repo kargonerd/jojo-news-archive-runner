@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import gzip
 import hashlib
 import json
@@ -21,6 +21,11 @@ CDX_ENDPOINT = "https://web.archive.org/cdx/search/cdx"
 RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
 DISCOVERY_SCHEMA_VERSION = "jojo-wayback-discovery/1"
 MANIFEST_FORMAT_VERSION = "jojo-capture-manifest/1"
+WSJ_BLUESKY_ENDPOINT = (
+    "https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed"
+)
+WSJ_BLUESKY_START_YEAR = 2024
+WSJ_CATALOG_TARGET_PER_YEAR = 750
 
 
 @dataclass(frozen=True)
@@ -250,6 +255,286 @@ def initialize_discovery_schema(
     connection.commit()
 
 
+def initialize_wsj_bluesky_schema(
+    connection: sqlite3.Connection,
+) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS wsj_bluesky_state (
+            singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+            cursor TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            pages INTEGER NOT NULL DEFAULT 0,
+            posts_seen INTEGER NOT NULL DEFAULT 0,
+            urls_accepted INTEGER NOT NULL DEFAULT 0,
+            oldest_at TEXT,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS wsj_bluesky_articles (
+            canonical_url TEXT PRIMARY KEY,
+            published_at TEXT NOT NULL,
+            post_uri TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO wsj_bluesky_state(
+            singleton,
+            updated_at
+        ) VALUES (1, ?)
+        """,
+        (_now_iso(),),
+    )
+    connection.execute(
+        """
+        UPDATE wsj_bluesky_state
+        SET status='running',
+            last_error='interrupted before completion',
+            updated_at=?
+        WHERE singleton=1 AND status='processing'
+        """,
+        (_now_iso(),),
+    )
+    connection.commit()
+
+
+def wsj_bluesky_should_continue(
+    connection: sqlite3.Connection,
+    *,
+    from_year: int,
+    to_year: int,
+) -> bool:
+    initialize_wsj_bluesky_schema(connection)
+    first_year = max(from_year, WSJ_BLUESKY_START_YEAR)
+    last_year = min(to_year, datetime.now(timezone.utc).year)
+    if first_year > last_year:
+        return False
+    if all(
+        wsj_catalog_count_for_year(connection, year)
+        >= WSJ_CATALOG_TARGET_PER_YEAR
+        for year in range(first_year, last_year + 1)
+    ):
+        with connection:
+            connection.execute(
+                """
+                UPDATE wsj_bluesky_state
+                SET status='complete-target-met',
+                    last_error=NULL,
+                    updated_at=?
+                WHERE singleton=1
+                """,
+                (_now_iso(),),
+            )
+        return False
+    status = connection.execute(
+        "SELECT status FROM wsj_bluesky_state WHERE singleton=1"
+    ).fetchone()[0]
+    return not str(status).startswith("complete")
+
+
+def process_wsj_bluesky_page(
+    connection: sqlite3.Connection,
+    *,
+    spec: ArchiveSourceSpec,
+    http_client: httpx.Client,
+    from_year: int,
+    to_year: int,
+) -> dict[str, object]:
+    if spec.publisher != "wsj":
+        raise ValueError("Bluesky discovery is only supported for WSJ")
+    initialize_wsj_bluesky_schema(connection)
+    cursor = connection.execute(
+        "SELECT cursor FROM wsj_bluesky_state WHERE singleton=1"
+    ).fetchone()[0]
+    with connection:
+        connection.execute(
+            """
+            UPDATE wsj_bluesky_state
+            SET status='processing',
+                last_error=NULL,
+                updated_at=?
+            WHERE singleton=1
+            """,
+            (_now_iso(),),
+        )
+    try:
+        parameters = {
+            "actor": "wsj.com",
+            "limit": "100",
+            "filter": "posts_with_links",
+        }
+        if cursor:
+            parameters["cursor"] = str(cursor)
+        response = http_client.get(
+            WSJ_BLUESKY_ENDPOINT,
+            params=parameters,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        feed = payload.get("feed")
+        if not isinstance(feed, list):
+            raise ValueError("WSJ Bluesky response has no feed list")
+        next_cursor = payload.get("cursor")
+        rows: list[tuple[str, str, str, str]] = []
+        post_dates: list[datetime] = []
+        for item in feed:
+            if not isinstance(item, dict):
+                continue
+            post = item.get("post")
+            if not isinstance(post, dict):
+                continue
+            record = post.get("record")
+            if not isinstance(record, dict):
+                continue
+            created_at = _parse_iso_datetime(record.get("createdAt"))
+            if created_at is None:
+                continue
+            post_dates.append(created_at)
+            embed = post.get("embed")
+            if not isinstance(embed, dict):
+                continue
+            external = embed.get("external")
+            if not isinstance(external, dict):
+                continue
+            original_url = external.get("uri")
+            if not isinstance(original_url, str):
+                continue
+            canonical_url = normalize_article_url(spec, original_url)
+            if canonical_url is None:
+                continue
+            if not from_year <= created_at.year <= to_year:
+                continue
+            post_uri = str(post.get("uri") or "")
+            rows.append(
+                (
+                    canonical_url,
+                    created_at.isoformat(),
+                    post_uri,
+                    _now_iso(),
+                )
+            )
+        with connection:
+            before = connection.total_changes
+            connection.executemany(
+                """
+                INSERT INTO wsj_bluesky_articles(
+                    canonical_url,
+                    published_at,
+                    post_uri,
+                    updated_at
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(canonical_url) DO UPDATE SET
+                    published_at=MIN(
+                        wsj_bluesky_articles.published_at,
+                        excluded.published_at
+                    ),
+                    post_uri=excluded.post_uri,
+                    updated_at=excluded.updated_at
+                """,
+                rows,
+            )
+            accepted = connection.total_changes - before
+            oldest = min(post_dates).isoformat() if post_dates else None
+            first_year = max(from_year, WSJ_BLUESKY_START_YEAR)
+            exhausted = (
+                not feed
+                or not next_cursor
+                or (
+                    bool(post_dates)
+                    and min(post_dates).year < first_year
+                )
+            )
+            status = "complete-history" if exhausted else "running"
+            connection.execute(
+                """
+                UPDATE wsj_bluesky_state
+                SET cursor=?,
+                    status=?,
+                    pages=pages+1,
+                    posts_seen=posts_seen+?,
+                    urls_accepted=urls_accepted+?,
+                    oldest_at=COALESCE(?, oldest_at),
+                    last_error=NULL,
+                    updated_at=?
+                WHERE singleton=1
+                """,
+                (
+                    str(next_cursor) if next_cursor else None,
+                    status,
+                    len(feed),
+                    accepted,
+                    oldest,
+                    _now_iso(),
+                ),
+            )
+        target_met = not wsj_bluesky_should_continue(
+            connection,
+            from_year=from_year,
+            to_year=to_year,
+        )
+        return {
+            "status": (
+                "complete-target-met"
+                if target_met and not exhausted
+                else status
+            ),
+            "seen": len(feed),
+            "accepted": accepted,
+            "oldestAt": oldest,
+            "hasMore": not exhausted and not target_met,
+        }
+    except Exception as exc:
+        with connection:
+            connection.execute(
+                """
+                UPDATE wsj_bluesky_state
+                SET status='error',
+                    last_error=?,
+                    updated_at=?
+                WHERE singleton=1
+                """,
+                (f"{type(exc).__name__}: {exc}", _now_iso()),
+            )
+        raise
+
+
+def wsj_catalog_count_for_year(
+    connection: sqlite3.Connection,
+    year: int,
+) -> int:
+    bluesky_select = (
+        """
+        UNION
+        SELECT canonical_url
+        FROM wsj_bluesky_articles
+        WHERE substr(published_at, 1, 4)=?
+        """
+        if _table_exists(connection, "wsj_bluesky_articles")
+        else ""
+    )
+    parameters: list[object] = [str(year)]
+    if bluesky_select:
+        parameters.append(str(year))
+    return int(
+        connection.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM (
+                SELECT canonical_url
+                FROM candidates
+                WHERE substr(published_at, 1, 4)=?
+                {bluesky_select}
+            )
+            """,
+            parameters,
+        ).fetchone()[0]
+    )
+
+
 def next_discovery_query(
     connection: sqlite3.Connection,
 ) -> tuple[str, str | None] | None:
@@ -402,6 +687,21 @@ def export_capture_manifest(
     opener = gzip.open if destination.suffix == ".gz" else open
     article_count = 0
     candidate_count = 0
+    external_articles = (
+        {
+            str(row[0]): str(row[1])
+            for row in connection.execute(
+                """
+                SELECT canonical_url, published_at
+                FROM wsj_bluesky_articles
+                ORDER BY canonical_url
+                """
+            ).fetchall()
+        }
+        if _table_exists(connection, "wsj_bluesky_articles")
+        else {}
+    )
+    written_urls: set[str] = set()
     with opener(temporary, "wt", encoding="utf-8") as handle:
         current_url: str | None = None
         current_published_at: str | None = None
@@ -409,6 +709,15 @@ def export_capture_manifest(
         for row in rows:
             canonical_url = row[0]
             if current_url is not None and canonical_url != current_url:
+                if current_url in external_articles:
+                    current_published_at = external_articles[current_url]
+                    candidates = _merge_capture_candidates(
+                        candidates,
+                        _approximate_wayback_candidates(
+                            current_url,
+                            published_at=current_published_at,
+                        ),
+                    )
                 _write_manifest_row(
                     handle,
                     spec=spec,
@@ -418,6 +727,7 @@ def export_capture_manifest(
                 )
                 article_count += 1
                 candidate_count += len(candidates)
+                written_urls.add(current_url)
                 candidates = []
             current_url = canonical_url
             current_published_at = row[1]
@@ -436,6 +746,15 @@ def export_capture_manifest(
                 }
             )
         if current_url is not None:
+            if current_url in external_articles:
+                current_published_at = external_articles[current_url]
+                candidates = _merge_capture_candidates(
+                    candidates,
+                    _approximate_wayback_candidates(
+                        current_url,
+                        published_at=current_published_at,
+                    ),
+                )
             _write_manifest_row(
                 handle,
                 spec=spec,
@@ -445,10 +764,33 @@ def export_capture_manifest(
             )
             article_count += 1
             candidate_count += len(candidates)
+            written_urls.add(current_url)
+        for canonical_url, published_at in sorted(external_articles.items()):
+            if canonical_url in written_urls:
+                continue
+            candidates = _approximate_wayback_candidates(
+                canonical_url,
+                published_at=published_at,
+            )
+            _write_manifest_row(
+                handle,
+                spec=spec,
+                canonical_url=canonical_url,
+                published_at=published_at,
+                candidates=candidates,
+            )
+            article_count += 1
+            candidate_count += len(candidates)
     temporary.replace(destination)
     incomplete = connection.execute(
         "SELECT COUNT(*) FROM discovery_queries WHERE status != 'complete'"
     ).fetchone()[0]
+    if _table_exists(connection, "wsj_bluesky_state"):
+        bluesky_status = connection.execute(
+            "SELECT status FROM wsj_bluesky_state WHERE singleton=1"
+        ).fetchone()[0]
+        if not str(bluesky_status).startswith("complete"):
+            incomplete += 1
     return {
         "publisher": spec.publisher,
         "fromYear": from_year,
@@ -479,7 +821,18 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
     articles = connection.execute(
         "SELECT COUNT(DISTINCT canonical_url) FROM candidates"
     ).fetchone()[0]
-    return {
+    if _table_exists(connection, "wsj_bluesky_articles"):
+        articles = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT canonical_url FROM candidates
+                UNION
+                SELECT canonical_url FROM wsj_bluesky_articles
+            )
+            """
+        ).fetchone()[0]
+    result = {
         "queriesByStatus": query_counts,
         "pages": int(totals[0]),
         "rowsSeen": int(totals[1]),
@@ -492,6 +845,32 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
         )
         > 0,
     }
+    if _table_exists(connection, "wsj_bluesky_state"):
+        row = connection.execute(
+            """
+            SELECT
+                status,
+                pages,
+                posts_seen,
+                urls_accepted,
+                oldest_at,
+                last_error
+            FROM wsj_bluesky_state
+            WHERE singleton=1
+            """
+        ).fetchone()
+        result["wsjBluesky"] = {
+            "status": str(row[0]),
+            "pages": int(row[1]),
+            "postsSeen": int(row[2]),
+            "urlsAccepted": int(row[3]),
+            "oldestAt": row[4],
+            "lastError": row[5],
+        }
+        result["shouldContinue"] = bool(result["shouldContinue"]) or not str(
+            row[0]
+        ).startswith("complete")
+    return result
 
 
 def infer_published_at(canonical_url: str) -> str | None:
@@ -586,6 +965,63 @@ def with_current_year_live_fallback(
     ]
 
 
+def _approximate_wayback_candidates(
+    canonical_url: str,
+    *,
+    published_at: str,
+) -> list[dict[str, object]]:
+    published = _parse_iso_datetime(published_at)
+    if published is None:
+        return [
+            {
+                "provider": "wayback",
+                "snapshotUrl": (
+                    "https://web.archive.org/web/2id_/" + canonical_url
+                ),
+            }
+        ]
+    result: list[dict[str, object]] = []
+    for delta in (timedelta(days=1), timedelta(days=7), timedelta(days=30)):
+        timestamp = (published + delta).strftime("%Y%m%d%H%M%S")
+        result.append(
+            {
+                "provider": "wayback",
+                "snapshotUrl": (
+                    f"https://web.archive.org/web/{timestamp}id_/"
+                    f"{canonical_url}"
+                ),
+            }
+        )
+    return result
+
+
+def _merge_capture_candidates(
+    first: list[dict],
+    second: list[dict[str, object]],
+) -> list[dict]:
+    result: list[dict] = []
+    seen: set[str] = set()
+    for candidate in [*first, *second]:
+        snapshot_url = str(candidate.get("snapshotUrl") or "")
+        if not snapshot_url or snapshot_url in seen:
+            continue
+        seen.add(snapshot_url)
+        result.append(candidate)
+    return result
+
+
+def _parse_iso_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _timestamp_datetime(timestamp: str) -> datetime:
     return datetime.strptime(timestamp, "%Y%m%d%H%M%S").replace(
         tzinfo=timezone.utc
@@ -623,3 +1059,17 @@ def _spec_fingerprint(
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _table_exists(connection: sqlite3.Connection, name: str) -> bool:
+    return (
+        connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type='table' AND name=?
+            """,
+            (name,),
+        ).fetchone()
+        is not None
+    )

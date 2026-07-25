@@ -69,6 +69,7 @@ ARCHIVE_SOURCE_SPECS = {
             r"^/articles/",
             r"^/article/",
             r"^/news/.+",
+            r"^/(?:[a-z0-9-]+/)+[a-z0-9-]+-[0-9a-f]{8}$",
         ),
         rejected_path_patterns=_patterns(
             r"/(?:video|podcasts?|newsletters?|livecoverage)(?:/|$)",

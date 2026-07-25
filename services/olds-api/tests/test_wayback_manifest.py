@@ -18,9 +18,12 @@ from jojo_olds_api.wayback_manifest import (
     export_capture_manifest,
     infer_published_at,
     initialize_discovery_schema,
+    initialize_wsj_bluesky_schema,
     next_discovery_query,
     parse_cdx_json,
+    process_wsj_bluesky_page,
     record_discovery_page,
+    wsj_catalog_count_for_year,
 )
 
 
@@ -62,6 +65,22 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "http://www.apnews.com/article/example?utm_source=test",
     ) == "https://apnews.com/article/example"
     assert normalize_article_url(ap, "https://apnews.com/hub/world-news") is None
+
+    wsj = archive_source_spec("wsj")
+    assert normalize_article_url(
+        wsj,
+        (
+            "https://www.wsj.com/politics/"
+            "modern-section-article-a1b2c3d4?mod=social"
+        ),
+    ) == (
+        "https://www.wsj.com/politics/"
+        "modern-section-article-a1b2c3d4"
+    )
+    assert normalize_article_url(
+        wsj,
+        "https://www.wsj.com/politics",
+    ) is None
 
     ft = archive_source_spec("ft")
     assert normalize_article_url(
@@ -216,6 +235,99 @@ def test_urlkey_discovery_round_robins_patterns():
 
     assert next_pattern != first_pattern
     assert next_pattern == "www.wsj.com/articles/b*"
+
+
+class StubBlueskyResponse:
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {
+            "cursor": "2025-01-01T00:00:00.000Z",
+            "feed": [
+                {
+                    "post": {
+                        "uri": "at://did:plc:wsj/post/one",
+                        "record": {
+                            "createdAt": "2025-01-02T03:04:05.000Z",
+                        },
+                        "embed": {
+                            "external": {
+                                "uri": (
+                                    "https://www.wsj.com/politics/"
+                                    "modern-story-a1b2c3d4?mod=social"
+                                )
+                            }
+                        },
+                    }
+                },
+                {
+                    "post": {
+                        "uri": "at://did:plc:wsj/post/two",
+                        "record": {
+                            "createdAt": "2025-01-01T03:04:05.000Z",
+                        },
+                        "embed": {
+                            "external": {
+                                "uri": "https://www.wsj.com/politics"
+                            }
+                        },
+                    }
+                },
+            ],
+        }
+
+
+class StubBlueskyClient:
+    def get(self, url, params):
+        assert url.endswith("app.bsky.feed.getAuthorFeed")
+        assert params["actor"] == "wsj.com"
+        assert params["filter"] == "posts_with_links"
+        return StubBlueskyResponse()
+
+
+def test_wsj_bluesky_discovers_modern_section_urls(tmp_path: Path):
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2024,
+        to_year=2026,
+        collapse="urlkey",
+    )
+    initialize_wsj_bluesky_schema(connection)
+
+    result = process_wsj_bluesky_page(
+        connection,
+        spec=spec,
+        http_client=StubBlueskyClient(),
+        from_year=2024,
+        to_year=2026,
+    )
+    destination = tmp_path / "wsj-manifest.jsonl.gz"
+    summary = export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=destination,
+        from_year=2024,
+        to_year=2026,
+    )
+
+    assert result["seen"] == 2
+    assert result["accepted"] == 1
+    assert result["hasMore"] is True
+    assert wsj_catalog_count_for_year(connection, 2025) == 1
+    assert summary["articles"] == 1
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        row = json.loads(handle.readline())
+    assert row["canonicalUrl"].endswith("/modern-story-a1b2c3d4")
+    assert row["publishedAt"] == "2025-01-02T03:04:05+00:00"
+    assert len(row["candidates"]) == 3
+    assert all(
+        candidate["provider"] == "wayback"
+        for candidate in row["candidates"]
+    )
 
 
 def test_digest_discovery_keeps_exhausting_current_pattern():
