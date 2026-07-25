@@ -68,11 +68,14 @@ def parse_article(
     soup = BeautifulSoup(html_bytes, "html.parser")
     news_article = _find_news_article_json(soup)
     body = None
-    if spec.publisher == "reuters" and _is_yahoo_syndication(
+    if spec.publisher in {"reuters", "bloomberg"} and _is_yahoo_syndication(
         soup,
         raw_capture=raw_capture,
     ):
-        body = _reuters_yahoo_body(soup)
+        body = _yahoo_syndication_body(
+            soup,
+            stop_at_reporting_by=spec.publisher == "reuters",
+        )
     if body is None:
         body = _select_body(soup, spec)
     if body is None and spec.embedded_html_body_keys:
@@ -267,7 +270,11 @@ def _is_yahoo_syndication(
     return bool(site_name and "yahoo" in site_name.casefold())
 
 
-def _reuters_yahoo_body(soup: BeautifulSoup) -> Tag | None:
+def _yahoo_syndication_body(
+    soup: BeautifulSoup,
+    *,
+    stop_at_reporting_by: bool,
+) -> Tag | None:
     primary_article = soup.select_one("article")
     if primary_article is None:
         return None
@@ -279,7 +286,7 @@ def _reuters_yahoo_body(soup: BeautifulSoup) -> Tag | None:
     if not paragraphs:
         return None
     wrapper_document = BeautifulSoup(
-        "<div data-jojo-source='reuters-yahoo-syndication'></div>",
+        "<div data-jojo-source='yahoo-syndication'></div>",
         "html.parser",
     )
     wrapper = wrapper_document.select_one("div")
@@ -303,7 +310,7 @@ def _reuters_yahoo_body(soup: BeautifulSoup) -> Tag | None:
         copy = BeautifulSoup(str(paragraph), "html.parser").select_one("p")
         if copy is not None:
             wrapper.append(copy)
-        if re.match(
+        if stop_at_reporting_by and re.match(
             r"^\s*\((?:additional )?reporting by\b",
             paragraph.get_text(" ", strip=True),
             re.IGNORECASE,

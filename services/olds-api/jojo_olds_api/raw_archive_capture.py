@@ -33,6 +33,7 @@ REUTERS_SYNDICATION_SEARCH_ENDPOINT = "https://search.yahoo.com/search"
 REUTERS_SYNDICATION_SEARCH_MAXIMUM_BYTES = 2_000_000
 REUTERS_SYNDICATION_MAXIMUM_CANDIDATES = 8
 REUTERS_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
+BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 REUTERS_SYNDICATION_STOP_WORDS = {
     "a",
     "after",
@@ -522,6 +523,61 @@ def capture_item(
             if response[5] == 100:
                 break
 
+    if best_response is None and item.publisher == "bloomberg":
+        try:
+            fallback_candidates = discover_bloomberg_syndication_candidates(
+                item,
+                archive_client=archive_client,
+            )
+        except Exception as exc:
+            failures.append(f"bloomberg-syndication:{type(exc).__name__}")
+            fallback_candidates = ()
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        fallback_candidates = tuple(
+            candidate
+            for candidate in fallback_candidates
+            if candidate.snapshot_url not in existing_urls
+        )
+        candidates_considered.extend(fallback_candidates)
+        for candidate in fallback_candidates:
+            response, failure = _fetch_usable_candidate(
+                candidate,
+                archive_client=archive_client,
+                maximum_html_bytes=maximum_html_bytes,
+            )
+            if failure:
+                failures.append(failure)
+            if response is None:
+                continue
+            validated, validation_signals = (
+                _validate_bloomberg_syndication_response(
+                    item,
+                    content=response[2],
+                    final_url=response[3],
+                )
+            )
+            if not validated:
+                failures.append(
+                    "bloomberg-syndication:validation:"
+                    + str(validation_signals.get("reason") or "failed")
+                )
+                continue
+            response = (
+                response[0],
+                response[1],
+                response[2],
+                response[3],
+                response[4],
+                response[5],
+                response[6] | validation_signals,
+            )
+            if best_response is None or response[5] > best_response[5]:
+                best_response = response
+            if response[5] == 100:
+                break
+
     if best_response is not None:
         (
             candidate,
@@ -712,11 +768,24 @@ def discover_wayback_timemap_candidates(
 
 
 def reuters_syndication_search_url(item: ManifestItem) -> str:
+    return _syndication_search_url(item, publisher_label="Reuters")
+
+
+def bloomberg_syndication_search_url(item: ManifestItem) -> str:
+    return _syndication_search_url(item, publisher_label="Bloomberg")
+
+
+def _syndication_search_url(
+    item: ManifestItem,
+    *,
+    publisher_label: str,
+) -> str:
     parsed = urlsplit(item.canonical_url)
     slug = parsed.path.rstrip("/").rsplit("/", 1)[-1]
-    slug = re.sub(r"-20\d{2}-\d{2}-\d{2}$", "", slug)
+    if item.publisher == "reuters":
+        slug = re.sub(r"-20\d{2}-\d{2}-\d{2}$", "", slug)
     words = " ".join(part for part in slug.split("-") if part)
-    query = f"{words} Reuters"
+    query = f"{words} {publisher_label}"
     return REUTERS_SYNDICATION_SEARCH_ENDPOINT + "?" + urlencode({"p": query})
 
 
@@ -725,7 +794,34 @@ def discover_reuters_syndication_candidates(
     *,
     archive_client: ArchiveClient,
 ) -> tuple[CaptureCandidate, ...]:
-    search_url = reuters_syndication_search_url(item)
+    return _discover_syndication_candidates(
+        item,
+        archive_client=archive_client,
+        search_url=reuters_syndication_search_url(item),
+        excluded_publisher="reuters",
+    )
+
+
+def discover_bloomberg_syndication_candidates(
+    item: ManifestItem,
+    *,
+    archive_client: ArchiveClient,
+) -> tuple[CaptureCandidate, ...]:
+    return _discover_syndication_candidates(
+        item,
+        archive_client=archive_client,
+        search_url=bloomberg_syndication_search_url(item),
+        excluded_publisher="bloomberg",
+    )
+
+
+def _discover_syndication_candidates(
+    item: ManifestItem,
+    *,
+    archive_client: ArchiveClient,
+    search_url: str,
+    excluded_publisher: str,
+) -> tuple[CaptureCandidate, ...]:
     status_code, headers, content, _ = archive_client.fetch(
         search_url,
         maximum_bytes=REUTERS_SYNDICATION_SEARCH_MAXIMUM_BYTES,
@@ -733,10 +829,12 @@ def discover_reuters_syndication_candidates(
     content_type = headers.get("content-type", "").casefold()
     if status_code != 200 or not content:
         raise ValueError(
-            f"Reuters syndication search returned HTTP {status_code}"
+            f"{item.publisher} syndication search returned HTTP {status_code}"
         )
     if "html" not in content_type and b"<html" not in content[:1_000].lower():
-        raise ValueError("Reuters syndication search did not return HTML")
+        raise ValueError(
+            f"{item.publisher} syndication search did not return HTML"
+        )
 
     soup = BeautifulSoup(content, "html.parser")
     ranked: list[tuple[int, int, str]] = []
@@ -749,7 +847,10 @@ def discover_reuters_syndication_candidates(
         if (
             candidate_url is None
             or candidate_url in seen
-            or not _is_public_syndication_url(candidate_url)
+            or not _is_public_syndication_url(
+                candidate_url,
+                excluded_publisher=excluded_publisher,
+            )
         ):
             continue
         seen.add(candidate_url)
@@ -783,7 +884,11 @@ def _decode_yahoo_search_result(value: object) -> str | None:
     return candidate_url
 
 
-def _is_public_syndication_url(value: str) -> bool:
+def _is_public_syndication_url(
+    value: str,
+    *,
+    excluded_publisher: str,
+) -> bool:
     parsed = urlsplit(value)
     host = (parsed.hostname or "").casefold().rstrip(".")
     if (
@@ -806,7 +911,12 @@ def _is_public_syndication_url(value: str) -> bool:
         address = None
     if address is not None and not address.is_global:
         return False
-    if host == "reuters.com" or host.endswith(".reuters.com"):
+    excluded_domains = {
+        "reuters": "reuters.com",
+        "bloomberg": "bloomberg.com",
+    }
+    excluded_domain = excluded_domains[excluded_publisher]
+    if host == excluded_domain or host.endswith("." + excluded_domain):
         return False
     if (
         host in {"search.yahoo.com", "www.google.com", "www.bing.com"}
@@ -902,12 +1012,110 @@ def _validate_reuters_syndication_response(
     }
 
 
+def _validate_bloomberg_syndication_response(
+    item: ManifestItem,
+    *,
+    content: bytes,
+    final_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="bloomberg",
+            canonical_url=item.canonical_url,
+        )
+    except Exception as exc:
+        return False, {
+            "reason": f"parser-{type(exc).__name__}",
+            "bloombergSyndicationValidated": False,
+        }
+    headline_overlap = _syndication_headline_overlap(
+        item.canonical_url,
+        article.headline or "",
+    )
+    soup = BeautifulSoup(content, "html.parser")
+    visible_text = soup.get_text(" ", strip=True)
+    author_text = " ".join(author.name for author in article.authors)
+    attribution_text = (
+        author_text
+        + "\n"
+        + visible_text[:10_000]
+        + "\n"
+        + article.plain_text[-1_000:]
+    )
+    attributed = re.search(
+        r"(?i)(?:^|\W)bloomberg(?:\s+(?:news|opinion))?(?:\W|$)",
+        attribution_text,
+    ) is not None
+    expected_date = _parse_iso_datetime(item.published_at)
+    date_delta_days: int | None = None
+    if expected_date is not None and article.published_at is not None:
+        date_delta_days = abs(
+            (article.published_at.date() - expected_date.date()).days
+        )
+    date_visible = _expected_date_visible(
+        content,
+        expected_date=expected_date,
+    )
+    date_matches = (
+        date_delta_days is not None and date_delta_days <= 2
+    ) or date_visible
+    body_characters = article.quality.body_characters
+    title_matches = headline_overlap >= 0.75
+    valid = (
+        article.quality.status == ArticleStatus.COMPLETE
+        and body_characters
+        >= BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS
+        and attributed
+        and title_matches
+        and date_matches
+    )
+    if article.quality.status != ArticleStatus.COMPLETE:
+        reason = f"parser-{article.quality.status.value}"
+    elif body_characters < BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS:
+        reason = "body-too-short"
+    elif not attributed:
+        reason = "missing-bloomberg-attribution"
+    elif not title_matches:
+        reason = "headline-mismatch"
+    elif not date_matches:
+        reason = "publication-date-mismatch"
+    else:
+        reason = None
+    return valid, {
+        "reason": reason,
+        "bloombergSyndicationValidated": valid,
+        "syndicationFinalUrl": final_url,
+        "syndicationHeadlineOverlap": round(headline_overlap, 4),
+        "syndicationBodyCharacters": body_characters,
+        "syndicationBloombergAttributed": attributed,
+        "syndicationDateDeltaDays": date_delta_days,
+        "syndicationExpectedDateVisible": date_visible,
+    }
+
+
 def _reuters_syndication_headline_overlap(
     canonical_url: str,
     headline: str,
 ) -> float:
+    return _syndication_headline_overlap(
+        canonical_url,
+        headline,
+        strip_reuters_date_suffix=True,
+    )
+
+
+def _syndication_headline_overlap(
+    canonical_url: str,
+    headline: str,
+    *,
+    strip_reuters_date_suffix: bool = False,
+) -> float:
     slug = urlsplit(canonical_url).path.rstrip("/").rsplit("/", 1)[-1]
-    slug = re.sub(r"-20\d{2}-\d{2}-\d{2}$", "", slug)
+    if strip_reuters_date_suffix:
+        slug = re.sub(r"-20\d{2}-\d{2}-\d{2}$", "", slug)
     slug_tokens = _significant_tokens(slug.replace("-", " "))
     headline_tokens = _significant_tokens(headline)
     if not slug_tokens or not headline_tokens:
@@ -916,6 +1124,28 @@ def _reuters_syndication_headline_overlap(
         len(slug_tokens),
         len(headline_tokens),
     )
+
+
+def _expected_date_visible(
+    content: bytes,
+    *,
+    expected_date: datetime | None,
+) -> bool:
+    if expected_date is None:
+        return False
+    text = BeautifulSoup(content, "html.parser").get_text(" ", strip=True)
+    raw = content.decode("utf-8", errors="ignore")
+    month = expected_date.strftime("%B")
+    abbreviated_month = expected_date.strftime("%b")
+    values = (
+        expected_date.strftime("%Y-%m-%d"),
+        f"{month} {expected_date.day}, {expected_date.year}",
+        f"{abbreviated_month} {expected_date.day}, {expected_date.year}",
+        f"{expected_date.day} {month} {expected_date.year}",
+        f"{expected_date.day} {abbreviated_month} {expected_date.year}",
+    )
+    haystack = raw.casefold() + "\n" + text.casefold()
+    return any(value.casefold() in haystack for value in values)
 
 
 def _significant_tokens(value: str) -> set[str]:

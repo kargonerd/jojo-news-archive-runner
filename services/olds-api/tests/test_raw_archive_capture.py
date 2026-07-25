@@ -12,9 +12,11 @@ from jojo_olds_api.news_models import (
     RawCapture,
 )
 from jojo_olds_api.raw_archive_capture import (
+    BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     ManifestItem,
     REUTERS_SYNDICATION_SEARCH_ENDPOINT,
     WAYBACK_TIMEMAP_ENDPOINT,
+    bloomberg_syndication_search_url,
     capture_item,
     capture_summary,
     completed_capture_rejection_reason,
@@ -699,6 +701,189 @@ def test_reuters_syndication_rejects_unattributed_related_article(
 
     assert result["status"] == "error"
     assert "missing-reuters-attribution" in result["error"]
+    assert not (tmp_path / "objects").exists()
+
+
+def test_bloomberg_capture_falls_back_to_validated_syndicated_html(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2024-06-03/"
+        "tories-fail-to-dent-labour-polling-lead-in-early-uk-campaign"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20240604000000id_/"
+        + canonical_url
+    )
+    syndicated_url = (
+        "https://www.yahoo.com/news/"
+        "tories-fail-to-dent-labour-polling-lead-040000123.html"
+    )
+    item = ManifestItem(
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        published_at="2024-06-03T00:00:00Z",
+        section="politics",
+        candidates=(candidate(guessed_url, "20240604000000"),),
+    )
+    search_url = bloomberg_syndication_search_url(item)
+    search_html = f"""
+    <html><body><ol id="web"><li><h3>
+      <a href="{syndicated_url}">Licensed syndicated copy</a>
+    </h3></li></ol></body></html>
+    """.encode()
+    syndicated_html = b"""
+    <!doctype html><html><head>
+      <meta property="og:site_name" content="Yahoo News">
+      <script type="application/ld+json">
+      {
+        "@type": "NewsArticle",
+        "headline": "Tories Fail to Dent Labour Polling Lead in Early UK Campaign",
+        "datePublished": "2024-06-03T04:00:00Z",
+        "author": {"name": "Bloomberg News"}
+      }
+      </script>
+    </head><body><article>
+      <div class="article-content">
+        <p>Bloomberg News reports that the governing party failed to narrow
+        the opposition's polling lead during the opening stage of the UK
+        election campaign. The survey provides a detailed national snapshot
+        and identifies the issues shaping voter decisions.</p>
+        <p>The report explains changes among several demographic groups,
+        compares the findings with earlier polling, and includes responses
+        from campaign officials. This supplies substantive reporting rather
+        than a headline, search snippet, or related-story card.</p>
+        <p>Additional analysis covers the parties' economic messages,
+        leadership ratings, constituency strategy, and the timetable before
+        voting day. The complete licensed copy is retained as raw HTML for
+        reproducible parser validation.</p>
+      </div>
+    </article></body></html>
+    """ + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                401,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            search_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                search_html,
+                search_url,
+            ),
+            syndicated_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                syndicated_html,
+                syndicated_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests[0] == guessed_url
+    assert client.requests[1].startswith(WAYBACK_TIMEMAP_ENDPOINT)
+    assert client.requests[-2:] == [search_url, syndicated_url]
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.OTHER
+    assert capture.final_url == syndicated_url
+    assert capture.quality_signals["bloombergSyndicationValidated"] is True
+    assert capture.quality_signals["syndicationBloombergAttributed"] is True
+    assert (
+        capture.quality_signals["syndicationBodyCharacters"]
+        >= BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS
+    )
+
+
+def test_bloomberg_syndication_rejects_unattributed_related_article(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2024-06-03/"
+        "tories-fail-to-dent-labour-polling-lead-in-early-uk-campaign"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20240604000000id_/"
+        + canonical_url
+    )
+    related_url = "https://example.com/tories-fail-to-dent-labour-lead"
+    item = ManifestItem(
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        published_at="2024-06-03T00:00:00Z",
+        section="politics",
+        candidates=(candidate(guessed_url, "20240604000000"),),
+    )
+    search_url = bloomberg_syndication_search_url(item)
+    search_html = f"""
+    <html><body><ol id="web"><li><h3>
+      <a href="{related_url}">Related article</a>
+    </h3></li></ol></body></html>
+    """.encode()
+    related_html = b"""
+    <!doctype html><html><head>
+      <script type="application/ld+json">
+      {
+        "@type": "NewsArticle",
+        "headline": "Tories Fail to Dent Labour Polling Lead in Early UK Campaign",
+        "datePublished": "2024-06-03T04:00:00Z",
+        "author": {"name": "Another Publisher"}
+      }
+      </script>
+    </head><body><article>
+      <p>An independently written article may have the same headline and
+      publication date, but it lacks the required source attribution. The
+      validator must not silently treat it as the canonical publisher copy.</p>
+      <p>More unrelated reporting is included to exceed the minimum body
+      length and prove that provenance, rather than a naive length check,
+      causes this candidate to be rejected by the archive.</p>
+      <p>A final paragraph adds enough detail for a complete parser result
+      while deliberately omitting any reference to the canonical publisher
+      or its news service.</p>
+    </article></body></html>
+    """ + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                401,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            search_url: (
+                200,
+                {"content-type": "text/html"},
+                search_html,
+                search_url,
+            ),
+            related_url: (
+                200,
+                {"content-type": "text/html"},
+                related_html,
+                related_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "error"
+    assert "missing-bloomberg-attribution" in result["error"]
     assert not (tmp_path / "objects").exists()
 
 

@@ -314,6 +314,69 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert result.extraction.parser_version == "reuters-parser/0.5.0"
 
 
+def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2024-06-03/"
+        "tories-fail-to-dent-labour-polling-lead-in-early-uk-campaign"
+    )
+    yahoo_url = (
+        "https://www.yahoo.com/news/"
+        "tories-fail-to-dent-labour-polling-lead-040000123.html"
+    )
+    capture = raw_capture("bloomberg", canonical_url)
+    capture = capture.model_copy(
+        update={
+            "selected_candidate": CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=yahoo_url,
+            ),
+            "final_url": yahoo_url,
+        }
+    )
+    html = b"""
+    <!doctype html><html lang="en"><head>
+      <meta property="og:site_name" content="Yahoo News">
+      <script type="application/ld+json">
+      {
+        "@type": "NewsArticle",
+        "headline": "Tories Fail to Dent Labour Polling Lead in Early UK Campaign",
+        "datePublished": "2024-06-03T04:00:00Z",
+        "author": {"name": "Bloomberg News"}
+      }
+      </script>
+    </head><body><article>
+      <figure><figcaption>Unrelated lead-media caption.</figcaption></figure>
+      <div class="key-takeaways">
+        <p><button>Generated Yahoo summary must be excluded.</button></p>
+      </div>
+      <div class="article-content">
+        <p>Bloomberg News reports that the governing party failed to narrow
+        the opposition's polling lead during the opening campaign.</p>
+        <p>The survey compares voter groups and includes enough substantive
+        reporting for the normalized article body.</p>
+      </div>
+      <aside>
+        <article><p>Nested recommendation text must not enter the body.</p>
+        </article>
+      </aside>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        raw_capture=capture,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "failed to narrow" in result.plain_text
+    assert "Generated Yahoo summary" not in result.plain_text
+    assert "Unrelated lead-media caption" not in result.plain_text
+    assert "Nested recommendation" not in result.plain_text
+    assert result.extraction.parser_version == "bloomberg-parser/0.5.0"
+
+
 def test_parser_falls_back_to_catalog_publication_time():
     canonical_url = "https://apnews.com/article/catalog-date"
     body = " ".join(["Substantive article sentence."] * 30)
