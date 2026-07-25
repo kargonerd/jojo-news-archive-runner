@@ -32,6 +32,7 @@ class PublisherSpec:
     remove_selectors: tuple[str, ...] = ()
     text_block_selectors: tuple[str, ...] = ()
     preferred_image_hosts: tuple[str, ...] = ()
+    use_structured_article_body: bool = False
 
 
 PUBLISHER_SPECS = {
@@ -90,7 +91,7 @@ PUBLISHER_SPECS = {
     ),
     "nyt": PublisherSpec(
         publisher="nyt",
-        parser_version="nyt-parser/0.4.0",
+        parser_version="nyt-parser/0.5.0",
         domains=("nytimes.com", "www.nytimes.com"),
         default_language="en",
         edition="us",
@@ -99,6 +100,7 @@ PUBLISHER_SPECS = {
             "[data-testid='article-body']",
             ".StoryBodyCompanionColumn",
             ".story-body",
+            ".interactive-body",
             "article",
         ),
         remove_selectors=(
@@ -122,7 +124,7 @@ PUBLISHER_SPECS = {
     ),
     "ft": PublisherSpec(
         publisher="ft",
-        parser_version="ft-parser/0.4.0",
+        parser_version="ft-parser/0.5.0",
         domains=("ft.com", "www.ft.com"),
         default_language="en",
         edition="global",
@@ -133,6 +135,7 @@ PUBLISHER_SPECS = {
             "article",
         ),
         preferred_image_hosts=("www.ft.com", "d1e00ek4ebabms.cloudfront.net"),
+        use_structured_article_body=True,
     ),
 }
 

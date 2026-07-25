@@ -65,6 +65,8 @@ def parse_article(
     soup = BeautifulSoup(html_bytes, "html.parser")
     news_article = _find_news_article_json(soup)
     body = _select_body(soup, spec)
+    if body is None and spec.use_structured_article_body:
+        body = _structured_article_body(news_article)
     clean_body = BeautifulSoup(str(body), "html.parser") if body else BeautifulSoup("", "html.parser")
     _remove_noise(clean_body, spec)
 
@@ -301,6 +303,30 @@ def _select_body(soup: BeautifulSoup, spec: PublisherSpec) -> Tag | None:
         if isinstance(node, Tag):
             return node
     return None
+
+
+def _structured_article_body(
+    news_article: dict[str, Any],
+) -> Tag | None:
+    value = news_article.get("articleBody")
+    if not isinstance(value, str):
+        return None
+    paragraphs = [
+        _clean_text(paragraph)
+        for paragraph in re.split(r"\n\s*\n", value)
+        if _clean_text(paragraph)
+    ]
+    if not paragraphs:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for paragraph in paragraphs:
+        node = document.new_tag("p")
+        node.string = paragraph
+        article.append(node)
+    return article
 
 
 def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:

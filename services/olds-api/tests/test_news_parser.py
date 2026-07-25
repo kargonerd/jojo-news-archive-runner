@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 
 import pytest
 
@@ -409,6 +410,45 @@ def test_parser_deduplicates_responsive_text_and_image_blocks():
     )
 
 
+def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
+    article_body = "\n\n".join(
+        [
+            (
+                f"Paragraph {index} contains substantive financial reporting "
+                "and enough context for a complete archived story."
+            )
+            for index in range(1, 7)
+        ]
+    )
+    html = f"""
+    <html>
+      <head>
+        <title>Subscribe to read | Financial Times</title>
+        <script type="application/ld+json">
+          {{
+            "@type": "NewsArticle",
+            "headline": "Structured FT article",
+            "datePublished": "2022-09-07T17:00:26Z",
+            "articleBody": {json.dumps(article_body)}
+          }}
+        </script>
+      </head>
+      <body><main class="subscription-barrier"></main></body>
+    </html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/example",
+    )
+
+    assert article.quality.status.value == "complete"
+    assert len(article.blocks) == 6
+    assert "Paragraph 1" in article.plain_text
+    assert article.extraction.parser_version == "ft-parser/0.5.0"
+
+
 def test_parser_includes_gallery_captions_in_plain_text():
     canonical_url = (
         "https://www.nytimes.com/2023/09/20/t-magazine/example.html"
@@ -472,3 +512,38 @@ def test_parser_classifies_interactive_urls():
     )
 
     assert result.content_type.value == "interactive"
+
+
+def test_nyt_parser_extracts_interactive_roundup_body():
+    canonical_url = (
+        "https://www.nytimes.com/interactive/2023/01/20/"
+        "briefing/the-weekender.html"
+    )
+    html = b"""
+    <html>
+      <head>
+        <meta property="og:title" content="The Weekender">
+        <meta property="article:published_time"
+              content="2023-01-20T21:32:37Z">
+      </head>
+      <body>
+        <div class="interactive-body">
+          <h2>Times editors have handpicked stories for you to enjoy.</h2>
+          <h2>A substantive story selected for this edition</h2>
+          <p>The summary provides enough reporting context to make this
+          interactive roundup useful as normalized article content.</p>
+        </div>
+      </body>
+    </html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "interactive"
+    assert "handpicked stories" in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.5.0"

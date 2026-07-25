@@ -349,6 +349,53 @@ def test_raw_quality_rejects_email_login_redirect_with_empty_shell():
     assert signals["authenticationShell"] is True
 
 
+def test_raw_quality_rejects_subscription_shell_without_article_body():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Subscribe to read | Financial Times</title></head>
+        <body><article><p>Discover all the plans currently available in your
+        country</p></article></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["subscriptionShell"] is True
+
+
+def test_raw_quality_keeps_subscription_page_with_structured_article_body():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Subscribe to read | Financial Times</title>
+        <script type="application/ld+json">
+        {"@type":"NewsArticle","articleBody":"Full archived article body."}
+        </script></head><body></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score >= 85
+    assert signals["subscriptionShell"] is False
+
+
+def test_raw_quality_keeps_article_body_with_subscription_footer():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Archived Financial Times article</title></head>
+        <body><div class="article__content-body"><p>Full article text.</p></div>
+        <footer>During your trial you will have complete digital access to
+        FT.com.</footer></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score >= 85
+    assert signals["subscriptionShell"] is False
+
+
 def test_wayback_candidate_records_actual_redirected_snapshot():
     requested = candidate(
         (

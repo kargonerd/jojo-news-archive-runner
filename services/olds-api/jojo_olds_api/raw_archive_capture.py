@@ -45,6 +45,19 @@ _ACCESS_CHALLENGE_MARKERS = (
     b"verify you are human",
     b"checking if the site connection is secure",
 )
+_SUBSCRIPTION_SHELL_MARKERS = (
+    b"<title>subscribe to read",
+    b"join over 300,000 finance professionals",
+    b"discover all the plans currently available in your country",
+    b"during your trial you will have complete digital access to ft.com",
+)
+_ARTICLE_BODY_MARKERS = (
+    b"article__content-body",
+    b'id="article-body"',
+    b"data-trackable=\"article-body\"",
+    b"data-testid=\"article-body\"",
+    b"story-body",
+)
 _WAYBACK_FINAL_RE = re.compile(
     r"https?://web\.archive\.org/web/(\d{14})(?:id_|im_|js_|cs_)?/",
     re.IGNORECASE,
@@ -382,6 +395,7 @@ def capture_item(
             or signals["archiveErrorPage"]
             or signals["authenticationShell"]
             or signals["accessChallengeShell"]
+            or signals["subscriptionShell"]
         ):
             failures.append(
                 f"{candidate.provider.value}:http-{status_code}:score-{quality_score}"
@@ -505,6 +519,13 @@ def score_raw_capture(
         not has_article_marker
         and any(marker in prefix for marker in _ACCESS_CHALLENGE_MARKERS)
     )
+    has_strong_body_marker = (
+        b'"articlebody"' in prefix
+        or any(marker in prefix for marker in _ARTICLE_BODY_MARKERS)
+    )
+    subscription_shell = not has_strong_body_marker and any(
+        marker in prefix for marker in _SUBSCRIPTION_SHELL_MARKERS
+    )
     substantial = len(content) >= 2_048
     score = 0
     if http_status in ACCEPTED_HTTP_STATUSES:
@@ -517,14 +538,16 @@ def score_raw_capture(
         score += 15
     if not archive_error_page:
         score += 10
-    if authentication_shell or access_challenge_shell:
+    if authentication_shell or access_challenge_shell or subscription_shell:
         score = max(0, score - 60)
     return score, {
         "looksLikeHtml": looks_like_html,
         "archiveErrorPage": archive_error_page,
         "hasArticleMarker": has_article_marker,
+        "hasStrongBodyMarker": has_strong_body_marker,
         "authenticationShell": authentication_shell,
         "accessChallengeShell": access_challenge_shell,
+        "subscriptionShell": subscription_shell,
         "substantialResponse": substantial,
         "rawBytes": len(content),
     }
