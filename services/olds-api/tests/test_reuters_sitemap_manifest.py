@@ -10,10 +10,13 @@ from jojo_olds_api.raw_archive_capture import manifest_item_from_row
 from jojo_olds_api.reuters_sitemap_manifest import (
     discover_reuters_sitemap_captures,
     export_reuters_manifest,
+    initialize_reuters_live_sitemaps,
     initialize_reuters_sitemap_schema,
     initialize_reuters_urlscan_queries,
+    pending_reuters_live_sitemaps,
     pending_reuters_sitemaps,
     pending_reuters_urlscan_queries,
+    process_reuters_live_sitemap,
     process_reuters_sitemap,
     process_reuters_urlscan_query,
 )
@@ -52,6 +55,24 @@ SITEMAP_XML = b"""<?xml version="1.0"?>
   <url>
     <loc>https://www.reuters.com/graphics/example/</loc>
     <lastmod>2022-12-31T10:00:00Z</lastmod>
+  </url>
+</urlset>
+"""
+
+LIVE_INDEX_XML = b"""<?xml version="1.0"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>https://www.reuters.com/arc/outboundfeeds/sitemap/?outputType=xml&amp;from=100</loc>
+    <lastmod>2026-07-25T10:00:00Z</lastmod>
+  </sitemap>
+</sitemapindex>
+"""
+
+LIVE_SITEMAP_XML = b"""<?xml version="1.0"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://www.reuters.com/world/live-story-2026-07-25/</loc>
+    <lastmod>2026-07-25T10:00:00Z</lastmod>
   </url>
 </urlset>
 """
@@ -111,6 +132,22 @@ class StubUrlscanClient:
         assert params["size"] == "100"
         assert "date:[2024-01-01 TO 2024-01-08]" in params["q"]
         return StubUrlscanResponse()
+
+
+class StubLiveResponse:
+    def __init__(self, content):
+        self.content = content
+
+    def raise_for_status(self):
+        return None
+
+
+class StubLiveClient:
+    def get(self, url):
+        if "sitemap-index" in url:
+            return StubLiveResponse(LIVE_INDEX_XML)
+        assert url.endswith("outputType=xml&from=100")
+        return StubLiveResponse(LIVE_SITEMAP_XML)
 
 
 def test_discovers_html_escaped_reuters_sitemap_urls():
@@ -236,3 +273,102 @@ def test_urlscan_fills_historical_reuters_catalog_gaps(tmp_path: Path):
         "provider": "live-origin",
         "snapshotUrl": row["canonicalUrl"],
     }
+
+
+def test_live_reuters_sitemap_fills_current_year_catalog(tmp_path: Path):
+    connection = sqlite3.connect(":memory:")
+    initialize_reuters_sitemap_schema(
+        connection,
+        from_year=2021,
+        to_year=2026,
+        captures=[],
+    )
+    client = StubLiveClient()
+    added = initialize_reuters_live_sitemaps(
+        connection,
+        from_year=2021,
+        to_year=2026,
+        http_client=client,
+        today=date(2026, 7, 25),
+    )
+    pending = pending_reuters_live_sitemaps(
+        connection,
+        maximum=10,
+        maximum_attempts=3,
+    )
+
+    assert added == 1
+    assert pending == [
+        (
+            "https://www.reuters.com/arc/outboundfeeds/sitemap/"
+            "?outputType=xml&from=100"
+        )
+    ]
+    result = process_reuters_live_sitemap(
+        connection,
+        sitemap_url=pending[0],
+        http_client=client,
+        from_year=2021,
+        to_year=2026,
+    )
+    destination = tmp_path / "live-manifest.jsonl.gz"
+    summary = export_reuters_manifest(
+        connection,
+        destination=destination,
+        from_year=2021,
+        to_year=2026,
+        maximum_attempts=3,
+    )
+
+    assert result == {
+        "status": "complete",
+        "sitemapUrl": pending[0],
+        "seen": 1,
+        "accepted": 1,
+    }
+    assert summary["complete"] is True
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        row = json.loads(handle.readline())
+    assert row["canonicalUrl"].endswith("/live-story-2026-07-25")
+    assert row["candidates"][-1] == {
+        "provider": "live-origin",
+        "snapshotUrl": row["canonicalUrl"],
+    }
+
+
+def test_urlscan_does_not_seed_years_with_catalog_buffer():
+    connection = sqlite3.connect(":memory:")
+    initialize_reuters_sitemap_schema(
+        connection,
+        from_year=2024,
+        to_year=2024,
+        captures=[],
+    )
+    connection.executemany(
+        """
+        INSERT INTO reuters_articles(
+            canonical_url,
+            published_at,
+            source_snapshot_url,
+            updated_at
+        ) VALUES (?, '2024-01-01T00:00:00+00:00', 'test', 'test')
+        """,
+        (
+            (f"https://www.reuters.com/world/test-{index}-2024-01-01",)
+            for index in range(750)
+        ),
+    )
+
+    added = initialize_reuters_urlscan_queries(
+        connection,
+        from_year=2024,
+        to_year=2024,
+        today=date(2025, 1, 1),
+    )
+
+    assert added == 0
+    assert pending_reuters_urlscan_queries(
+        connection,
+        maximum=10,
+        maximum_attempts=3,
+    ) == []

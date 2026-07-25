@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sqlite3
 from typing import Iterable
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 from dateutil.parser import isoparse
@@ -22,9 +23,14 @@ from .wayback_manifest import (
 )
 
 
-REUTERS_SITEMAP_DISCOVERY_VERSION = "jojo-reuters-sitemap-discovery/1"
+REUTERS_SITEMAP_DISCOVERY_VERSION = "jojo-reuters-sitemap-discovery/2"
 URLSCAN_SEARCH_ENDPOINT = "https://urlscan.io/api/v1/search/"
-URLSCAN_DISCOVERY_START_YEAR = 2024
+URLSCAN_DISCOVERY_START_YEAR = 2021
+REUTERS_LIVE_SITEMAP_INDEX = (
+    "https://www.reuters.com/arc/outboundfeeds/sitemap-index/"
+    "?outputType=xml"
+)
+REUTERS_YEAR_CATALOG_TARGET = 750
 SITEMAP_CDX_PATTERN = (
     "www.reuters.com/arc/outboundfeeds/sitemap/*"
 )
@@ -260,35 +266,12 @@ def process_reuters_sitemap(
         if status not in {200, 206}:
             raise RuntimeError(f"HTTP {status}")
         entries = parse_url_sitemap(content)
-        rows: list[tuple[str, str | None, str, str]] = []
-        publisher_spec = archive_source_spec("reuters")
-        for original_url, last_modified in entries:
-            canonical_url = normalize_article_url(
-                publisher_spec,
-                original_url,
-            )
-            if not canonical_url:
-                continue
-            published_at = infer_published_at(canonical_url)
-            if not published_at:
-                published_at = _valid_last_modified(
-                    last_modified,
-                    from_year=from_year,
-                    to_year=to_year,
-                )
-            if not published_at:
-                continue
-            published_year = isoparse(published_at).year
-            if not from_year <= published_year <= to_year:
-                continue
-            rows.append(
-                (
-                    canonical_url,
-                    published_at,
-                    snapshot_url,
-                    _now_iso(),
-                )
-            )
+        rows = _reuters_article_rows(
+            entries,
+            source_url=snapshot_url,
+            from_year=from_year,
+            to_year=to_year,
+        )
         with connection:
             before = connection.total_changes
             connection.executemany(
@@ -372,6 +355,11 @@ def initialize_reuters_urlscan_queries(
     last_year = min(to_year, current.year)
     rows: list[tuple[str, str, str]] = []
     for year in range(first_year, last_year + 1):
+        if (
+            reuters_article_count_for_year(connection, year)
+            >= REUTERS_YEAR_CATALOG_TARGET
+        ):
+            continue
         window_start = date(year, 1, 1)
         year_end = min(
             date(year + 1, 1, 1),
@@ -410,6 +398,256 @@ def initialize_reuters_urlscan_queries(
     )
     connection.commit()
     return connection.total_changes - before
+
+
+def initialize_reuters_live_sitemaps(
+    connection: sqlite3.Connection,
+    *,
+    from_year: int,
+    to_year: int,
+    http_client: httpx.Client,
+    today: date | None = None,
+) -> int:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS reuters_live_sitemaps (
+            sitemap_url TEXT PRIMARY KEY,
+            last_modified TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            rows_seen INTEGER NOT NULL DEFAULT 0,
+            rows_accepted INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    connection.execute(
+        """
+        UPDATE reuters_live_sitemaps
+        SET status='pending',
+            last_error='interrupted before completion',
+            updated_at=?
+        WHERE status='processing'
+        """,
+        (_now_iso(),),
+    )
+    current = today or datetime.now(timezone.utc).date()
+    if not from_year <= current.year <= to_year:
+        connection.commit()
+        return 0
+    if (
+        reuters_article_count_for_year(connection, current.year)
+        >= REUTERS_YEAR_CATALOG_TARGET
+    ):
+        connection.execute(
+            """
+            UPDATE reuters_live_sitemaps
+            SET status='skipped-target-met',
+                last_error=NULL,
+                updated_at=?
+            WHERE status='pending' OR status='error'
+            """,
+            (_now_iso(),),
+        )
+        connection.commit()
+        return 0
+    response = http_client.get(REUTERS_LIVE_SITEMAP_INDEX)
+    response.raise_for_status()
+    entries = parse_url_sitemap(response.content)
+    rows = [
+        (url, last_modified, _now_iso())
+        for url, last_modified in entries
+        if _is_reuters_live_sitemap_url(url)
+    ]
+    if not rows:
+        raise ValueError("Reuters live sitemap index contains no child sitemaps")
+    before = connection.total_changes
+    connection.executemany(
+        """
+        INSERT INTO reuters_live_sitemaps(
+            sitemap_url,
+            last_modified,
+            updated_at
+        ) VALUES (?, ?, ?)
+        ON CONFLICT(sitemap_url) DO UPDATE SET
+            last_modified=excluded.last_modified,
+            updated_at=excluded.updated_at
+        """,
+        rows,
+    )
+    added_or_refreshed = connection.total_changes - before
+    connection.commit()
+    return added_or_refreshed
+
+
+def pending_reuters_live_sitemaps(
+    connection: sqlite3.Connection,
+    *,
+    maximum: int,
+    maximum_attempts: int,
+) -> list[str]:
+    if not _table_exists(connection, "reuters_live_sitemaps"):
+        return []
+    return [
+        row[0]
+        for row in connection.execute(
+            """
+            SELECT sitemap_url
+            FROM reuters_live_sitemaps
+            WHERE status='pending'
+               OR (status='error' AND attempts < ?)
+            ORDER BY
+                CASE
+                    WHEN sitemap_url LIKE '%&from=%' THEN 1
+                    ELSE 0
+                END,
+                LENGTH(sitemap_url),
+                sitemap_url
+            LIMIT ?
+            """,
+            (maximum_attempts, maximum),
+        ).fetchall()
+    ]
+
+
+def process_reuters_live_sitemap(
+    connection: sqlite3.Connection,
+    *,
+    sitemap_url: str,
+    http_client: httpx.Client,
+    from_year: int,
+    to_year: int,
+    maximum_bytes: int = 10 * 1024 * 1024,
+) -> dict[str, object]:
+    with connection:
+        connection.execute(
+            """
+            UPDATE reuters_live_sitemaps
+            SET status='processing',
+                attempts=attempts+1,
+                last_error=NULL,
+                updated_at=?
+            WHERE sitemap_url=?
+            """,
+            (_now_iso(), sitemap_url),
+        )
+    try:
+        response = http_client.get(sitemap_url)
+        response.raise_for_status()
+        content = response.content
+        if len(content) > maximum_bytes:
+            raise ValueError(
+                f"Reuters live sitemap exceeds {maximum_bytes} bytes"
+            )
+        entries = parse_url_sitemap(content)
+        rows = _reuters_article_rows(
+            entries,
+            source_url=sitemap_url,
+            from_year=from_year,
+            to_year=to_year,
+        )
+        with connection:
+            before = connection.total_changes
+            connection.executemany(
+                """
+                INSERT INTO reuters_articles(
+                    canonical_url,
+                    published_at,
+                    source_snapshot_url,
+                    discovery_source,
+                    updated_at
+                ) VALUES (?, ?, ?, 'reuters-live-sitemap', ?)
+                ON CONFLICT(canonical_url) DO UPDATE SET
+                    published_at=COALESCE(
+                        reuters_articles.published_at,
+                        excluded.published_at
+                    ),
+                    updated_at=excluded.updated_at
+                """,
+                rows,
+            )
+            accepted = connection.total_changes - before
+            connection.execute(
+                """
+                UPDATE reuters_live_sitemaps
+                SET status='complete',
+                    rows_seen=?,
+                    rows_accepted=?,
+                    updated_at=?
+                WHERE sitemap_url=?
+                """,
+                (len(entries), accepted, _now_iso(), sitemap_url),
+            )
+        return {
+            "status": "complete",
+            "sitemapUrl": sitemap_url,
+            "seen": len(entries),
+            "accepted": accepted,
+        }
+    except Exception as exc:
+        with connection:
+            connection.execute(
+                """
+                UPDATE reuters_live_sitemaps
+                SET status='error',
+                    last_error=?,
+                    updated_at=?
+                WHERE sitemap_url=?
+                """,
+                (
+                    f"{type(exc).__name__}: {exc}",
+                    _now_iso(),
+                    sitemap_url,
+                ),
+            )
+        return {
+            "status": "error",
+            "sitemapUrl": sitemap_url,
+            "seen": 0,
+            "accepted": 0,
+        }
+
+
+def skip_reuters_live_sitemaps_if_target_met(
+    connection: sqlite3.Connection,
+    *,
+    year: int,
+) -> bool:
+    if (
+        reuters_article_count_for_year(connection, year)
+        < REUTERS_YEAR_CATALOG_TARGET
+    ):
+        return False
+    with connection:
+        connection.execute(
+            """
+            UPDATE reuters_live_sitemaps
+            SET status='skipped-target-met',
+                last_error=NULL,
+                updated_at=?
+            WHERE status='pending'
+               OR status='error'
+            """,
+            (_now_iso(),),
+        )
+    return True
+
+
+def reuters_article_count_for_year(
+    connection: sqlite3.Connection,
+    year: int,
+) -> int:
+    return int(
+        connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM reuters_articles
+            WHERE substr(published_at, 1, 4)=?
+            """,
+            (str(year),),
+        ).fetchone()[0]
+    )
 
 
 def pending_reuters_urlscan_queries(
@@ -599,7 +837,7 @@ def export_reuters_manifest(
                 published_at=published_at,
             )
             if (
-                discovery_source == "urlscan"
+                discovery_source in {"urlscan", "reuters-live-sitemap"}
                 and not any(
                     candidate.get("provider") == "live-origin"
                     for candidate in candidate_rows
@@ -644,6 +882,16 @@ def export_reuters_manifest(
             """,
             (maximum_attempts,),
         ).fetchone()[0]
+    if _table_exists(connection, "reuters_live_sitemaps"):
+        actionable += connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM reuters_live_sitemaps
+            WHERE status='pending'
+               OR (status='error' AND attempts < ?)
+            """,
+            (maximum_attempts,),
+        ).fetchone()[0]
     terminal_errors = connection.execute(
         """
         SELECT COUNT(*)
@@ -657,6 +905,15 @@ def export_reuters_manifest(
             """
             SELECT COUNT(*)
             FROM reuters_urlscan_queries
+            WHERE status='error' AND attempts >= ?
+            """,
+            (maximum_attempts,),
+        ).fetchone()[0]
+    if _table_exists(connection, "reuters_live_sitemaps"):
+        terminal_errors += connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM reuters_live_sitemaps
             WHERE status='error' AND attempts >= ?
             """,
             (maximum_attempts,),
@@ -714,7 +971,65 @@ def reuters_sitemap_summary(
                 """
             ).fetchall()
         )
+    if _table_exists(connection, "reuters_live_sitemaps"):
+        result["liveSitemapsByStatus"] = dict(
+            connection.execute(
+                """
+                SELECT status, COUNT(*)
+                FROM reuters_live_sitemaps
+                GROUP BY status
+                """
+            ).fetchall()
+        )
     return result
+
+
+def _reuters_article_rows(
+    entries: Iterable[tuple[str, str | None]],
+    *,
+    source_url: str,
+    from_year: int,
+    to_year: int,
+) -> list[tuple[str, str, str, str]]:
+    rows: list[tuple[str, str, str, str]] = []
+    publisher_spec = archive_source_spec("reuters")
+    for original_url, last_modified in entries:
+        canonical_url = normalize_article_url(
+            publisher_spec,
+            original_url,
+        )
+        if not canonical_url:
+            continue
+        published_at = infer_published_at(canonical_url)
+        if not published_at:
+            published_at = _valid_last_modified(
+                last_modified,
+                from_year=from_year,
+                to_year=to_year,
+            )
+        if not published_at:
+            continue
+        published_year = isoparse(published_at).year
+        if not from_year <= published_year <= to_year:
+            continue
+        rows.append(
+            (
+                canonical_url,
+                published_at,
+                source_url,
+                _now_iso(),
+            )
+        )
+    return rows
+
+
+def _is_reuters_live_sitemap_url(value: str) -> bool:
+    parsed = urlsplit(value)
+    if parsed.scheme != "https" or parsed.netloc != "www.reuters.com":
+        return False
+    if parsed.path != "/arc/outboundfeeds/sitemap/":
+        return False
+    return parse_qs(parsed.query).get("outputType") == ["xml"]
 
 
 def _valid_last_modified(

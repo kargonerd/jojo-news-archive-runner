@@ -18,12 +18,16 @@ from jojo_olds_api.bloomberg_archive_download import ArchiveClient
 from jojo_olds_api.reuters_sitemap_manifest import (
     discover_reuters_sitemap_captures,
     export_reuters_manifest,
+    initialize_reuters_live_sitemaps,
     initialize_reuters_sitemap_schema,
     initialize_reuters_urlscan_queries,
+    pending_reuters_live_sitemaps,
     pending_reuters_sitemaps,
     pending_reuters_urlscan_queries,
+    process_reuters_live_sitemap,
     process_reuters_sitemap,
     process_reuters_urlscan_query,
+    skip_reuters_live_sitemaps_if_target_met,
     reuters_sitemap_summary,
 )
 
@@ -108,14 +112,10 @@ def main() -> int:
             )
     finally:
         archive_client.close()
+    live_processed = 0
+    live_errors = 0
     urlscan_processed = 0
     urlscan_errors = 0
-    remaining_budget = max(0, args.max_sitemaps - processed)
-    urlscan_pending = pending_reuters_urlscan_queries(
-        connection,
-        maximum=remaining_budget,
-        maximum_attempts=args.max_attempts,
-    )
     with httpx.Client(
         headers={
             "User-Agent": (
@@ -126,6 +126,57 @@ def main() -> int:
         follow_redirects=True,
         timeout=args.timeout,
     ) as http_client:
+        initialize_reuters_live_sitemaps(
+            connection,
+            from_year=args.from_year,
+            to_year=args.to_year,
+            http_client=http_client,
+        )
+        remaining_budget = max(0, args.max_sitemaps - processed)
+        live_pending = pending_reuters_live_sitemaps(
+            connection,
+            maximum=remaining_budget,
+            maximum_attempts=args.max_attempts,
+        )
+        current_year = time.gmtime().tm_year
+        for sitemap_url in live_pending:
+            result = process_reuters_live_sitemap(
+                connection,
+                sitemap_url=sitemap_url,
+                http_client=http_client,
+                from_year=args.from_year,
+                to_year=args.to_year,
+            )
+            live_processed += 1
+            live_errors += result["status"] == "error"
+            print(
+                json.dumps(
+                    {
+                        "event": "reuters-live-sitemap",
+                        "processedThisRun": live_processed,
+                        "errorsThisRun": live_errors,
+                        **result,
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+            if skip_reuters_live_sitemaps_if_target_met(
+                connection,
+                year=current_year,
+            ):
+                break
+            if args.min_request_interval:
+                time.sleep(args.min_request_interval)
+        remaining_budget = max(
+            0,
+            args.max_sitemaps - processed - live_processed,
+        )
+        urlscan_pending = pending_reuters_urlscan_queries(
+            connection,
+            maximum=remaining_budget,
+            maximum_attempts=args.max_attempts,
+        )
         for window_start, window_end in urlscan_pending:
             result = process_reuters_urlscan_query(
                 connection,
@@ -164,6 +215,8 @@ def main() -> int:
         "state": str(state),
         "sitemapsThisRun": processed,
         "errorsThisRun": errors,
+        "liveSitemapsThisRun": live_processed,
+        "liveSitemapErrorsThisRun": live_errors,
         "urlscanQueriesThisRun": urlscan_processed,
         "urlscanErrorsThisRun": urlscan_errors,
     }
