@@ -67,7 +67,14 @@ def parse_article(
     spec = publisher_spec(publisher)
     soup = BeautifulSoup(html_bytes, "html.parser")
     news_article = _find_news_article_json(soup)
-    body = _select_body(soup, spec)
+    body = None
+    if spec.publisher == "reuters" and _is_yahoo_syndication(
+        soup,
+        raw_capture=raw_capture,
+    ):
+        body = _reuters_yahoo_body(soup)
+    if body is None:
+        body = _select_body(soup, spec)
     if body is None and spec.embedded_html_body_keys:
         body = _embedded_html_body(
             soup,
@@ -245,6 +252,64 @@ def parse_article(
             warnings=warnings,
         ),
     )
+
+
+def _is_yahoo_syndication(
+    soup: BeautifulSoup,
+    *,
+    raw_capture: RawCapture | None,
+) -> bool:
+    if raw_capture is not None:
+        host = (urlsplit(raw_capture.final_url).hostname or "").casefold()
+        if host == "yahoo.com" or host.endswith(".yahoo.com"):
+            return True
+    site_name = _meta_content(soup, "property", "og:site_name")
+    return bool(site_name and "yahoo" in site_name.casefold())
+
+
+def _reuters_yahoo_body(soup: BeautifulSoup) -> Tag | None:
+    primary_article = soup.select_one("article")
+    if primary_article is None:
+        return None
+    paragraphs = [
+        paragraph
+        for paragraph in primary_article.select("p")
+        if paragraph.find_parent("article") is primary_article
+    ]
+    if not paragraphs:
+        return None
+    wrapper_document = BeautifulSoup(
+        "<div data-jojo-source='reuters-yahoo-syndication'></div>",
+        "html.parser",
+    )
+    wrapper = wrapper_document.select_one("div")
+    if wrapper is None:
+        return None
+    for paragraph in paragraphs:
+        ancestor_classes = " ".join(
+            " ".join(parent.get("class", []))
+            for parent in paragraph.parents
+            if isinstance(parent, Tag)
+        ).casefold()
+        if (
+            paragraph.find_parent(("header", "button", "nav", "footer"))
+            or paragraph.select_one("button") is not None
+            or any(
+                marker in ancestor_classes
+                for marker in ("key-takeaway", "yahoo-scout")
+            )
+        ):
+            continue
+        copy = BeautifulSoup(str(paragraph), "html.parser").select_one("p")
+        if copy is not None:
+            wrapper.append(copy)
+        if re.match(
+            r"^\s*\((?:additional )?reporting by\b",
+            paragraph.get_text(" ", strip=True),
+            re.IGNORECASE,
+        ):
+            break
+    return wrapper if wrapper.select_one("p") is not None else None
 
 
 def _capture_reference(

@@ -248,6 +248,72 @@ def test_parser_supports_legacy_nyt_story_body_and_pdate():
     assert result.quality.body_characters >= 200
 
 
+def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
+    canonical_url = (
+        "https://www.reuters.com/business/autos-transportation/"
+        "boeing-justice-department-seek-judges-approval-"
+        "deal-opposed-by-crash-victims-2025-07-03"
+    )
+    yahoo_url = (
+        "https://www.yahoo.com/news/"
+        "boeing-justice-department-seek-judges-035416509.html"
+    )
+    capture = raw_capture("reuters", canonical_url)
+    capture = capture.model_copy(
+        update={
+            "selected_candidate": CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=yahoo_url,
+            ),
+            "final_url": yahoo_url,
+        }
+    )
+    html = b"""
+    <!doctype html><html lang="en"><head>
+      <meta property="og:site_name" content="Yahoo News">
+      <meta property="og:image" content="https://s.yimg.com/example.jpg">
+      <script type="application/ld+json">
+      {
+        "@type": "NewsArticle",
+        "headline": "Boeing and Justice Department seek judge's approval for deal opposed by crash victims' families",
+        "datePublished": "2025-07-03T03:54:16Z",
+        "author": {"name": "David Shepardson"}
+      }
+      </script>
+    </head><body><article>
+      <h1>Boeing and Justice Department seek judge's approval</h1>
+      <figure><figcaption>Unrelated lead-media caption noise.</figcaption></figure>
+      <div class="key-takeaways">
+        <p><button>AI key takeaways should never enter the article body.</button></p>
+        <ul><li>Generated summary noise must be excluded.</li></ul>
+      </div>
+      <div class="article-content">
+        <p>By David Shepardson</p>
+        <p>(Reuters) - Boeing and the Justice Department asked a U.S. judge
+        to approve an agreement concerning the 737 MAX case, despite
+        objections from relatives of people killed in two crashes.</p>
+        <p>The agreement includes compensation for victims' families and
+        additional compliance obligations. Court filings explain the legal
+        reasoning and provide enough reporting for a complete extraction.</p>
+      </div>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+        raw_capture=capture,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Boeing and the Justice Department asked" in result.plain_text
+    assert "AI key takeaways" not in result.plain_text
+    assert "Generated summary noise" not in result.plain_text
+    assert "Unrelated lead-media caption" not in result.plain_text
+    assert result.extraction.parser_version == "reuters-parser/0.5.0"
+
+
 def test_parser_falls_back_to_catalog_publication_time():
     canonical_url = "https://apnews.com/article/catalog-date"
     body = " ".join(["Substantive article sentence."] * 30)

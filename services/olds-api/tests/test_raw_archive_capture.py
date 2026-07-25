@@ -13,6 +13,7 @@ from jojo_olds_api.news_models import (
 )
 from jojo_olds_api.raw_archive_capture import (
     ManifestItem,
+    REUTERS_SYNDICATION_SEARCH_ENDPOINT,
     WAYBACK_TIMEMAP_ENDPOINT,
     capture_item,
     capture_summary,
@@ -22,6 +23,7 @@ from jojo_olds_api.raw_archive_capture import (
     mark_capture_downloading,
     pending_captures,
     record_capture_result,
+    reuters_syndication_search_url,
     reset_completed_capture_for_retry,
     resolved_capture_candidate,
     score_raw_capture,
@@ -522,6 +524,182 @@ def test_unsupported_publisher_does_not_query_wayback_timemap(
 
     assert result["status"] == "error"
     assert client.requests == [guessed_url]
+
+
+def test_reuters_capture_falls_back_to_validated_syndicated_html(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.reuters.com/business/autos-transportation/"
+        "boeing-justice-department-seek-judges-approval-"
+        "deal-opposed-by-crash-victims-2025-07-03"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20250704000000id_/"
+        + canonical_url
+    )
+    syndicated_url = (
+        "https://www.yahoo.com/news/"
+        "boeing-justice-department-seek-judges-035416509.html"
+    )
+    item = ManifestItem(
+        publisher="reuters",
+        canonical_url=canonical_url,
+        published_at="2025-07-03T00:00:00Z",
+        section="business",
+        candidates=(candidate(guessed_url, "20250704000000"),),
+    )
+    search_url = reuters_syndication_search_url(item)
+    assert search_url.startswith(REUTERS_SYNDICATION_SEARCH_ENDPOINT)
+    search_html = f"""
+    <html><body><ol id="web"><li><h3>
+      <a href="{syndicated_url}">Syndicated copy</a>
+    </h3></li></ol></body></html>
+    """.encode()
+    syndicated_html = b"""
+    <!doctype html><html><head>
+      <script type="application/ld+json">
+      {
+        "@type": "NewsArticle",
+        "headline": "Boeing and Justice Department seek judge's approval for deal opposed by crash victims' families",
+        "datePublished": "2025-07-03T03:54:16Z",
+        "author": {"name": "Reuters"}
+      }
+      </script>
+    </head><body><article>
+      <p>By David Shepardson</p>
+      <p>(Reuters) - Boeing and the Justice Department asked a U.S. judge
+      to approve an agreement concerning the 737 MAX case. This paragraph
+      contains enough substantive reporting to identify the syndicated wire
+      article and distinguish it from a search result, abstract, or shell.</p>
+      <p>The agreement includes compensation for victims' families and other
+      obligations. The report continues with court arguments, procedural
+      history, financial terms, and responses from the parties so that the
+      captured body is long enough for full-article validation.</p>
+      <p>Additional reporting explains the earlier plea agreement, the two
+      crashes, regulatory findings, and the positions taken by relatives.
+      This is retained as the raw HTML supplied by the syndication host.</p>
+    </article></body></html>
+    """ + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                401,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            search_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                search_html,
+                search_url,
+            ),
+            syndicated_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                syndicated_html,
+                syndicated_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [guessed_url, search_url, syndicated_url]
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.OTHER
+    assert capture.selected_candidate.snapshot_url == syndicated_url
+    assert capture.final_url == syndicated_url
+    assert capture.quality_signals["reutersSyndicationValidated"] is True
+    assert capture.quality_signals["syndicationReutersAttributed"] is True
+    assert capture.quality_signals["syndicationBodyCharacters"] >= 400
+
+
+def test_reuters_syndication_rejects_unattributed_related_article(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.reuters.com/world/example-related-story-2025-07-03"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20250704000000id_/"
+        + canonical_url
+    )
+    related_url = "https://example.com/example-related-story"
+    item = ManifestItem(
+        publisher="reuters",
+        canonical_url=canonical_url,
+        published_at="2025-07-03T00:00:00Z",
+        section="world",
+        candidates=(candidate(guessed_url, "20250704000000"),),
+    )
+    search_url = reuters_syndication_search_url(item)
+    search_html = f"""
+    <html><body><ol id="web"><li><h3>
+      <a href="{related_url}">Related article</a>
+    </h3></li></ol></body></html>
+    """.encode()
+    related_html = b"""
+    <!doctype html><html><head>
+      <script type="application/ld+json">
+      {
+        "@type": "NewsArticle",
+        "headline": "Example related story",
+        "datePublished": "2025-07-03T03:00:00Z",
+        "author": {"name": "Another Publisher"}
+      }
+      </script>
+    </head><body><article>
+      <p>This independently written report discusses a similar subject but
+      does not carry the wire service byline or attribution required by the
+      archive. It has enough text to pass a naive length-only article check.</p>
+      <p>More unrelated reporting is included here to ensure the rejection is
+      caused by provenance validation rather than by a short-body threshold.
+      The candidate must never be stored as if it were the original wire.</p>
+      <p>A final paragraph adds context and length while still omitting any
+      reference to the source whose canonical URL is being archived.</p>
+    </article></body></html>
+    """ + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                401,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            search_url: (
+                200,
+                {"content-type": "text/html"},
+                search_html,
+                search_url,
+            ),
+            related_url: (
+                200,
+                {"content-type": "text/html"},
+                related_html,
+                related_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "error"
+    assert "missing-reuters-attribution" in result["error"]
+    assert not (tmp_path / "objects").exists()
 
 
 def test_capture_state_records_result_and_summary(tmp_path: Path):
