@@ -25,6 +25,7 @@ ACCEPTED_HTTP_STATUSES = {200, 206}
 WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"
 WAYBACK_TIMEMAP_MAXIMUM_BYTES = 2_000_000
 WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES = 8
+WAYBACK_TIMEMAP_FALLBACK_PUBLISHERS = {"bloomberg", "nyt"}
 _HTML_MARKERS = (
     b"<!doctype html",
     b"<html",
@@ -405,7 +406,10 @@ def capture_item(
         if response[5] == 100:
             break
 
-    if best_response is None and item.publisher == "bloomberg":
+    if (
+        best_response is None
+        and item.publisher in WAYBACK_TIMEMAP_FALLBACK_PUBLISHERS
+    ):
         try:
             fallback_candidates = discover_wayback_timemap_candidates(
                 item,
@@ -591,7 +595,7 @@ def discover_wayback_timemap_candidates(
             _wayback_datetime(timestamp) is None
             or status != 200
             or mime_type.casefold() != "text/html"
-            or not _same_bloomberg_article_url(
+            or not _same_article_url(
                 original,
                 item.canonical_url,
             )
@@ -638,13 +642,14 @@ def _timemap_value(
     return str(row[index]).strip()
 
 
-def _same_bloomberg_article_url(first: str, second: str) -> bool:
+def _same_article_url(first: str, second: str) -> bool:
     first_parts = urlsplit(first)
     second_parts = urlsplit(second)
     first_host = (first_parts.hostname or "").casefold().removeprefix("www.")
     second_host = (second_parts.hostname or "").casefold().removeprefix("www.")
     return (
-        first_host == second_host == "bloomberg.com"
+        first_host == second_host
+        and bool(first_host)
         and first_parts.path.rstrip("/") == second_parts.path.rstrip("/")
     )
 

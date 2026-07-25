@@ -409,7 +409,86 @@ def test_bloomberg_capture_falls_back_to_exact_timemap_snapshot(
     ]
 
 
-def test_non_bloomberg_capture_does_not_query_wayback_timemap(
+def test_nyt_capture_uses_exact_timemap_snapshot(tmp_path: Path):
+    canonical_url = (
+        "https://www.nytimes.com/2025/11/24/briefing/"
+        "negotiating-peace-in-ukraine.html"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20251125000000id_/" + canonical_url
+    )
+    exact_url = (
+        "https://web.archive.org/web/20251124122247id_/" + canonical_url
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.nytimes.com%2F2025%2F11%2F24%2Fbriefing%2F"
+        "negotiating-peace-in-ukraine.html"
+    )
+    timemap = json.dumps(
+        [
+            [
+                "urlkey",
+                "timestamp",
+                "original",
+                "mimetype",
+                "statuscode",
+                "digest",
+                "length",
+            ],
+            [
+                "com,nytimes)/2025/11/24/briefing/example.html",
+                "20251124122247",
+                canonical_url,
+                "text/html",
+                "200",
+                "NYT-EXACT",
+                str(len(ARTICLE)),
+            ],
+        ]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                404,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                timemap,
+                timemap_url,
+            ),
+            exact_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                exact_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at="2025-11-24T12:00:00Z",
+        section=None,
+        candidates=(candidate(guessed_url, "20251125000000"),),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [guessed_url, timemap_url, exact_url]
+    assert result["capture"].selected_candidate.digest == "NYT-EXACT"
+
+
+def test_unsupported_publisher_does_not_query_wayback_timemap(
     tmp_path: Path,
 ):
     canonical_url = "https://apnews.com/article/example"
