@@ -48,6 +48,12 @@ checkpoint therefore never references data that has not reached B2.
 Cancelling a workflow skips checkpoint and object publishing, while ordinary
 failures still publish a recoverable checkpoint.
 
+During a long capture batch, the workflow also creates a consistent SQLite
+backup and incrementally uploads completed objects every ten minutes. The
+checkpoint is still published last. A runner failure therefore loses at most
+the work completed since the latest live checkpoint rather than the whole
+batch.
+
 ## Schemas
 
 - [`schemas/jojo-raw-capture-v1.schema.json`](schemas/jojo-raw-capture-v1.schema.json)
