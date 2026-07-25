@@ -380,6 +380,9 @@ jobs:
             --max-captures "$MAX_CAPTURES"
             --max-runtime-minutes "$MAX_RUNTIME_MINUTES"
             --max-record-attempts "$MAX_RECORD_ATTEMPTS"
+            --validation-sample-per-year 500
+            --validation-from-year "$FROM_YEAR"
+            --validation-to-year "$TO_YEAR"
             --progress-every 25
             --minimum-free-gb 2
           )

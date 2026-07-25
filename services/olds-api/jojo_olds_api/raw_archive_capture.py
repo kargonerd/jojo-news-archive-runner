@@ -226,9 +226,51 @@ def pending_captures(
     retry_errors: bool,
     maximum: int | None,
     maximum_record_attempts: int,
+    prioritize_parser_validation: bool = False,
 ) -> list[ManifestItem]:
     if maximum_record_attempts < 1:
         raise ValueError("maximum_record_attempts must be positive")
+    priority_urls: list[str] = []
+    if prioritize_parser_validation:
+        from .parser_validation import pending_parser_validation_urls
+
+        priority_urls = pending_parser_validation_urls(
+            connection,
+            maximum=maximum,
+            maximum_record_attempts=maximum_record_attempts,
+        )
+    priority_rows: list[tuple] = []
+    if priority_urls:
+        placeholders = ",".join("?" for _ in priority_urls)
+        rows_by_url = {
+            row[1]: row
+            for row in connection.execute(
+                f"""
+                SELECT
+                    publisher,
+                    canonical_url,
+                    published_at,
+                    section,
+                    candidates_json
+                FROM captures
+                WHERE canonical_url IN ({placeholders})
+                """,
+                priority_urls,
+            ).fetchall()
+        }
+        priority_rows = [
+            rows_by_url[url] for url in priority_urls if url in rows_by_url
+        ]
+
+    remaining = (
+        None
+        if maximum is None
+        else max(0, maximum - len(priority_rows))
+    )
+    if remaining == 0:
+        rows = priority_rows
+        return [_manifest_item_from_capture_row(row) for row in rows]
+
     statuses = ("pending", "error") if retry_errors else ("pending",)
     placeholders = ",".join("?" for _ in statuses)
     query = f"""
@@ -239,23 +281,34 @@ def pending_captures(
         ORDER BY COALESCE(published_at, ''), canonical_url
     """
     parameters: list[object] = [*statuses, maximum_record_attempts]
-    if maximum is not None:
-        query += " LIMIT ?"
-        parameters.append(maximum)
-    rows = connection.execute(query, parameters).fetchall()
-    return [
-        ManifestItem(
-            publisher=row[0],
-            canonical_url=row[1],
-            published_at=row[2],
-            section=row[3],
-            candidates=tuple(
-                CaptureCandidate.model_validate(candidate)
-                for candidate in json.loads(row[4])
-            ),
+    if priority_urls:
+        excluded = ",".join("?" for _ in priority_urls)
+        query = query.replace(
+            "ORDER BY COALESCE(published_at, ''), canonical_url",
+            f"""
+              AND canonical_url NOT IN ({excluded})
+            ORDER BY COALESCE(published_at, ''), canonical_url
+            """,
         )
-        for row in rows
-    ]
+        parameters.extend(priority_urls)
+    if remaining is not None:
+        query += " LIMIT ?"
+        parameters.append(remaining)
+    rows = priority_rows + connection.execute(query, parameters).fetchall()
+    return [_manifest_item_from_capture_row(row) for row in rows]
+
+
+def _manifest_item_from_capture_row(row: tuple) -> ManifestItem:
+    return ManifestItem(
+        publisher=row[0],
+        canonical_url=row[1],
+        published_at=row[2],
+        section=row[3],
+        candidates=tuple(
+            CaptureCandidate.model_validate(candidate)
+            for candidate in json.loads(row[4])
+        ),
+    )
 
 
 def mark_capture_downloading(
@@ -577,7 +630,7 @@ def capture_summary(
         WHERE status='complete'
         """
     ).fetchone()
-    return {
+    result = {
         "formatVersion": SCHEMA_VERSION,
         "capturesByStatus": statuses,
         "rawHtmlBytes": int(sizes[0]),
@@ -594,6 +647,18 @@ def capture_summary(
         if (output_dir / "records").exists()
         else 0,
     }
+    validation_table = connection.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type='table' AND name='parser_validation_config'
+        """
+    ).fetchone()
+    if validation_table:
+        from .parser_validation import parser_validation_summary
+
+        result["parserValidation"] = parser_validation_summary(connection)
+    return result
 
 
 def _insert_manifest_batch(

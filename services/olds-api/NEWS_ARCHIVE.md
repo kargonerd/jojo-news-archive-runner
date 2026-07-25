@@ -17,6 +17,14 @@ The raw stage stores the response bytes before Beautiful Soup or any other
 parser changes them. Image URLs are recorded only by the parser. Images are not
 downloaded by `capture_archive_batch.py`.
 
+Parser readiness is measured on a reproducible, publisher-and-year-stratified
+sample. The archive workflow selects URLs by a stable SHA-256 priority, captures
+years in round-robin order, and evaluates at least 500 articles for every
+configured year. Validation stores metrics and issue codes, never article body
+text. A publisher/year is not ready until it has 500 evaluated samples, no
+parser exceptions, at least a 95% complete-extraction rate, and at least a 95%
+QA-pass rate.
+
 ## B2 layout
 
 For a publisher and discovery window, the workflow writes:
@@ -33,6 +41,10 @@ news-archive/v1/{publisher}/{fromYear}-{toYear}/{manifestMode}/
     capture.sqlite3.gz
     summary.json
 ```
+
+The capture checkpoint also contains the deterministic sample plan and parser
+validation results. `state/summary.json` exposes progress and readiness by
+year under `parserValidation`.
 
 HTML objects are addressed by the SHA-256 of the uncompressed response. Gzip is
 deterministic (`mtime=0`), so repeated identical captures produce the same B2

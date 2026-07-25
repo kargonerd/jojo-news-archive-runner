@@ -17,6 +17,11 @@ if str(SERVICE_ROOT) not in sys.path:
 
 from jojo_olds_api.bloomberg_archive_download import ArchiveClient
 from jojo_olds_api.publisher_specs import publisher_spec
+from jojo_olds_api.parser_validation import (
+    ensure_parser_validation_plan,
+    is_parser_validation_sample,
+    record_parser_validation,
+)
 from jojo_olds_api.raw_archive_capture import (
     ManifestItem,
     capture_item,
@@ -47,6 +52,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-html-mb", type=int, default=25)
     parser.add_argument("--progress-every", type=int, default=25)
     parser.add_argument("--minimum-free-gb", type=float, default=2.0)
+    parser.add_argument(
+        "--validation-sample-per-year",
+        type=int,
+        default=0,
+        help="Prioritize a reproducible random parser QA sample for every year.",
+    )
+    parser.add_argument("--validation-from-year", type=int)
+    parser.add_argument("--validation-to-year", type=int)
     parser.add_argument(
         "--authorization-reference",
         default="user-provided-authorization",
@@ -82,11 +95,27 @@ def main() -> int:
         manifest_path=args.manifest,
         publisher=args.publisher,
     )
+    validation_plan = None
+    if args.validation_sample_per_year:
+        if args.validation_from_year is None or args.validation_to_year is None:
+            raise SystemExit(
+                "--validation-from-year and --validation-to-year are required "
+                "when parser validation sampling is enabled"
+            )
+        validation_plan = ensure_parser_validation_plan(
+            connection,
+            publisher=args.publisher,
+            from_year=args.validation_from_year,
+            to_year=args.validation_to_year,
+            target_per_year=args.validation_sample_per_year,
+            maximum_record_attempts=args.max_record_attempts,
+        )
     items = pending_captures(
         connection,
         retry_errors=args.retry_errors,
         maximum=args.max_captures,
         maximum_record_attempts=args.max_record_attempts,
+        prioritize_parser_validation=bool(args.validation_sample_per_year),
     )
     print(
         json.dumps(
@@ -98,6 +127,7 @@ def main() -> int:
                 "freeGB": round(free_gb, 2),
                 "queued": len(items),
                 **manifest_result,
+                "parserValidationPlan": validation_plan,
             },
             ensure_ascii=False,
         ),
@@ -168,6 +198,20 @@ def main() -> int:
                             "error": f"{type(exc).__name__}: {exc}",
                         }
                     record_capture_result(connection, result)
+                    validation_result = None
+                    capture = result.get("capture")
+                    if (
+                        capture is not None
+                        and is_parser_validation_sample(
+                            connection,
+                            item.canonical_url,
+                        )
+                    ):
+                        validation_result = record_parser_validation(
+                            connection,
+                            capture=capture,
+                            archive_root=args.output_dir,
+                        )
                     completed += 1
                     failures += result["status"] == "error"
                     submit_one(executor)
@@ -190,6 +234,7 @@ def main() -> int:
                                     ),
                                     "lastUrl": result["canonicalUrl"],
                                     "lastStatus": result["status"],
+                                    "lastParserValidation": validation_result,
                                 },
                                 ensure_ascii=False,
                             ),
