@@ -472,6 +472,28 @@ def test_raw_quality_rejects_client_challenge_shell():
     assert signals["accessChallengeShell"] is True
 
 
+def test_raw_quality_rejects_ft_zephr_barrier_shell():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Article headline</title></head>
+        <body><div id="barrier-page">
+        <h1>Article headline</h1>
+        <span>Subscribe to unlock this article</span>
+        </div>
+        <script>
+        window.Zephr.outcomes['paywall'] = {
+          featureLabel: 'Paywall'
+        };
+        </script></body></html>
+        """ + (b" " * 220_000),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["subscriptionShell"] is True
+
+
 def test_raw_quality_rejects_javascript_redirect_shell():
     score, signals = score_raw_capture(
         b"""

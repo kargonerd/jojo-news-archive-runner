@@ -57,6 +57,9 @@ _REDIRECT_SHELL_MARKERS = (
 )
 _SUBSCRIPTION_SHELL_MARKERS = (
     b"<title>subscribe to read",
+    b'id="barrier-page"',
+    b"subscribe to unlock this article",
+    b"window.zephr.outcomes['paywall']",
     b"join over 300,000 finance professionals",
     b"discover all the plans currently available in your country",
     b"during your trial you will have complete digital access to ft.com",

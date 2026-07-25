@@ -446,7 +446,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.6.0"
+    assert article.extraction.parser_version == "ft-parser/0.7.0"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
