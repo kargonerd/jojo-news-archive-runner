@@ -190,3 +190,54 @@ def test_no_date_url_uses_capture_time_for_year_stratification():
     ).fetchone()[0]
 
     assert published_at == "2020-06-15T12:00:00+00:00"
+
+
+def test_urlkey_discovery_round_robins_patterns():
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2020,
+        to_year=2020,
+        collapse="urlkey",
+    )
+    first_pattern, _ = next_discovery_query(connection)
+    connection.execute(
+        """
+        UPDATE discovery_queries
+        SET status='running', pages=5, resume_key='resume'
+        WHERE pattern=?
+        """,
+        (first_pattern,),
+    )
+
+    next_pattern, _ = next_discovery_query(connection)
+
+    assert next_pattern != first_pattern
+    assert next_pattern == "www.wsj.com/articles/b*"
+
+
+def test_digest_discovery_keeps_exhausting_current_pattern():
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2020,
+        to_year=2020,
+        collapse="digest",
+    )
+    first_pattern, _ = next_discovery_query(connection)
+    connection.execute(
+        """
+        UPDATE discovery_queries
+        SET status='running', pages=5, resume_key='resume'
+        WHERE pattern=?
+        """,
+        (first_pattern,),
+    )
+
+    next_pattern, _ = next_discovery_query(connection)
+
+    assert next_pattern == first_pattern

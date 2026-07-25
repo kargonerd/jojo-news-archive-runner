@@ -258,7 +258,17 @@ def next_discovery_query(
         SELECT pattern, resume_key
         FROM discovery_queries
         WHERE status != 'complete'
-        ORDER BY rowid
+        ORDER BY
+            CASE
+                WHEN (
+                    SELECT value
+                    FROM discovery_metadata
+                    WHERE key='collapse'
+                )='urlkey'
+                THEN pages
+                ELSE 0
+            END,
+            rowid
         LIMIT 1
         """
     ).fetchone()
