@@ -308,3 +308,57 @@ def test_parser_keeps_legitimate_short_brief_and_removes_legacy_nyt_noise():
     assert "Advertisement" not in result.plain_text
     assert "Order Reprints" not in result.plain_text
     assert "Seven former players" in result.plain_text
+
+
+def test_parser_extracts_bloomberg_timeline_feature():
+    canonical_url = (
+        "https://www.bloomberg.com/features/2016/example.html"
+    )
+    timeline_items = "".join(
+        f"""
+        <article class="event">
+          <div class="copy">
+            <div class="dates">{2000 + index}</div>
+            <div class="text">Career milestone number {index} includes
+            substantive biographical reporting and context.</div>
+          </div>
+        </article>
+        """
+        for index in range(8)
+    )
+    html = f"""
+    <html>
+      <head>
+        <meta property="og:title" content="How Did I Get Here? Example">
+        <meta name="pdate" content="20160109">
+      </head>
+      <body>
+        <div id="main">
+          <div class="timeline_header">
+            <h1>Example Person</h1>
+            <div id="current-title">Chief executive officer</div>
+          </div>
+          <div class="timeline">
+            <article class="event title">
+              <div class="text">Work Experience</div>
+            </article>
+            {timeline_items}
+          </div>
+        </div>
+      </body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Chief executive officer" in result.plain_text
+    assert "Career milestone number 7" in result.plain_text
+    assert any(
+        block.type.value == "heading" and block.text == "Work Experience"
+        for block in result.blocks
+    )

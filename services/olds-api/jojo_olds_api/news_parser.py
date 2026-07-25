@@ -326,7 +326,29 @@ def _extract_blocks(
 ) -> tuple[list[ContentBlock], list[ImageCandidate]]:
     blocks: list[ContentBlock] = []
     images: list[ImageCandidate] = []
-    selected = body.select("p, h2, h3, h4, h5, h6, blockquote, ul, ol, figure, img, table, hr, iframe")
+    selectors = [
+        "p",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "blockquote",
+        "ul",
+        "ol",
+        "figure",
+        "img",
+        "table",
+        "hr",
+        "iframe",
+        *spec.text_block_selectors,
+    ]
+    selected = body.select(", ".join(selectors))
+    publisher_text_node_ids = {
+        id(node)
+        for selector in spec.text_block_selectors
+        for node in body.select(selector)
+    }
     for node in selected:
         if _has_selected_ancestor(node, body):
             continue
@@ -339,6 +361,27 @@ def _extract_blocks(
                     ContentBlock(
                         type=BlockType.PARAGRAPH,
                         position=position,
+                        text=text,
+                        html=str(node),
+                    )
+                )
+        elif name in {"div", "span"} and id(node) in publisher_text_node_ids:
+            text = _clean_text(node.get_text(" ", strip=True))
+            if text:
+                event = node.find_parent("article")
+                is_heading = bool(
+                    isinstance(event, Tag)
+                    and "title" in (event.get("class") or [])
+                )
+                blocks.append(
+                    ContentBlock(
+                        type=(
+                            BlockType.HEADING
+                            if is_heading
+                            else BlockType.PARAGRAPH
+                        ),
+                        position=position,
+                        level=2 if is_heading else None,
                         text=text,
                         html=str(node),
                     )

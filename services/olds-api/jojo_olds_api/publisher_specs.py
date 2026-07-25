@@ -30,6 +30,7 @@ class PublisherSpec:
     edition: str | None
     body_selectors: tuple[str, ...]
     remove_selectors: tuple[str, ...] = ()
+    text_block_selectors: tuple[str, ...] = ()
     preferred_image_hosts: tuple[str, ...] = ()
 
 
@@ -64,7 +65,7 @@ PUBLISHER_SPECS = {
     ),
     "bloomberg": PublisherSpec(
         publisher="bloomberg",
-        parser_version="bloomberg-parser/0.2.0",
+        parser_version="bloomberg-parser/0.3.0",
         domains=("bloomberg.com", "www.bloomberg.com"),
         default_language="en",
         edition="global",
@@ -73,11 +74,17 @@ PUBLISHER_SPECS = {
             "[data-component='article-body']",
             "article .body-content",
             "article [itemprop='articleBody']",
+            "#main",
             "article",
         ),
         remove_selectors=(
             "[data-position='in-article']",
             "[data-position='mobile-box']",
+        ),
+        text_block_selectors=(
+            ".timeline_header #current-title",
+            ".event .text",
+            ".event .caption",
         ),
         preferred_image_hosts=("assets.bwbx.io", "assets.bwbx.com"),
     ),

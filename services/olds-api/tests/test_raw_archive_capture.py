@@ -316,6 +316,21 @@ def test_raw_quality_rejects_authentication_shell():
     assert signals["authenticationShell"] is True
 
 
+def test_raw_quality_rejects_access_challenge_shell():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Bloomberg - Are you a robot?</title></head>
+        <body><p>We've detected unusual activity from your network.</p></body>
+        </html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["accessChallengeShell"] is True
+
+
 def test_wayback_candidate_records_actual_redirected_snapshot():
     requested = candidate(
         (

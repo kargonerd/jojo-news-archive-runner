@@ -39,6 +39,12 @@ _AUTH_SHELL_MARKERS = (
     b"sign in to continue",
     b"log in to continue",
 )
+_ACCESS_CHALLENGE_MARKERS = (
+    b"are you a robot?",
+    b"we've detected unusual activity",
+    b"verify you are human",
+    b"checking if the site connection is secure",
+)
 _WAYBACK_FINAL_RE = re.compile(
     r"https?://web\.archive\.org/web/(\d{14})(?:id_|im_|js_|cs_)?/",
     re.IGNORECASE,
@@ -375,6 +381,7 @@ def capture_item(
             or not signals["looksLikeHtml"]
             or signals["archiveErrorPage"]
             or signals["authenticationShell"]
+            or signals["accessChallengeShell"]
         ):
             failures.append(
                 f"{candidate.provider.value}:http-{status_code}:score-{quality_score}"
@@ -491,6 +498,10 @@ def score_raw_capture(
             or "/account/login" in final_url_lower
         )
     )
+    access_challenge_shell = (
+        not has_article_marker
+        and any(marker in prefix for marker in _ACCESS_CHALLENGE_MARKERS)
+    )
     substantial = len(content) >= 2_048
     score = 0
     if http_status in ACCEPTED_HTTP_STATUSES:
@@ -503,13 +514,14 @@ def score_raw_capture(
         score += 15
     if not archive_error_page:
         score += 10
-    if authentication_shell:
+    if authentication_shell or access_challenge_shell:
         score = max(0, score - 60)
     return score, {
         "looksLikeHtml": looks_like_html,
         "archiveErrorPage": archive_error_page,
         "hasArticleMarker": has_article_marker,
         "authenticationShell": authentication_shell,
+        "accessChallengeShell": access_challenge_shell,
         "substantialResponse": substantial,
         "rawBytes": len(content),
     }
