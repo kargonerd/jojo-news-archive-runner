@@ -711,7 +711,10 @@ def _select_additional_samples(
           ON sample.canonical_url=capture.canonical_url
         WHERE capture.published_at >= ?
           AND capture.published_at < ?
-          AND capture.status != 'complete'
+          AND (
+            capture.status != 'complete'
+            OR capture.raw_path IS NOT NULL
+          )
           AND sample.canonical_url IS NULL
         """,
         (start, end),

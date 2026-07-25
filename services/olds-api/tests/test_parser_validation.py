@@ -136,6 +136,59 @@ def test_validation_plan_is_random_reproducible_and_balanced(tmp_path: Path):
     ]
 
 
+def test_validation_plan_can_add_previously_completed_raw_captures(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    connection.execute(
+        """
+        UPDATE captures
+        SET status='complete',
+            raw_path='objects/html/aa/already-captured.html.gz',
+            raw_sha256=?,
+            raw_bytes=1000,
+            stored_bytes=500
+        WHERE published_at >= '2020-01-01'
+          AND published_at < '2021-01-01'
+          AND canonical_url != 'https://apnews.com/article/2020-0'
+        """,
+        ("a" * 64,),
+    )
+    connection.commit()
+
+    plan = ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    planned = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM parser_validation_samples
+        WHERE sample_year=2020
+        """
+    ).fetchone()[0]
+    completed_planned = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM parser_validation_samples AS sample
+        JOIN captures AS capture
+          ON capture.canonical_url=sample.canonical_url
+        WHERE sample.sample_year=2020
+          AND capture.status='complete'
+          AND capture.raw_path IS NOT NULL
+        """
+    ).fetchone()[0]
+
+    assert plan["years"]["2020"]["addedToPlan"] == 2
+    assert planned == 2
+    assert completed_planned >= 1
+
+
 def test_completed_validation_sample_records_parser_quality(tmp_path: Path):
     connection = _state_with_years(tmp_path)
     ensure_parser_validation_plan(
