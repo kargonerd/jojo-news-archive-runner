@@ -19,10 +19,12 @@ from jojo_olds_api.wayback_manifest import (
     infer_published_at,
     initialize_discovery_schema,
     initialize_wsj_bluesky_schema,
+    initialize_wsj_google_news_schema,
     initialize_wsj_rss_schema,
     next_discovery_query,
     parse_cdx_json,
     process_wsj_bluesky_page,
+    process_wsj_google_news_feed,
     process_wsj_rss_feeds,
     record_discovery_page,
     wsj_catalog_count_for_year,
@@ -403,6 +405,106 @@ def test_wsj_official_rss_discovers_current_section_urls(
     assert row["publishedAt"] == "2026-07-25T12:34:56+00:00"
     assert len(row["candidates"]) == 4
     assert row["candidates"][-1]["provider"] == "live-origin"
+
+
+class StubGoogleNewsResponse:
+    def __init__(self, value: str):
+        self.text = value
+        self.content = value.encode()
+
+    def raise_for_status(self):
+        return None
+
+
+class StubGoogleNewsClient:
+    def get(self, url, params=None):
+        if url.endswith("/rss/search"):
+            assert params["q"].startswith("site:wsj.com/articles")
+            return StubGoogleNewsResponse(
+                """
+                <rss version="2.0">
+                  <channel>
+                    <item>
+                      <link>https://news.google.com/rss/articles/ENCODED-ID</link>
+                      <pubDate>Sat, 21 Sep 2024 07:00:00 GMT</pubDate>
+                    </item>
+                  </channel>
+                </rss>
+                """
+            )
+        assert url.endswith("/rss/articles/ENCODED-ID")
+        return StubGoogleNewsResponse(
+            '<c-wiz><div data-n-a-sg="SIGNATURE" '
+            'data-n-a-ts="1726902000"></div></c-wiz>'
+        )
+
+    def post(self, url, data, headers):
+        assert url.endswith("/data/batchexecute")
+        assert "ENCODED-ID" in data["f.req"]
+        assert headers["Origin"] == "https://news.google.com"
+        inner = json.dumps(
+            [
+                "garturlres",
+                (
+                    "https://www.wsj.com/articles/"
+                    "google-news-story-a1b2c3d4"
+                ),
+            ]
+        )
+        return StubGoogleNewsResponse(
+            ")]}'\n\n"
+            + json.dumps([["wrb.fr", "Fbv4je", inner]])
+        )
+
+
+def test_wsj_google_news_fills_historical_catalog_gap(
+    tmp_path: Path,
+):
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2024,
+        to_year=2026,
+        collapse="urlkey",
+    )
+    initialize_wsj_google_news_schema(connection)
+
+    result = process_wsj_google_news_feed(
+        connection,
+        spec=spec,
+        http_client=StubGoogleNewsClient(),
+        from_year=2024,
+        to_year=2026,
+        maximum_decodes=1,
+        minimum_catalog=1,
+    )
+    destination = tmp_path / "wsj-google-news-manifest.jsonl.gz"
+    summary = export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=destination,
+        from_year=2024,
+        to_year=2026,
+    )
+
+    assert result == {
+        "status": "complete-target-met",
+        "itemsSeen": 1,
+        "decodesAttempted": 1,
+        "accepted": 1,
+        "catalogCount2024": 1,
+        "errors": [],
+    }
+    assert wsj_catalog_count_for_year(connection, 2024) == 1
+    assert summary["articles"] == 1
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        row = json.loads(handle.readline())
+    assert row["canonicalUrl"].endswith(
+        "/google-news-story-a1b2c3d4"
+    )
+    assert row["publishedAt"] == "2024-09-21T07:00:00+00:00"
 
 
 def test_digest_discovery_keeps_exhausting_current_pattern():

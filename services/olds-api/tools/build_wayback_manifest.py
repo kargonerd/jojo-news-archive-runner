@@ -21,12 +21,15 @@ from jojo_olds_api.wayback_manifest import (
     export_capture_manifest,
     initialize_discovery_schema,
     initialize_wsj_bluesky_schema,
+    initialize_wsj_google_news_schema,
     initialize_wsj_rss_schema,
     next_discovery_query,
     process_wsj_bluesky_page,
+    process_wsj_google_news_feed,
     process_wsj_rss_feeds,
     record_discovery_page,
     wsj_bluesky_should_continue,
+    wsj_google_news_should_continue,
 )
 
 
@@ -72,9 +75,11 @@ def main() -> int:
         collapse=args.collapse,
     )
     bluesky_pages_this_run = 0
+    google_news_items_this_run = 0
     deferred_errors: list[str] = []
     if args.publisher == "wsj" and args.collapse == "urlkey":
         initialize_wsj_bluesky_schema(connection)
+        initialize_wsj_google_news_schema(connection)
         initialize_wsj_rss_schema(connection)
         with httpx.Client(
             headers={
@@ -86,6 +91,43 @@ def main() -> int:
             follow_redirects=True,
             timeout=args.timeout,
         ) as http_client:
+            if wsj_google_news_should_continue(
+                connection,
+                from_year=args.from_year,
+                to_year=args.to_year,
+            ):
+                try:
+                    google_news_result = process_wsj_google_news_feed(
+                        connection,
+                        spec=spec,
+                        http_client=http_client,
+                        from_year=args.from_year,
+                        to_year=args.to_year,
+                    )
+                    google_news_items_this_run = int(
+                        google_news_result["decodesAttempted"]
+                    )
+                    google_news_errors = google_news_result.pop("errors")
+                    deferred_errors.extend(
+                        f"WSJ Google News: {error}"
+                        for error in google_news_errors
+                    )
+                    print(
+                        json.dumps(
+                            {
+                                "event": "wsj-google-news-poll",
+                                **google_news_result,
+                                "errors": len(google_news_errors),
+                            },
+                            ensure_ascii=False,
+                        ),
+                        flush=True,
+                    )
+                except Exception as exc:
+                    deferred_errors.append(
+                        "WSJ Google News: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
             rss_result = process_wsj_rss_feeds(
                 connection,
                 spec=spec,
@@ -220,6 +262,7 @@ def main() -> int:
         "state": str(state),
         "pagesThisRun": pages_this_run,
         "blueskyPagesThisRun": bluesky_pages_this_run,
+        "googleNewsItemsThisRun": google_news_items_this_run,
         "deferredError": (
             "; ".join(deferred_errors) if deferred_errors else None
         ),

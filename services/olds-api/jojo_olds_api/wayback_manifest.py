@@ -28,6 +28,13 @@ WSJ_BLUESKY_ENDPOINT = (
 )
 WSJ_BLUESKY_START_YEAR = 2024
 WSJ_CATALOG_TARGET_PER_YEAR = 750
+WSJ_GOOGLE_NEWS_YEAR = 2024
+WSJ_GOOGLE_NEWS_MINIMUM_CATALOG = 500
+WSJ_GOOGLE_NEWS_MAXIMUM_DECODES = 25
+GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
+GOOGLE_NEWS_DECODE_ENDPOINT = (
+    "https://news.google.com/_/DotsSplashUi/data/batchexecute"
+)
 WSJ_RSS_ENDPOINTS = (
     "https://feeds.content.dowjones.io/public/rss/RSSOpinion",
     "https://feeds.content.dowjones.io/public/rss/RSSWorldNews",
@@ -356,6 +363,318 @@ def initialize_wsj_rss_schema(
     connection.commit()
 
 
+def initialize_wsj_google_news_schema(
+    connection: sqlite3.Connection,
+) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS wsj_google_news_state (
+            singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+            status TEXT NOT NULL DEFAULT 'pending',
+            polls INTEGER NOT NULL DEFAULT 0,
+            items_seen INTEGER NOT NULL DEFAULT 0,
+            decodes_attempted INTEGER NOT NULL DEFAULT 0,
+            urls_accepted INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS wsj_google_news_articles (
+            canonical_url TEXT PRIMARY KEY,
+            published_at TEXT NOT NULL,
+            google_news_url TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO wsj_google_news_state(
+            singleton,
+            updated_at
+        ) VALUES (1, ?)
+        """,
+        (_now_iso(),),
+    )
+    connection.commit()
+
+
+def wsj_google_news_should_continue(
+    connection: sqlite3.Connection,
+    *,
+    from_year: int,
+    to_year: int,
+    minimum_catalog: int = WSJ_GOOGLE_NEWS_MINIMUM_CATALOG,
+) -> bool:
+    initialize_wsj_google_news_schema(connection)
+    if not from_year <= WSJ_GOOGLE_NEWS_YEAR <= to_year:
+        return False
+    if (
+        wsj_catalog_count_for_year(connection, WSJ_GOOGLE_NEWS_YEAR)
+        >= minimum_catalog
+    ):
+        with connection:
+            connection.execute(
+                """
+                UPDATE wsj_google_news_state
+                SET status='complete-target-met',
+                    last_error=NULL,
+                    updated_at=?
+                WHERE singleton=1
+                """,
+                (_now_iso(),),
+            )
+        return False
+    status = connection.execute(
+        "SELECT status FROM wsj_google_news_state WHERE singleton=1"
+    ).fetchone()[0]
+    return not str(status).startswith("complete")
+
+
+def process_wsj_google_news_feed(
+    connection: sqlite3.Connection,
+    *,
+    spec: ArchiveSourceSpec,
+    http_client: httpx.Client,
+    from_year: int,
+    to_year: int,
+    maximum_decodes: int = WSJ_GOOGLE_NEWS_MAXIMUM_DECODES,
+    minimum_catalog: int = WSJ_GOOGLE_NEWS_MINIMUM_CATALOG,
+) -> dict[str, object]:
+    if spec.publisher != "wsj":
+        raise ValueError("Google News discovery is only supported for WSJ")
+    if maximum_decodes < 1:
+        raise ValueError("maximum_decodes must be positive")
+    initialize_wsj_google_news_schema(connection)
+    query = (
+        "site:wsj.com/articles "
+        "after:2024-01-01 before:2024-11-13"
+    )
+    response = http_client.get(
+        GOOGLE_NEWS_RSS_ENDPOINT,
+        params={
+            "q": query,
+            "hl": "en-US",
+            "gl": "US",
+            "ceid": "US:en",
+        },
+    )
+    response.raise_for_status()
+    root = ElementTree.fromstring(response.content)
+    items = root.findall("./channel/item")
+    rows: list[tuple[str, str, str, str]] = []
+    errors: list[str] = []
+    decodes_attempted = 0
+    for item in items:
+        if decodes_attempted >= maximum_decodes:
+            break
+        published_at = _parse_rss_datetime(item.findtext("pubDate"))
+        if (
+            published_at is None
+            or published_at.year != WSJ_GOOGLE_NEWS_YEAR
+            or not from_year <= published_at.year <= to_year
+        ):
+            continue
+        google_news_url = (item.findtext("link") or "").strip()
+        if not google_news_url:
+            continue
+        decodes_attempted += 1
+        try:
+            original_url = _decode_google_news_url(
+                http_client,
+                google_news_url,
+            )
+            canonical_url = normalize_article_url(spec, original_url)
+            if canonical_url is None:
+                raise ValueError("decoded URL is not a WSJ article")
+            rows.append(
+                (
+                    canonical_url,
+                    published_at.isoformat(),
+                    google_news_url,
+                    _now_iso(),
+                )
+            )
+        except Exception as exc:
+            errors.append(f"{type(exc).__name__}: {exc}")
+    with connection:
+        before = connection.total_changes
+        connection.executemany(
+            """
+            INSERT INTO wsj_google_news_articles(
+                canonical_url,
+                published_at,
+                google_news_url,
+                updated_at
+            ) VALUES (?, ?, ?, ?)
+            ON CONFLICT(canonical_url) DO UPDATE SET
+                published_at=MIN(
+                    wsj_google_news_articles.published_at,
+                    excluded.published_at
+                ),
+                google_news_url=excluded.google_news_url,
+                updated_at=excluded.updated_at
+            """,
+            rows,
+        )
+        accepted = connection.total_changes - before
+        catalog_count = wsj_catalog_count_for_year(
+            connection,
+            WSJ_GOOGLE_NEWS_YEAR,
+        )
+        status = (
+            "complete-target-met"
+            if catalog_count >= minimum_catalog
+            else "partial"
+        )
+        connection.execute(
+            """
+            UPDATE wsj_google_news_state
+            SET status=?,
+                polls=polls+1,
+                items_seen=items_seen+?,
+                decodes_attempted=decodes_attempted+?,
+                urls_accepted=urls_accepted+?,
+                last_error=?,
+                updated_at=?
+            WHERE singleton=1
+            """,
+            (
+                status,
+                len(items),
+                decodes_attempted,
+                accepted,
+                "; ".join(errors[-5:]) if errors else None,
+                _now_iso(),
+            ),
+        )
+    return {
+        "status": status,
+        "itemsSeen": len(items),
+        "decodesAttempted": decodes_attempted,
+        "accepted": accepted,
+        "catalogCount2024": catalog_count,
+        "errors": errors,
+    }
+
+
+def _decode_google_news_url(
+    http_client: httpx.Client,
+    google_news_url: str,
+) -> str:
+    parsed = httpx.URL(google_news_url)
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if (
+        parsed.host != "news.google.com"
+        or len(path_parts) < 2
+        or path_parts[-2] not in {"articles", "read"}
+    ):
+        raise ValueError("invalid Google News article URL")
+    article_id = path_parts[-1]
+    parameter_response = http_client.get(
+        f"https://news.google.com/rss/articles/{article_id}"
+    )
+    parameter_response.raise_for_status()
+    signature_match = re.search(
+        r'data-n-a-sg="([^"]+)"',
+        parameter_response.text,
+    )
+    timestamp_match = re.search(
+        r'data-n-a-ts="(\d+)"',
+        parameter_response.text,
+    )
+    if signature_match is None or timestamp_match is None:
+        raise ValueError("Google News decoding parameters are missing")
+    descriptor = [
+        "garturlreq",
+        [
+            [
+                "X",
+                "X",
+                ["X", "X"],
+                None,
+                None,
+                1,
+                1,
+                "US:en",
+                None,
+                1,
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+                1,
+            ],
+            "X",
+            "X",
+            1,
+            [1, 1, 1],
+            1,
+            1,
+            None,
+            0,
+            0,
+            None,
+            0,
+        ],
+        article_id,
+        int(timestamp_match.group(1)),
+        signature_match.group(1),
+    ]
+    request_payload = [
+        [
+            [
+                "Fbv4je",
+                json.dumps(
+                    descriptor,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            ]
+        ]
+    ]
+    decode_response = http_client.post(
+        GOOGLE_NEWS_DECODE_ENDPOINT,
+        data={
+            "f.req": json.dumps(
+                request_payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        },
+        headers={
+            "Origin": "https://news.google.com",
+            "Referer": "https://news.google.com/",
+        },
+    )
+    decode_response.raise_for_status()
+    for chunk in decode_response.text.split("\n\n"):
+        try:
+            payload = json.loads(chunk)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, list):
+            continue
+        for row in payload:
+            if (
+                not isinstance(row, list)
+                or len(row) < 3
+                or row[0] not in {"wrb.fr", "w779db"}
+                or row[1] != "Fbv4je"
+            ):
+                continue
+            inner = json.loads(row[2])
+            if (
+                isinstance(inner, list)
+                and len(inner) >= 2
+                and str(inner[1]).startswith(("http://", "https://"))
+            ):
+                return str(inner[1])
+    raise ValueError("Google News decoded URL is missing")
+
+
 def process_wsj_rss_feeds(
     connection: sqlite3.Connection,
     *,
@@ -660,7 +979,11 @@ def wsj_catalog_count_for_year(
         """
     ]
     parameters: list[object] = [str(year)]
-    for table in ("wsj_bluesky_articles", "wsj_rss_articles"):
+    for table in (
+        "wsj_bluesky_articles",
+        "wsj_rss_articles",
+        "wsj_google_news_articles",
+    ):
         if not _table_exists(connection, table):
             continue
         selects.append(
@@ -688,7 +1011,11 @@ def _wsj_external_articles(
     connection: sqlite3.Connection,
 ) -> dict[str, str]:
     result: dict[str, str] = {}
-    for table in ("wsj_bluesky_articles", "wsj_rss_articles"):
+    for table in (
+        "wsj_bluesky_articles",
+        "wsj_rss_articles",
+        "wsj_google_news_articles",
+    ):
         if not _table_exists(connection, table):
             continue
         for canonical_url, published_at in connection.execute(
@@ -947,6 +1274,12 @@ def export_capture_manifest(
         ).fetchone()[0]
         if not str(bluesky_status).startswith("complete"):
             incomplete += 1
+    if _table_exists(connection, "wsj_google_news_state"):
+        google_news_status = connection.execute(
+            "SELECT status FROM wsj_google_news_state WHERE singleton=1"
+        ).fetchone()[0]
+        if not str(google_news_status).startswith("complete"):
+            incomplete += 1
     return {
         "publisher": spec.publisher,
         "fromYear": from_year,
@@ -1039,6 +1372,31 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
             "urlsAccepted": int(row[3]),
             "lastError": row[4],
         }
+    if _table_exists(connection, "wsj_google_news_state"):
+        row = connection.execute(
+            """
+            SELECT
+                status,
+                polls,
+                items_seen,
+                decodes_attempted,
+                urls_accepted,
+                last_error
+            FROM wsj_google_news_state
+            WHERE singleton=1
+            """
+        ).fetchone()
+        result["wsjGoogleNews"] = {
+            "status": str(row[0]),
+            "polls": int(row[1]),
+            "itemsSeen": int(row[2]),
+            "decodesAttempted": int(row[3]),
+            "urlsAccepted": int(row[4]),
+            "lastError": row[5],
+        }
+        result["shouldContinue"] = bool(result["shouldContinue"]) or not str(
+            row[0]
+        ).startswith("complete")
     return result
 
 
