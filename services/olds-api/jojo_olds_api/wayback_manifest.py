@@ -247,7 +247,7 @@ def next_discovery_query(
         SELECT pattern, resume_key
         FROM discovery_queries
         WHERE status != 'complete'
-        ORDER BY pattern
+        ORDER BY rowid
         LIMIT 1
         """
     ).fetchone()

@@ -239,7 +239,7 @@ jobs:
               --to-year "$TO_YEAR" \
               --output "$manifest" \
               --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
-              --page-limit 10000 \
+              --page-limit 2000 \
               --max-pages "$MAX_DISCOVERY_PAGES" \
               --min-request-interval 1.0 \
               --github-output "$GITHUB_OUTPUT"
