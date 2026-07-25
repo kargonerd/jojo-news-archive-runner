@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import sqlite3
+import sys
+
+
+SERVICE_ROOT = Path(__file__).resolve().parents[1]
+if str(SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICE_ROOT))
+
+from jojo_olds_api.archive_sources import archive_source_spec
+from jojo_olds_api.sitemap_manifest import (
+    SitemapClient,
+    export_sitemap_manifest,
+    initialize_sitemap_schema,
+    next_sitemap_query,
+    record_sitemap,
+    sitemap_source,
+    sitemap_summary,
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Build a resumable capture manifest from publisher sitemaps."
+    )
+    parser.add_argument("--publisher", required=True)
+    parser.add_argument("--from-year", type=int, default=2016)
+    parser.add_argument("--to-year", type=int, default=2026)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--state", type=Path)
+    parser.add_argument("--max-sitemaps", type=int, default=10)
+    parser.add_argument("--min-request-interval", type=float, default=1.0)
+    parser.add_argument("--timeout", type=float, default=90.0)
+    parser.add_argument("--attempts", type=int, default=5)
+    parser.add_argument("--github-output", type=Path)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    if args.from_year > args.to_year:
+        raise SystemExit("--from-year must not be after --to-year")
+    if args.max_sitemaps < 1:
+        raise SystemExit("--max-sitemaps must be positive")
+    source = sitemap_source(args.publisher)
+    publisher_spec = archive_source_spec(args.publisher)
+    state = args.state or args.output.with_suffix(".sqlite3")
+    state.parent.mkdir(parents=True, exist_ok=True)
+    client = SitemapClient(
+        minimum_interval=args.min_request_interval,
+        timeout=args.timeout,
+        attempts=args.attempts,
+    )
+    connection = sqlite3.connect(state, timeout=60)
+    processed = 0
+    try:
+        index = client.fetch_xml(source.index_url)
+        initialize_sitemap_schema(
+            connection,
+            source=source,
+            from_year=args.from_year,
+            to_year=args.to_year,
+            sitemap_index=index,
+        )
+        while processed < args.max_sitemaps:
+            query = next_sitemap_query(connection)
+            if query is None:
+                break
+            sitemap_url, year, month = query
+            result = record_sitemap(
+                connection,
+                publisher_spec=publisher_spec,
+                sitemap_url=sitemap_url,
+                year=year,
+                month=month,
+                content=client.fetch_xml(sitemap_url),
+            )
+            processed += 1
+            print(
+                json.dumps(
+                    {
+                        "event": "sitemap",
+                        "publisher": args.publisher,
+                        "year": year,
+                        "month": month,
+                        "processedThisRun": processed,
+                        **result,
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+    finally:
+        client.close()
+    manifest = export_sitemap_manifest(
+        connection,
+        publisher=args.publisher,
+        destination=args.output,
+        from_year=args.from_year,
+        to_year=args.to_year,
+    )
+    summary = {
+        **sitemap_summary(connection),
+        **manifest,
+        "state": str(state),
+        "sitemapsThisRun": processed,
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    if args.github_output:
+        with args.github_output.open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"should_continue={str(bool(summary['shouldContinue'])).lower()}\n"
+            )
+            handle.write(
+                f"complete={str(bool(summary['complete'])).lower()}\n"
+            )
+            handle.write(f"articles={summary['articles']}\n")
+    connection.close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

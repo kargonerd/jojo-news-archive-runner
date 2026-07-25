@@ -25,15 +25,16 @@ on:
         default: "2026"
         type: string
       manifest_mode:
-        description: "Use Wayback discovery or the committed Bloomberg 2020 test catalog."
+        description: "Catalog source for this publisher window."
         required: true
         default: "wayback"
         type: choice
         options:
+          - sitemap-wayback
           - wayback
           - committed-bloomberg-2020
       max_discovery_pages:
-        description: "Maximum CDX pages in this run."
+        description: "Maximum CDX pages or sitemap files in this run."
         required: true
         default: "5"
         type: string
@@ -124,7 +125,7 @@ jobs:
               exit 2
             fi
           fi
-          shard="${PUBLISHER}/${FROM_YEAR}-${TO_YEAR}"
+          shard="${PUBLISHER}/${FROM_YEAR}-${TO_YEAR}/${MANIFEST_MODE}"
           local_root="${ARCHIVE_ROOT}/${shard}"
           remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${shard}"
           mkdir -p "$local_root/catalog" "$local_root/raw"
@@ -200,16 +201,28 @@ jobs:
             exit 0
           fi
           set +e
-          python services/olds-api/tools/build_wayback_manifest.py \
-            --publisher "$PUBLISHER" \
-            --from-year "$FROM_YEAR" \
-            --to-year "$TO_YEAR" \
-            --output "$manifest" \
-            --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
-            --page-limit 10000 \
-            --max-pages "$MAX_DISCOVERY_PAGES" \
-            --min-request-interval 1.0 \
-            --github-output "$GITHUB_OUTPUT"
+          if [ "$MANIFEST_MODE" = "sitemap-wayback" ]; then
+            python services/olds-api/tools/build_sitemap_manifest.py \
+              --publisher "$PUBLISHER" \
+              --from-year "$FROM_YEAR" \
+              --to-year "$TO_YEAR" \
+              --output "$manifest" \
+              --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
+              --max-sitemaps "$MAX_DISCOVERY_PAGES" \
+              --min-request-interval 1.0 \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            python services/olds-api/tools/build_wayback_manifest.py \
+              --publisher "$PUBLISHER" \
+              --from-year "$FROM_YEAR" \
+              --to-year "$TO_YEAR" \
+              --output "$manifest" \
+              --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
+              --page-limit 10000 \
+              --max-pages "$MAX_DISCOVERY_PAGES" \
+              --min-request-interval 1.0 \
+              --github-output "$GITHUB_OUTPUT"
+          fi
           code=$?
           set -e
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
@@ -219,7 +232,7 @@ jobs:
         if: >-
           ${{
             always() &&
-            inputs.manifest_mode == 'wayback' &&
+            inputs.manifest_mode != 'committed-bloomberg-2020' &&
             hashFiles('.archive-work/**/catalog/discovery.sqlite3') != ''
           }}
         shell: bash
@@ -244,7 +257,7 @@ jobs:
         if: >-
           ${{
             always() &&
-            inputs.manifest_mode == 'wayback' &&
+            inputs.manifest_mode != 'committed-bloomberg-2020' &&
             hashFiles('.archive-work/**/catalog/discovery.sqlite3') != ''
           }}
         shell: bash
