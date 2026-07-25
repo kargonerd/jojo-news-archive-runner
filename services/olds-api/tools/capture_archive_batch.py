@@ -1,0 +1,238 @@
+from __future__ import annotations
+
+import argparse
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import shutil
+import sqlite3
+import sys
+import time
+
+
+SERVICE_ROOT = Path(__file__).resolve().parents[1]
+if str(SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICE_ROOT))
+
+from jojo_olds_api.bloomberg_archive_download import ArchiveClient
+from jojo_olds_api.publisher_specs import publisher_spec
+from jojo_olds_api.raw_archive_capture import (
+    ManifestItem,
+    capture_item,
+    capture_summary,
+    initialize_capture_schema,
+    load_capture_manifest,
+    mark_capture_downloading,
+    pending_captures,
+    record_capture_result,
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Capture raw archived HTML without parsing article content."
+    )
+    parser.add_argument("--publisher", required=True)
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--min-request-interval", type=float, default=0.5)
+    parser.add_argument("--timeout", type=float, default=90.0)
+    parser.add_argument("--attempts", type=int, default=6)
+    parser.add_argument("--max-captures", type=int)
+    parser.add_argument("--max-runtime-minutes", type=float)
+    parser.add_argument("--max-record-attempts", type=int, default=3)
+    parser.add_argument("--retry-errors", action="store_true")
+    parser.add_argument("--max-html-mb", type=int, default=25)
+    parser.add_argument("--progress-every", type=int, default=25)
+    parser.add_argument("--minimum-free-gb", type=float, default=2.0)
+    parser.add_argument(
+        "--authorization-reference",
+        default="user-provided-authorization",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    publisher_spec(args.publisher)
+    if args.workers < 1:
+        raise SystemExit("--workers must be positive")
+    if args.max_record_attempts < 1:
+        raise SystemExit("--max-record-attempts must be positive")
+    if not args.manifest.exists():
+        raise SystemExit(f"manifest not found: {args.manifest}")
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    free_gb = shutil.disk_usage(args.output_dir).free / 1024**3
+    if free_gb < args.minimum_free_gb:
+        raise SystemExit(
+            f"only {free_gb:.2f} GB free; need {args.minimum_free_gb:.2f} GB"
+        )
+
+    state_path = args.output_dir / "capture.sqlite3"
+    connection = sqlite3.connect(state_path, timeout=60)
+    initialize_capture_schema(
+        connection,
+        publisher=args.publisher,
+        authorization_reference=args.authorization_reference,
+    )
+    manifest_result = load_capture_manifest(
+        connection,
+        manifest_path=args.manifest,
+        publisher=args.publisher,
+    )
+    items = pending_captures(
+        connection,
+        retry_errors=args.retry_errors,
+        maximum=args.max_captures,
+        maximum_record_attempts=args.max_record_attempts,
+    )
+    print(
+        json.dumps(
+            {
+                "event": "start",
+                "publisher": args.publisher,
+                "manifest": str(args.manifest.resolve()),
+                "state": str(state_path.resolve()),
+                "freeGB": round(free_gb, 2),
+                "queued": len(items),
+                **manifest_result,
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
+    if not items:
+        summary = capture_summary(connection, output_dir=args.output_dir)
+        _write_summary(args.output_dir, summary)
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        connection.close()
+        return 0
+
+    archive_client = ArchiveClient(
+        timeout=args.timeout,
+        minimum_interval=args.min_request_interval,
+        attempts=args.attempts,
+    )
+    started_at = time.monotonic()
+    deadline = (
+        started_at + args.max_runtime_minutes * 60
+        if args.max_runtime_minutes is not None
+        else None
+    )
+    completed = 0
+    failures = 0
+    runtime_limit_reached = False
+    maximum_html_bytes = args.max_html_mb * 1024 * 1024
+    iterator = iter(items)
+    in_flight: dict[Future, ManifestItem] = {}
+
+    def submit_one(executor: ThreadPoolExecutor) -> bool:
+        nonlocal runtime_limit_reached
+        if deadline is not None and time.monotonic() >= deadline:
+            runtime_limit_reached = True
+            return False
+        try:
+            item = next(iterator)
+        except StopIteration:
+            return False
+        mark_capture_downloading(connection, item)
+        future = executor.submit(
+            capture_item,
+            item,
+            archive_client=archive_client,
+            output_dir=args.output_dir,
+            maximum_html_bytes=maximum_html_bytes,
+        )
+        in_flight[future] = item
+        return True
+
+    return_code = 0
+    try:
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            for _ in range(min(len(items), args.workers * 2)):
+                submit_one(executor)
+            while in_flight:
+                finished, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+                for future in finished:
+                    item = in_flight.pop(future)
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        result = {
+                            "canonicalUrl": item.canonical_url,
+                            "status": "error",
+                            "capture": None,
+                            "recordPath": None,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    record_capture_result(connection, result)
+                    completed += 1
+                    failures += result["status"] == "error"
+                    submit_one(executor)
+                    if (
+                        completed % args.progress_every == 0
+                        or completed == len(items)
+                    ):
+                        elapsed = max(0.001, time.monotonic() - started_at)
+                        print(
+                            json.dumps(
+                                {
+                                    "event": "progress",
+                                    "publisher": args.publisher,
+                                    "completedThisRun": completed,
+                                    "queuedThisRun": len(items),
+                                    "errorsThisRun": failures,
+                                    "capturesPerMinute": round(
+                                        completed / elapsed * 60,
+                                        2,
+                                    ),
+                                    "lastUrl": result["canonicalUrl"],
+                                    "lastStatus": result["status"],
+                                },
+                                ensure_ascii=False,
+                            ),
+                            flush=True,
+                        )
+                        _write_summary(
+                            args.output_dir,
+                            capture_summary(
+                                connection,
+                                output_dir=args.output_dir,
+                            ),
+                        )
+    except KeyboardInterrupt:
+        print("Interrupted; completed captures are committed and resumable.")
+        return_code = 130
+    finally:
+        archive_client.close()
+
+    summary = capture_summary(connection, output_dir=args.output_dir)
+    summary.update(
+        {
+            "publisher": args.publisher,
+            "completedThisRun": completed,
+            "errorsThisRun": failures,
+            "stoppedForRuntimeLimit": runtime_limit_reached,
+            "finishedAt": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    _write_summary(args.output_dir, summary)
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    connection.close()
+    return return_code
+
+
+def _write_summary(output_dir: Path, result: dict[str, object]) -> None:
+    destination = output_dir / "summary.json"
+    temporary = destination.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(destination)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

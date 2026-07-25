@@ -24,6 +24,11 @@ jobs:
           cache-dependency-path: services/olds-api/requirements.txt
       - run: python -m pip install -r requirements.txt "pytest>=8,<10"
       - run: python -m pytest -q
+      - name: Verify committed JSON Schemas
+        shell: bash
+        run: |
+          python tools/export_news_schemas.py --output-dir "$RUNNER_TEMP/schemas"
+          diff -ru schemas "$RUNNER_TEMP/schemas"
 
   manifest:
     runs-on: ubuntu-latest

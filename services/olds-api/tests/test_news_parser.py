@@ -1,0 +1,214 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from jojo_olds_api.news_models import (
+    BlobReference,
+    CaptureCandidate,
+    CaptureProvider,
+    ImageRole,
+    RawCapture,
+)
+from jojo_olds_api.news_parser import parse_article
+
+
+CASES = [
+    (
+        "ap",
+        "https://apnews.com/article/example",
+        "<div data-key='article'>",
+        "</div>",
+        "https://dims.apnews.com/dims4/default/example.jpg",
+    ),
+    (
+        "wsj",
+        "https://www.wsj.com/articles/example",
+        "<div data-type='article-body'>",
+        "</div>",
+        "https://images.wsj.net/im-12345",
+    ),
+    (
+        "bloomberg",
+        "https://www.bloomberg.com/news/articles/2020-01-01/example",
+        "<div class='body-copy-v2'>",
+        "</div>",
+        "https://assets.bwbx.io/images/users/example/v1/1200x800.jpg",
+    ),
+    (
+        "nyt",
+        "https://www.nytimes.com/2020/01/01/world/example.html",
+        "<section name='articleBody'>",
+        "</section>",
+        "https://static01.nyt.com/images/2020/01/01/example.jpg",
+    ),
+    (
+        "reuters",
+        "https://www.reuters.com/world/example-2020-01-01/",
+        "<div data-testid='article-body'>",
+        "</div>",
+        (
+            "https://cloudfront-us-east-2.images.arcpublishing.com/"
+            "reuters/example.jpg"
+        ),
+    ),
+    (
+        "ft",
+        "https://www.ft.com/content/example",
+        "<div class='article__content-body'>",
+        "</div>",
+        "https://d1e00ek4ebabms.cloudfront.net/example.jpg",
+    ),
+]
+
+
+def raw_capture(publisher: str, canonical_url: str) -> RawCapture:
+    return RawCapture(
+        article_id=f"{publisher}:" + ("a" * 64),
+        publisher=publisher,
+        canonical_url=canonical_url,
+        published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        section="world",
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20200102000000id_/"
+                + canonical_url
+            ),
+            captured_at=datetime(2020, 1, 2, tzinfo=timezone.utc),
+            mime_type="text/html",
+            status_code=200,
+        ),
+        retrieved_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=BlobReference(
+            path="objects/html/aa/example.html.gz",
+            sha256="b" * 64,
+            byte_count=10_000,
+            stored_byte_count=3_000,
+            content_encoding="gzip",
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "publisher,canonical_url,body_open,body_close,image_url",
+    CASES,
+)
+def test_six_publishers_emit_jojo_article_v1(
+    publisher: str,
+    canonical_url: str,
+    body_open: str,
+    body_close: str,
+    image_url: str,
+):
+    html = f"""
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta property="og:image" content="{image_url}">
+        <script type="application/ld+json">
+        {{
+          "@context": "https://schema.org",
+          "@type": "NewsArticle",
+          "headline": "A complete archived headline",
+          "description": "A useful description.",
+          "author": [{{"name": "Reporter One"}}, {{"name": "Reporter Two"}}],
+          "datePublished": "2020-01-01T03:04:05Z",
+          "dateModified": "2020-01-01T04:05:06Z",
+          "articleSection": "World",
+          "image": "{image_url}"
+        }}
+        </script>
+      </head>
+      <body>
+        {body_open}
+          <p>First paragraph contains enough meaningful reporting to test the
+          normalized article output across all configured publishers.</p>
+          <div class="advertisement">
+            <img src="https://ads.example.test/banner.jpg" width="300" height="250">
+          </div>
+          <h2>Context</h2>
+          <p>Second paragraph adds more reporting, context, and detail so the
+          quality evaluator marks this article as a complete extraction rather
+          than a short or unsupported page.</p>
+          <figure>
+            <img src="{image_url}" width="1200" height="800" alt="Editorial photo">
+            <figcaption>
+              A descriptive caption.
+              Photographer: Example Person
+              Photographer: Example Person
+            </figcaption>
+          </figure>
+        {body_close}
+      </body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher=publisher,
+        canonical_url=canonical_url,
+        raw_capture=raw_capture(publisher, canonical_url),
+        parsed_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+    )
+
+    assert result.format_version == "jojo-article/1"
+    assert result.publisher == publisher
+    assert result.canonical_url == canonical_url
+    assert result.headline == "A complete archived headline"
+    assert result.section == "World"
+    assert [author.name for author in result.authors] == [
+        "Reporter One",
+        "Reporter Two",
+    ]
+    assert "First paragraph" in result.plain_text
+    assert "advertisement" not in result.body_html
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters >= 200
+    assert len(result.images) == 1
+    assert result.images[0].role == ImageRole.LEAD
+    assert result.images[0].should_archive is True
+    assert result.images[0].caption == "A descriptive caption."
+    assert result.images[0].credit == "Photographer: Example Person"
+    assert result.quality.images_selected == 1
+    assert result.source_capture.raw_html is not None
+
+
+def test_parser_classifies_non_editorial_images_without_archiving_them():
+    canonical_url = "https://apnews.com/article/example"
+    html = b"""
+    <html><head>
+      <script type="application/ld+json">
+      {"@type":"NewsArticle","headline":"Headline","datePublished":"2020-01-01T00:00:00Z"}
+      </script>
+    </head><body>
+      <div data-key="article">
+        <p>This is a sufficiently long article paragraph with meaningful
+        reporting content that continues for more than two hundred characters
+        after the second paragraph has also been included in this sample.</p>
+        <p>Additional reporting fills out the article and makes this a useful
+        parser fixture rather than a short placeholder document.</p>
+        <figure class="author-avatar">
+          <img src="https://example.com/avatar.png" width="48" height="48">
+        </figure>
+        <img class="tracking-pixel" src="https://example.com/pixel.gif"
+             width="1" height="1">
+      </div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=canonical_url,
+    )
+
+    roles = {image.role for image in result.images}
+    assert roles == {ImageRole.AUTHOR_AVATAR, ImageRole.TRACKING}
+    assert all(image.should_archive is False for image in result.images)
+    assert result.quality.images_selected == 0
