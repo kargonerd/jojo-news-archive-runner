@@ -248,6 +248,49 @@ def test_parser_supports_legacy_nyt_story_body_and_pdate():
     assert result.quality.body_characters >= 200
 
 
+def test_nyt_parser_joins_distributed_story_companion_columns():
+    canonical_url = (
+        "https://www.nytimes.com/2018/10/03/briefing/"
+        "trump-taxes-kavanaugh-melania-trump.html"
+    )
+    html = b"""
+    <html>
+      <head>
+        <meta property="og:title" content="Your Wednesday Evening Briefing">
+        <meta name="pdate" content="20181003">
+      </head>
+      <body><article>
+        <div class="StoryBodyCompanionColumn">
+          <p>Good evening. Here is the latest national and international
+          reporting selected for this briefing.</p>
+        </div>
+        <div class="StoryBodyCompanionColumn">
+          <p>First, senators continued reviewing evidence during a closely
+          watched confirmation process. The report explains the competing
+          accounts and reactions from lawmakers.</p>
+        </div>
+        <div class="StoryBodyCompanionColumn">
+          <p>Second, a tax investigation described financial transactions
+          over several decades. Additional reporting supplies documentary
+          context and responses from the people involved.</p>
+        </div>
+      </article></body>
+    </html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Good evening" in result.plain_text
+    assert "senators continued" in result.plain_text
+    assert "tax investigation" in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.7.0"
+
+
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     canonical_url = (
         "https://www.reuters.com/business/autos-transportation/"
@@ -718,7 +761,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.6.0"
+    assert result.extraction.parser_version == "nyt-parser/0.7.0"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():

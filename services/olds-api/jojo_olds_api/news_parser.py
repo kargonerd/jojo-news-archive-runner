@@ -68,6 +68,8 @@ def parse_article(
     soup = BeautifulSoup(html_bytes, "html.parser")
     news_article = _find_news_article_json(soup)
     body = None
+    if spec.publisher == "nyt":
+        body = _nyt_story_body_companions(soup)
     if spec.publisher in {"reuters", "bloomberg"} and _is_yahoo_syndication(
         soup,
         raw_capture=raw_capture,
@@ -387,6 +389,34 @@ def _select_body(soup: BeautifulSoup, spec: PublisherSpec) -> Tag | None:
         if isinstance(node, Tag):
             return node
     return None
+
+
+def _nyt_story_body_companions(soup: BeautifulSoup) -> Tag | None:
+    nodes = [
+        node
+        for node in soup.select(".StoryBodyCompanionColumn")
+        if not any(
+            isinstance(parent, Tag)
+            and "StoryBodyCompanionColumn" in (parent.get("class") or [])
+            for parent in node.parents
+        )
+    ]
+    if len(nodes) < 2:
+        return None
+    document = BeautifulSoup(
+        "<div data-jojo-source='nyt-story-companions'></div>",
+        "html.parser",
+    )
+    wrapper = document.select_one("div")
+    if wrapper is None:
+        return None
+    for node in nodes:
+        copy = BeautifulSoup(str(node), "html.parser").select_one(
+            ".StoryBodyCompanionColumn"
+        )
+        if copy is not None:
+            wrapper.append(copy)
+    return wrapper if wrapper.get_text(" ", strip=True) else None
 
 
 def _structured_article_body(
