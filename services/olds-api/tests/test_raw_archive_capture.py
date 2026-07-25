@@ -155,6 +155,64 @@ def test_capture_tries_fallback_and_stores_only_usable_raw_html(tmp_path: Path):
     assert "bodyHtml" not in record
 
 
+def test_capture_keeps_strong_article_instead_of_first_html_shell(
+    tmp_path: Path,
+):
+    shell_url = (
+        "https://web.archive.org/web/20200101000000id_/"
+        "https://www.ft.com/content/example"
+    )
+    article_url = (
+        "https://web.archive.org/web/20200102000000id_/"
+        "https://amp.ft.com/content/example"
+    )
+    shell = (
+        b"<!doctype html><html><body><p>Subscribe to read.</p></body></html>"
+        + (b" " * 2_048)
+    )
+    client = StubArchiveClient(
+        {
+            shell_url: (
+                200,
+                {"content-type": "text/html"},
+                shell,
+                shell_url,
+            ),
+            article_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                article_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/example",
+        published_at="2020-01-01T00:00:00Z",
+        section=None,
+        candidates=(
+            candidate(shell_url, "20200101000000"),
+            candidate(article_url, "20200102000000"),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [shell_url, article_url]
+    capture = result["capture"]
+    assert capture.selected_candidate.snapshot_url == article_url
+    assert capture.quality_score == 100
+    assert capture.raw_html.byte_count == len(ARTICLE)
+    assert len(list((tmp_path / "objects").rglob("*.html.gz"))) == 1
+
+
 def test_capture_state_records_result_and_summary(tmp_path: Path):
     url = "https://web.archive.org/web/20200102000000id_/https://example.com/a"
     item = ManifestItem(

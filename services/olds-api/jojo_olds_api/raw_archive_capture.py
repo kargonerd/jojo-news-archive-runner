@@ -284,6 +284,15 @@ def capture_item(
     maximum_html_bytes: int,
 ) -> dict:
     failures: list[str] = []
+    best_response: tuple[
+        CaptureCandidate,
+        int,
+        bytes,
+        str,
+        str,
+        int,
+        dict[str, object],
+    ] | None = None
     for candidate in item.candidates:
         try:
             status_code, headers, content, final_url = archive_client.fetch(
@@ -310,6 +319,30 @@ def capture_item(
             )
             continue
 
+        response = (
+            candidate,
+            status_code,
+            content,
+            final_url,
+            content_type,
+            quality_score,
+            signals,
+        )
+        if best_response is None or quality_score > best_response[5]:
+            best_response = response
+        if quality_score == 100:
+            break
+
+    if best_response is not None:
+        (
+            candidate,
+            status_code,
+            content,
+            final_url,
+            content_type,
+            quality_score,
+            signals,
+        ) = best_response
         raw_reference = store_raw_html(output_dir, content)
         retrieved_at = datetime.now(timezone.utc)
         selected_candidate = resolved_capture_candidate(
