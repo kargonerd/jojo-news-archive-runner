@@ -161,6 +161,7 @@ def parse_article(
             for block in blocks:
                 if block.asset_id == image.asset_id:
                     block.asset_id = existing.asset_id
+        blocks = _deduplicate_blocks(blocks)
 
     plain_text = "\n\n".join(
         block.text
@@ -495,6 +496,30 @@ def _has_selected_ancestor(node: Tag, body: BeautifulSoup) -> bool:
             return True
         parent = parent.parent
     return False
+
+
+def _deduplicate_blocks(blocks: list[ContentBlock]) -> list[ContentBlock]:
+    seen_text: set[str] = set()
+    seen_assets: set[str] = set()
+    unique: list[ContentBlock] = []
+    for block in blocks:
+        if block.text:
+            normalized = _normalize_block_text(block.text)
+            if normalized and normalized in seen_text:
+                continue
+            if normalized:
+                seen_text.add(normalized)
+        if block.type == BlockType.IMAGE and block.asset_id:
+            if block.asset_id in seen_assets:
+                continue
+            seen_assets.add(block.asset_id)
+        block.position = len(unique)
+        unique.append(block)
+    return unique
+
+
+def _normalize_block_text(value: str) -> str:
+    return _clean_text(value).casefold()
 
 
 def _image_from_tag(

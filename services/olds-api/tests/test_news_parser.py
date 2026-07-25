@@ -362,3 +362,48 @@ def test_parser_extracts_bloomberg_timeline_feature():
         block.type.value == "heading" and block.text == "Work Experience"
         for block in result.blocks
     )
+
+
+def test_parser_deduplicates_responsive_text_and_image_blocks():
+    canonical_url = "https://apnews.com/article/responsive-duplicates"
+    repeated = (
+        "This reporting paragraph is repeated in responsive page variants "
+        "and must appear only once in normalized article content."
+    )
+    html = f"""
+    <html>
+      <head>
+        <meta property="og:title" content="Responsive duplicate test">
+        <meta name="pub_date" content="20200101">
+      </head>
+      <body>
+        <div data-key="article">
+          <p>{repeated}</p>
+          <p>{repeated}</p>
+          <p>Another substantive paragraph supplies additional context and
+          ensures this remains a complete article extraction.</p>
+          <img src="https://dims.apnews.com/example.jpg">
+          <img src="https://dims.apnews.com/example.jpg">
+        </div>
+      </body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=canonical_url,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.plain_text.count(repeated) == 1
+    assert len(
+        [
+            block
+            for block in result.blocks
+            if block.type.value == "image"
+        ]
+    ) == 1
+    assert [block.position for block in result.blocks] == list(
+        range(len(result.blocks))
+    )
