@@ -301,7 +301,11 @@ def test_capture_keeps_strong_article_instead_of_first_html_shell(
     )
 
     assert result["status"] == "complete"
-    assert client.requests == [shell_url, article_url]
+    assert client.requests == [
+        "https://index.commoncrawl.org/collinfo.json",
+        shell_url,
+        article_url,
+    ]
     capture = result["capture"]
     assert capture.selected_candidate.snapshot_url == article_url
     assert capture.quality_score == 100

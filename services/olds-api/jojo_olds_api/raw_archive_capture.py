@@ -14,6 +14,10 @@ from urllib.parse import unquote, urlencode, urlsplit
 
 from bs4 import BeautifulSoup
 from .bloomberg_archive_download import ArchiveClient
+from .common_crawl import (
+    discover_common_crawl_candidates,
+    fetch_common_crawl_candidate,
+)
 from .news_models import (
     ArticleStatus,
     BlobReference,
@@ -34,6 +38,7 @@ REUTERS_SYNDICATION_SEARCH_MAXIMUM_BYTES = 2_000_000
 REUTERS_SYNDICATION_MAXIMUM_CANDIDATES = 8
 REUTERS_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
+COMMON_CRAWL_FALLBACK_PUBLISHERS = {"ft"}
 REUTERS_SYNDICATION_STOP_WORDS = {
     "a",
     "after",
@@ -408,6 +413,43 @@ def capture_item(
 ) -> dict:
     failures: list[str] = []
     candidates_considered = list(item.candidates)
+    candidates_to_try = list(item.candidates)
+    if item.publisher in COMMON_CRAWL_FALLBACK_PUBLISHERS:
+        try:
+            common_crawl_candidates = discover_common_crawl_candidates(
+                item.canonical_url,
+                published_at=item.published_at,
+                archive_client=archive_client,
+            )
+        except Exception as exc:
+            failures.append(f"commoncrawl-index:{type(exc).__name__}")
+            common_crawl_candidates = ()
+        existing_urls = {
+            (
+                candidate.snapshot_url,
+                candidate.warc_offset,
+                candidate.warc_length,
+            )
+            for candidate in candidates_considered
+        }
+        common_crawl_candidates = tuple(
+            candidate
+            for candidate in common_crawl_candidates
+            if (
+                candidate.snapshot_url,
+                candidate.warc_offset,
+                candidate.warc_length,
+            )
+            not in existing_urls
+        )
+        candidates_considered.extend(common_crawl_candidates)
+        # FT archive snapshots frequently contain only a subscription shell.
+        # Try publication-near Common Crawl records first, then retain Wayback
+        # as the deterministic fallback and provenance source.
+        candidates_to_try = [
+            *common_crawl_candidates,
+            *candidates_to_try,
+        ]
     best_response: tuple[
         CaptureCandidate,
         int,
@@ -417,11 +459,12 @@ def capture_item(
         int,
         dict[str, object],
     ] | None = None
-    for candidate in item.candidates:
+    for candidate in candidates_to_try:
         response, failure = _fetch_usable_candidate(
             candidate,
             archive_client=archive_client,
             maximum_html_bytes=maximum_html_bytes,
+            canonical_url=item.canonical_url,
         )
         if failure:
             failures.append(failure)
@@ -458,6 +501,7 @@ def capture_item(
                 candidate,
                 archive_client=archive_client,
                 maximum_html_bytes=maximum_html_bytes,
+                canonical_url=item.canonical_url,
             )
             if failure:
                 failures.append(failure)
@@ -491,6 +535,7 @@ def capture_item(
                 candidate,
                 archive_client=archive_client,
                 maximum_html_bytes=maximum_html_bytes,
+                canonical_url=item.canonical_url,
             )
             if failure:
                 failures.append(failure)
@@ -546,6 +591,7 @@ def capture_item(
                 candidate,
                 archive_client=archive_client,
                 maximum_html_bytes=maximum_html_bytes,
+                canonical_url=item.canonical_url,
             )
             if failure:
                 failures.append(failure)
@@ -635,6 +681,7 @@ def _fetch_usable_candidate(
     *,
     archive_client: ArchiveClient,
     maximum_html_bytes: int,
+    canonical_url: str,
 ) -> tuple[
     tuple[
         CaptureCandidate,
@@ -649,12 +696,26 @@ def _fetch_usable_candidate(
     str | None,
 ]:
     try:
-        status_code, headers, content, final_url = archive_client.fetch(
-            candidate.snapshot_url,
-            maximum_bytes=maximum_html_bytes,
-        )
+        if candidate.provider == CaptureProvider.COMMON_CRAWL:
+            status_code, headers, content, final_url = (
+                fetch_common_crawl_candidate(
+                    candidate,
+                    archive_client=archive_client,
+                    maximum_html_bytes=maximum_html_bytes,
+                )
+            )
+        else:
+            status_code, headers, content, final_url = archive_client.fetch(
+                candidate.snapshot_url,
+                maximum_bytes=maximum_html_bytes,
+            )
     except Exception as exc:
         return None, f"{candidate.provider.value}:{type(exc).__name__}"
+    if (
+        candidate.provider == CaptureProvider.COMMON_CRAWL
+        and not _same_article_url(final_url, canonical_url)
+    ):
+        return None, "commoncrawl:target-mismatch"
     content_type = headers.get("content-type", "").split(";", 1)[0].strip()
     quality_score, signals = score_raw_capture(
         content,
@@ -676,6 +737,13 @@ def _fetch_usable_candidate(
             None,
             f"{candidate.provider.value}:http-{status_code}:score-{quality_score}",
         )
+    if candidate.provider == CaptureProvider.COMMON_CRAWL:
+        signals = signals | {
+            "commonCrawlWarcValidated": True,
+            "commonCrawlWarcFilename": candidate.warc_filename,
+            "commonCrawlWarcOffset": candidate.warc_offset,
+            "commonCrawlWarcLength": candidate.warc_length,
+        }
     return (
         (
             candidate,

@@ -115,6 +115,44 @@
           ],
           "default": null,
           "title": "Statuscode"
+        },
+        "warcFilename": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warcfilename"
+        },
+        "warcLength": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warclength"
+        },
+        "warcOffset": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warcoffset"
         }
       },
       "required": [

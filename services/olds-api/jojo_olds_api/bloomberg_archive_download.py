@@ -148,12 +148,56 @@ class ArchiveClient:
         *,
         maximum_bytes: int,
     ) -> tuple[int, dict[str, str], bytes, str]:
+        return self._fetch(
+            url,
+            maximum_bytes=maximum_bytes,
+            request_headers=None,
+            require_partial_content=False,
+        )
+
+    def fetch_range(
+        self,
+        url: str,
+        *,
+        offset: int,
+        length: int,
+        maximum_bytes: int,
+    ) -> tuple[int, dict[str, str], bytes, str]:
+        if offset < 0:
+            raise ValueError("range offset must not be negative")
+        if length < 1:
+            raise ValueError("range length must be positive")
+        if length > maximum_bytes:
+            raise ValueError(
+                f"range length {length} exceeds {maximum_bytes} bytes"
+            )
+        return self._fetch(
+            url,
+            maximum_bytes=maximum_bytes,
+            request_headers={
+                "Range": f"bytes={offset}-{offset + length - 1}",
+            },
+            require_partial_content=True,
+        )
+
+    def _fetch(
+        self,
+        url: str,
+        *,
+        maximum_bytes: int,
+        request_headers: dict[str, str] | None,
+        require_partial_content: bool,
+    ) -> tuple[int, dict[str, str], bytes, str]:
         last_error: Exception | None = None
         for attempt in range(self.attempts):
             self._wait_for_circuit()
             self.rate_limiter.wait()
             try:
-                with self._get_client().stream("GET", url) as response:
+                with self._get_client().stream(
+                    "GET",
+                    url,
+                    headers=request_headers,
+                ) as response:
                     status_code = response.status_code
                     headers = {
                         key.lower(): value
@@ -167,6 +211,9 @@ class ArchiveClient:
                             retry_after=retry_after,
                         )
                     if status_code not in {200, 206}:
+                        self._record_success()
+                        return status_code, headers, b"", str(response.url)
+                    if require_partial_content and status_code != 206:
                         self._record_success()
                         return status_code, headers, b"", str(response.url)
                     chunks = []

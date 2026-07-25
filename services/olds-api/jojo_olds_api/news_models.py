@@ -35,6 +35,9 @@ class CaptureCandidate(ArchiveModel):
     mime_type: str | None = None
     status_code: int | None = None
     byte_count: int | None = Field(default=None, ge=0)
+    warc_filename: str | None = None
+    warc_offset: int | None = Field(default=None, ge=0)
+    warc_length: int | None = Field(default=None, ge=1)
 
 
 class BlobReference(ArchiveModel):

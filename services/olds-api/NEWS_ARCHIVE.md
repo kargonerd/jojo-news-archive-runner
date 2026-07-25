@@ -7,6 +7,7 @@ Raw acquisition and article interpretation are separate:
 ```text
 publisher catalog
   -> Wayback CDX candidates
+  -> publication-near Common Crawl WARC fallback where configured
   -> jojo-raw-capture/1 + content-addressed HTML
   -> versioned publisher parser
   -> jojo-article/1
@@ -53,7 +54,12 @@ fallback snapshots. The capture worker evaluates usable candidates and stores
 only the highest-quality response; it stops early when a response reaches the
 maximum raw quality score. FT manifests try archived AMP article pages before
 canonical pages because canonical snapshots can contain only a subscription
-shell.
+shell. When those candidates are unusable, FT capture also queries the nearest
+Common Crawl indexes for the exact canonical URL. It range-downloads only the
+indexed WARC record, validates the WARC target URL, reconstructs the original
+HTTP response, and applies the same subscription-shell and raw-quality gates.
+The raw record retains the Common Crawl object URL, WARC filename, offset, and
+length.
 
 Objects and records are uploaded before the capture checkpoint. A restored
 checkpoint therefore never references data that has not reached B2.
