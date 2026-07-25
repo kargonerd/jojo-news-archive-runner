@@ -71,18 +71,35 @@ def main() -> int:
         collapse=args.collapse,
     )
     pages_this_run = 0
+    deferred_error = None
     try:
         while args.max_pages is None or pages_this_run < args.max_pages:
             query = next_discovery_query(connection)
             if query is None:
                 break
             pattern, resume_key = query
-            page = client.fetch_page(
-                pattern=pattern,
-                from_year=args.from_year,
-                to_year=args.to_year,
-                resume_key=resume_key,
-            )
+            try:
+                page = client.fetch_page(
+                    pattern=pattern,
+                    from_year=args.from_year,
+                    to_year=args.to_year,
+                    resume_key=resume_key,
+                )
+            except RuntimeError as exc:
+                deferred_error = str(exc)
+                print(
+                    json.dumps(
+                        {
+                            "event": "discovery-deferred",
+                            "publisher": args.publisher,
+                            "pattern": pattern,
+                            "error": deferred_error,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                break
             result = record_discovery_page(
                 connection,
                 spec=spec,
@@ -118,6 +135,7 @@ def main() -> int:
         **manifest,
         "state": str(state),
         "pagesThisRun": pages_this_run,
+        "deferredError": deferred_error,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if args.github_output:
