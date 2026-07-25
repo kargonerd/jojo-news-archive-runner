@@ -136,3 +136,18 @@ def test_discovery_keeps_three_best_candidates_and_exports_generic_manifest(
     assert item.canonical_url == original
     assert len(item.candidates) == 3
     assert item.candidates[0].byte_count is not None
+
+
+def test_discovery_queries_follow_configured_order_not_lexical_order():
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2020,
+        to_year=2020,
+    )
+
+    pattern, _ = next_discovery_query(connection)
+
+    assert pattern == "www.wsj.com/articles/a*"
