@@ -198,6 +198,9 @@ def test_completed_validation_sample_records_parser_quality(tmp_path: Path):
     assert summary["years"]["2020"]["evaluated"] == 1
     assert summary["years"]["2020"]["complete"] == 1
     assert summary["years"]["2020"]["qaPassed"] == 1
+    assert summary["years"]["2020"]["planned"] == 1
+    assert summary["years"]["2020"]["issueCounts"] == {}
+    assert summary["years"]["2020"]["failureExamples"] == []
 
 
 def test_validation_uses_parsed_publication_year_not_capture_year(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from collections import Counter
 import gzip
 import hashlib
 import heapq
@@ -540,6 +541,57 @@ def parser_validation_summary(
             (sample_year, parser_version),
         ).fetchone()
         evaluated = int(row[0])
+        planned = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM parser_validation_samples
+                WHERE sample_year=?
+                """,
+                (sample_year,),
+            ).fetchone()[0]
+        )
+        issue_counts: Counter[str] = Counter()
+        failure_examples: list[dict[str, object]] = []
+        failure_rows = connection.execute(
+            """
+            SELECT
+                canonical_url,
+                extraction_status,
+                body_characters,
+                issues_json,
+                error
+            FROM parser_validation_results
+            WHERE sample_year=?
+              AND parser_version=?
+              AND qa_pass=0
+            ORDER BY
+                extraction_status='error' DESC,
+                extraction_status='unsupported' DESC,
+                body_characters,
+                canonical_url
+            """,
+            (sample_year, parser_version),
+        ).fetchall()
+        for (
+            canonical_url,
+            extraction_status,
+            body_characters,
+            issues_json,
+            error,
+        ) in failure_rows:
+            issues = json.loads(issues_json)
+            issue_counts.update(str(issue) for issue in issues)
+            if len(failure_examples) < 20:
+                failure_examples.append(
+                    {
+                        "canonicalUrl": str(canonical_url),
+                        "status": str(extraction_status),
+                        "bodyCharacters": int(body_characters),
+                        "issues": issues,
+                        **({"error": str(error)} if error else {}),
+                    }
+                )
         target_reached = evaluated >= int(target_size)
         complete_rate = int(row[2]) / evaluated if evaluated else 0.0
         qa_pass_rate = int(row[1]) / evaluated if evaluated else 0.0
@@ -553,6 +605,7 @@ def parser_validation_summary(
         years[str(sample_year)] = {
             "target": int(target_size),
             "parserVersion": str(parser_version),
+            "planned": planned,
             "evaluated": evaluated,
             "targetReached": target_reached,
             "qaPassed": int(row[1]),
@@ -566,6 +619,8 @@ def parser_validation_summary(
             "missingHeadline": int(row[7]),
             "missingPublishedAt": int(row[8]),
             "articlesWithDuplicateBlocks": int(row[9]),
+            "issueCounts": dict(sorted(issue_counts.items())),
+            "failureExamples": failure_examples,
         }
     result["years"] = years
     if not configs:
