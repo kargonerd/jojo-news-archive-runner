@@ -5,6 +5,7 @@ import html
 import json
 from pathlib import Path
 import sqlite3
+import time
 from typing import Iterable
 from urllib.parse import parse_qs, urlsplit
 
@@ -31,6 +32,7 @@ REUTERS_LIVE_SITEMAP_INDEX = (
     "?outputType=xml"
 )
 REUTERS_YEAR_CATALOG_TARGET = 750
+RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
 SITEMAP_CDX_PATTERN = (
     "www.reuters.com/arc/outboundfeeds/sitemap/*"
 )
@@ -44,8 +46,12 @@ def discover_reuters_sitemap_captures(
     from_year: int,
     to_year: int,
     timeout: float = 90.0,
+    attempts: int = 5,
+    retry_backoff_seconds: float = 1.0,
     client: httpx.Client | None = None,
 ) -> list[dict[str, object]]:
+    if attempts < 1:
+        raise ValueError("attempts must be at least 1")
     provided = client is not None
     http_client = client or httpx.Client(
         headers={
@@ -73,8 +79,24 @@ def discover_reuters_sitemap_captures(
             ("limit", "5000"),
             ("showResumeKey", "true"),
         ]
-        response = http_client.get(CDX_ENDPOINT, params=parameters)
-        response.raise_for_status()
+        for attempt in range(attempts):
+            try:
+                response = http_client.get(CDX_ENDPOINT, params=parameters)
+                if response.status_code in RETRYABLE_STATUS_CODES:
+                    raise RuntimeError(
+                        f"retryable HTTP {response.status_code}"
+                    )
+                response.raise_for_status()
+                break
+            except (httpx.HTTPError, OSError, RuntimeError):
+                if attempt + 1 >= attempts:
+                    raise
+                time.sleep(
+                    min(
+                        30.0,
+                        retry_backoff_seconds * (2**attempt),
+                    )
+                )
         page = parse_cdx_json(response.text)
         if page.resume_key:
             raise RuntimeError(

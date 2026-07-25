@@ -95,6 +95,25 @@ class StubHTTPClient:
         return StubResponse()
 
 
+class RetryableStubResponse:
+    def __init__(self, status_code):
+        self.status_code = status_code
+        self.text = CDX_RESPONSE
+
+    def raise_for_status(self):
+        if self.status_code != 200:
+            raise AssertionError("retryable status should be handled first")
+
+
+class RetryableStubHTTPClient:
+    def __init__(self):
+        self.calls = 0
+
+    def get(self, url, params):
+        self.calls += 1
+        return RetryableStubResponse(503 if self.calls == 1 else 200)
+
+
 class StubArchiveClient:
     def fetch(self, url, *, maximum_bytes):
         assert "&from=100" in url
@@ -168,6 +187,21 @@ def test_discovers_html_escaped_reuters_sitemap_urls():
             "byteCount": 12345,
         }
     ]
+
+
+def test_retries_transient_reuters_sitemap_cdx_failure():
+    client = RetryableStubHTTPClient()
+
+    captures = discover_reuters_sitemap_captures(
+        from_year=2021,
+        to_year=2026,
+        attempts=2,
+        retry_backoff_seconds=0,
+        client=client,
+    )
+
+    assert client.calls == 2
+    assert captures[0]["digest"] == "DIGEST"
 
 
 def test_reuters_sitemap_capture_builds_article_manifest(tmp_path: Path):
