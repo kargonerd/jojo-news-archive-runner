@@ -36,12 +36,17 @@ news-archive/v1/{publisher}/{fromYear}-{toYear}/{manifestMode}/
 
 HTML objects are addressed by the SHA-256 of the uncompressed response. Gzip is
 deterministic (`mtime=0`), so repeated identical captures produce the same B2
-object. Each canonical publisher URL appears once in a manifest with at most
-three ranked fallback snapshots. A successful capture stores only the first
-usable candidate.
+object. Each canonical publisher URL appears once in a manifest with ranked
+fallback snapshots. The capture worker evaluates usable candidates and stores
+only the highest-quality response; it stops early when a response reaches the
+maximum raw quality score. FT manifests try archived AMP article pages before
+canonical pages because canonical snapshots can contain only a subscription
+shell.
 
 Objects and records are uploaded before the capture checkpoint. A restored
 checkpoint therefore never references data that has not reached B2.
+Cancelling a workflow skips checkpoint and object publishing, while ordinary
+failures still publish a recoverable checkpoint.
 
 ## Schemas
 
