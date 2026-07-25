@@ -82,15 +82,26 @@ jobs:
             echo "Shard already active: $target_title"
             exit 0
           fi
-          gh workflow run news-raw-archive.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f publisher="$PUBLISHER" \
-            -f from_year="$FROM_YEAR" \
-            -f to_year="$TO_YEAR" \
-            -f manifest_mode="$MANIFEST_MODE" \
-            -f max_discovery_pages="$DISCOVERY_UNITS" \
-            -f max_captures=500 \
-            -f workers=4 \
-            -f max_runtime_minutes=300 \
-            -f auto_continue=true
+          for attempt in 1 2 3 4 5; do
+            if gh workflow run news-raw-archive.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref main \
+              -f publisher="$PUBLISHER" \
+              -f from_year="$FROM_YEAR" \
+              -f to_year="$TO_YEAR" \
+              -f manifest_mode="$MANIFEST_MODE" \
+              -f max_discovery_pages="$DISCOVERY_UNITS" \
+              -f max_captures=500 \
+              -f workers=4 \
+              -f max_runtime_minutes=300 \
+              -f auto_continue=true; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Could not dispatch $target_title after $attempt attempts." >&2
+              exit 1
+            fi
+            delay=$((attempt * 10))
+            echo "Dispatch failed; retrying in ${delay}s."
+            sleep "$delay"
+          done
