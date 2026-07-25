@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 import sqlite3
 import sys
+import time
+
+import httpx
 
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
@@ -16,8 +19,11 @@ from jojo_olds_api.reuters_sitemap_manifest import (
     discover_reuters_sitemap_captures,
     export_reuters_manifest,
     initialize_reuters_sitemap_schema,
+    initialize_reuters_urlscan_queries,
     pending_reuters_sitemaps,
+    pending_reuters_urlscan_queries,
     process_reuters_sitemap,
+    process_reuters_urlscan_query,
     reuters_sitemap_summary,
 )
 
@@ -60,6 +66,11 @@ def main() -> int:
         to_year=args.to_year,
         captures=captures,
     )
+    initialize_reuters_urlscan_queries(
+        connection,
+        from_year=args.from_year,
+        to_year=args.to_year,
+    )
     pending = pending_reuters_sitemaps(
         connection,
         maximum=args.max_sitemaps,
@@ -97,6 +108,49 @@ def main() -> int:
             )
     finally:
         archive_client.close()
+    urlscan_processed = 0
+    urlscan_errors = 0
+    remaining_budget = max(0, args.max_sitemaps - processed)
+    urlscan_pending = pending_reuters_urlscan_queries(
+        connection,
+        maximum=remaining_budget,
+        maximum_attempts=args.max_attempts,
+    )
+    with httpx.Client(
+        headers={
+            "User-Agent": (
+                "JOJO-News-Archive-Research/0.1 "
+                "(authorized nonprofit academic archive)"
+            )
+        },
+        follow_redirects=True,
+        timeout=args.timeout,
+    ) as http_client:
+        for window_start, window_end in urlscan_pending:
+            result = process_reuters_urlscan_query(
+                connection,
+                window_start=window_start,
+                window_end=window_end,
+                http_client=http_client,
+                from_year=args.from_year,
+                to_year=args.to_year,
+            )
+            urlscan_processed += 1
+            urlscan_errors += result["status"] == "error"
+            print(
+                json.dumps(
+                    {
+                        "event": "reuters-urlscan",
+                        "processedThisRun": urlscan_processed,
+                        "errorsThisRun": urlscan_errors,
+                        **result,
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+            if args.min_request_interval:
+                time.sleep(args.min_request_interval)
     manifest = export_reuters_manifest(
         connection,
         destination=args.output,
@@ -110,6 +164,8 @@ def main() -> int:
         "state": str(state),
         "sitemapsThisRun": processed,
         "errorsThisRun": errors,
+        "urlscanQueriesThisRun": urlscan_processed,
+        "urlscanErrorsThisRun": urlscan_errors,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if args.github_output:

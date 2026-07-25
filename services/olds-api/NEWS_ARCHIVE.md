@@ -162,9 +162,13 @@ Reuters uses two catalog shards because its URL design changed:
 - `wayback` for the legacy `/article/` catalog (2016–2020);
 - `reuters-sitemap-wayback` for 2021 onward. This mode enumerates archived
   snapshots of Reuters' rolling sitemap, extracts canonical article URLs, and
-  then selects publication-near Wayback captures.
+  then selects publication-near Wayback captures. For gaps after Reuters'
+  archived rolling sitemaps stop, bounded weekly searches of public urlscan.io
+  metadata contribute canonical Reuters URLs. Those rows retain `urlscan` as
+  discovery provenance and try Wayback before a live-origin fallback; urlscan
+  metadata is never treated as article content.
 
-`News archive watchdog` checks all seven configured shards every hour. It skips
+`News archive watchdog` checks all configured shards every hour. It skips
 shards that already have a queued or running workflow and restarts only stopped
 chains. The target workflow's per-shard concurrency lock remains a second guard
 against simultaneous writers.
