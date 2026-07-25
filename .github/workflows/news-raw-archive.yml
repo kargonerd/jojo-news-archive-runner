@@ -321,8 +321,56 @@ jobs:
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
         run: |
           set -uo pipefail
+          live_checkpoint() {
+            local checkpoint="$RUNNER_TEMP/capture-live.sqlite3.gz"
+            if ! python \
+              services/olds-api/tools/checkpoint_capture_state.py \
+              --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+              --output "$checkpoint"; then
+              echo "::warning::Could not snapshot live capture state."
+              return 0
+            fi
+            if [ -d "$LOCAL_ROOT/raw/objects" ]; then
+              if ! rclone copy \
+                  "$LOCAL_ROOT/raw/objects" \
+                  "${REMOTE_ROOT}/raw/objects" \
+                  --exclude '*.tmp' \
+                  --checksum --immutable \
+                  --transfers 8 --checkers 16 \
+                  --retries 8 --low-level-retries 20; then
+                echo "::warning::Live object upload failed; state withheld."
+                return 0
+              fi
+            fi
+            if [ -d "$LOCAL_ROOT/raw/records" ]; then
+              if ! rclone copy \
+                  "$LOCAL_ROOT/raw/records" \
+                  "${REMOTE_ROOT}/raw/records" \
+                  --exclude '*.tmp' \
+                  --checksum --immutable \
+                  --transfers 8 --checkers 16 \
+                  --retries 8 --low-level-retries 20; then
+                echo "::warning::Live record upload failed; state withheld."
+                return 0
+              fi
+            fi
+            if [ -f "$LOCAL_ROOT/raw/summary.json" ]; then
+              rclone copyto \
+                "$LOCAL_ROOT/raw/summary.json" \
+                "${REMOTE_ROOT}/state/summary.json" \
+                --retries 8 --low-level-retries 20
+            fi
+            # The snapshot was taken before object upload and is published
+            # last, so every capture it references is already durable.
+            rclone copyto \
+              "$checkpoint" \
+              "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
+              --retries 8 --low-level-retries 20
+            echo "Published live capture checkpoint."
+          }
           args=(
             --publisher "$PUBLISHER"
             --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
@@ -339,7 +387,18 @@ jobs:
             args+=(--retry-errors)
           fi
           set +e
-          python services/olds-api/tools/capture_archive_batch.py "${args[@]}"
+          python services/olds-api/tools/capture_archive_batch.py "${args[@]}" &
+          capture_pid=$!
+          while kill -0 "$capture_pid" 2>/dev/null; do
+            timeout 600 tail --pid="$capture_pid" -f /dev/null
+            wait_code=$?
+            if [ "$wait_code" -eq 124 ]; then
+              live_checkpoint
+            else
+              break
+            fi
+          done
+          wait "$capture_pid"
           code=$?
           set -e
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
@@ -389,6 +448,7 @@ jobs:
             rclone copy \
               "$LOCAL_ROOT/raw/objects" \
               "${REMOTE_ROOT}/raw/objects" \
+              --exclude '*.tmp' \
               --checksum --immutable \
               --transfers 8 --checkers 16 \
               --retries 8 --low-level-retries 20 \
@@ -398,6 +458,7 @@ jobs:
             rclone copy \
               "$LOCAL_ROOT/raw/records" \
               "${REMOTE_ROOT}/raw/records" \
+              --exclude '*.tmp' \
               --checksum --immutable \
               --transfers 8 --checkers 16 \
               --retries 8 --low-level-retries 20 \
