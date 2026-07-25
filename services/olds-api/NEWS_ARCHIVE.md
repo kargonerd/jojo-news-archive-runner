@@ -125,3 +125,15 @@ CDX prefix queries and tends to select better article versions.
 Use `manifest_mode: wayback` for partitioned CDX adapters such as WSJ. Discovery
 checkpoints are published after each bounded run. Capture begins only after
 every configured query for that publisher window is complete.
+
+Reuters uses two catalog shards because its URL design changed:
+
+- `wayback` for the legacy `/article/` catalog (2016–2020);
+- `reuters-sitemap-wayback` for 2021 onward. This mode enumerates archived
+  snapshots of Reuters' rolling sitemap, extracts canonical article URLs, and
+  then selects publication-near Wayback captures.
+
+`News archive watchdog` dispatches all seven configured shards every six hours.
+The target workflow's per-shard concurrency lock prevents simultaneous writers;
+the watchdog restarts a chain if a transient discovery, archive, or Actions
+failure stops automatic continuation.
