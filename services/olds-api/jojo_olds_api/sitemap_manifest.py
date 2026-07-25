@@ -351,7 +351,8 @@ def export_sitemap_manifest(
             ORDER BY canonical_url
             """
         ):
-            candidate_rows = wayback_candidates(
+            candidate_rows = sitemap_wayback_candidates(
+                publisher,
                 canonical_url,
                 published_at=published_at,
             )
@@ -450,6 +451,37 @@ def wayback_candidates(
                 ),
             }
         )
+    return result
+
+
+def sitemap_wayback_candidates(
+    publisher: str,
+    canonical_url: str,
+    *,
+    published_at: str | None,
+) -> list[dict[str, object]]:
+    source_urls: list[str] = []
+    parsed = urlsplit(canonical_url)
+    if (
+        publisher == "ft"
+        and parsed.hostname in {"ft.com", "www.ft.com"}
+        and parsed.path.startswith("/content/")
+    ):
+        source_urls.append(f"https://amp.ft.com{parsed.path}")
+    source_urls.append(canonical_url)
+
+    result: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for source_url in source_urls:
+        for candidate in wayback_candidates(
+            source_url,
+            published_at=published_at,
+        ):
+            snapshot_url = str(candidate["snapshotUrl"])
+            if snapshot_url in seen:
+                continue
+            seen.add(snapshot_url)
+            result.append(candidate)
     return result
 
 

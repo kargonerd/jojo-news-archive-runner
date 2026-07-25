@@ -14,6 +14,7 @@ from jojo_olds_api.sitemap_manifest import (
     parse_sitemap_index,
     parse_url_sitemap,
     record_sitemap,
+    sitemap_wayback_candidates,
     sitemap_source,
     wayback_candidates,
 )
@@ -117,3 +118,19 @@ def test_candidate_fallback_for_unknown_publication_date_uses_latest():
             ),
         }
     ]
+
+
+def test_ft_sitemap_candidates_try_amp_before_canonical():
+    result = sitemap_wayback_candidates(
+        "ft",
+        "https://www.ft.com/content/fd3df9ba-4480-11ea-abea-0c7a29cd66fe",
+        published_at="2020-02-01T00:00:00Z",
+    )
+
+    assert len(result) == 6
+    assert result[0]["snapshotUrl"].endswith(
+        "https://amp.ft.com/content/fd3df9ba-4480-11ea-abea-0c7a29cd66fe"
+    )
+    assert result[3]["snapshotUrl"].endswith(
+        "https://www.ft.com/content/fd3df9ba-4480-11ea-abea-0c7a29cd66fe"
+    )
