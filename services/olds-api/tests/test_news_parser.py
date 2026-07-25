@@ -212,3 +212,99 @@ def test_parser_classifies_non_editorial_images_without_archiving_them():
     assert roles == {ImageRole.AUTHOR_AVATAR, ImageRole.TRACKING}
     assert all(image.should_archive is False for image in result.images)
     assert result.quality.images_selected == 0
+
+
+def test_parser_supports_legacy_nyt_story_body_and_pdate():
+    canonical_url = (
+        "https://www.nytimes.com/2016/01/03/business/example.html"
+    )
+    body = " ".join(["Historical reporting sentence."] * 30)
+    html = f"""
+    <html>
+      <head>
+        <meta name="pdate" content="20160102">
+        <meta property="og:title" content="Legacy NYT headline">
+      </head>
+      <body><div class="story-body"><p>{body}</p></div></body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("nyt", canonical_url),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.headline == "Legacy NYT headline"
+    assert result.published_at == datetime(
+        2016,
+        1,
+        2,
+        tzinfo=timezone.utc,
+    )
+    assert result.quality.body_characters >= 200
+
+
+def test_parser_falls_back_to_catalog_publication_time():
+    canonical_url = "https://apnews.com/article/catalog-date"
+    body = " ".join(["Substantive article sentence."] * 30)
+    html = f"""
+    <html>
+      <head><meta property="og:title" content="Catalog dated story"></head>
+      <body><div data-key="article"><p>{body}</p></div></body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("ap", canonical_url),
+    )
+
+    assert result.published_at == datetime(
+        2020,
+        1,
+        1,
+        tzinfo=timezone.utc,
+    )
+    assert "missing-published-at" not in result.quality.warnings
+
+
+def test_parser_keeps_legitimate_short_brief_and_removes_legacy_nyt_noise():
+    canonical_url = (
+        "https://www.nytimes.com/2016/01/07/sports/example.html"
+    )
+    html = b"""
+    <html>
+      <head>
+        <meta name="pdate" content="20160107">
+        <meta property="og:title" content="A short news brief">
+      </head>
+      <body>
+        <article>
+          <div class="story-body">
+            <p>Advertisement</p>
+            <p itemprop="articleBody">Seven former players pleaded not guilty
+            to charges related to home invasions and an assault. Another
+            defendant was arraigned.</p>
+            <p class="story-print-citation">A version of this brief appears in
+            print. Order Reprints | Today's Paper | Subscribe</p>
+          </div>
+        </article>
+      </body>
+    </html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Advertisement" not in result.plain_text
+    assert "Order Reprints" not in result.plain_text
+    assert "Seven former players" in result.plain_text

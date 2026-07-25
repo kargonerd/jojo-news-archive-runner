@@ -32,6 +32,13 @@ _ARCHIVE_ERROR_MARKERS = (
     b"this url has been excluded from the wayback machine",
     b"cannot be crawled or displayed due to robots.txt",
 )
+_AUTH_SHELL_MARKERS = (
+    b"<title>log in - ",
+    b"<title>sign in - ",
+    b"/auth/login?",
+    b"sign in to continue",
+    b"log in to continue",
+)
 _WAYBACK_FINAL_RE = re.compile(
     r"https?://web\.archive\.org/web/(\d{14})(?:id_|im_|js_|cs_)?/",
     re.IGNORECASE,
@@ -360,12 +367,14 @@ def capture_item(
             content,
             http_status=status_code,
             content_type=content_type,
+            final_url=final_url,
         )
         if (
             status_code not in ACCEPTED_HTTP_STATUSES
             or not content
             or not signals["looksLikeHtml"]
             or signals["archiveErrorPage"]
+            or signals["authenticationShell"]
         ):
             failures.append(
                 f"{candidate.provider.value}:http-{status_code}:score-{quality_score}"
@@ -464,6 +473,7 @@ def score_raw_capture(
     *,
     http_status: int,
     content_type: str,
+    final_url: str = "",
 ) -> tuple[int, dict[str, object]]:
     prefix = content[:1_000_000].lower()
     looks_like_html = (
@@ -472,6 +482,15 @@ def score_raw_capture(
     )
     archive_error_page = any(marker in prefix for marker in _ARCHIVE_ERROR_MARKERS)
     has_article_marker = b"<article" in prefix or b"newsarticle" in prefix
+    final_url_lower = final_url.casefold()
+    authentication_shell = (
+        not has_article_marker
+        and (
+            any(marker in prefix for marker in _AUTH_SHELL_MARKERS)
+            or "/auth/login" in final_url_lower
+            or "/account/login" in final_url_lower
+        )
+    )
     substantial = len(content) >= 2_048
     score = 0
     if http_status in ACCEPTED_HTTP_STATUSES:
@@ -484,10 +503,13 @@ def score_raw_capture(
         score += 15
     if not archive_error_page:
         score += 10
+    if authentication_shell:
+        score = max(0, score - 60)
     return score, {
         "looksLikeHtml": looks_like_html,
         "archiveErrorPage": archive_error_page,
         "hasArticleMarker": has_article_marker,
+        "authenticationShell": authentication_shell,
         "substantialResponse": substantial,
         "rawBytes": len(content),
     }

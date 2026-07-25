@@ -11,6 +11,7 @@ from typing import Iterable
 
 from .news_models import ArticleStatus, RawCapture
 from .news_parser import parse_article
+from .publisher_specs import publisher_spec
 
 
 SCHEMA_VERSION = "jojo-parser-validation/1"
@@ -33,6 +34,7 @@ def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
             sample_year INTEGER PRIMARY KEY,
             target_size INTEGER NOT NULL,
             seed TEXT NOT NULL,
+            parser_version TEXT NOT NULL DEFAULT '',
             updated_at TEXT NOT NULL
         );
 
@@ -71,6 +73,19 @@ def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
             ON parser_validation_results(sample_year, qa_pass);
         """
     )
+    config_columns = {
+        str(row[1])
+        for row in connection.execute(
+            "PRAGMA table_info(parser_validation_config)"
+        ).fetchall()
+    }
+    if "parser_version" not in config_columns:
+        connection.execute(
+            """
+            ALTER TABLE parser_validation_config
+            ADD COLUMN parser_version TEXT NOT NULL DEFAULT ''
+            """
+        )
     connection.commit()
 
 
@@ -101,19 +116,27 @@ def ensure_parser_validation_plan(
 
     initialize_parser_validation_schema(connection)
     now = _now_iso()
+    current_parser_version = publisher_spec(publisher).parser_version
     connection.executemany(
         """
         INSERT INTO parser_validation_config(
-            sample_year, target_size, seed, updated_at
+            sample_year, target_size, seed, parser_version, updated_at
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(sample_year) DO UPDATE SET
             target_size=excluded.target_size,
             seed=excluded.seed,
+            parser_version=excluded.parser_version,
             updated_at=excluded.updated_at
         """,
         (
-            (year, target_per_year, seed, now)
+            (
+                year,
+                target_per_year,
+                seed,
+                current_parser_version,
+                now,
+            )
             for year in range(from_year, to_year + 1)
         ),
     )
@@ -137,9 +160,9 @@ def ensure_parser_validation_plan(
                 """
                 SELECT COUNT(*)
                 FROM parser_validation_results
-                WHERE sample_year=?
+                WHERE sample_year=? AND parser_version=?
                 """,
-                (year,),
+                (year, current_parser_version),
             ).fetchone()[0]
         )
         actionable = int(
@@ -151,6 +174,7 @@ def ensure_parser_validation_plan(
                   ON capture.canonical_url=sample.canonical_url
                 LEFT JOIN parser_validation_results AS result
                   ON result.canonical_url=sample.canonical_url
+                 AND result.parser_version=?
                 WHERE sample.sample_year=?
                   AND result.canonical_url IS NULL
                   AND (
@@ -161,7 +185,11 @@ def ensure_parser_validation_plan(
                     )
                   )
                 """,
-                (year, maximum_record_attempts),
+                (
+                    current_parser_version,
+                    year,
+                    maximum_record_attempts,
+                ),
             ).fetchone()[0]
         )
         desired_actionable = max(0, target_per_year - evaluated) + reserve
@@ -195,6 +223,7 @@ def ensure_parser_validation_plan(
     return {
         "formatVersion": SCHEMA_VERSION,
         "publisher": publisher,
+        "parserVersion": current_parser_version,
         "targetPerYear": target_per_year,
         "reservePerYear": reserve,
         "years": years,
@@ -212,11 +241,16 @@ def pending_parser_validation_urls(
         WITH active_years AS (
             SELECT
                 config.sample_year,
-                config.target_size
+                config.target_size,
+                config.parser_version
             FROM parser_validation_config AS config
             LEFT JOIN parser_validation_results AS result
               ON result.sample_year=config.sample_year
-            GROUP BY config.sample_year, config.target_size
+             AND result.parser_version=config.parser_version
+            GROUP BY
+                config.sample_year,
+                config.target_size,
+                config.parser_version
             HAVING COUNT(result.canonical_url) < config.target_size
         ),
         ranked AS (
@@ -234,6 +268,7 @@ def pending_parser_validation_urls(
               ON capture.canonical_url=sample.canonical_url
             LEFT JOIN parser_validation_results AS result
               ON result.canonical_url=sample.canonical_url
+             AND result.parser_version=active_years.parser_version
             WHERE result.canonical_url IS NULL
               AND (
                 capture.status='pending'
@@ -466,12 +501,12 @@ def parser_validation_summary(
     years: dict[str, object] = {}
     configs = connection.execute(
         """
-        SELECT sample_year, target_size
+        SELECT sample_year, target_size, parser_version
         FROM parser_validation_config
         ORDER BY sample_year
         """
     ).fetchall()
-    for sample_year, target_size in configs:
+    for sample_year, target_size, parser_version in configs:
         row = connection.execute(
             """
             SELECT
@@ -486,9 +521,9 @@ def parser_validation_summary(
                 COALESCE(SUM(published_at_present=0), 0),
                 COALESCE(SUM(duplicate_text_blocks > 0), 0)
             FROM parser_validation_results
-            WHERE sample_year=?
+            WHERE sample_year=? AND parser_version=?
             """,
-            (sample_year,),
+            (sample_year, parser_version),
         ).fetchone()
         evaluated = int(row[0])
         target_reached = evaluated >= int(target_size)
@@ -503,6 +538,7 @@ def parser_validation_summary(
         result["ready"] = bool(result["ready"]) and year_ready
         years[str(sample_year)] = {
             "target": int(target_size),
+            "parserVersion": str(parser_version),
             "evaluated": evaluated,
             "targetReached": target_reached,
             "qaPassed": int(row[1]),

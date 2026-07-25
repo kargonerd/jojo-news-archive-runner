@@ -301,6 +301,21 @@ def test_raw_quality_rejects_archive_error_page():
     assert signals["archiveErrorPage"] is True
 
 
+def test_raw_quality_rejects_authentication_shell():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Log In - The New York Times</title></head>
+        <body><p>Log in to continue.</p></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+        final_url="https://myaccount.nytimes.com/auth/login?URI=article",
+    )
+
+    assert score < 85
+    assert signals["authenticationShell"] is True
+
+
 def test_wayback_candidate_records_actual_redirected_snapshot():
     requested = candidate(
         (

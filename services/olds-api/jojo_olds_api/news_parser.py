@@ -40,6 +40,12 @@ _NOISE_RE = re.compile(
 )
 _TRACKING_RE = re.compile(r"(?i)(pixel|tracking|spacer|transparent)")
 _GRAPHIC_RE = re.compile(r"(?i)(chart|graphic|infographic|interactive)")
+_MINIMUM_BODY_CHARACTERS = 100
+_EXACT_NOISE_TEXT = {
+    "advertisement",
+    "advertiser content",
+    "sponsored content",
+}
 
 
 def stable_article_id(publisher: str, canonical_url: str) -> str:
@@ -75,10 +81,36 @@ def parse_article(
     )
     authors = _extract_authors(news_article, soup)
     published_at = _parse_datetime(
-        _string_or_none(news_article.get("datePublished")) if news_article else None
+        _first_text(
+            _string_or_none(news_article.get("datePublished"))
+            if news_article
+            else None,
+            _meta_content(soup, "property", "article:published_time"),
+            _meta_content(soup, "name", "pub_date"),
+            _meta_content(soup, "name", "pdate"),
+            _tag_attribute(
+                soup.select_one(
+                    '[itemprop="datePublished"][datetime], '
+                    'time[datetime][data-testid*="timestamp" i]'
+                ),
+                "datetime",
+            ),
+        )
     )
+    if published_at is None and raw_capture is not None:
+        published_at = raw_capture.published_at
     modified_at = _parse_datetime(
-        _string_or_none(news_article.get("dateModified")) if news_article else None
+        _first_text(
+            _string_or_none(news_article.get("dateModified"))
+            if news_article
+            else None,
+            _meta_content(soup, "property", "article:modified_time"),
+            _meta_content(soup, "name", "lastmod"),
+            _tag_attribute(
+                soup.select_one('[itemprop="dateModified"][datetime]'),
+                "datetime",
+            ),
+        )
     )
     section = _first_text(
         _string_or_none(news_article.get("articleSection"))
@@ -148,7 +180,7 @@ def parse_article(
     warnings: list[str] = []
     if not headline:
         warnings.append("missing-headline")
-    if len(plain_text) < 200:
+    if len(plain_text) < _MINIMUM_BODY_CHARACTERS:
         warnings.append("body-too-short")
     if not published_at:
         warnings.append("missing-published-at")
@@ -279,6 +311,9 @@ def _select_body(soup: BeautifulSoup, spec: PublisherSpec) -> Tag | None:
 def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
     for selector in (*COMMON_REMOVE_SELECTORS, *spec.remove_selectors):
         for node in soup.select(selector):
+            node.decompose()
+    for node in soup.select("p, div, span"):
+        if _clean_text(node.get_text(" ", strip=True)).casefold() in _EXACT_NOISE_TEXT:
             node.decompose()
 
 
@@ -700,6 +735,12 @@ def _meta_content(
 
 def _tag_text(node: Tag | None) -> str | None:
     return _clean_text(node.get_text(" ", strip=True)) if node else None
+
+
+def _tag_attribute(node: Tag | None, attribute: str) -> str | None:
+    if not isinstance(node, Tag):
+        return None
+    return _string_or_none(node.get(attribute))
 
 
 def _parse_datetime(value: str | None) -> datetime | None:

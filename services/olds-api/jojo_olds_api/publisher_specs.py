@@ -36,7 +36,7 @@ class PublisherSpec:
 PUBLISHER_SPECS = {
     "ap": PublisherSpec(
         publisher="ap",
-        parser_version="ap-parser/0.1.0",
+        parser_version="ap-parser/0.2.0",
         domains=("apnews.com",),
         default_language="en",
         edition="us",
@@ -50,7 +50,7 @@ PUBLISHER_SPECS = {
     ),
     "wsj": PublisherSpec(
         publisher="wsj",
-        parser_version="wsj-parser/0.1.0",
+        parser_version="wsj-parser/0.2.0",
         domains=("wsj.com", "www.wsj.com"),
         default_language="en",
         edition="us",
@@ -64,7 +64,7 @@ PUBLISHER_SPECS = {
     ),
     "bloomberg": PublisherSpec(
         publisher="bloomberg",
-        parser_version="bloomberg-parser/0.1.0",
+        parser_version="bloomberg-parser/0.2.0",
         domains=("bloomberg.com", "www.bloomberg.com"),
         default_language="en",
         edition="global",
@@ -83,7 +83,7 @@ PUBLISHER_SPECS = {
     ),
     "nyt": PublisherSpec(
         publisher="nyt",
-        parser_version="nyt-parser/0.1.0",
+        parser_version="nyt-parser/0.2.0",
         domains=("nytimes.com", "www.nytimes.com"),
         default_language="en",
         edition="us",
@@ -91,13 +91,18 @@ PUBLISHER_SPECS = {
             "section[name='articleBody']",
             "[data-testid='article-body']",
             ".StoryBodyCompanionColumn",
+            ".story-body",
             "article",
+        ),
+        remove_selectors=(
+            ".story-print-citation",
+            ".story-footer-links",
         ),
         preferred_image_hosts=("static01.nyt.com", "static.nytimes.com"),
     ),
     "reuters": PublisherSpec(
         publisher="reuters",
-        parser_version="reuters-parser/0.1.0",
+        parser_version="reuters-parser/0.2.0",
         domains=("reuters.com", "www.reuters.com"),
         default_language="en",
         edition="global",
@@ -110,7 +115,7 @@ PUBLISHER_SPECS = {
     ),
     "ft": PublisherSpec(
         publisher="ft",
-        parser_version="ft-parser/0.1.0",
+        parser_version="ft-parser/0.2.0",
         domains=("ft.com", "www.ft.com"),
         default_language="en",
         edition="global",
