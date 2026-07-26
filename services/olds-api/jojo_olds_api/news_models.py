@@ -30,6 +30,7 @@ class CaptureProvider(str, Enum):
 class CaptureCandidate(ArchiveModel):
     provider: CaptureProvider
     snapshot_url: str
+    expected_headline: str | None = None
     captured_at: datetime | None = None
     digest: str | None = None
     mime_type: str | None = None

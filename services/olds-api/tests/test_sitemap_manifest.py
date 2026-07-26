@@ -10,9 +10,12 @@ from jojo_olds_api.archive_sources import archive_source_spec
 from jojo_olds_api.raw_archive_capture import manifest_item_from_row
 from jojo_olds_api.nyt_syndication_catalog import (
     initialize_nyt_syndication_schema,
+    next_nyt_syndication_resolution,
     next_nyt_syndication_query,
     nyt_syndication_summary,
     record_nyt_syndication_page,
+    record_nyt_syndication_resolution,
+    resolve_nyt_syndication_search,
 )
 from jojo_olds_api.sitemap_manifest import (
     export_sitemap_manifest,
@@ -227,13 +230,20 @@ def test_nyt_partner_catalog_adds_exact_canonical_direct_candidate(
         total_pages=2,
     )
 
-    assert result == {"seen": 2, "accepted": 1, "totalPages": 2}
+    assert result == {
+        "seen": 2,
+        "accepted": 1,
+        "unresolved": 0,
+        "totalPages": 2,
+    }
     next_query = next_nyt_syndication_query(connection)
     assert next_query is not None
     assert next_query[0:2] == (2026, 2)
     assert nyt_syndication_summary(connection) == {
         "queriesByStatus": {"complete": 1, "pending": 1},
         "articles": 1,
+        "resolutionByStatus": {},
+        "resolutionNeeded": 0,
         "shouldContinue": True,
     }
 
@@ -253,6 +263,89 @@ def test_nyt_partner_catalog_adds_exact_canonical_direct_candidate(
     assert item.published_at == "2026-04-15T00:00:00+00:00"
     assert item.candidates[0].provider.value == "other"
     assert item.candidates[0].snapshot_url == syndicated_url
+    assert (
+        item.candidates[0].expected_headline
+        == "Dam failure could imperil thousands in Northern Michigan"
+    )
+
+
+def test_nyt_partner_catalog_resolves_legacy_copy_by_title_and_date():
+    canonical_url = (
+        "https://www.nytimes.com/2024/01/01/upshot/"
+        "2024-election-trump-biden.html"
+    )
+    syndicated_url = (
+        "https://www.hawaiitribune-herald.com/2024/01/02/"
+        "nation-world-news/looking-ahead-to-five-things/"
+    )
+    headline = "Looking ahead to 5 things that will shape the 2024 election"
+    connection = sqlite3.connect(":memory:")
+    initialize_nyt_syndication_schema(
+        connection,
+        from_year=2024,
+        to_year=2024,
+    )
+    query = next_nyt_syndication_query(connection)
+    assert query is not None
+    year, page, request_url = query
+    result = record_nyt_syndication_page(
+        connection,
+        year=year,
+        page=page,
+        request_url=request_url,
+        content=json.dumps(
+            [
+                {
+                    "date": "2024-01-02T00:05:00",
+                    "date_gmt": "2024-01-02T10:05:00",
+                    "link": syndicated_url,
+                    "title": {"rendered": headline},
+                    "content": {
+                        "rendered": (
+                            "<p>Legacy full body without a source link.</p>"
+                        )
+                    },
+                }
+            ]
+        ).encode(),
+        total_pages=1,
+    )
+    assert result["accepted"] == 0
+    assert result["unresolved"] == 1
+    resolution = next_nyt_syndication_resolution(connection)
+    assert resolution is not None
+    search_html = f"""
+    <html><body><ol id="web"><li><div class="compTitle">
+      <a href="{canonical_url}"><h3>
+        Looking Ahead to 5 Things That Will Shape the 2024 Election
+      </h3></a>
+    </div></li></ol></body></html>
+    """.encode()
+    resolved = resolve_nyt_syndication_search(
+        search_html,
+        headline=headline,
+        partner_published_at="2024-01-02T10:05:00",
+    )
+    assert resolved == (
+        canonical_url,
+        "2024-01-01T00:00:00+00:00",
+    )
+    record_nyt_syndication_resolution(
+        connection,
+        syndicated_url=syndicated_url,
+        partner_published_at="2024-01-02T10:05:00",
+        headline=headline,
+        source_endpoint="https://example.com/wp-json/wp/v2/posts",
+        resolved=resolved,
+    )
+    assert next_nyt_syndication_resolution(connection) is None
+    assert nyt_syndication_summary(connection) == {
+        "queriesByStatus": {"complete": 1},
+        "articles": 1,
+        "resolutionByStatus": {"complete": 1},
+        "resolutionNeeded": 0,
+        "shouldContinue": False,
+    }
 
 
 def test_ap_historical_sitemap_candidates_include_live_fallback():

@@ -458,7 +458,7 @@ def capture_item(
                 validated, validation_signals = (
                     _validate_nyt_syndication_response(
                         item,
-                        expected_headline=None,
+                        expected_headline=candidate.expected_headline,
                         content=response[2],
                         final_url=response[3],
                     )

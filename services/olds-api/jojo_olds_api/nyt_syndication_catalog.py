@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 import sqlite3
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode, urlsplit
 
 from bs4 import BeautifulSoup
 
@@ -19,6 +20,24 @@ DEFAULT_ENDPOINT = (
 DEFAULT_TAG_ID = 768
 PAGE_SIZE = 100
 MAXIMUM_RESPONSE_BYTES = 10_000_000
+RESOLUTION_TARGET_PER_YEAR = 500
+YAHOO_SEARCH_ENDPOINT = "https://search.yahoo.com/search"
+_STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "by",
+    "for",
+    "from",
+    "in",
+    "of",
+    "on",
+    "the",
+    "to",
+    "with",
+}
 
 
 def initialize_nyt_syndication_schema(
@@ -54,14 +73,50 @@ def initialize_nyt_syndication_schema(
             published_at TEXT NOT NULL,
             syndicated_url TEXT NOT NULL,
             partner_published_at TEXT,
+            headline TEXT NOT NULL DEFAULT '',
+            mapping_method TEXT NOT NULL DEFAULT 'canonical-link',
             source_endpoint TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS nyt_syndication_unresolved (
+            syndicated_url TEXT PRIMARY KEY,
+            partner_published_at TEXT NOT NULL,
+            headline TEXT NOT NULL,
+            source_endpoint TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
             updated_at TEXT NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_nyt_syndication_articles_published
         ON nyt_syndication_articles(published_at);
+
+        CREATE INDEX IF NOT EXISTS idx_nyt_syndication_unresolved_status
+        ON nyt_syndication_unresolved(status, partner_published_at);
         """
     )
+    article_columns = {
+        str(row[1])
+        for row in connection.execute(
+            "PRAGMA table_info(nyt_syndication_articles)"
+        )
+    }
+    if "headline" not in article_columns:
+        connection.execute(
+            """
+            ALTER TABLE nyt_syndication_articles
+            ADD COLUMN headline TEXT NOT NULL DEFAULT ''
+            """
+        )
+    if "mapping_method" not in article_columns:
+        connection.execute(
+            """
+            ALTER TABLE nyt_syndication_articles
+            ADD COLUMN mapping_method TEXT NOT NULL DEFAULT 'canonical-link'
+            """
+        )
     fingerprint = hashlib.sha256(
         json.dumps(
             {
@@ -181,17 +236,42 @@ def record_nyt_syndication_page(
     payload = json.loads(content)
     if not isinstance(payload, list):
         raise ValueError("NYT syndication page must be a JSON list")
-    accepted: list[tuple[str, str, str, str | None, str, str]] = []
+    accepted: list[
+        tuple[str, str, str, str | None, str, str, str, str]
+    ] = []
+    unresolved: list[tuple[str, str, str, str, str]] = []
     for row in payload:
         parsed = parse_nyt_syndication_post(
             row,
             source_endpoint=endpoint,
         )
         if parsed is None:
+            metadata = _nyt_partner_post_metadata(row)
+            if metadata is not None:
+                (
+                    syndicated_url,
+                    partner_published_at,
+                    headline,
+                    _,
+                ) = metadata
+                if partner_published_at.startswith(f"{year:04d}-"):
+                    unresolved.append(
+                        (
+                            syndicated_url,
+                            partner_published_at,
+                            headline,
+                            endpoint,
+                            _now_iso(),
+                        )
+                    )
             continue
-        canonical_url, published_at, syndicated_url, partner_published_at = (
-            parsed
-        )
+        (
+            canonical_url,
+            published_at,
+            syndicated_url,
+            partner_published_at,
+            headline,
+        ) = parsed
         if not published_at.startswith(f"{year:04d}-"):
             continue
         accepted.append(
@@ -200,6 +280,8 @@ def record_nyt_syndication_page(
                 published_at,
                 syndicated_url,
                 partner_published_at,
+                headline,
+                "canonical-link",
                 endpoint,
                 _now_iso(),
             )
@@ -214,17 +296,46 @@ def record_nyt_syndication_page(
                 published_at,
                 syndicated_url,
                 partner_published_at,
+                headline,
+                mapping_method,
                 source_endpoint,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(canonical_url) DO UPDATE SET
                 published_at=excluded.published_at,
                 syndicated_url=excluded.syndicated_url,
                 partner_published_at=excluded.partner_published_at,
+                headline=excluded.headline,
+                mapping_method=excluded.mapping_method,
                 source_endpoint=excluded.source_endpoint,
                 updated_at=excluded.updated_at
             """,
             accepted,
+        )
+        connection.executemany(
+            """
+            INSERT INTO nyt_syndication_unresolved(
+                syndicated_url,
+                partner_published_at,
+                headline,
+                source_endpoint,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(syndicated_url) DO UPDATE SET
+                partner_published_at=excluded.partner_published_at,
+                headline=excluded.headline,
+                source_endpoint=excluded.source_endpoint,
+                updated_at=excluded.updated_at
+            WHERE nyt_syndication_unresolved.status != 'complete'
+            """,
+            unresolved,
+        )
+        connection.executemany(
+            """
+            DELETE FROM nyt_syndication_unresolved
+            WHERE syndicated_url=?
+            """,
+            ((row[2],) for row in accepted),
         )
         connection.execute(
             """
@@ -271,6 +382,7 @@ def record_nyt_syndication_page(
     return {
         "seen": len(payload),
         "accepted": len(accepted),
+        "unresolved": len(unresolved),
         "totalPages": total_pages,
     }
 
@@ -279,22 +391,16 @@ def parse_nyt_syndication_post(
     value: object,
     *,
     source_endpoint: str = DEFAULT_ENDPOINT,
-) -> tuple[str, str, str, str | None] | None:
-    if not isinstance(value, dict):
+) -> tuple[str, str, str, str | None, str] | None:
+    metadata = _nyt_partner_post_metadata(value)
+    if metadata is None:
         return None
-    syndicated_url = value.get("link")
-    content_value = value.get("content")
-    if (
-        not isinstance(syndicated_url, str)
-        or not isinstance(content_value, dict)
-    ):
-        return None
-    rendered = content_value.get("rendered")
-    if not isinstance(rendered, str):
-        return None
-    partner_published_at = value.get("date_gmt") or value.get("date")
-    if not isinstance(partner_published_at, str):
-        partner_published_at = None
+    (
+        syndicated_url,
+        partner_published_at,
+        headline,
+        rendered,
+    ) = metadata
     partner_date = _parse_datetime(partner_published_at)
 
     publisher_spec = archive_source_spec("nyt")
@@ -341,19 +447,249 @@ def parse_nyt_syndication_post(
         published_at,
         syndicated_url,
         partner_published_at,
+        headline,
     )
+
+
+def _nyt_partner_post_metadata(
+    value: object,
+) -> tuple[str, str, str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    syndicated_url = value.get("link")
+    content_value = value.get("content")
+    title_value = value.get("title")
+    partner_published_at = value.get("date_gmt") or value.get("date")
+    if (
+        not isinstance(syndicated_url, str)
+        or not isinstance(content_value, dict)
+        or not isinstance(title_value, dict)
+        or not isinstance(partner_published_at, str)
+    ):
+        return None
+    rendered = content_value.get("rendered")
+    rendered_title = title_value.get("rendered")
+    if not isinstance(rendered, str) or not isinstance(rendered_title, str):
+        return None
+    headline = BeautifulSoup(
+        rendered_title,
+        "html.parser",
+    ).get_text(" ", strip=True)
+    if len(_significant_tokens(headline)) < 4:
+        return None
+    return syndicated_url, partner_published_at, headline, rendered
+
+
+def next_nyt_syndication_resolution(
+    connection: sqlite3.Connection,
+    *,
+    target_per_year: int = RESOLUTION_TARGET_PER_YEAR,
+) -> tuple[str, str, str, str] | None:
+    row = connection.execute(
+        """
+        SELECT
+            unresolved.syndicated_url,
+            unresolved.partner_published_at,
+            unresolved.headline,
+            unresolved.source_endpoint
+        FROM nyt_syndication_unresolved AS unresolved
+        WHERE unresolved.status='pending'
+          AND (
+            SELECT COUNT(*)
+            FROM nyt_syndication_articles AS article
+            WHERE substr(article.published_at, 1, 4)
+                  = substr(unresolved.partner_published_at, 1, 4)
+          ) < ?
+        ORDER BY unresolved.partner_published_at DESC,
+                 unresolved.syndicated_url
+        LIMIT 1
+        """,
+        (target_per_year,),
+    ).fetchone()
+    if row is None:
+        return None
+    return tuple(str(value) for value in row)
+
+
+def nyt_syndication_resolution_url(headline: str) -> str:
+    return YAHOO_SEARCH_ENDPOINT + "?" + urlencode(
+        {"p": headline + " New York Times"}
+    )
+
+
+def resolve_nyt_syndication_search(
+    content: bytes,
+    *,
+    headline: str,
+    partner_published_at: str,
+) -> tuple[str, str] | None:
+    partner_date = _parse_datetime(partner_published_at)
+    if partner_date is None:
+        return None
+    publisher_spec = archive_source_spec("nyt")
+    soup = BeautifulSoup(content, "html.parser")
+    ranked: list[tuple[float, int, str, str]] = []
+    for position, result in enumerate(soup.select("#web li")):
+        anchor = (
+            result.select_one(".compTitle > a")
+            or result.select_one("h3 a")
+            or result.select_one("a")
+        )
+        heading = result.select_one("h3")
+        if anchor is None or heading is None:
+            continue
+        candidate_url = _decode_yahoo_result(anchor.get("href"))
+        if candidate_url is None:
+            continue
+        canonical_url = normalize_article_url(
+            publisher_spec,
+            candidate_url,
+        )
+        if canonical_url is None:
+            continue
+        published_at = infer_published_at(canonical_url)
+        published_date = _parse_datetime(published_at)
+        if (
+            published_at is None
+            or published_date is None
+            or abs((partner_date.date() - published_date.date()).days) > 2
+        ):
+            continue
+        result_headline = _clean_search_headline(
+            heading.get_text(" ", strip=True)
+        )
+        overlap = _headline_overlap(headline, result_headline)
+        if overlap < 0.75:
+            continue
+        ranked.append((-overlap, position, canonical_url, published_at))
+    if not ranked:
+        return None
+    _, _, canonical_url, published_at = min(ranked)
+    return canonical_url, published_at
+
+
+def record_nyt_syndication_resolution(
+    connection: sqlite3.Connection,
+    *,
+    syndicated_url: str,
+    partner_published_at: str,
+    headline: str,
+    source_endpoint: str,
+    resolved: tuple[str, str] | None,
+) -> None:
+    now = _now_iso()
+    with connection:
+        if resolved is not None:
+            canonical_url, published_at = resolved
+            connection.execute(
+                """
+                INSERT INTO nyt_syndication_articles(
+                    canonical_url,
+                    published_at,
+                    syndicated_url,
+                    partner_published_at,
+                    headline,
+                    mapping_method,
+                    source_endpoint,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'headline-search', ?, ?)
+                ON CONFLICT(canonical_url) DO UPDATE SET
+                    published_at=excluded.published_at,
+                    syndicated_url=excluded.syndicated_url,
+                    partner_published_at=excluded.partner_published_at,
+                    headline=excluded.headline,
+                    mapping_method=excluded.mapping_method,
+                    source_endpoint=excluded.source_endpoint,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    canonical_url,
+                    published_at,
+                    syndicated_url,
+                    partner_published_at,
+                    headline,
+                    source_endpoint,
+                    now,
+                ),
+            )
+        connection.execute(
+            """
+            UPDATE nyt_syndication_unresolved
+            SET status='complete',
+                attempts=attempts+1,
+                last_error=?,
+                updated_at=?
+            WHERE syndicated_url=?
+            """,
+            (
+                None if resolved is not None else "no strict title match",
+                now,
+                syndicated_url,
+            ),
+        )
+
+
+def _decode_yahoo_result(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    match = re.search(r"/RU=([^/]+)/RK=", value)
+    candidate_url = unquote(match.group(1)) if match else value
+    parsed = urlsplit(candidate_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return candidate_url
+
+
+def _clean_search_headline(value: str) -> str:
+    value = re.sub(
+        r"^\s*(?:opinion|guest essay)\s*[|:-]\s*",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(
+        r"\s+(?:[-|]\s*)?(?:The )?New York Times\s*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"\s*(?:…|\.\.\.)\s*$", "", value).strip()
+
+
+def _headline_overlap(first: str, second: str) -> float:
+    first_tokens = _significant_tokens(first)
+    second_tokens = _significant_tokens(second)
+    if not first_tokens or not second_tokens:
+        return 0.0
+    return len(first_tokens & second_tokens) / min(
+        len(first_tokens),
+        len(second_tokens),
+    )
+
+
+def _significant_tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", value.casefold())
+        if token not in _STOP_WORDS
+    }
 
 
 def nyt_syndication_articles(
     connection: sqlite3.Connection,
-) -> dict[str, tuple[str, str]]:
+) -> dict[str, tuple[str, str, str]]:
     if not _table_exists(connection, "nyt_syndication_articles"):
         return {}
     return {
-        str(canonical_url): (str(published_at), str(syndicated_url))
-        for canonical_url, published_at, syndicated_url in connection.execute(
+        str(canonical_url): (
+            str(published_at),
+            str(syndicated_url),
+            str(headline),
+        )
+        for canonical_url, published_at, syndicated_url, headline
+        in connection.execute(
             """
-            SELECT canonical_url, published_at, syndicated_url
+            SELECT canonical_url, published_at, syndicated_url, headline
             FROM nyt_syndication_articles
             ORDER BY canonical_url
             """
@@ -368,6 +704,8 @@ def nyt_syndication_summary(
         return {
             "queriesByStatus": {},
             "articles": 0,
+            "resolutionByStatus": {},
+            "resolutionNeeded": 0,
             "shouldContinue": False,
         }
     counts = dict(
@@ -384,12 +722,42 @@ def nyt_syndication_summary(
             "SELECT COUNT(*) FROM nyt_syndication_articles"
         ).fetchone()[0]
     )
+    resolution_counts = dict(
+        connection.execute(
+            """
+            SELECT status, COUNT(*)
+            FROM nyt_syndication_unresolved
+            GROUP BY status
+            """
+        ).fetchall()
+    )
+    resolution_needed = int(
+        connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM nyt_syndication_unresolved AS unresolved
+            WHERE unresolved.status='pending'
+              AND (
+                SELECT COUNT(*)
+                FROM nyt_syndication_articles AS article
+                WHERE substr(article.published_at, 1, 4)
+                      = substr(unresolved.partner_published_at, 1, 4)
+              ) < ?
+            """,
+            (RESOLUTION_TARGET_PER_YEAR,),
+        ).fetchone()[0]
+    )
     return {
         "queriesByStatus": counts,
         "articles": articles,
-        "shouldContinue": any(
-            status != "complete" and count > 0
-            for status, count in counts.items()
+        "resolutionByStatus": resolution_counts,
+        "resolutionNeeded": resolution_needed,
+        "shouldContinue": (
+            any(
+                status != "complete" and count > 0
+                for status, count in counts.items()
+            )
+            or resolution_needed > 0
         ),
     }
 

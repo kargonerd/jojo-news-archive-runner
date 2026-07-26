@@ -361,7 +361,8 @@ def export_sitemap_manifest(
             SELECT
                 sitemap.canonical_url,
                 COALESCE(sitemap.published_at, syndication.published_at),
-                syndication.syndicated_url
+                syndication.syndicated_url,
+                syndication.headline
             FROM sitemap_articles AS sitemap
             LEFT JOIN nyt_syndication_articles AS syndication
               ON syndication.canonical_url=sitemap.canonical_url
@@ -369,7 +370,8 @@ def export_sitemap_manifest(
             SELECT
                 syndication.canonical_url,
                 syndication.published_at,
-                syndication.syndicated_url
+                syndication.syndicated_url,
+                syndication.headline
             FROM nyt_syndication_articles AS syndication
             LEFT JOIN sitemap_articles AS sitemap
               ON sitemap.canonical_url=syndication.canonical_url
@@ -380,13 +382,18 @@ def export_sitemap_manifest(
     else:
         article_rows = connection.execute(
             """
-            SELECT canonical_url, published_at, NULL
+            SELECT canonical_url, published_at, NULL, NULL
             FROM sitemap_articles
             ORDER BY canonical_url
             """
         )
     with opener(temporary, "wt", encoding="utf-8") as handle:
-        for canonical_url, published_at, syndicated_url in article_rows:
+        for (
+            canonical_url,
+            published_at,
+            syndicated_url,
+            expected_headline,
+        ) in article_rows:
             candidate_rows = sitemap_wayback_candidates(
                 publisher,
                 canonical_url,
@@ -397,6 +404,11 @@ def export_sitemap_manifest(
                     {
                         "provider": "other",
                         "snapshotUrl": syndicated_url,
+                        **(
+                            {"expectedHeadline": expected_headline}
+                            if expected_headline
+                            else {}
+                        ),
                     },
                     *candidate_rows,
                 ]

@@ -17,8 +17,12 @@ from jojo_olds_api.nyt_syndication_catalog import (
     MAXIMUM_RESPONSE_BYTES,
     initialize_nyt_syndication_schema,
     next_nyt_syndication_query,
+    next_nyt_syndication_resolution,
+    nyt_syndication_resolution_url,
     nyt_syndication_summary,
     record_nyt_syndication_page,
+    record_nyt_syndication_resolution,
+    resolve_nyt_syndication_search,
 )
 from jojo_olds_api.sitemap_manifest import (
     SitemapClient,
@@ -105,6 +109,8 @@ def main() -> int:
     finally:
         client.close()
     syndication_processed = 0
+    syndication_resolutions = 0
+    syndication_resolution_matches = 0
     syndication_error: str | None = None
     if args.publisher == "nyt":
         initialize_nyt_syndication_schema(
@@ -174,6 +180,89 @@ def main() -> int:
                     ),
                     flush=True,
                 )
+            maximum_resolutions = args.max_sitemaps * 10
+            while syndication_resolutions < maximum_resolutions:
+                resolution = next_nyt_syndication_resolution(connection)
+                if resolution is None:
+                    break
+                (
+                    syndicated_url,
+                    partner_published_at,
+                    headline,
+                    source_endpoint,
+                ) = resolution
+                search_url = nyt_syndication_resolution_url(headline)
+                try:
+                    status, headers, content, _ = syndication_client.fetch(
+                        search_url,
+                        maximum_bytes=2_000_000,
+                    )
+                    content_type = headers.get(
+                        "content-type",
+                        "",
+                    ).casefold()
+                    if status != 200:
+                        raise ValueError(
+                            f"headline search returned HTTP {status}"
+                        )
+                    if (
+                        "html" not in content_type
+                        and b"<html" not in content[:1_000].lower()
+                    ):
+                        raise ValueError(
+                            "headline search did not return HTML"
+                        )
+                    resolved = resolve_nyt_syndication_search(
+                        content,
+                        headline=headline,
+                        partner_published_at=partner_published_at,
+                    )
+                    record_nyt_syndication_resolution(
+                        connection,
+                        syndicated_url=syndicated_url,
+                        partner_published_at=partner_published_at,
+                        headline=headline,
+                        source_endpoint=source_endpoint,
+                        resolved=resolved,
+                    )
+                except Exception as exc:
+                    syndication_error = (
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    print(
+                        json.dumps(
+                            {
+                                "event": "nyt-resolution-error",
+                                "error": syndication_error,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        flush=True,
+                    )
+                    break
+                syndication_resolutions += 1
+                syndication_resolution_matches += int(
+                    resolved is not None
+                )
+                if (
+                    syndication_resolutions % 25 == 0
+                    or syndication_resolutions == maximum_resolutions
+                ):
+                    print(
+                        json.dumps(
+                            {
+                                "event": "nyt-resolution-progress",
+                                "processedThisRun": (
+                                    syndication_resolutions
+                                ),
+                                "matchedThisRun": (
+                                    syndication_resolution_matches
+                                ),
+                            },
+                            ensure_ascii=False,
+                        ),
+                        flush=True,
+                    )
         finally:
             syndication_client.close()
     manifest = export_sitemap_manifest(
@@ -202,6 +291,10 @@ def main() -> int:
         "state": str(state),
         "sitemapsThisRun": processed,
         "nytSyndicationPagesThisRun": syndication_processed,
+        "nytSyndicationResolutionsThisRun": syndication_resolutions,
+        "nytSyndicationResolutionMatchesThisRun": (
+            syndication_resolution_matches
+        ),
         **(
             {"nytSyndication": syndication}
             if syndication is not None
