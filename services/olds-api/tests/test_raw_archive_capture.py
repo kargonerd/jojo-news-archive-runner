@@ -5,6 +5,7 @@ import gzip
 import json
 from pathlib import Path
 import sqlite3
+from urllib.parse import parse_qs, urlsplit
 
 from jojo_olds_api.news_models import (
     CaptureCandidate,
@@ -779,6 +780,10 @@ def test_arquivo_pt_candidates_are_exact_deduplicated_and_ranked():
         candidates=(),
     )
     query_url = arquivo_pt_cdx_url(item)
+    assert parse_qs(urlsplit(query_url).query)["filter"] == [
+        "=status:200",
+        "=mime:text/html",
+    ]
     rows = [
         {
             "url": canonical_url,
@@ -907,7 +912,8 @@ def test_ft_capture_falls_back_to_validated_arquivo_pt_replay(
     )
 
     assert result["status"] == "complete"
-    assert client.requests == [timemap_url, query_url, replay_url]
+    assert client.requests[0] == timemap_url
+    assert client.requests[-2:] == [query_url, replay_url]
     capture = result["capture"]
     assert capture.selected_candidate.provider == CaptureProvider.ARQUIVO_PT
     assert capture.final_url == replay_url

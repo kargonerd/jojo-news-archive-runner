@@ -33,7 +33,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.9.2",
+    "ft": "ft-capture/0.9.3",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -741,30 +741,6 @@ def capture_item(
             consider_candidates(item.candidates)
 
         if (
-            enable_arquivo_pt_fallback
-            and item.publisher in ARQUIVO_PT_FALLBACK_PUBLISHERS
-            and (best_response is None or best_response[5] < 100)
-        ):
-            try:
-                arquivo_pt_candidates = discover_arquivo_pt_candidates(
-                    item,
-                    archive_client=archive_client,
-                )
-            except Exception as exc:
-                failures.append(f"arquivo-pt-index:{type(exc).__name__}")
-                arquivo_pt_candidates = ()
-            existing_urls = {
-                candidate.snapshot_url for candidate in candidates_considered
-            }
-            arquivo_pt_candidates = tuple(
-                candidate
-                for candidate in arquivo_pt_candidates
-                if candidate.snapshot_url not in existing_urls
-            )
-            candidates_considered.extend(arquivo_pt_candidates)
-            consider_candidates(arquivo_pt_candidates)
-
-        if (
             enable_common_crawl_fallback
             and (best_response is None or best_response[5] < 100)
         ):
@@ -1035,6 +1011,30 @@ def capture_item(
         candidates_considered.extend(fallback_candidates)
         consider_candidates(fallback_candidates)
 
+    if (
+        enable_arquivo_pt_fallback
+        and item.publisher in ARQUIVO_PT_FALLBACK_PUBLISHERS
+        and (best_response is None or best_response[5] < 100)
+    ):
+        try:
+            arquivo_pt_candidates = discover_arquivo_pt_candidates(
+                item,
+                archive_client=archive_client,
+            )
+        except Exception as exc:
+            failures.append(f"arquivo-pt-index:{type(exc).__name__}")
+            arquivo_pt_candidates = ()
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        arquivo_pt_candidates = tuple(
+            candidate
+            for candidate in arquivo_pt_candidates
+            if candidate.snapshot_url not in existing_urls
+        )
+        candidates_considered.extend(arquivo_pt_candidates)
+        consider_candidates(arquivo_pt_candidates)
+
     if best_response is not None:
         (
             candidate,
@@ -1226,8 +1226,8 @@ def arquivo_pt_cdx_url(item: ManifestItem) -> str:
         [
             ("url", item.canonical_url),
             ("output", "json"),
-            ("filter", "statuscode:200"),
-            ("filter", "mimetype:text/html"),
+            ("filter", "=status:200"),
+            ("filter", "=mime:text/html"),
             ("collapse", "digest"),
         ]
     )
