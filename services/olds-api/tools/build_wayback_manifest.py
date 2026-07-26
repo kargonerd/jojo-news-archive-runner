@@ -140,38 +140,9 @@ def main() -> int:
                     ),
                     flush=True,
                 )
-                infini_document_result = process_wsj_infini_documents(
-                    connection,
-                    spec=spec,
-                    http_client=http_client,
-                    maximum=max(1, args.max_pages or 5) * 100,
-                    workers=4,
-                    minimum_request_interval=args.min_request_interval,
-                )
-                wsj_infini_documents_this_run = int(
-                    infini_document_result["attempted"]
-                )
-                infini_document_errors = infini_document_result.pop(
-                    "errors"
-                )
-                deferred_errors.extend(
-                    f"WSJ Infini-News document: {error}"
-                    for error in infini_document_errors
-                )
-                print(
-                    json.dumps(
-                        {
-                            "event": "wsj-infini-documents",
-                            **infini_document_result,
-                            "errors": len(infini_document_errors),
-                        },
-                        ensure_ascii=False,
-                    ),
-                    flush=True,
-                )
             except Exception as exc:
                 deferred_errors.append(
-                    "WSJ Infini-News: "
+                    "WSJ Infini-News query: "
                     f"{type(exc).__name__}: {exc}"
                 )
             if wsj_google_news_should_continue(
@@ -300,6 +271,41 @@ def main() -> int:
             except Exception as exc:
                 deferred_errors.append(
                     "WSJ syndication resolution: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            try:
+                infini_document_result = process_wsj_infini_documents(
+                    connection,
+                    spec=spec,
+                    http_client=http_client,
+                    maximum=max(1, args.max_pages or 5) * 100,
+                    workers=4,
+                    minimum_request_interval=args.min_request_interval,
+                )
+                wsj_infini_documents_this_run = int(
+                    infini_document_result["attempted"]
+                )
+                infini_document_errors = infini_document_result.pop(
+                    "errors"
+                )
+                deferred_errors.extend(
+                    f"WSJ Infini-News document: {error}"
+                    for error in infini_document_errors
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "wsj-infini-documents",
+                            **infini_document_result,
+                            "errors": len(infini_document_errors),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+            except Exception as exc:
+                deferred_errors.append(
+                    "WSJ Infini-News document: "
                     f"{type(exc).__name__}: {exc}"
                 )
             while (
