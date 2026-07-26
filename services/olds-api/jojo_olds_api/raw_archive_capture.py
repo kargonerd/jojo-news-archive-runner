@@ -1852,7 +1852,12 @@ def score_raw_capture(
     content_type: str,
     final_url: str = "",
 ) -> tuple[int, dict[str, object]]:
-    prefix = content[:1_000_000].lower()
+    sampled_content = (
+        content
+        if len(content) <= 2_000_000
+        else content[:1_000_000] + content[-1_000_000:]
+    )
+    prefix = sampled_content.lower()
     looks_like_html = (
         "html" in content_type.casefold()
         or any(marker in prefix for marker in _HTML_MARKERS)
@@ -1889,10 +1894,14 @@ def score_raw_capture(
         and b"log in to keep reading" in prefix
         and b"bloomberg" in prefix
     )
-    subscription_shell = not has_strong_body_marker and (
-        wsj_subscription_shell
-        or bloomberg_subscription_shell
-        or any(marker in prefix for marker in _SUBSCRIPTION_SHELL_MARKERS)
+    wsj_snippet_shell = b'"issnippetview":true' in prefix
+    subscription_shell = wsj_snippet_shell or (
+        not has_strong_body_marker
+        and (
+            wsj_subscription_shell
+            or bloomberg_subscription_shell
+            or any(marker in prefix for marker in _SUBSCRIPTION_SHELL_MARKERS)
+        )
     )
     redirect_shell = not has_strong_body_marker and any(
         marker in prefix for marker in _REDIRECT_SHELL_MARKERS

@@ -1820,6 +1820,26 @@ def test_raw_quality_rejects_wsj_continue_reading_shell():
     assert signals["subscriptionShell"] is True
 
 
+def test_raw_quality_rejects_wsj_structured_snippet_view():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>A WSJ article</title>
+        <script type="application/json">
+        {"isSnippetView":true,"articleBodySchema":[{"@type":"ImageObject"}]}
+        </script></head>
+        <body><article data-testid="article-body">
+        <p>The first two paragraphs are visible but the rest is omitted.</p>
+        </article></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["hasStrongBodyMarker"] is True
+    assert signals["subscriptionShell"] is True
+
+
 def test_raw_quality_rejects_bloomberg_login_to_keep_reading_shell():
     score, signals = score_raw_capture(
         b"""
