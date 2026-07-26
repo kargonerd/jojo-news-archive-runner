@@ -282,6 +282,10 @@ def _list_year_parquet_files(
                 if "cursor=" not in url
                 else None,
             )
+            if response.status_code == 404:
+                # The corpus starts in August 2016 and the latest year can be
+                # incomplete, so absent month partitions are expected.
+                break
             response.raise_for_status()
             payload = response.json()
             if not isinstance(payload, list):

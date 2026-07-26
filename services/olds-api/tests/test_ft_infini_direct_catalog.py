@@ -103,6 +103,29 @@ def test_parquet_footer_row_count_uses_bounded_ranges():
     )
 
 
+def test_year_catalog_skips_months_absent_from_partial_years():
+    class Response:
+        status_code = 404
+        links: dict[str, object] = {}
+
+        def raise_for_status(self) -> None:
+            raise AssertionError("expected 404 month to be skipped")
+
+    class Client:
+        def __init__(self):
+            self.requests = 0
+
+        def get(self, *_args, **_kwargs):
+            self.requests += 1
+            return Response()
+
+    client = Client()
+    files = catalog._list_year_parquet_files(client, year=2016)
+
+    assert files == []
+    assert client.requests == 12
+
+
 def test_scan_accepts_only_provenance_safe_ft_rows(monkeypatch):
     canonical_url = (
         "https://www.ft.com/content/"
