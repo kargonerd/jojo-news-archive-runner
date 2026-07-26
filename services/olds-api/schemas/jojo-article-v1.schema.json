@@ -90,6 +90,7 @@
     "CaptureProvider": {
       "enum": [
         "wayback",
+        "arquivo-pt",
         "commoncrawl",
         "live-origin",
         "other"
