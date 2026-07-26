@@ -8,6 +8,12 @@ import sqlite3
 
 from jojo_olds_api.archive_sources import archive_source_spec
 from jojo_olds_api.raw_archive_capture import manifest_item_from_row
+from jojo_olds_api.nyt_syndication_catalog import (
+    initialize_nyt_syndication_schema,
+    next_nyt_syndication_query,
+    nyt_syndication_summary,
+    record_nyt_syndication_page,
+)
 from jojo_olds_api.sitemap_manifest import (
     export_sitemap_manifest,
     initialize_sitemap_schema,
@@ -154,6 +160,99 @@ def test_current_year_sitemap_candidates_include_live_fallback():
         "provider": "live-origin",
         "snapshotUrl": canonical_url,
     }
+
+
+def test_nyt_partner_catalog_adds_exact_canonical_direct_candidate(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.nytimes.com/2026/04/15/us/"
+        "floods-michigan-cheboygan-dams-evacuation.html"
+    )
+    syndicated_url = (
+        "https://www.hawaiitribune-herald.com/2026/04/16/"
+        "nation-world-news/dam-failure-could-imperil-thousands/"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_sitemap_schema(
+        connection,
+        source=sitemap_source("nyt"),
+        from_year=2026,
+        to_year=2026,
+        sitemap_index=INDEX_XML,
+    )
+    initialize_nyt_syndication_schema(
+        connection,
+        from_year=2026,
+        to_year=2026,
+    )
+    query = next_nyt_syndication_query(connection)
+    assert query is not None
+    year, page, request_url = query
+    content = json.dumps(
+        [
+            {
+                "date": "2026-04-16T00:05:00",
+                "date_gmt": "2026-04-16T10:05:00",
+                "link": syndicated_url,
+                "title": {
+                    "rendered": (
+                        "Dam failure could imperil thousands "
+                        "in Northern Michigan"
+                    )
+                },
+                "content": {
+                    "rendered": (
+                        "<p>Full licensed article body.</p>"
+                        "<ins>This article originally appeared in "
+                        f'<a href="{canonical_url}">'
+                        "The New York Times</a>.</ins>"
+                    )
+                },
+            },
+            {
+                "date": "2026-04-16T00:05:00",
+                "link": "https://example.com/unrelated",
+                "title": {"rendered": "Unrelated article"},
+                "content": {"rendered": "<p>No canonical source link.</p>"},
+            },
+        ]
+    ).encode()
+    result = record_nyt_syndication_page(
+        connection,
+        year=year,
+        page=page,
+        request_url=request_url,
+        content=content,
+        total_pages=2,
+    )
+
+    assert result == {"seen": 2, "accepted": 1, "totalPages": 2}
+    next_query = next_nyt_syndication_query(connection)
+    assert next_query is not None
+    assert next_query[0:2] == (2026, 2)
+    assert nyt_syndication_summary(connection) == {
+        "queriesByStatus": {"complete": 1, "pending": 1},
+        "articles": 1,
+        "shouldContinue": True,
+    }
+
+    destination = tmp_path / "nyt-partner-manifest.jsonl.gz"
+    summary = export_sitemap_manifest(
+        connection,
+        publisher="nyt",
+        destination=destination,
+        from_year=2026,
+        to_year=2026,
+    )
+    assert summary["articles"] == 1
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        row = json.loads(handle.readline())
+    item = manifest_item_from_row(row, publisher="nyt")
+    assert item.canonical_url == canonical_url
+    assert item.published_at == "2026-04-15T00:00:00+00:00"
+    assert item.candidates[0].provider.value == "other"
+    assert item.candidates[0].snapshot_url == syndicated_url
 
 
 def test_ap_historical_sitemap_candidates_include_live_fallback():

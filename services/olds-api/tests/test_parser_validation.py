@@ -190,6 +190,122 @@ def test_validation_plan_can_add_previously_completed_raw_captures(
     assert completed_planned == 2
 
 
+def test_nyt_parser_upgrade_refreshes_plan_and_prefers_direct_copies(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "nyt-manifest.jsonl"
+    rows = []
+    for suffix in range(10):
+        canonical_url = (
+            "https://www.nytimes.com/2026/01/01/world/"
+            f"sample-{suffix}.html"
+        )
+        if suffix < 5:
+            candidates = [
+                {
+                    "provider": "other",
+                    "snapshotUrl": (
+                        "https://example.com/licensed/"
+                        f"sample-{suffix}"
+                    ),
+                }
+            ]
+        else:
+            candidates = [
+                {
+                    "provider": "wayback",
+                    "snapshotUrl": (
+                        "https://web.archive.org/web/20260102000000id_/"
+                        + canonical_url
+                    ),
+                }
+            ]
+        rows.append(
+            {
+                "publisher": "nyt",
+                "canonicalUrl": canonical_url,
+                "publishedAt": "2026-01-01T00:00:00Z",
+                "candidates": candidates,
+            }
+        )
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="nyt",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="nyt",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="nyt",
+        from_year=2026,
+        to_year=2026,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    connection.execute(
+        """
+        UPDATE parser_validation_config
+        SET parser_version='nyt-parser/0.7.0'
+        WHERE sample_year=2026
+        """
+    )
+    connection.execute("DELETE FROM parser_validation_samples")
+    connection.executemany(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url,
+            sample_year,
+            sample_priority,
+            selected_at
+        ) VALUES (?, 2026, ?, '2026-01-01T00:00:00Z')
+        """,
+        (
+            (
+                f"https://www.nytimes.com/2026/01/01/world/sample-{suffix}.html",
+                f"old-{suffix}",
+            )
+            for suffix in (8, 9)
+        ),
+    )
+    connection.commit()
+
+    plan = ensure_parser_validation_plan(
+        connection,
+        publisher="nyt",
+        from_year=2026,
+        to_year=2026,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    selected = pending_captures(
+        connection,
+        retry_errors=False,
+        maximum=2,
+        maximum_record_attempts=3,
+        prioritize_parser_validation=True,
+    )
+
+    year_plan = plan["years"]["2026"]
+    assert year_plan["refreshedForParserVersion"] == 1
+    assert year_plan["addedDirectToPlan"] == 2
+    assert len(selected) == 2
+    assert all(
+        item.candidates[0].provider == CaptureProvider.OTHER
+        for item in selected
+    )
+
+
 def test_validation_plan_adds_completed_samples_to_an_existing_pending_plan(
     tmp_path: Path,
 ):

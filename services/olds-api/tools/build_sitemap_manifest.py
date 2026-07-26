@@ -12,6 +12,14 @@ if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
 from jojo_olds_api.archive_sources import archive_source_spec
+from jojo_olds_api.bloomberg_archive_download import ArchiveClient
+from jojo_olds_api.nyt_syndication_catalog import (
+    MAXIMUM_RESPONSE_BYTES,
+    initialize_nyt_syndication_schema,
+    next_nyt_syndication_query,
+    nyt_syndication_summary,
+    record_nyt_syndication_page,
+)
 from jojo_olds_api.sitemap_manifest import (
     SitemapClient,
     export_sitemap_manifest,
@@ -96,6 +104,78 @@ def main() -> int:
             )
     finally:
         client.close()
+    syndication_processed = 0
+    syndication_error: str | None = None
+    if args.publisher == "nyt":
+        initialize_nyt_syndication_schema(
+            connection,
+            from_year=args.from_year,
+            to_year=args.to_year,
+        )
+        syndication_client = ArchiveClient(
+            minimum_interval=args.min_request_interval,
+            timeout=args.timeout,
+            attempts=args.attempts,
+        )
+        try:
+            while syndication_processed < args.max_sitemaps:
+                query = next_nyt_syndication_query(connection)
+                if query is None:
+                    break
+                year, page, request_url = query
+                try:
+                    status, headers, content, _ = syndication_client.fetch(
+                        request_url,
+                        maximum_bytes=MAXIMUM_RESPONSE_BYTES,
+                    )
+                    if status != 200:
+                        raise ValueError(
+                            f"partner catalog returned HTTP {status}"
+                        )
+                    total_pages = int(
+                        headers.get("x-wp-totalpages") or "0"
+                    )
+                    result = record_nyt_syndication_page(
+                        connection,
+                        year=year,
+                        page=page,
+                        request_url=request_url,
+                        content=content,
+                        total_pages=total_pages,
+                    )
+                except Exception as exc:
+                    syndication_error = (
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    print(
+                        json.dumps(
+                            {
+                                "event": "nyt-syndication-error",
+                                "year": year,
+                                "page": page,
+                                "error": syndication_error,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        flush=True,
+                    )
+                    break
+                syndication_processed += 1
+                print(
+                    json.dumps(
+                        {
+                            "event": "nyt-syndication-page",
+                            "year": year,
+                            "page": page,
+                            "processedThisRun": syndication_processed,
+                            **result,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+        finally:
+            syndication_client.close()
     manifest = export_sitemap_manifest(
         connection,
         publisher=args.publisher,
@@ -103,11 +183,35 @@ def main() -> int:
         from_year=args.from_year,
         to_year=args.to_year,
     )
+    sitemap_is_complete = bool(manifest["complete"])
+    syndication = (
+        nyt_syndication_summary(connection)
+        if args.publisher == "nyt"
+        else None
+    )
+    should_continue = bool(manifest["shouldContinue"]) or bool(
+        syndication and syndication["shouldContinue"]
+    )
     summary = {
         **sitemap_summary(connection),
         **manifest,
+        "sitemapComplete": sitemap_is_complete,
+        "complete": not should_continue,
+        "shouldContinue": should_continue,
+        "captureReady": sitemap_is_complete,
         "state": str(state),
         "sitemapsThisRun": processed,
+        "nytSyndicationPagesThisRun": syndication_processed,
+        **(
+            {"nytSyndication": syndication}
+            if syndication is not None
+            else {}
+        ),
+        **(
+            {"nytSyndicationError": syndication_error}
+            if syndication_error
+            else {}
+        ),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if args.github_output:
@@ -117,6 +221,10 @@ def main() -> int:
             )
             handle.write(
                 f"complete={str(bool(summary['complete'])).lower()}\n"
+            )
+            handle.write(
+                f"capture_ready="
+                f"{str(bool(summary['captureReady'])).lower()}\n"
             )
             handle.write(f"articles={summary['articles']}\n")
     connection.close()

@@ -344,19 +344,62 @@ def export_sitemap_manifest(
     opener = gzip.open if destination.suffix == ".gz" else open
     articles = 0
     candidates = 0
-    with opener(temporary, "wt", encoding="utf-8") as handle:
-        for canonical_url, published_at in connection.execute(
+    has_nyt_syndication = (
+        publisher == "nyt"
+        and connection.execute(
             """
-            SELECT canonical_url, published_at
+            SELECT 1
+            FROM sqlite_master
+            WHERE type='table' AND name='nyt_syndication_articles'
+            """
+        ).fetchone()
+        is not None
+    )
+    if has_nyt_syndication:
+        article_rows = connection.execute(
+            """
+            SELECT
+                sitemap.canonical_url,
+                COALESCE(sitemap.published_at, syndication.published_at),
+                syndication.syndicated_url
+            FROM sitemap_articles AS sitemap
+            LEFT JOIN nyt_syndication_articles AS syndication
+              ON syndication.canonical_url=sitemap.canonical_url
+            UNION ALL
+            SELECT
+                syndication.canonical_url,
+                syndication.published_at,
+                syndication.syndicated_url
+            FROM nyt_syndication_articles AS syndication
+            LEFT JOIN sitemap_articles AS sitemap
+              ON sitemap.canonical_url=syndication.canonical_url
+            WHERE sitemap.canonical_url IS NULL
+            ORDER BY 1
+            """
+        )
+    else:
+        article_rows = connection.execute(
+            """
+            SELECT canonical_url, published_at, NULL
             FROM sitemap_articles
             ORDER BY canonical_url
             """
-        ):
+        )
+    with opener(temporary, "wt", encoding="utf-8") as handle:
+        for canonical_url, published_at, syndicated_url in article_rows:
             candidate_rows = sitemap_wayback_candidates(
                 publisher,
                 canonical_url,
                 published_at=published_at,
             )
+            if syndicated_url:
+                candidate_rows = [
+                    {
+                        "provider": "other",
+                        "snapshotUrl": syndicated_url,
+                    },
+                    *candidate_rows,
+                ]
             row = {
                 "formatVersion": MANIFEST_FORMAT_VERSION,
                 "publisher": publisher,

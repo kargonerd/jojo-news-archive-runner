@@ -878,6 +878,84 @@ def test_nyt_capture_falls_back_to_validated_local_newspaper_copy(
     assert capture.quality_signals["syndicationHeadlineOverlap"] == 1.0
 
 
+def test_nyt_manifest_direct_copy_requires_exact_canonical_provenance(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.nytimes.com/2026/04/15/us/"
+        "floods-michigan-cheboygan-dams-evacuation.html"
+    )
+    syndicated_url = (
+        "https://www.hawaiitribune-herald.com/2026/04/16/"
+        "nation-world-news/dam-failure-could-imperil-thousands/"
+    )
+    item = ManifestItem(
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at="2026-04-15T00:00:00Z",
+        section="us",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=syndicated_url,
+            ),
+        ),
+    )
+    paragraphs = "".join(
+        (
+            "<p>Licensed reporting paragraph "
+            f"{index} contains full details about emergency workers, "
+            "evacuations, damaged roads, rising rivers and the structural "
+            "condition of dams across northern Michigan. Officials described "
+            "the response while residents prepared to leave their homes.</p>"
+        )
+        for index in range(1, 9)
+    )
+    content = f"""
+    <!doctype html><html><head>
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "Dam failure could imperil thousands in Northern Michigan",
+        "datePublished": "2026-04-16T00:05:00Z",
+        "author": {{"name": "New York Times"}}
+      }}
+      </script>
+    </head><body><div class="post-content">
+      {paragraphs}
+      <p>This article originally appeared in
+        <a href="{canonical_url}">The New York Times</a>.
+      </p>
+    </div></body></html>
+    """.encode() + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            syndicated_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                content,
+                syndicated_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [syndicated_url]
+    capture = result["capture"]
+    assert capture.quality_signals["nytSyndicationValidated"] is True
+    assert (
+        capture.quality_signals["syndicationCanonicalArticleLinked"]
+        is True
+    )
+
+
 def test_nyt_syndication_rejects_unattributed_same_topic_article(
     tmp_path: Path,
 ):

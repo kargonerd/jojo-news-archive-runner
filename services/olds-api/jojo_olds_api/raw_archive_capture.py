@@ -451,6 +451,35 @@ def capture_item(
                 failures.append(failure)
             if response is None:
                 continue
+            if (
+                item.publisher == "nyt"
+                and candidate.provider == CaptureProvider.OTHER
+            ):
+                validated, validation_signals = (
+                    _validate_nyt_syndication_response(
+                        item,
+                        expected_headline=None,
+                        content=response[2],
+                        final_url=response[3],
+                    )
+                )
+                if not validated:
+                    failures.append(
+                        "nyt-syndication:validation:"
+                        + str(
+                            validation_signals.get("reason") or "failed"
+                        )
+                    )
+                    continue
+                response = (
+                    response[0],
+                    response[1],
+                    response[2],
+                    response[3],
+                    response[4],
+                    response[5],
+                    response[6] | validation_signals,
+                )
             if best_response is None or response[5] > best_response[5]:
                 best_response = response
             if response[5] == 100:
@@ -1559,11 +1588,6 @@ def _validate_nyt_syndication_response(
 ) -> tuple[bool, dict[str, object]]:
     from .news_parser import parse_article
 
-    if not expected_headline:
-        return False, {
-            "reason": "missing-original-headline",
-            "nytSyndicationValidated": False,
-        }
     try:
         article = parse_article(
             content,
@@ -1576,10 +1600,6 @@ def _validate_nyt_syndication_response(
             "reason": f"parser-{type(exc).__name__}",
             "nytSyndicationValidated": False,
         }
-    headline_overlap = _headline_text_overlap(
-        expected_headline,
-        article.headline or "",
-    )
     soup = BeautifulSoup(content, "html.parser")
     visible_text = soup.get_text(" ", strip=True)
     author_text = " ".join(author.name for author in article.authors)
@@ -1606,12 +1626,24 @@ def _validate_nyt_syndication_response(
         content.decode("utf-8", errors="ignore"),
         item.canonical_url,
     )
+    has_provenance = bool(expected_headline) or canonical_linked
+    headline_overlap = (
+        _headline_text_overlap(
+            expected_headline,
+            article.headline or "",
+        )
+        if expected_headline
+        else 1.0
+        if canonical_linked
+        else 0.0
+    )
     body_characters = article.quality.body_characters
     title_matches = headline_overlap >= 0.75
     valid = (
         article.quality.status == ArticleStatus.COMPLETE
         and body_characters >= NYT_SYNDICATION_MINIMUM_BODY_CHARACTERS
         and attributed
+        and has_provenance
         and title_matches
         and date_matches
     )
@@ -1621,6 +1653,8 @@ def _validate_nyt_syndication_response(
         reason = "body-too-short"
     elif not attributed:
         reason = "missing-nyt-attribution"
+    elif not has_provenance:
+        reason = "missing-original-headline"
     elif not title_matches:
         reason = "headline-mismatch"
     elif not date_matches:

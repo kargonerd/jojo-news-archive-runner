@@ -118,6 +118,35 @@ def ensure_parser_validation_plan(
     initialize_parser_validation_schema(connection)
     now = _now_iso()
     current_parser_version = publisher_spec(publisher).parser_version
+    previous_versions = {
+        int(year): str(parser_version)
+        for year, parser_version in connection.execute(
+            """
+            SELECT sample_year, parser_version
+            FROM parser_validation_config
+            WHERE sample_year >= ? AND sample_year <= ?
+            """,
+            (from_year, to_year),
+        )
+    }
+    refreshed_years = {
+        year
+        for year in range(from_year, to_year + 1)
+        if (
+            publisher == "nyt"
+            and year in previous_versions
+            and previous_versions[year] != current_parser_version
+        )
+    }
+    if refreshed_years:
+        placeholders = ",".join("?" for _ in refreshed_years)
+        connection.execute(
+            f"""
+            DELETE FROM parser_validation_samples
+            WHERE sample_year IN ({placeholders})
+            """,
+            sorted(refreshed_years),
+        )
     connection.executemany(
         """
         INSERT INTO parser_validation_config(
@@ -244,6 +273,34 @@ def ensure_parser_validation_plan(
         actionable += len(completed_selected)
         desired_actionable = max(0, target_per_year - evaluated) + reserve
         add_count = max(0, desired_actionable - actionable)
+        direct_selected: list[tuple[str, str]] = []
+        if publisher == "nyt" and add_count:
+            direct_selected = _select_additional_samples(
+                connection,
+                publisher=publisher,
+                year=year,
+                limit=add_count,
+                seed=seed,
+                completed_only=False,
+                direct_only=True,
+            )
+            connection.executemany(
+                """
+                INSERT OR IGNORE INTO parser_validation_samples(
+                    canonical_url,
+                    sample_year,
+                    sample_priority,
+                    selected_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    (canonical_url, year, priority, now)
+                    for priority, canonical_url in direct_selected
+                ),
+            )
+            actionable += len(direct_selected)
+            add_count -= len(direct_selected)
         selected = _select_additional_samples(
             connection,
             publisher=publisher,
@@ -268,8 +325,14 @@ def ensure_parser_validation_plan(
             "available": available,
             "evaluated": evaluated,
             "actionableBeforePlanning": actionable_before_planning,
+            "refreshedForParserVersion": int(year in refreshed_years),
             "addedCompletedToPlan": len(completed_selected),
-            "addedToPlan": len(completed_selected) + len(selected),
+            "addedDirectToPlan": len(direct_selected),
+            "addedToPlan": (
+                len(completed_selected)
+                + len(direct_selected)
+                + len(selected)
+            ),
         }
     connection.commit()
     return {
@@ -311,7 +374,14 @@ def pending_parser_validation_urls(
                 sample.sample_year,
                 ROW_NUMBER() OVER (
                     PARTITION BY sample.sample_year
-                    ORDER BY sample.sample_priority
+                    ORDER BY
+                        CASE
+                            WHEN capture.candidates_json
+                                 LIKE '%"provider":"other"%'
+                            THEN 0
+                            ELSE 1
+                        END,
+                        sample.sample_priority
                 ) AS sample_rank
             FROM parser_validation_samples AS sample
             JOIN active_years
@@ -744,6 +814,7 @@ def _select_additional_samples(
     limit: int,
     seed: str,
     completed_only: bool,
+    direct_only: bool = False,
 ) -> list[tuple[str, str]]:
     if limit <= 0:
         return []
@@ -756,6 +827,13 @@ def _select_additional_samples(
           AND capture.raw_path IS NOT NULL
         """
         if completed_only
+        else ""
+    )
+    direct_filter = (
+        """
+          AND capture.candidates_json LIKE '%"provider":"other"%'
+        """
+        if direct_only
         else ""
     )
     rows: Iterable[tuple[str]] = connection.execute(
@@ -771,6 +849,7 @@ def _select_additional_samples(
             OR capture.raw_path IS NOT NULL
           )
           {completed_filter}
+          {direct_filter}
           AND sample.canonical_url IS NULL
         """,
         (start, end),
