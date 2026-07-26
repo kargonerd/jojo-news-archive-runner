@@ -49,6 +49,7 @@ def plan_validation_dispatch(
         (publisher, year): {
             "ready": False,
             "evaluated": 0,
+            "replayableEvaluated": 0,
             "summaryPaths": [],
         }
         for publisher in PUBLISHER_ORDER
@@ -81,17 +82,21 @@ def plan_validation_dispatch(
             row = years.get(str(year))
             if not isinstance(row, dict):
                 continue
+            cell = progress[(publisher, year)]
+            cell["replayableEvaluated"] = max(
+                int(cell["replayableEvaluated"]),
+                _integer(row.get("evaluated")),
+            )
+            paths = cell["summaryPaths"]
+            if isinstance(paths, list):
+                paths.append(summary_path.relative_to(state_root).as_posix())
             if row.get("parserVersion") != versions[publisher]:
                 continue
-            cell = progress[(publisher, year)]
             cell["evaluated"] = max(
                 int(cell["evaluated"]),
                 _integer(row.get("evaluated")),
             )
             cell["ready"] = bool(cell["ready"]) or _year_ready(row)
-            paths = cell["summaryPaths"]
-            if isinstance(paths, list):
-                paths.append(summary_path.relative_to(state_root).as_posix())
 
     active_cells: set[tuple[str, int]] = set()
     for title in active_titles:
@@ -117,6 +122,7 @@ def plan_validation_dispatch(
     }
     candidates.sort(
         key=lambda cell: (
+            -int(progress[cell]["replayableEvaluated"]),
             -int(progress[cell]["evaluated"]),
             order[cell[0]],
             cell[1],
@@ -127,6 +133,9 @@ def plan_validation_dispatch(
             publisher=publisher,
             year=year,
             evaluated=int(progress[(publisher, year)]["evaluated"]),
+            replayable_evaluated=int(
+                progress[(publisher, year)]["replayableEvaluated"]
+            ),
             parser_version=versions[publisher],
         )
         for publisher, year in candidates[:max_dispatch]
@@ -183,6 +192,7 @@ def _task(
     publisher: str,
     year: int,
     evaluated: int,
+    replayable_evaluated: int,
     parser_version: str,
 ) -> dict[str, object]:
     if publisher == "reuters":
@@ -201,5 +211,6 @@ def _task(
             "macos-15-intel" if publisher == "nyt" else "ubuntu-latest"
         ),
         "currentEvaluated": evaluated,
+        "replayableEvaluated": replayable_evaluated,
         "parserVersion": parser_version,
     }

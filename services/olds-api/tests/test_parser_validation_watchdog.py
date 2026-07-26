@@ -144,9 +144,41 @@ def test_watchdog_prioritizes_nearly_complete_current_sample(
             ),
             "runnerOs": "ubuntu-latest",
             "currentEvaluated": 499,
+            "replayableEvaluated": 499,
             "parserVersion": "reuters-parser/0.7.0",
         }
     ]
+
+
+def test_watchdog_prioritizes_stale_corpus_for_parser_replay(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "bloomberg/2016-2026/sitemap-wayback/state/summary.json",
+        publisher="bloomberg",
+        year=2016,
+        evaluated=519,
+        parser_version="bloomberg-parser/0.8.0",
+    )
+    _write_summary(
+        tmp_path,
+        "validation/reuters/2024/state/summary.json",
+        publisher="reuters",
+        year=2024,
+        evaluated=41,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+    )
+
+    assert plan["tasks"][0]["publisher"] == "bloomberg"
+    assert plan["tasks"][0]["year"] == 2016
+    assert plan["tasks"][0]["currentEvaluated"] == 0
+    assert plan["tasks"][0]["replayableEvaluated"] == 519
 
 
 def test_watchdog_requires_rates_and_zero_errors(tmp_path: Path):
