@@ -50,6 +50,27 @@ The capture checkpoint also contains the deterministic sample plan and parser
 validation results. `state/summary.json` exposes progress and readiness by
 year under `parserValidation`.
 
+When a full publisher shard is progressing too slowly to exercise every year,
+the `Parser validation accelerator` workflow filters that shard's existing
+manifest to one year and uses an independent checkpoint:
+
+```text
+news-archive/v1/validation/{publisher}/{year}/
+  catalog/manifest.jsonl.gz
+  raw/objects/html/...
+  raw/records/...
+  state/capture.sqlite3.gz
+  state/summary.json
+```
+
+The filtered manifest is cached in B2 after its first use. Sampling uses the
+same publisher, year, seed, parser version, 500-article target, and QA gates as
+the full shard, so the result is directly comparable. The independent prefix
+allows multiple years to run concurrently without two Actions jobs writing
+the same SQLite checkpoint. It is an acceleration and validation corpus, not
+a replacement for the full archive shard, which continues downloading in the
+background.
+
 HTML objects are addressed by the SHA-256 of the uncompressed response. Gzip is
 deterministic (`mtime=0`), so repeated identical captures produce the same B2
 object. Each canonical publisher URL appears once in a manifest with ranked
