@@ -80,11 +80,19 @@ def parse_article(
         )
     if body is None:
         body = _select_body(soup, spec)
-    if body is None and spec.embedded_html_body_keys:
-        body = _embedded_html_body(
+    if spec.embedded_html_body_keys and (
+        body is None
+        or body.select_one(
+            "p, h2, h3, h4, h5, h6, blockquote, ul, ol, table"
+        )
+        is None
+    ):
+        embedded_body = _embedded_html_body(
             soup,
             keys=spec.embedded_html_body_keys,
         )
+        if embedded_body is not None:
+            body = embedded_body
     if body is None and spec.use_structured_article_body:
         body = _structured_article_body(news_article)
     if spec.publisher == "nyt":
@@ -112,8 +120,15 @@ def parse_article(
             if news_article
             else None,
             _meta_content(soup, "property", "article:published_time"),
+            _meta_content(soup, "property", "og:article:published_time"),
             _meta_content(soup, "name", "pub_date"),
             _meta_content(soup, "name", "pdate"),
+            _meta_content(
+                soup,
+                "name",
+                "analyticsAttributes.articleDate",
+            ),
+            _meta_content(soup, "name", "sailthru.date"),
             _tag_attribute(
                 soup.select_one(
                     '[itemprop="datePublished"][datetime], '
@@ -536,6 +551,7 @@ def _extract_blocks(
     images: list[ImageCandidate] = []
     selectors = [
         "p",
+        "pre",
         "h2",
         "h3",
         "h4",
@@ -562,7 +578,7 @@ def _extract_blocks(
             continue
         position = starting_position + len(blocks)
         name = node.name.lower()
-        if name == "p":
+        if name in {"p", "pre"}:
             text = _clean_text(node.get_text(" ", strip=True))
             if text:
                 blocks.append(

@@ -113,16 +113,21 @@ PUBLISHER_SPECS = {
     ),
     "reuters": PublisherSpec(
         publisher="reuters",
-        parser_version="reuters-parser/0.5.0",
+        parser_version="reuters-parser/0.6.0",
         domains=("reuters.com", "www.reuters.com"),
         default_language="en",
         edition="global",
         body_selectors=(
             "[data-testid='article-body']",
             ".article-body__content",
+            "[class*='StandardArticleBody_body']",
+            "[class*='ArticleBody_body']",
+            "#articleText",
+            "#rcs-articleContent",
             "article",
         ),
         preferred_image_hosts=("cloudfront-us-east-2.images.arcpublishing.com",),
+        embedded_html_body_keys=("body",),
     ),
     "ft": PublisherSpec(
         publisher="ft",

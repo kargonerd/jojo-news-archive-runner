@@ -354,7 +354,137 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.5.0"
+    assert result.extraction.parser_version == "reuters-parser/0.6.0"
+
+
+@pytest.mark.parametrize(
+    ("body_markup", "expected_text"),
+    [
+        (
+            """
+            <div class="StandardArticleBody_body">
+              <p>Legacy Reuters standard body contains substantive reporting
+              about markets, companies, and policy decisions.</p>
+              <p>Another paragraph provides enough detail for a complete
+              normalized article extraction.</p>
+            </div>
+            """,
+            "Legacy Reuters standard body",
+        ),
+        (
+            """
+            <div class="ArticleBody_body_2ECha">
+              <p>Hashed Reuters article body contains substantive reporting
+              from the archived React page template.</p>
+              <p>Another paragraph preserves the remainder of the original
+              report for parser validation.</p>
+            </div>
+            """,
+            "Hashed Reuters article body",
+        ),
+        (
+            """
+            <span id="articleText">
+              <p>Classic Reuters article text contains substantive reporting
+              from the archived pre-React page template.</p>
+              <p>Another paragraph preserves the complete historical report
+              for deterministic validation.</p>
+            </span>
+            """,
+            "Classic Reuters article text",
+        ),
+        (
+            """
+            <div id="rcs-articleContent">
+              <p>Alternate Reuters content contains substantive reporting
+              from another archived pre-React page template.</p>
+              <p>Another paragraph supplies the rest of the historical news
+              report for complete extraction.</p>
+            </div>
+            """,
+            "Alternate Reuters content",
+        ),
+    ],
+)
+def test_reuters_legacy_body_templates(body_markup, expected_text):
+    canonical_url = "https://www.reuters.com/article/example-idUSL1N2AB123"
+    html = f"""
+    <!doctype html><html lang="en"><head>
+      <meta property="og:title" content="Archived Reuters report">
+      <meta name="analyticsAttributes.articleDate"
+            content="2018-08-22T05:23:32+0000">
+    </head><body>{body_markup}</body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("reuters", canonical_url),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert expected_text in result.plain_text
+    assert result.published_at == datetime(
+        2018,
+        8,
+        22,
+        5,
+        23,
+        32,
+        tzinfo=timezone.utc,
+    )
+    assert result.extraction.parser_version == "reuters-parser/0.6.0"
+
+
+def test_reuters_legacy_parser_uses_embedded_rcom_body():
+    canonical_url = (
+        "https://www.reuters.com/article/example/"
+        "archived-report-idUSL1N2AB123"
+    )
+    embedded_body = (
+        "<pre>Embedded Reuters reporting preserves substantive details "
+        "from the archived article page.\n"
+        "A second line contains market context and source attribution.\n"
+        "A third line preserves the remainder of the original report.</pre>"
+    )
+    state = {
+        "article_list": {
+            "first_article": {
+                "headline": "Archived Reuters report",
+                "published": 1_503_456_789,
+                "body": embedded_body,
+            }
+        }
+    }
+    html = f"""
+    <!doctype html><html lang="en"><head>
+      <meta property="og:title" content="Archived Reuters report">
+      <meta name="sailthru.date" content="2017-08-22T05:23:32Z">
+    </head><body>
+      <script>window.RCOM_Data = {json.dumps(state)};</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("reuters", canonical_url),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert len(result.blocks) == 1
+    assert "remainder of the original report" in result.plain_text
+    assert result.published_at == datetime(
+        2017,
+        8,
+        22,
+        5,
+        23,
+        32,
+        tzinfo=timezone.utc,
+    )
 
 
 def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
