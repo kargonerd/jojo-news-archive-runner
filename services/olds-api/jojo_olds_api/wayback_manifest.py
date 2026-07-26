@@ -30,7 +30,7 @@ WSJ_BLUESKY_START_YEAR = 2024
 WSJ_CATALOG_TARGET_PER_YEAR = 750
 WSJ_GOOGLE_NEWS_YEARS = (2023, 2024)
 WSJ_GOOGLE_NEWS_MINIMUM_CATALOG = 750
-WSJ_GOOGLE_NEWS_MAXIMUM_DECODES = 25
+WSJ_GOOGLE_NEWS_MAXIMUM_DECODES = 100
 GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
 GOOGLE_NEWS_DECODE_ENDPOINT = (
     "https://news.google.com/_/DotsSplashUi/data/batchexecute"
@@ -433,6 +433,21 @@ def wsj_google_news_should_continue(
     # only one historical year. Reopen until every supported gap year has the
     # parser-QA reserve.
     return True
+
+
+def wsj_google_news_is_only_catalog_gap(
+    connection: sqlite3.Connection,
+    *,
+    from_year: int,
+    to_year: int,
+    minimum_catalog: int = WSJ_GOOGLE_NEWS_MINIMUM_CATALOG,
+) -> bool:
+    gap_years = {
+        year
+        for year in range(from_year, to_year + 1)
+        if wsj_catalog_count_for_year(connection, year) < minimum_catalog
+    }
+    return bool(gap_years) and gap_years.issubset(WSJ_GOOGLE_NEWS_YEARS)
 
 
 def process_wsj_google_news_feed(

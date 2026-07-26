@@ -28,6 +28,7 @@ from jojo_olds_api.wayback_manifest import (
     process_wsj_rss_feeds,
     record_discovery_page,
     wsj_catalog_count_for_year,
+    wsj_google_news_is_only_catalog_gap,
     wsj_google_news_should_continue,
 )
 
@@ -602,6 +603,54 @@ def test_wsj_google_news_keeps_filling_2023_after_2024_is_ready():
         to_year=2024,
         minimum_catalog=2,
     ) is False
+
+
+def test_wsj_google_news_can_pause_cdx_when_only_supported_years_are_short():
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2022,
+        to_year=2024,
+        collapse="urlkey",
+    )
+
+    assert wsj_google_news_is_only_catalog_gap(
+        connection,
+        from_year=2022,
+        to_year=2024,
+        minimum_catalog=1,
+    ) is False
+
+    record_discovery_page(
+        connection,
+        spec=spec,
+        pattern=next_discovery_query(connection)[0],
+        page=CDXPage(
+            captures=(
+                CDXCapture(
+                    timestamp="20220601000000",
+                    original=(
+                        "https://www.wsj.com/articles/"
+                        "ready-2022-a1b2c3d4"
+                    ),
+                    mimetype="text/html",
+                    status_code=200,
+                    digest="READY-2022",
+                    length=12_345,
+                ),
+            ),
+            resume_key=None,
+        ),
+    )
+
+    assert wsj_google_news_is_only_catalog_gap(
+        connection,
+        from_year=2022,
+        to_year=2024,
+        minimum_catalog=1,
+    ) is True
 
 
 def test_digest_discovery_keeps_exhausting_current_pattern():

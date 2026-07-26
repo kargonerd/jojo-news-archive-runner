@@ -29,6 +29,7 @@ from jojo_olds_api.wayback_manifest import (
     process_wsj_rss_feeds,
     record_discovery_page,
     wsj_bluesky_should_continue,
+    wsj_google_news_is_only_catalog_gap,
     wsj_google_news_should_continue,
 )
 
@@ -76,6 +77,7 @@ def main() -> int:
     )
     bluesky_pages_this_run = 0
     google_news_items_this_run = 0
+    cdx_paused_for_google_news = False
     deferred_errors: list[str] = []
     if args.publisher == "wsj" and args.collapse == "urlkey":
         initialize_wsj_bluesky_schema(connection)
@@ -108,6 +110,14 @@ def main() -> int:
                         google_news_result["decodesAttempted"]
                     )
                     google_news_errors = google_news_result.pop("errors")
+                    cdx_paused_for_google_news = (
+                        int(google_news_result["accepted"]) > 0
+                        and wsj_google_news_is_only_catalog_gap(
+                            connection,
+                            from_year=args.from_year,
+                            to_year=args.to_year,
+                        )
+                    )
                     deferred_errors.extend(
                         f"WSJ Google News: {error}"
                         for error in google_news_errors
@@ -196,8 +206,11 @@ def main() -> int:
     deferred_error = None
     try:
         while (
-            args.max_pages is None
-            or bluesky_pages_this_run + pages_this_run < args.max_pages
+            not cdx_paused_for_google_news
+            and (
+                args.max_pages is None
+                or bluesky_pages_this_run + pages_this_run < args.max_pages
+            )
         ):
             query = next_discovery_query(connection)
             if query is None:
@@ -263,6 +276,7 @@ def main() -> int:
         "pagesThisRun": pages_this_run,
         "blueskyPagesThisRun": bluesky_pages_this_run,
         "googleNewsItemsThisRun": google_news_items_this_run,
+        "cdxPausedForGoogleNews": cdx_paused_for_google_news,
         "deferredError": (
             "; ".join(deferred_errors) if deferred_errors else None
         ),
