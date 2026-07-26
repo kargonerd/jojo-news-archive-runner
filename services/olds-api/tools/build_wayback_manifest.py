@@ -276,6 +276,10 @@ def main() -> int:
             handle.write(
                 f"complete={str(bool(summary['complete'])).lower()}\n"
             )
+            handle.write(
+                "capture_ready="
+                f"{str(bool(summary['captureReady'])).lower()}\n"
+            )
             handle.write(f"articles={summary['articles']}\n")
     connection.close()
     return 0

@@ -152,6 +152,8 @@ def test_discovery_keeps_three_best_candidates_and_exports_generic_manifest(
     assert connection.execute("SELECT COUNT(*) FROM candidates").fetchone()[0] == 3
     assert summary["articles"] == 1
     assert summary["candidates"] == 3
+    assert summary["captureReady"] is False
+    assert summary["yearCounts"] == {"2020": 1}
     assert discovery_summary(connection)["shouldContinue"] is True
     with gzip.open(destination, "rt", encoding="utf-8") as handle:
         row = json.loads(handle.readline())
@@ -159,6 +161,16 @@ def test_discovery_keeps_three_best_candidates_and_exports_generic_manifest(
     assert item.canonical_url == original
     assert len(item.candidates) == 3
     assert item.candidates[0].byte_count is not None
+
+    ready_summary = export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=destination,
+        from_year=2020,
+        to_year=2020,
+        capture_minimum_per_year=1,
+    )
+    assert ready_summary["captureReady"] is True
 
 
 def test_discovery_queries_follow_configured_order_not_lexical_order():

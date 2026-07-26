@@ -52,6 +52,7 @@ WSJ_RSS_ENDPOINTS = (
     "https://feeds.content.dowjones.io/public/rss/RSSStyle",
     "https://feeds.content.dowjones.io/public/rss/rsssportsfeed",
 )
+PARSER_VALIDATION_CATALOG_MINIMUM_PER_YEAR = 750
 
 
 @dataclass(frozen=True)
@@ -997,7 +998,7 @@ def wsj_catalog_count_for_year(
     return int(
         connection.execute(
             f"""
-            SELECT COUNT(*)
+            SELECT COUNT(DISTINCT canonical_url)
             FROM (
                 {" UNION ".join(selects)}
             )
@@ -1162,7 +1163,12 @@ def export_capture_manifest(
     destination: Path,
     from_year: int,
     to_year: int,
+    capture_minimum_per_year: int = (
+        PARSER_VALIDATION_CATALOG_MINIMUM_PER_YEAR
+    ),
 ) -> dict[str, int | bool | str]:
+    if capture_minimum_per_year < 1:
+        raise ValueError("capture_minimum_per_year must be positive")
     destination.parent.mkdir(parents=True, exist_ok=True)
     rows = connection.execute(
         """
@@ -1280,11 +1286,21 @@ def export_capture_manifest(
         ).fetchone()[0]
         if not str(google_news_status).startswith("complete"):
             incomplete += 1
+    year_counts = {
+        str(year): wsj_catalog_count_for_year(connection, year)
+        for year in range(from_year, to_year + 1)
+    }
     return {
         "publisher": spec.publisher,
         "fromYear": from_year,
         "toYear": to_year,
         "complete": incomplete == 0,
+        "captureReady": all(
+            count >= capture_minimum_per_year
+            for count in year_counts.values()
+        ),
+        "captureMinimumPerYear": capture_minimum_per_year,
+        "yearCounts": year_counts,
         "remainingQueries": incomplete,
         "articles": article_count,
         "candidates": candidate_count,

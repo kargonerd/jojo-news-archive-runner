@@ -216,6 +216,7 @@ jobs:
               services/olds-api/data/bloomberg-2020-archive-manifest.jsonl.gz \
               "$manifest"
             echo "complete=true" >> "$GITHUB_OUTPUT"
+            echo "capture_ready=true" >> "$GITHUB_OUTPUT"
             echo "should_continue=false" >> "$GITHUB_OUTPUT"
             echo "exit_code=0" >> "$GITHUB_OUTPUT"
             exit 0
@@ -323,7 +324,11 @@ jobs:
 
       - name: Plan capture batch
         id: before
-        if: ${{ steps.catalog.outputs.complete == 'true' }}
+        if: >-
+          ${{
+            steps.catalog.outputs.complete == 'true' ||
+            steps.catalog.outputs.capture_ready == 'true'
+          }}
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
@@ -335,7 +340,11 @@ jobs:
 
       - name: Plan replay of previously captured parser samples
         id: validation_replay
-        if: ${{ steps.catalog.outputs.complete == 'true' }}
+        if: >-
+          ${{
+            steps.catalog.outputs.complete == 'true' ||
+            steps.catalog.outputs.capture_ready == 'true'
+          }}
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
@@ -402,7 +411,11 @@ jobs:
 
       - name: Capture bounded raw HTML batch
         id: capture
-        if: ${{ steps.catalog.outputs.complete == 'true' }}
+        if: >-
+          ${{
+            steps.catalog.outputs.complete == 'true' ||
+            steps.catalog.outputs.capture_ready == 'true'
+          }}
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
@@ -499,7 +512,10 @@ jobs:
           ${{
             always() &&
             !cancelled() &&
-            steps.catalog.outputs.complete == 'true' &&
+            (
+              steps.catalog.outputs.complete == 'true' ||
+              steps.catalog.outputs.capture_ready == 'true'
+            ) &&
             hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
           }}
         shell: bash
@@ -525,7 +541,10 @@ jobs:
           ${{
             always() &&
             !cancelled() &&
-            steps.catalog.outputs.complete == 'true' &&
+            (
+              steps.catalog.outputs.complete == 'true' ||
+              steps.catalog.outputs.capture_ready == 'true'
+            ) &&
             hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
           }}
         shell: bash
@@ -574,7 +593,10 @@ jobs:
           ${{
             always() &&
             !cancelled() &&
-            steps.catalog.outputs.complete == 'true' &&
+            (
+              steps.catalog.outputs.complete == 'true' ||
+              steps.catalog.outputs.capture_ready == 'true'
+            ) &&
             hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
           }}
         shell: bash
@@ -617,7 +639,10 @@ jobs:
       - name: Propagate capture failure after checkpoint
         if: >-
           ${{
-            steps.catalog.outputs.complete == 'true' &&
+            (
+              steps.catalog.outputs.complete == 'true' ||
+              steps.catalog.outputs.capture_ready == 'true'
+            ) &&
             steps.capture.outputs.exit_code != '0'
           }}
         run: |
