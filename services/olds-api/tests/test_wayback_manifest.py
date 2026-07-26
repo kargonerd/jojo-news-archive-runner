@@ -88,6 +88,13 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         wsj,
         "https://www.wsj.com/politics",
     ) is None
+    assert normalize_article_url(
+        wsj,
+        (
+            "https://www.wsj.com/articles/"
+            "B3-BY423_health_PREVIEW_20181003165352.jpg"
+        ),
+    ) is None
 
     ft = archive_source_spec("ft")
     assert normalize_article_url(

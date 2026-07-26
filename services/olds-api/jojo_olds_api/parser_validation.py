@@ -10,6 +10,7 @@ from pathlib import Path
 import sqlite3
 from typing import Iterable
 
+from .archive_sources import archive_source_spec, normalize_article_url
 from .news_models import ArticleStatus, RawCapture
 from .news_parser import parse_article
 from .publisher_specs import publisher_spec
@@ -133,7 +134,7 @@ def ensure_parser_validation_plan(
         year
         for year in range(from_year, to_year + 1)
         if (
-            publisher == "nyt"
+            publisher in {"nyt", "wsj"}
             and year in previous_versions
             and previous_versions[year] != current_parser_version
         )
@@ -854,7 +855,10 @@ def _select_additional_samples(
         """,
         (start, end),
     )
+    source_spec = archive_source_spec(publisher)
     for (canonical_url,) in rows:
+        if normalize_article_url(source_spec, str(canonical_url)) is None:
+            continue
         priority = hashlib.sha256(
             f"{seed}\0{publisher}\0{year}\0{canonical_url}".encode("utf-8")
         ).hexdigest()

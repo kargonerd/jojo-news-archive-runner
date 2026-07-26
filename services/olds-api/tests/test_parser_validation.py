@@ -306,6 +306,104 @@ def test_nyt_parser_upgrade_refreshes_plan_and_prefers_direct_copies(
     )
 
 
+def test_wsj_parser_upgrade_refreshes_plan_and_excludes_asset_urls(
+    tmp_path: Path,
+):
+    valid_url = (
+        "https://www.wsj.com/articles/"
+        "a-valid-wsj-article-12345678"
+    )
+    asset_url = (
+        "https://www.wsj.com/articles/"
+        "B3-BY423_health_PREVIEW_20181003165352.jpg"
+    )
+    manifest = tmp_path / "wsj-manifest.jsonl"
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "publisher": "wsj",
+                    "canonicalUrl": canonical_url,
+                    "publishedAt": "2023-01-01T00:00:00Z",
+                    "candidates": [
+                        {
+                            "provider": "wayback",
+                            "snapshotUrl": (
+                                "https://web.archive.org/web/"
+                                "20230102000000id_/"
+                                + canonical_url
+                            ),
+                        }
+                    ],
+                }
+            )
+            + "\n"
+            for canonical_url in (valid_url, asset_url)
+        ),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="wsj",
+        from_year=2023,
+        to_year=2023,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    connection.execute(
+        """
+        UPDATE parser_validation_config
+        SET parser_version='wsj-parser/0.4.0'
+        WHERE sample_year=2023
+        """
+    )
+    connection.execute("DELETE FROM parser_validation_samples")
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url,
+            sample_year,
+            sample_priority,
+            selected_at
+        ) VALUES (?, 2023, 'old', '2023-01-01T00:00:00Z')
+        """,
+        (asset_url,),
+    )
+    connection.commit()
+
+    plan = ensure_parser_validation_plan(
+        connection,
+        publisher="wsj",
+        from_year=2023,
+        to_year=2023,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    selected = connection.execute(
+        """
+        SELECT canonical_url
+        FROM parser_validation_samples
+        WHERE sample_year=2023
+        """
+    ).fetchall()
+
+    assert plan["years"]["2023"]["refreshedForParserVersion"] == 1
+    assert selected == [(valid_url,)]
+
+
 def test_validation_plan_adds_completed_samples_to_an_existing_pending_plan(
     tmp_path: Path,
 ):

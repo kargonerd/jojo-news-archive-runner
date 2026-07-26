@@ -36,6 +36,10 @@ def _patterns(*values: str) -> tuple[re.Pattern[str], ...]:
 
 
 _SLUG_PREFIXES = tuple("abcdefghijklmnopqrstuvwxyz0123456789")
+_NON_ARTICLE_FILE_SUFFIX_RE = re.compile(
+    r"\.(?:avif|bmp|css|gif|ico|jpe?g|js|mjs|pdf|png|svg|webp)$",
+    re.IGNORECASE,
+)
 
 
 ARCHIVE_SOURCE_SPECS = {
@@ -165,6 +169,8 @@ def normalize_article_url(
     if hostname not in allowed_hosts:
         return None
     path = re.sub(r"/+", "/", parsed.path or "/")
+    if _NON_ARTICLE_FILE_SUFFIX_RE.search(path):
+        return None
     if any(pattern.search(path) for pattern in spec.rejected_path_patterns):
         return None
     if not any(pattern.search(path) for pattern in spec.accepted_path_patterns):

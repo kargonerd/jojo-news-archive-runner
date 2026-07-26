@@ -1803,6 +1803,23 @@ def test_raw_quality_rejects_subscription_shell_without_article_body():
     assert signals["subscriptionShell"] is True
 
 
+def test_raw_quality_rejects_wsj_continue_reading_shell():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>A WSJ article</title></head>
+        <body><article><p>A short preview sentence.</p>
+        <div>Continue reading your article with a
+        <strong>WSJ subscription</strong></div>
+        <a>Already a subscriber?</a></article></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["subscriptionShell"] is True
+
+
 def test_raw_quality_keeps_subscription_page_with_structured_article_body():
     score, signals = score_raw_capture(
         b"""

@@ -1875,8 +1875,14 @@ def score_raw_capture(
         b'"articlebody"' in prefix
         or any(marker in prefix for marker in _ARTICLE_BODY_MARKERS)
     )
-    subscription_shell = not has_strong_body_marker and any(
-        marker in prefix for marker in _SUBSCRIPTION_SHELL_MARKERS
+    wsj_subscription_shell = (
+        b"continue reading" in prefix
+        and b"wsj subscription" in prefix
+        and b"already a subscriber" in prefix
+    )
+    subscription_shell = not has_strong_body_marker and (
+        wsj_subscription_shell
+        or any(marker in prefix for marker in _SUBSCRIPTION_SHELL_MARKERS)
     )
     redirect_shell = not has_strong_body_marker and any(
         marker in prefix for marker in _REDIRECT_SHELL_MARKERS
