@@ -2792,7 +2792,7 @@ def _ft_article_body_evidence(
         return None, 0
 
     soup = BeautifulSoup(content, "html.parser")
-    body_nodes = soup.select(".article__content-body")
+    body_nodes = soup.select(".article__content-body, .article-body")
     if not body_nodes:
         for selector in (
             "#article-body",

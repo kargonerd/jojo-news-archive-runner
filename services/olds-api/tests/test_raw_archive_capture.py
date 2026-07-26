@@ -2941,6 +2941,35 @@ def test_raw_quality_keeps_article_body_with_subscription_footer():
     assert signals["subscriptionShell"] is False
 
 
+def test_raw_quality_keeps_legacy_ft_amp_article_body():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Archived Financial Times article</title></head>
+        <body><article>
+          <div class="article-body" itemprop="articleBody">
+            <p>France's highest court revived a corruption probe into the
+            former president after rejecting his argument about taped phone
+            conversations with his lawyer and a senior prosecutor.</p>
+            <p>The ruling means the investigation will resume and may lead
+            to a trial while the politician prepares to seek his party's
+            nomination in the next presidential election.</p>
+          </div>
+        </article></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://web.archive.org/web/20160624005500id_/"
+            "https://amp.ft.com/content/"
+            "12333d72-f038-11e5-9f20-c3a047354386"
+        ),
+    )
+
+    assert score >= 85
+    assert signals["ftBodyCharacters"] >= 250
+    assert signals["ftTruncatedArticleShell"] is False
+
+
 def test_wayback_candidate_records_actual_redirected_snapshot():
     requested = candidate(
         (
