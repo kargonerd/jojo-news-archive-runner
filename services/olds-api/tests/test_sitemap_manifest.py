@@ -8,11 +8,14 @@ import sqlite3
 
 from jojo_olds_api.archive_sources import archive_source_spec
 from jojo_olds_api.ft_syndication_catalog import (
+    _next_document_rows,
+    _next_resolution_rows,
     ft_syndication_summary,
     initialize_ft_syndication_schema,
     process_ft_infini_documents,
     process_ft_infini_queries,
     process_ft_syndication_resolutions,
+    resolve_ft_original_url,
 )
 from jojo_olds_api.raw_archive_capture import manifest_item_from_row
 from jojo_olds_api.nyt_syndication_catalog import (
@@ -243,6 +246,97 @@ def test_ft_infini_catalog_resolves_and_exports_licensed_copy(
             "for AI start-up Anthropic"
         ),
     }
+
+
+def test_ft_catalog_work_is_balanced_across_years():
+    connection = sqlite3.connect(":memory:")
+    initialize_ft_syndication_schema(
+        connection,
+        from_year=2016,
+        to_year=2018,
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    for year in range(2016, 2019):
+        for rank in range(3):
+            connection.execute(
+                """
+                INSERT INTO ft_syndication_occurrences(
+                    year, shard_index, rank, updated_at
+                ) VALUES (?, 0, ?, ?)
+                """,
+                (year, rank, now),
+            )
+            connection.execute(
+                """
+                INSERT INTO ft_syndication_unresolved(
+                    partner_url,
+                    published_at,
+                    expected_headline,
+                    source_year,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    f"https://partner.example/{year}/{rank}",
+                    f"{year}-01-{rank + 1:02d}T00:00:00+00:00",
+                    f"Financial Times licensed article {year} number {rank}",
+                    year,
+                    now,
+                ),
+            )
+    connection.commit()
+
+    document_rows = _next_document_rows(connection, maximum=6)
+    assert [row[0] for row in document_rows] == [
+        2018,
+        2017,
+        2016,
+        2018,
+        2017,
+        2016,
+    ]
+    resolution_rows = _next_resolution_rows(connection, maximum=6)
+    assert [int(row[3]) for row in resolution_rows] == [
+        2018,
+        2017,
+        2016,
+        2018,
+        2017,
+        2016,
+    ]
+
+
+def test_ft_original_resolution_rejects_partial_title_match():
+    expected_headline = (
+        "Amazon writes its largest venture cheque yet "
+        "for AI start-up Anthropic"
+    )
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+
+    class PartialTitleClient:
+        def get(self, url, params):
+            assert url == "https://search.yahoo.com/search"
+            assert params["p"].endswith("site:ft.com")
+            return StubFtSyndicationResponse(
+                html_value=f"""
+                <html><body><ol id="web"><li>
+                  <div class="compTitle"><a href="{canonical_url}">
+                    <h3>Amazon writes largest venture cheque for Anthropic</h3>
+                  </a></div>
+                </li></ol></body></html>
+                """
+            )
+
+    result = resolve_ft_original_url(
+        expected_headline,
+        spec=archive_source_spec("ft"),
+        http_client=PartialTitleClient(),
+    )
+
+    assert result is None
 
 
 def test_index_and_url_sitemap_parsing():

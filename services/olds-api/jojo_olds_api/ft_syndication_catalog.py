@@ -399,34 +399,7 @@ def process_ft_syndication_resolutions(
     maximum: int = DEFAULT_RESOLUTIONS_PER_RUN,
     minimum_request_interval: float = 1.0,
 ) -> dict[str, object]:
-    rows = connection.execute(
-        """
-        SELECT
-            unresolved.partner_url,
-            unresolved.published_at,
-            unresolved.expected_headline,
-            unresolved.source_year,
-            unresolved.document_index,
-            unresolved.warc_source
-        FROM ft_syndication_unresolved AS unresolved
-        WHERE (
-                unresolved.status='pending'
-                OR (
-                    unresolved.status='error'
-                    AND unresolved.attempts < 3
-                )
-              )
-          AND (
-                SELECT COUNT(*)
-                FROM ft_syndication_articles AS article
-                WHERE substr(article.published_at, 1, 4)
-                      = substr(unresolved.published_at, 1, 4)
-              ) < ?
-        ORDER BY unresolved.published_at DESC, unresolved.partner_url
-        LIMIT ?
-        """,
-        (RESOLUTION_TARGET_PER_YEAR, maximum),
-    ).fetchall()
+    rows = _next_resolution_rows(connection, maximum=maximum)
     limiter = GlobalRateLimiter(minimum_request_interval)
     resolved_count = 0
     not_found = 0
@@ -561,7 +534,7 @@ def resolve_ft_original_url(
             if result_tokens
             else 0.0
         )
-        if coverage < 0.6 or len(expected_tokens & result_tokens) < 4:
+        if coverage < 0.8 or len(expected_tokens & result_tokens) < 4:
             continue
         ranked.append((coverage, -position, canonical_url))
     if not ranked:
@@ -718,24 +691,86 @@ def _next_document_rows(
         (int(year), int(shard_index), int(rank))
         for year, shard_index, rank in connection.execute(
             """
-            SELECT item.year, item.shard_index, item.rank
-            FROM ft_syndication_occurrences AS item
-            WHERE (
-                    item.status='pending'
-                    OR (item.status='error' AND item.attempts < 3)
-                  )
-              AND (
-                    SELECT COUNT(*)
-                    FROM ft_syndication_articles AS article
-                    WHERE substr(article.published_at, 1, 4)
-                          = CAST(item.year AS TEXT)
-                  ) < ?
-            ORDER BY item.year DESC, item.shard_index, item.rank
+            WITH eligible AS (
+                SELECT
+                    item.year,
+                    item.shard_index,
+                    item.rank,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY item.year
+                        ORDER BY item.shard_index, item.rank
+                    ) AS year_position
+                FROM ft_syndication_occurrences AS item
+                WHERE (
+                        item.status='pending'
+                        OR (item.status='error' AND item.attempts < 3)
+                      )
+                  AND (
+                        SELECT COUNT(*)
+                        FROM ft_syndication_articles AS article
+                        WHERE substr(article.published_at, 1, 4)
+                              = CAST(item.year AS TEXT)
+                      ) < ?
+            )
+            SELECT year, shard_index, rank
+            FROM eligible
+            ORDER BY year_position, year DESC
             LIMIT ?
             """,
             (RESOLUTION_TARGET_PER_YEAR, maximum),
         )
     ]
+
+
+def _next_resolution_rows(
+    connection: sqlite3.Connection,
+    *,
+    maximum: int,
+) -> list[tuple[object, ...]]:
+    return connection.execute(
+        """
+        WITH eligible AS (
+            SELECT
+                unresolved.partner_url,
+                unresolved.published_at,
+                unresolved.expected_headline,
+                unresolved.source_year,
+                unresolved.document_index,
+                unresolved.warc_source,
+                ROW_NUMBER() OVER (
+                    PARTITION BY substr(unresolved.published_at, 1, 4)
+                    ORDER BY
+                        unresolved.published_at DESC,
+                        unresolved.partner_url
+                ) AS year_position
+            FROM ft_syndication_unresolved AS unresolved
+            WHERE (
+                    unresolved.status='pending'
+                    OR (
+                        unresolved.status='error'
+                        AND unresolved.attempts < 3
+                    )
+                  )
+              AND (
+                    SELECT COUNT(*)
+                    FROM ft_syndication_articles AS article
+                    WHERE substr(article.published_at, 1, 4)
+                          = substr(unresolved.published_at, 1, 4)
+                  ) < ?
+        )
+        SELECT
+            partner_url,
+            published_at,
+            expected_headline,
+            source_year,
+            document_index,
+            warc_source
+        FROM eligible
+        ORDER BY year_position, source_year DESC, partner_url
+        LIMIT ?
+        """,
+        (RESOLUTION_TARGET_PER_YEAR, maximum),
+    ).fetchall()
 
 
 def _sample_occurrence_ranks(
