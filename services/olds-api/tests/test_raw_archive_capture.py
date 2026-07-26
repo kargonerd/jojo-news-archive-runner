@@ -963,6 +963,10 @@ def test_reuters_capture_falls_back_to_exact_timemap_snapshot(
         ]
     ).encode()
     missing = b"<html>Wayback Machine doesn't have that page archived.</html>"
+    search_url = (
+        REUTERS_SYNDICATION_SEARCH_ENDPOINT
+        + "?p=reactor+uses+fuel+Reuters"
+    )
     client = StubArchiveClient(
         {
             guessed_url: (
@@ -970,6 +974,12 @@ def test_reuters_capture_falls_back_to_exact_timemap_snapshot(
                 {"content-type": "text/html"},
                 missing,
                 guessed_url,
+            ),
+            search_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                b"<html><body><ol id='web'></ol></body></html>",
+                search_url,
             ),
             timemap_url: (
                 200,
@@ -1001,7 +1011,12 @@ def test_reuters_capture_falls_back_to_exact_timemap_snapshot(
     )
 
     assert result["status"] == "complete"
-    assert client.requests == [guessed_url, timemap_url, exact_url]
+    assert client.requests == [
+        guessed_url,
+        search_url,
+        timemap_url,
+        exact_url,
+    ]
     assert result["capture"].selected_candidate.snapshot_url == exact_url
     assert result["capture"].selected_candidate.digest == "REUTERS-EXACT"
 
@@ -1791,7 +1806,6 @@ def test_reuters_capture_falls_back_to_validated_syndicated_html(
     assert result["status"] == "complete"
     assert client.requests == [
         guessed_url,
-        timemap_url,
         search_url,
         syndicated_url,
     ]

@@ -686,43 +686,6 @@ def capture_item(
     else:
         consider_candidates(item.candidates)
 
-    if (
-        best_response is None
-        and item.publisher in WAYBACK_TIMEMAP_FALLBACK_PUBLISHERS
-    ):
-        try:
-            fallback_candidates = discover_wayback_timemap_candidates(
-                item,
-                archive_client=archive_client,
-            )
-        except Exception as exc:
-            failures.append(f"wayback-timemap:{type(exc).__name__}")
-            fallback_candidates = ()
-        existing_urls = {
-            candidate.snapshot_url for candidate in candidates_considered
-        }
-        fallback_candidates = tuple(
-            candidate
-            for candidate in fallback_candidates
-            if candidate.snapshot_url not in existing_urls
-        )
-        candidates_considered.extend(fallback_candidates)
-        for candidate in fallback_candidates:
-            response, failure = _fetch_usable_candidate(
-                candidate,
-                archive_client=archive_client,
-                maximum_html_bytes=maximum_html_bytes,
-                canonical_url=item.canonical_url,
-            )
-            if failure:
-                failures.append(failure)
-            if response is None:
-                continue
-            if best_response is None or response[5] > best_response[5]:
-                best_response = response
-            if response[5] == 100:
-                break
-
     if best_response is None and item.publisher == "reuters":
         try:
             fallback_candidates = discover_reuters_syndication_candidates(
@@ -774,6 +737,43 @@ def capture_item(
                 response[5],
                 response[6] | validation_signals,
             )
+            if best_response is None or response[5] > best_response[5]:
+                best_response = response
+            if response[5] == 100:
+                break
+
+    if (
+        best_response is None
+        and item.publisher in WAYBACK_TIMEMAP_FALLBACK_PUBLISHERS
+    ):
+        try:
+            fallback_candidates = discover_wayback_timemap_candidates(
+                item,
+                archive_client=archive_client,
+            )
+        except Exception as exc:
+            failures.append(f"wayback-timemap:{type(exc).__name__}")
+            fallback_candidates = ()
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        fallback_candidates = tuple(
+            candidate
+            for candidate in fallback_candidates
+            if candidate.snapshot_url not in existing_urls
+        )
+        candidates_considered.extend(fallback_candidates)
+        for candidate in fallback_candidates:
+            response, failure = _fetch_usable_candidate(
+                candidate,
+                archive_client=archive_client,
+                maximum_html_bytes=maximum_html_bytes,
+                canonical_url=item.canonical_url,
+            )
+            if failure:
+                failures.append(failure)
+            if response is None:
+                continue
             if best_response is None or response[5] > best_response[5]:
                 best_response = response
             if response[5] == 100:
