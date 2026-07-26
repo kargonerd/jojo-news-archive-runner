@@ -158,11 +158,18 @@ auto_continue: false
 For AP, Bloomberg, NYT, and FT, use `manifest_mode: sitemap-wayback`. It obtains
 the canonical URL and publication month from the publisher's historical
 sitemaps, then asks Wayback for snapshots near publication. This avoids large
-CDX prefix queries and tends to select better article versions.
+CDX prefix queries for AP and NYT and tends to select better article versions.
+For Bloomberg and FT, the same mode additionally advances bounded,
+resume-keyed Wayback URL-key queries and merges their exact snapshots into the
+sitemap manifest. Exact URL-key candidates take precedence over guessed
+publication-near timestamps, while sitemap or validated partner publication
+dates remain authoritative when available. This fills historical sitemap gaps
+without creating a second capture database or discarding existing progress.
 
 Use `manifest_mode: wayback` for partitioned CDX adapters such as WSJ. Discovery
-checkpoints are published after each bounded run. Capture begins only after
-every configured query for that publisher window is complete.
+checkpoints are published every ten minutes and after each bounded run. A
+sitemap-based shard may begin capture after its sitemap baseline is complete
+while its supplemental URL-key and partner catalogs continue to grow.
 
 WSJ and legacy Reuters also run a parallel `wayback-urlkey` shard. It asks CDX
 for one first capture per unique URL, instead of paging through every distinct
