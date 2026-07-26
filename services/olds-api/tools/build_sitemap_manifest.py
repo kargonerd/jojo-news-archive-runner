@@ -6,6 +6,8 @@ from pathlib import Path
 import sqlite3
 import sys
 
+import httpx
+
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVICE_ROOT) not in sys.path:
@@ -13,6 +15,13 @@ if str(SERVICE_ROOT) not in sys.path:
 
 from jojo_olds_api.archive_sources import archive_source_spec
 from jojo_olds_api.bloomberg_archive_download import ArchiveClient
+from jojo_olds_api.ft_syndication_catalog import (
+    initialize_ft_syndication_schema,
+    ft_syndication_summary,
+    process_ft_infini_documents,
+    process_ft_infini_queries,
+    process_ft_syndication_resolutions,
+)
 from jojo_olds_api.nyt_syndication_catalog import (
     MAXIMUM_RESPONSE_BYTES,
     initialize_nyt_syndication_schema,
@@ -112,6 +121,10 @@ def main() -> int:
     syndication_resolutions = 0
     syndication_resolution_matches = 0
     syndication_error: str | None = None
+    ft_syndication: dict[str, object] | None = None
+    ft_infini_queries = 0
+    ft_infini_documents = 0
+    ft_resolution_attempts = 0
     if args.publisher == "nyt":
         initialize_nyt_syndication_schema(
             connection,
@@ -265,6 +278,100 @@ def main() -> int:
                     )
         finally:
             syndication_client.close()
+    if args.publisher == "ft":
+        initialize_ft_syndication_schema(
+            connection,
+            from_year=args.from_year,
+            to_year=args.to_year,
+        )
+        try:
+            with httpx.Client(
+                headers={
+                    "User-Agent": (
+                        "JOJO-News-Archive-Research/0.1 "
+                        "(authorized nonprofit academic archive)"
+                    )
+                },
+                follow_redirects=True,
+                timeout=args.timeout,
+            ) as ft_client:
+                query_result = process_ft_infini_queries(
+                    connection,
+                    http_client=ft_client,
+                    maximum_years=args.max_sitemaps,
+                )
+                ft_infini_queries = int(query_result["processed"])
+                print(
+                    json.dumps(
+                        {
+                            "event": "ft-infini-queries",
+                            **query_result,
+                            "errors": len(query_result["errors"]),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                document_result = process_ft_infini_documents(
+                    connection,
+                    http_client=ft_client,
+                    maximum=args.max_sitemaps * 100,
+                    workers=4,
+                    minimum_request_interval=(
+                        args.min_request_interval
+                    ),
+                )
+                ft_infini_documents = int(
+                    document_result["attempted"]
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "ft-infini-documents",
+                            **document_result,
+                            "errors": len(document_result["errors"]),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                resolution_result = (
+                    process_ft_syndication_resolutions(
+                        connection,
+                        http_client=ft_client,
+                        maximum=args.max_sitemaps * 100,
+                        minimum_request_interval=(
+                            args.min_request_interval
+                        ),
+                    )
+                )
+                ft_resolution_attempts = int(
+                    resolution_result["attempted"]
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "ft-syndication-resolutions",
+                            **resolution_result,
+                            "errors": len(resolution_result["errors"]),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+        except Exception as exc:
+            syndication_error = f"{type(exc).__name__}: {exc}"
+            print(
+                json.dumps(
+                    {
+                        "event": "ft-syndication-error",
+                        "error": syndication_error,
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+        ft_syndication = ft_syndication_summary(connection)
     manifest = export_sitemap_manifest(
         connection,
         publisher=args.publisher,
@@ -280,6 +387,8 @@ def main() -> int:
     )
     should_continue = bool(manifest["shouldContinue"]) or bool(
         syndication and syndication["shouldContinue"]
+    ) or bool(
+        ft_syndication and ft_syndication["shouldContinue"]
     )
     summary = {
         **sitemap_summary(connection),
@@ -295,6 +404,9 @@ def main() -> int:
         "nytSyndicationResolutionMatchesThisRun": (
             syndication_resolution_matches
         ),
+        "ftInfiniQueriesThisRun": ft_infini_queries,
+        "ftInfiniDocumentsThisRun": ft_infini_documents,
+        "ftSyndicationResolutionsThisRun": ft_resolution_attempts,
         **(
             {"nytSyndication": syndication}
             if syndication is not None
@@ -302,7 +414,17 @@ def main() -> int:
         ),
         **(
             {"nytSyndicationError": syndication_error}
-            if syndication_error
+            if syndication_error and args.publisher == "nyt"
+            else {}
+        ),
+        **(
+            {"ftSyndication": ft_syndication}
+            if ft_syndication is not None
+            else {}
+        ),
+        **(
+            {"ftSyndicationError": syndication_error}
+            if syndication_error and args.publisher == "ft"
             else {}
         ),
     }

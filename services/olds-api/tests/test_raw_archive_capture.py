@@ -13,6 +13,7 @@ from jojo_olds_api.news_models import (
 )
 from jojo_olds_api.raw_archive_capture import (
     BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS,
+    FT_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     ManifestItem,
     NYT_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     NYT_SYNDICATION_SEARCH_ENDPOINT,
@@ -107,6 +108,161 @@ def wsj_syndication_html(
       {paragraphs}
     </article></body></html>
     """.encode() + (b" " * 2_048)
+
+
+def ft_syndication_html(
+    *,
+    headline: str,
+    include_copyright: bool,
+) -> bytes:
+    paragraphs = "".join(
+        (
+            "<p>Licensed business reporting paragraph "
+            f"{index} contains substantive details about the investment, "
+            "executive comments, market conditions, financial disclosures "
+            "and the competitive outlook. This is complete article text "
+            "rather than a preview, search result, or subscription shell.</p>"
+        )
+        for index in range(1, 6)
+    )
+    copyright_text = (
+        "<p>Copyright The Financial Times Limited 2024</p>"
+        if include_copyright
+        else ""
+    )
+    return f"""
+    <!doctype html><html><head>
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "{headline}",
+        "datePublished": "2024-03-28T15:45:53Z",
+        "author": {{"name": "Financial Times reporters"}}
+      }}
+      </script>
+    </head><body><article>
+      {paragraphs}
+      {copyright_text}
+    </article></body></html>
+    """.encode() + (b" " * 2_048)
+
+
+def test_ft_manifest_partner_copy_requires_strict_validation(
+    tmp_path: Path,
+):
+    headline = (
+        "Amazon writes its largest venture cheque yet "
+        "for AI start-up Anthropic"
+    )
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    partner_url = (
+        "https://www.irishtimes.com/business/2024/03/28/"
+        "amazon-invests-in-ai-start-up/"
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2024-03-28T00:00:00+00:00",
+        section="business",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=partner_url,
+                expected_headline=headline,
+            ),
+        ),
+    )
+    client = StubArchiveClient(
+        {
+            partner_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                ft_syndication_html(
+                    headline=headline,
+                    include_copyright=True,
+                ),
+                partner_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.OTHER
+    assert capture.quality_signals["ftSyndicationValidated"] is True
+    assert (
+        capture.quality_signals["syndicationFtCopyrightAttributed"]
+        is True
+    )
+    assert (
+        capture.quality_signals["syndicationBodyCharacters"]
+        >= FT_SYNDICATION_MINIMUM_BODY_CHARACTERS
+    )
+    assert capture.quality_signals["syndicationHeadlineOverlap"] == 1.0
+    assert capture.quality_signals["syndicationPartnerHostValidated"] is True
+
+
+def test_ft_manifest_partner_copy_rejects_missing_copyright(
+    tmp_path: Path,
+):
+    headline = (
+        "Amazon writes its largest venture cheque yet "
+        "for AI start-up Anthropic"
+    )
+    partner_url = (
+        "https://www.irishtimes.com/business/2024/03/28/"
+        "independent-related-article/"
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+        ),
+        published_at="2024-03-28T00:00:00+00:00",
+        section="business",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=partner_url,
+                expected_headline=headline,
+            ),
+        ),
+    )
+    client = StubArchiveClient(
+        {
+            partner_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                ft_syndication_html(
+                    headline=headline,
+                    include_copyright=False,
+                ),
+                partner_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "error"
+    assert "missing-ft-copyright" in result["error"]
+    assert not (tmp_path / "objects").exists()
 
 
 def test_wsj_manifest_partner_copy_requires_strict_validation(

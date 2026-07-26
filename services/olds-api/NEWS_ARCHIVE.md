@@ -178,6 +178,18 @@ headline, publication date, complete-body threshold, and visible Wall Street
 Journal attribution all pass. Failed provenance checks never enter the parser
 validation sample.
 
+FT discovery also augments sparse Wayback results with licensed partner
+copies. It searches Infini-News' CC-News index for the exact visible
+`Copyright The Financial Times Limited` attribution, samples occurrences
+across the whole result range for each year, and retains the CC-News WARC
+filename and document index as discovery provenance. Each partner headline is
+resolved to an `ft.com/content/` URL with an exact-title search. Infini-News
+text is never stored as the raw article: capture still downloads the live
+partner HTML. That HTML enters the archive only when its final partner host,
+headline, publication date, complete-body threshold, and visible FT copyright
+statement all pass. Failed or ambiguous mappings remain outside the parser
+validation sample.
+
 Reuters uses two catalog shards because its URL design changed:
 
 - `wayback` for the legacy `/article/` catalog (2016–2020);

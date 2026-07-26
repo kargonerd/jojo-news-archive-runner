@@ -355,6 +355,17 @@ def export_sitemap_manifest(
         ).fetchone()
         is not None
     )
+    has_ft_syndication = (
+        publisher == "ft"
+        and connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type='table' AND name='ft_syndication_articles'
+            """
+        ).fetchone()
+        is not None
+    )
     if has_nyt_syndication:
         article_rows = connection.execute(
             """
@@ -373,6 +384,30 @@ def export_sitemap_manifest(
                 syndication.syndicated_url,
                 syndication.headline
             FROM nyt_syndication_articles AS syndication
+            LEFT JOIN sitemap_articles AS sitemap
+              ON sitemap.canonical_url=syndication.canonical_url
+            WHERE sitemap.canonical_url IS NULL
+            ORDER BY 1
+            """
+        )
+    elif has_ft_syndication:
+        article_rows = connection.execute(
+            """
+            SELECT
+                sitemap.canonical_url,
+                COALESCE(syndication.published_at, sitemap.published_at),
+                syndication.partner_url,
+                syndication.expected_headline
+            FROM sitemap_articles AS sitemap
+            LEFT JOIN ft_syndication_articles AS syndication
+              ON syndication.canonical_url=sitemap.canonical_url
+            UNION ALL
+            SELECT
+                syndication.canonical_url,
+                syndication.published_at,
+                syndication.partner_url,
+                syndication.expected_headline
+            FROM ft_syndication_articles AS syndication
             LEFT JOIN sitemap_articles AS sitemap
               ON sitemap.canonical_url=syndication.canonical_url
             WHERE sitemap.canonical_url IS NULL
