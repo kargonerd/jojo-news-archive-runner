@@ -97,7 +97,7 @@ def test_parquet_footer_row_count_uses_bounded_ranges():
     )
 
     assert count == 3
-    assert len(client.ranges) == 2
+    assert len(client.ranges) == 1
     assert client.ranges[0].endswith(
         f"-{len(parquet_bytes) - 1}"
     )

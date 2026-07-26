@@ -32,6 +32,7 @@ DEFAULT_MAXIMUM_FILES_PER_RUN = 1_200
 DEFAULT_METADATA_WORKERS = 24
 DEFAULT_SCAN_WORKERS = 8
 MINIMUM_TEXT_CHARACTERS = 1_000
+PARQUET_FOOTER_PROBE_BYTES = 32 * 1024
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
@@ -422,27 +423,36 @@ def _read_parquet_row_count(
     if byte_count < 12:
         raise ValueError("Parquet file is too small")
     url = _resolve_url(path)
-    trailer = http_client.get(
+    probe_start = max(0, byte_count - PARQUET_FOOTER_PROBE_BYTES)
+    probe = http_client.get(
         url,
-        headers={"Range": f"bytes={byte_count - 8}-{byte_count - 1}"},
+        headers={"Range": f"bytes={probe_start}-{byte_count - 1}"},
     )
-    trailer.raise_for_status()
-    if len(trailer.content) != 8 or trailer.content[4:] != b"PAR1":
+    probe.raise_for_status()
+    expected_probe_size = byte_count - probe_start
+    if len(probe.content) != expected_probe_size:
+        raise ValueError("Parquet footer probe range is incomplete")
+    trailer = probe.content[-8:]
+    if len(trailer) != 8 or trailer[4:] != b"PAR1":
         raise ValueError("Parquet trailer is invalid")
-    footer_size = struct.unpack("<I", trailer.content[:4])[0]
+    footer_size = struct.unpack("<I", trailer[:4])[0]
     footer_start = byte_count - 8 - footer_size
     if footer_start < 4:
         raise ValueError("Parquet footer size is invalid")
-    footer = http_client.get(
-        url,
-        headers={"Range": f"bytes={footer_start}-{byte_count - 1}"},
-    )
-    footer.raise_for_status()
     expected_size = footer_size + 8
-    if len(footer.content) != expected_size:
+    if footer_start >= probe_start:
+        footer_content = probe.content[footer_start - probe_start :]
+    else:
+        footer = http_client.get(
+            url,
+            headers={"Range": f"bytes={footer_start}-{byte_count - 1}"},
+        )
+        footer.raise_for_status()
+        footer_content = footer.content
+    if len(footer_content) != expected_size:
         raise ValueError("Parquet footer range is incomplete")
     metadata = pq.read_metadata(
-        pa.BufferReader(b"PAR1" + footer.content)
+        pa.BufferReader(b"PAR1" + footer_content)
     )
     return int(metadata.num_rows)
 
