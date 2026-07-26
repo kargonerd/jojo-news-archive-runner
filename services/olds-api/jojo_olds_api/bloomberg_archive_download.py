@@ -213,8 +213,8 @@ class ArchiveClient:
                 "Range": f"bytes={offset}-{offset + length - 1}",
             },
             require_partial_content=True,
-            maximum_attempts=min(self.attempts, 3),
-            request_timeout=min(self.timeout, 60.0),
+            maximum_attempts=1,
+            request_timeout=min(self.timeout, 30.0),
         )
 
     def _fetch(

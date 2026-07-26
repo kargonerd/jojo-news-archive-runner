@@ -302,11 +302,11 @@ def test_capture_keeps_strong_article_instead_of_first_html_shell(
 
     assert result["status"] == "complete"
     assert client.requests == [
-        "https://index.commoncrawl.org/collinfo.json",
         (
             "https://web.archive.org/web/timemap/json?"
             "url=https%3A%2F%2Fwww.ft.com%2Fcontent%2Fexample"
         ),
+        "https://index.commoncrawl.org/collinfo.json",
         shell_url,
         article_url,
     ]
@@ -315,6 +315,78 @@ def test_capture_keeps_strong_article_instead_of_first_html_shell(
     assert capture.quality_score == 100
     assert capture.raw_html.byte_count == len(ARTICLE)
     assert len(list((tmp_path / "objects").rglob("*.html.gz"))) == 1
+
+
+def test_ft_capture_uses_exact_wayback_before_common_crawl(tmp_path: Path):
+    canonical_url = "https://www.ft.com/content/example"
+    timemap_url = (
+        "https://web.archive.org/web/timemap/json?"
+        "url=https%3A%2F%2Fwww.ft.com%2Fcontent%2Fexample"
+    )
+    exact_url = (
+        "https://web.archive.org/web/20200101120000id_/" + canonical_url
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20200102000000id_/" + canonical_url
+    )
+    timemap = json.dumps(
+        [
+            [
+                "urlkey",
+                "timestamp",
+                "original",
+                "mimetype",
+                "statuscode",
+                "digest",
+            ],
+            [
+                "com,ft)/content/example",
+                "20200101120000",
+                canonical_url,
+                "text/html",
+                "200",
+                "EXACT",
+            ],
+        ]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                timemap,
+                timemap_url,
+            ),
+            exact_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                exact_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2020-01-01T00:00:00Z",
+        section=None,
+        candidates=(candidate(guessed_url, "20200102000000"),),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [timemap_url, exact_url]
+    assert (
+        result["capture"].selected_candidate.provider
+        == CaptureProvider.WAYBACK
+    )
+    assert result["capture"].selected_candidate.snapshot_url == exact_url
 
 
 def test_bloomberg_capture_falls_back_to_exact_timemap_snapshot(

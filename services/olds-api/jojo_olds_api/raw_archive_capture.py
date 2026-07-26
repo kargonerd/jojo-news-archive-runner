@@ -444,61 +444,61 @@ def capture_item(
                 break
 
     if item.publisher in COMMON_CRAWL_FALLBACK_PUBLISHERS:
+        # Exact Wayback captures have historically produced far more usable FT
+        # articles than Common Crawl WARC records. Try the nearest exact
+        # snapshots first and avoid three index plus Range lookups when one is
+        # already a maximum-quality article.
+        timemap_candidates: tuple[CaptureCandidate, ...] = ()
         try:
-            common_crawl_candidates = discover_common_crawl_candidates(
-                item.canonical_url,
-                published_at=item.published_at,
+            timemap_candidates = discover_wayback_timemap_candidates(
+                item,
                 archive_client=archive_client,
+                maximum_candidates=3,
             )
         except Exception as exc:
-            failures.append(f"commoncrawl-index:{type(exc).__name__}")
-            common_crawl_candidates = ()
+            failures.append(f"wayback-timemap:{type(exc).__name__}")
+            timemap_candidates = ()
         existing_urls = {
-            (
-                candidate.snapshot_url,
-                candidate.warc_offset,
-                candidate.warc_length,
-            )
-            for candidate in candidates_considered
+            candidate.snapshot_url for candidate in candidates_considered
         }
-        common_crawl_candidates = tuple(
+        timemap_candidates = tuple(
             candidate
-            for candidate in common_crawl_candidates
-            if (
-                candidate.snapshot_url,
-                candidate.warc_offset,
-                candidate.warc_length,
-            )
-            not in existing_urls
+            for candidate in timemap_candidates
+            if candidate.snapshot_url not in existing_urls
         )
-        candidates_considered.extend(common_crawl_candidates)
-        consider_candidates(common_crawl_candidates)
+        candidates_considered.extend(timemap_candidates)
+        consider_candidates(timemap_candidates)
 
-        # FT's publication-near guessed Wayback timestamps often spend most of
-        # their time on missing captures. Ask the exact timemap only when
-        # Common Crawl did not already produce a maximum-quality response.
-        timemap_candidates: tuple[CaptureCandidate, ...] = ()
         if best_response is None or best_response[5] < 100:
             try:
-                timemap_candidates = discover_wayback_timemap_candidates(
-                    item,
+                common_crawl_candidates = discover_common_crawl_candidates(
+                    item.canonical_url,
+                    published_at=item.published_at,
                     archive_client=archive_client,
-                    maximum_candidates=3,
                 )
             except Exception as exc:
-                failures.append(f"wayback-timemap:{type(exc).__name__}")
-                timemap_candidates = ()
+                failures.append(f"commoncrawl-index:{type(exc).__name__}")
+                common_crawl_candidates = ()
             existing_urls = {
-                candidate.snapshot_url
+                (
+                    candidate.snapshot_url,
+                    candidate.warc_offset,
+                    candidate.warc_length,
+                )
                 for candidate in candidates_considered
             }
-            timemap_candidates = tuple(
+            common_crawl_candidates = tuple(
                 candidate
-                for candidate in timemap_candidates
-                if candidate.snapshot_url not in existing_urls
+                for candidate in common_crawl_candidates
+                if (
+                    candidate.snapshot_url,
+                    candidate.warc_offset,
+                    candidate.warc_length,
+                )
+                not in existing_urls
             )
-            candidates_considered.extend(timemap_candidates)
-            consider_candidates(timemap_candidates)
+            candidates_considered.extend(common_crawl_candidates)
+            consider_candidates(common_crawl_candidates)
 
         # Guessed publication-near URLs are useful only when Timemap itself is
         # unavailable or empty. If Timemap returned exact captures, retrying

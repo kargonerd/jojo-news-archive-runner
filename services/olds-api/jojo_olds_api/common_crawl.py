@@ -18,7 +18,7 @@ DATA_BASE_URL = "https://data.commoncrawl.org/"
 COLLECTION_INFO_MAXIMUM_BYTES = 2_000_000
 INDEX_RESULT_MAXIMUM_BYTES = 2_000_000
 MAXIMUM_COLLECTIONS_PER_ARTICLE = 3
-MAXIMUM_CANDIDATES_PER_ARTICLE = 8
+MAXIMUM_CANDIDATES_PER_ARTICLE = 3
 MAXIMUM_COMPRESSED_WARC_BYTES = 25_000_000
 _COLLECTION_CACHE_LOCK = threading.Lock()
 
@@ -81,8 +81,8 @@ def discover_common_crawl_candidates(
                 archive_client,
                 query_url,
                 maximum_bytes=INDEX_RESULT_MAXIMUM_BYTES,
-                attempts=2,
-                timeout=35.0,
+                attempts=1,
+                timeout=25.0,
             )
         except Exception as exc:
             last_error = exc
