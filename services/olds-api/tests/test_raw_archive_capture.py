@@ -27,6 +27,7 @@ from jojo_olds_api.raw_archive_capture import (
     initialize_capture_schema,
     load_capture_manifest,
     mark_capture_downloading,
+    nyt_headline_wordpress_search_url,
     nyt_syndication_search_url,
     nyt_syndication_title_search_url,
     nyt_trusted_wordpress_search_url,
@@ -1378,6 +1379,153 @@ def test_nyt_manifest_direct_copy_requires_exact_canonical_provenance(
     assert (
         capture.quality_signals["syndicationCanonicalArticleLinked"]
         is True
+    )
+
+
+def test_nyt_capture_uses_strict_headline_wordpress_copy(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.nytimes.com/2026/04/19/arts/design/"
+        "milan-design-week-revivals.html"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20260420000000id_/" + canonical_url
+    )
+    item = ManifestItem(
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at="2026-04-19T00:00:00Z",
+        section="arts",
+        candidates=(candidate(guessed_url, "20260420000000"),),
+    )
+    headline = "Vintage Designs Take on New Lives at Milan Design Week"
+    syndicated_url = (
+        "https://dnyuz.com/2026/04/19/"
+        "vintage-designs-take-on-new-lives-at-milan-design-week/"
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.nytimes.com%2F2026%2F04%2F19%2Farts%2F"
+        "design%2Fmilan-design-week-revivals.html"
+    )
+    trusted_search_url = nyt_trusted_wordpress_search_url(item)
+    canonical_search_url = nyt_syndication_search_url(item)
+    headline_wordpress_url = nyt_headline_wordpress_search_url(headline)
+    canonical_search_html = f"""
+    <html><body><ol id="web"><li><div class="compTitle">
+      <a href="{canonical_url}"><h3>{headline} - The New York Times</h3></a>
+    </div></li></ol></body></html>
+    """.encode()
+    headline_search_json = json.dumps(
+        [
+            {
+                "date": "2026-04-19T10:37:50",
+                "link": syndicated_url,
+                "title": {"rendered": headline},
+                "content": {
+                    "rendered": (
+                        "<p>Full licensed article body.</p>"
+                        "<p>The post appeared first on "
+                        '<a href="https://www.nytimes.com/">'
+                        "New York Times</a>.</p>"
+                    )
+                },
+            }
+        ]
+    ).encode()
+    paragraphs = "".join(
+        (
+            "<p>Design reporting paragraph "
+            f"{index} describes the makers, materials, exhibitions, "
+            "historic furniture and contemporary production in enough "
+            "detail to constitute a complete licensed article body. "
+            "The reporting includes interviews, locations and context.</p>"
+        )
+        for index in range(1, 9)
+    )
+    syndicated_html = f"""
+    <!doctype html><html><head>
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "{headline}",
+        "datePublished": "2026-04-19T10:37:50Z",
+        "author": {{"name": "New York Times"}}
+      }}
+      </script>
+    </head><body><main><div class="post-content">
+      {paragraphs}
+      <p>The post appeared first on
+        <a href="https://www.nytimes.com/">New York Times</a>.
+      </p>
+    </div></main></body></html>
+    """.encode() + (b" " * 2_048)
+    empty_timemap = json.dumps(
+        [["urlkey", "timestamp", "original", "mimetype", "statuscode"]]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                403,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                empty_timemap,
+                timemap_url,
+            ),
+            trusted_search_url: (
+                200,
+                {"content-type": "application/json"},
+                b"[]",
+                trusted_search_url,
+            ),
+            canonical_search_url: (
+                200,
+                {"content-type": "text/html"},
+                canonical_search_html,
+                canonical_search_url,
+            ),
+            headline_wordpress_url: (
+                200,
+                {"content-type": "application/json"},
+                headline_search_json,
+                headline_wordpress_url,
+            ),
+            syndicated_url: (
+                200,
+                {"content-type": "text/html"},
+                syndicated_html,
+                syndicated_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [
+        guessed_url,
+        timemap_url,
+        trusted_search_url,
+        canonical_search_url,
+        headline_wordpress_url,
+        syndicated_url,
+    ]
+    capture = result["capture"]
+    assert capture.selected_candidate.snapshot_url == syndicated_url
+    assert capture.quality_signals["nytSyndicationValidated"] is True
+    assert (
+        capture.quality_signals["syndicationCanonicalArticleLinked"]
+        is False
     )
 
 

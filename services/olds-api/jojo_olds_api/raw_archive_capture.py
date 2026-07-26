@@ -52,6 +52,9 @@ NYT_SYNDICATION_MINIMUM_BODY_CHARACTERS = 1_000
 NYT_TRUSTED_WORDPRESS_ENDPOINTS = (
     "https://www.hawaiitribune-herald.com/wp-json/wp/v2/posts",
 )
+NYT_HEADLINE_WORDPRESS_ENDPOINTS = (
+    "https://dnyuz.com/wp-json/wp/v2/posts",
+)
 COMMON_CRAWL_FALLBACK_PUBLISHERS = {"ft"}
 REUTERS_SYNDICATION_STOP_WORDS = {
     "a",
@@ -1218,6 +1221,19 @@ def discover_nyt_syndication(
             candidates=(),
         )
 
+    for endpoint in NYT_HEADLINE_WORDPRESS_ENDPOINTS:
+        try:
+            trusted = _discover_nyt_headline_wordpress_copy(
+                item,
+                expected_headline=expected_headline,
+                endpoint=endpoint,
+                archive_client=archive_client,
+            )
+        except Exception:
+            trusted = None
+        if trusted is not None:
+            return trusted
+
     title_search_url = nyt_syndication_title_search_url(expected_headline)
     status_code, headers, content, _ = archive_client.fetch(
         title_search_url,
@@ -1368,6 +1384,133 @@ def nyt_trusted_wordpress_search_url(
     return endpoint + "?" + urlencode(
         {
             "search": query,
+            "per_page": 10,
+            "_fields": "date,date_gmt,link,title,content",
+        }
+    )
+
+
+def _discover_nyt_headline_wordpress_copy(
+    item: ManifestItem,
+    *,
+    expected_headline: str,
+    endpoint: str,
+    archive_client: ArchiveClient,
+) -> NytSyndicationDiscovery | None:
+    search_url = nyt_headline_wordpress_search_url(
+        expected_headline,
+        endpoint=endpoint,
+    )
+    status_code, headers, content, _ = _fetch_limited_archive(
+        archive_client,
+        search_url,
+        maximum_bytes=NYT_SYNDICATION_SEARCH_MAXIMUM_BYTES,
+        attempts=2,
+        timeout=35.0,
+    )
+    content_type = headers.get("content-type", "").casefold()
+    if status_code != 200 or not content:
+        raise ValueError(
+            f"headline NYT syndication search returned HTTP {status_code}"
+        )
+    if "json" not in content_type and not content.lstrip().startswith(b"["):
+        raise ValueError(
+            "headline NYT syndication search did not return JSON"
+        )
+    payload = json.loads(content)
+    if not isinstance(payload, list):
+        raise ValueError("headline NYT syndication response is invalid")
+    expected_date = _parse_iso_datetime(item.published_at)
+    if expected_date is None:
+        return None
+    ranked: list[tuple[float, int, int, str]] = []
+    for position, row in enumerate(payload):
+        if not isinstance(row, dict):
+            continue
+        link = row.get("link")
+        title_value = row.get("title")
+        content_value = row.get("content")
+        date_value = row.get("date_gmt") or row.get("date")
+        if (
+            not isinstance(link, str)
+            or not _is_public_syndication_url(
+                link,
+                excluded_publisher="nyt",
+            )
+            or not isinstance(title_value, dict)
+            or not isinstance(content_value, dict)
+            or not isinstance(date_value, str)
+        ):
+            continue
+        rendered_title = title_value.get("rendered")
+        rendered_content = content_value.get("rendered")
+        if (
+            not isinstance(rendered_title, str)
+            or not isinstance(rendered_content, str)
+        ):
+            continue
+        candidate_headline = _clean_nyt_search_result_title(
+            BeautifulSoup(
+                rendered_title,
+                "html.parser",
+            ).get_text(" ", strip=True)
+        )
+        headline_overlap = _headline_text_overlap(
+            expected_headline,
+            candidate_headline,
+        )
+        if headline_overlap < 0.8:
+            continue
+        partner_date = _parse_iso_datetime(date_value)
+        if partner_date is None:
+            continue
+        date_delta = abs(
+            (partner_date.date() - expected_date.date()).days
+        )
+        if date_delta > 2:
+            continue
+        rendered_soup = BeautifulSoup(rendered_content, "html.parser")
+        attribution = rendered_soup.get_text(" ", strip=True)
+        if re.search(
+            r"(?i)(?:the\s+)?new\s+york\s+times|nytimes\.com",
+            attribution,
+        ) is None:
+            continue
+        canonical_linked = _html_links_to_article(
+            rendered_content,
+            item.canonical_url,
+        )
+        ranked.append(
+            (
+                -headline_overlap,
+                0 if canonical_linked else 1,
+                date_delta * 100 + position,
+                link,
+            )
+        )
+    if not ranked:
+        return None
+    _, _, _, link = min(ranked)
+    return NytSyndicationDiscovery(
+        expected_headline=expected_headline,
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=link,
+                expected_headline=expected_headline,
+            ),
+        ),
+    )
+
+
+def nyt_headline_wordpress_search_url(
+    expected_headline: str,
+    *,
+    endpoint: str = NYT_HEADLINE_WORDPRESS_ENDPOINTS[0],
+) -> str:
+    return endpoint + "?" + urlencode(
+        {
+            "search": expected_headline,
             "per_page": 10,
             "_fields": "date,date_gmt,link,title,content",
         }
