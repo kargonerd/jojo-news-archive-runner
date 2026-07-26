@@ -453,7 +453,7 @@ def capture_item(
             timemap_candidates = discover_wayback_timemap_candidates(
                 item,
                 archive_client=archive_client,
-                maximum_candidates=3,
+                maximum_candidates=WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES,
             )
         except Exception as exc:
             failures.append(f"wayback-timemap:{type(exc).__name__}")

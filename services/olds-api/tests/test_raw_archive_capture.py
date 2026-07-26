@@ -389,6 +389,87 @@ def test_ft_capture_uses_exact_wayback_before_common_crawl(tmp_path: Path):
     assert result["capture"].selected_candidate.snapshot_url == exact_url
 
 
+def test_ft_capture_checks_later_exact_wayback_versions_before_common_crawl(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.ft.com/content/example"
+    timemap_url = (
+        "https://web.archive.org/web/timemap/json?"
+        "url=https%3A%2F%2Fwww.ft.com%2Fcontent%2Fexample"
+    )
+    exact_urls = [
+        (
+            f"https://web.archive.org/web/2020010{day}120000id_/"
+            f"{canonical_url}"
+        )
+        for day in range(1, 9)
+    ]
+    timemap = json.dumps(
+        [
+            [
+                "urlkey",
+                "timestamp",
+                "original",
+                "mimetype",
+                "statuscode",
+                "digest",
+            ],
+            *[
+                [
+                    "com,ft)/content/example",
+                    f"2020010{day}120000",
+                    canonical_url,
+                    "text/html",
+                    "200",
+                    f"EXACT-{day}",
+                ]
+                for day in range(1, 9)
+            ],
+        ]
+    ).encode()
+    subscription_shell = (
+        b"<!doctype html><html><body>Subscribe to read</body></html>"
+        + (b" " * 2_048)
+    )
+    responses = {
+        timemap_url: (
+            200,
+            {"content-type": "application/json"},
+            timemap,
+            timemap_url,
+        ),
+        **{
+            url: (
+                200,
+                {"content-type": "text/html"},
+                subscription_shell if index < 7 else ARTICLE,
+                url,
+            )
+            for index, url in enumerate(exact_urls)
+        },
+    }
+    client = StubArchiveClient(responses)
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2020-01-01T00:00:00Z",
+        section=None,
+        candidates=(),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [timemap_url, *exact_urls]
+    assert result["capture"].selected_candidate.snapshot_url == exact_urls[-1]
+    assert result["capture"].quality_score == 100
+
+
 def test_bloomberg_capture_falls_back_to_exact_timemap_snapshot(
     tmp_path: Path,
 ):
