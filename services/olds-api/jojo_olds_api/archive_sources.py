@@ -77,6 +77,7 @@ ARCHIVE_SOURCE_SPECS = {
         ),
         rejected_path_patterns=_patterns(
             r"/(?:video|podcasts?|newsletters?|livecoverage)(?:/|$)",
+            r"^/articles/[^/]*-crossword(?:-|$)",
         ),
     ),
     "bloomberg": ArchiveSourceSpec(
