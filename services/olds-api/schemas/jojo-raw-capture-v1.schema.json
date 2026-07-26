@@ -85,6 +85,18 @@
           "default": null,
           "title": "Digest"
         },
+        "expectedHeadline": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expectedheadline"
+        },
         "mimeType": {
           "anyOf": [
             {
