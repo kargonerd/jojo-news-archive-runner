@@ -28,7 +28,9 @@ from jojo_olds_api.raw_archive_capture import (
     discover_ft_syndication_candidates,
     discover_reuters_syndication_candidates,
     ft_google_news_headline_search_url,
+    ft_google_news_partner_search_url,
     ft_syndication_broad_title_search_url,
+    ft_syndication_partner_site_search_url,
     ft_syndication_search_url,
     ft_syndication_title_search_url,
     initialize_capture_schema,
@@ -2283,6 +2285,113 @@ def test_ft_syndication_recovers_missing_headline_from_google_news():
         google_news_url,
         title_search_url,
         broad_search_url,
+    ]
+    assert [candidate.snapshot_url for candidate in candidates] == [
+        partner_url
+    ]
+    assert candidates[0].expected_headline == expected_headline
+
+
+def test_ft_syndication_refines_google_news_partner_host_with_yahoo():
+    expected_headline = (
+        "AI is forecast to put 200,000 European banking jobs "
+        "at risk by 2030"
+    )
+    partner_url = (
+        "https://www.irishtimes.com/business/2026/01/01/"
+        "ai-is-forecast-to-put-200000-european-banking-jobs-"
+        "at-risk-by-2030/"
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "71e12f85-1edb-4156-8cb5-3fe8aef36d93"
+        ),
+        published_at="2026-01-01T08:00:00Z",
+        section="banking",
+        candidates=(),
+    )
+    title_search_url = ft_syndication_title_search_url(
+        expected_headline
+    )
+    broad_search_url = ft_syndication_broad_title_search_url(
+        expected_headline
+    )
+    google_news_url = ft_google_news_partner_search_url(
+        expected_headline
+    )
+    partner_search_url = ft_syndication_partner_site_search_url(
+        expected_headline,
+        "www.irishtimes.com",
+    )
+    google_news_xml = f"""
+    <?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0"><channel>
+      <item>
+        <title>
+          AI is forecast to ‘put 200,000 European banking jobs at risk’
+          by 2030 - The Irish Times
+        </title>
+        <pubDate>Thu, 01 Jan 2026 08:00:00 GMT</pubDate>
+        <source url="https://www.irishtimes.com">The Irish Times</source>
+      </item>
+      <item>
+        <title>{expected_headline} - Unrelated Archive</title>
+        <pubDate>Thu, 01 Jan 2015 08:00:00 GMT</pubDate>
+        <source url="https://unrelated.example">Unrelated Archive</source>
+      </item>
+    </channel></rss>
+    """.encode()
+    partner_search_html = f"""
+    <html><body><ol id="web"><li><h3>
+      <a href="{partner_url}">
+        AI is forecast to put 200,000 European banking jobs at risk
+        by 2030 - The Irish Times
+      </a>
+    </h3></li></ol></body></html>
+    """.encode()
+    empty_search = b"<html><ol id='web'></ol></html>"
+    client = StubArchiveClient(
+        {
+            title_search_url: (
+                200,
+                {"content-type": "text/html"},
+                empty_search,
+                title_search_url,
+            ),
+            broad_search_url: (
+                200,
+                {"content-type": "text/html"},
+                empty_search,
+                broad_search_url,
+            ),
+            google_news_url: (
+                200,
+                {"content-type": "application/rss+xml"},
+                google_news_xml,
+                google_news_url,
+            ),
+            partner_search_url: (
+                200,
+                {"content-type": "text/html"},
+                partner_search_html,
+                partner_search_url,
+            ),
+        }
+    )
+
+    candidates = discover_ft_syndication_candidates(
+        item,
+        archive_client=client,
+        expected_headline=expected_headline,
+    )
+
+    assert client.requests == [
+        title_search_url,
+        broad_search_url,
+        google_news_url,
+        partner_search_url,
     ]
     assert [candidate.snapshot_url for candidate in candidates] == [
         partner_url

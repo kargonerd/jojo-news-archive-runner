@@ -33,7 +33,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.9.0",
+    "ft": "ft-capture/0.9.1",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.1",
@@ -58,6 +58,8 @@ FT_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 FT_CAPTURE_MINIMUM_BODY_CHARACTERS = 100
 FT_IMAGE_LED_MINIMUM_IMAGES = 3
 FT_GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
+FT_GOOGLE_NEWS_MAXIMUM_PARTNER_SOURCES = 3
+FT_GOOGLE_NEWS_MAXIMUM_DATE_DELTA_DAYS = 2
 NYT_SYNDICATION_SEARCH_ENDPOINT = REUTERS_SYNDICATION_SEARCH_ENDPOINT
 NYT_SYNDICATION_SEARCH_MAXIMUM_BYTES = 2_000_000
 NYT_SYNDICATION_MAXIMUM_CANDIDATES = 8
@@ -1284,6 +1286,28 @@ def ft_google_news_headline_search_url(item: ManifestItem) -> str:
     )
 
 
+def ft_google_news_partner_search_url(
+    expected_headline: str,
+) -> str:
+    return FT_GOOGLE_NEWS_RSS_ENDPOINT + "?" + urlencode(
+        {
+            "q": f'"{expected_headline}"',
+            "hl": "en-US",
+            "gl": "US",
+            "ceid": "US:en",
+        }
+    )
+
+
+def ft_syndication_partner_site_search_url(
+    expected_headline: str,
+    source_host: str,
+) -> str:
+    return REUTERS_SYNDICATION_SEARCH_ENDPOINT + "?" + urlencode(
+        {"p": f'"{expected_headline}" site:{source_host}'}
+    )
+
+
 def _syndication_search_url(
     item: ManifestItem,
     *,
@@ -1432,6 +1456,118 @@ def discover_ft_syndication_candidates(
         (offset + position, title, candidate_url)
         for position, title, candidate_url in broad_results
     )
+    ranked = _rank_syndication_candidates(
+        all_results,
+        excluded_publisher="ft",
+        expected_headline=expected_headline,
+    )
+    if ranked:
+        return ranked
+    try:
+        return _discover_ft_partner_candidates_from_google_news(
+            item,
+            archive_client=archive_client,
+            expected_headline=expected_headline,
+        )
+    except Exception:
+        return ()
+
+
+def _discover_ft_partner_candidates_from_google_news(
+    item: ManifestItem,
+    *,
+    archive_client: ArchiveClient,
+    expected_headline: str,
+) -> tuple[CaptureCandidate, ...]:
+    expected_date = _parse_iso_datetime(item.published_at)
+    if expected_date is None:
+        return ()
+    search_url = ft_google_news_partner_search_url(expected_headline)
+    status_code, headers, content, _ = archive_client.fetch(
+        search_url,
+        maximum_bytes=REUTERS_SYNDICATION_SEARCH_MAXIMUM_BYTES,
+    )
+    content_type = headers.get("content-type", "").casefold()
+    if status_code != 200 or not content:
+        raise ValueError(
+            f"FT Google News partner search returned HTTP {status_code}"
+        )
+    if (
+        "xml" not in content_type
+        and not content.lstrip().startswith((b"<?xml", b"<rss"))
+    ):
+        raise ValueError("FT Google News partner search did not return XML")
+    root = ElementTree.fromstring(content.lstrip())
+    source_hosts: list[str] = []
+    seen_hosts: set[str] = set()
+    for result in root.findall("./channel/item"):
+        result_title = _clean_syndication_search_title(
+            result.findtext("title") or ""
+        )
+        if (
+            _headline_text_overlap(expected_headline, result_title)
+            < 0.8
+        ):
+            continue
+        try:
+            published_at = parsedate_to_datetime(
+                result.findtext("pubDate") or ""
+            )
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        if (
+            abs(
+                (
+                    published_at.astimezone(timezone.utc).date()
+                    - expected_date.date()
+                ).days
+            )
+            > FT_GOOGLE_NEWS_MAXIMUM_DATE_DELTA_DAYS
+        ):
+            continue
+        source = result.find("source")
+        source_url = (
+            source.attrib.get("url", "").strip()
+            if source is not None
+            else ""
+        )
+        source_host = (urlsplit(source_url).hostname or "").casefold()
+        if (
+            not source_host
+            or source_host in seen_hosts
+            or not _is_public_syndication_url(
+                source_url,
+                excluded_publisher="ft",
+            )
+        ):
+            continue
+        seen_hosts.add(source_host)
+        source_hosts.append(source_host)
+        if (
+            len(source_hosts)
+            >= FT_GOOGLE_NEWS_MAXIMUM_PARTNER_SOURCES
+        ):
+            break
+    all_results: list[tuple[int, str, str]] = []
+    for source_host in source_hosts:
+        try:
+            results = _fetch_syndication_search_results(
+                item,
+                archive_client=archive_client,
+                search_url=ft_syndication_partner_site_search_url(
+                    expected_headline,
+                    source_host,
+                ),
+            )
+        except Exception:
+            continue
+        offset = len(all_results)
+        all_results.extend(
+            (offset + position, title, candidate_url)
+            for position, title, candidate_url in results
+        )
     return _rank_syndication_candidates(
         all_results,
         excluded_publisher="ft",
