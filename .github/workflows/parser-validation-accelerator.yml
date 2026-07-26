@@ -327,6 +327,7 @@ jobs:
             --validation-sample-per-year 500
             --validation-from-year "$SAMPLE_YEAR"
             --validation-to-year "$SAMPLE_YEAR"
+            --stop-when-validation-ready
             --progress-every 25
             --minimum-free-gb 2
           )

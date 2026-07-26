@@ -20,6 +20,7 @@ from jojo_olds_api.publisher_specs import publisher_spec
 from jojo_olds_api.parser_validation import (
     ensure_parser_validation_plan,
     is_parser_validation_sample,
+    parser_validation_summary,
     record_parser_validation,
 )
 from jojo_olds_api.raw_archive_capture import (
@@ -68,6 +69,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--validation-from-year", type=int)
     parser.add_argument("--validation-to-year", type=int)
+    parser.add_argument(
+        "--stop-when-validation-ready",
+        action="store_true",
+        help=(
+            "Stop submitting new captures as soon as every configured parser "
+            "validation year passes its target and QA gates."
+        ),
+    )
     parser.add_argument(
         "--authorization-reference",
         default="user-provided-authorization",
@@ -118,12 +127,27 @@ def main() -> int:
             target_per_year=args.validation_sample_per_year,
             maximum_record_attempts=args.max_record_attempts,
         )
-    items = pending_captures(
-        connection,
-        retry_errors=args.retry_errors,
-        maximum=args.max_captures,
-        maximum_record_attempts=args.max_record_attempts,
-        prioritize_parser_validation=bool(args.validation_sample_per_year),
+    elif args.stop_when_validation_ready:
+        raise SystemExit(
+            "--stop-when-validation-ready requires "
+            "--validation-sample-per-year"
+        )
+    validation_ready = bool(
+        args.stop_when_validation_ready
+        and parser_validation_summary(connection)["ready"]
+    )
+    items = (
+        []
+        if validation_ready
+        else pending_captures(
+            connection,
+            retry_errors=args.retry_errors,
+            maximum=args.max_captures,
+            maximum_record_attempts=args.max_record_attempts,
+            prioritize_parser_validation=bool(
+                args.validation_sample_per_year
+            ),
+        )
     )
     print(
         json.dumps(
@@ -168,6 +192,8 @@ def main() -> int:
 
     def submit_one(executor: ThreadPoolExecutor) -> bool:
         nonlocal runtime_limit_reached
+        if validation_ready:
+            return False
         if deadline is not None and time.monotonic() >= deadline:
             runtime_limit_reached = True
             return False
@@ -225,6 +251,10 @@ def main() -> int:
                         )
                     completed += 1
                     failures += result["status"] == "error"
+                    if args.stop_when_validation_ready:
+                        validation_ready = bool(
+                            parser_validation_summary(connection)["ready"]
+                        )
                     submit_one(executor)
                     if (
                         completed % args.progress_every == 0
@@ -271,6 +301,7 @@ def main() -> int:
             "completedThisRun": completed,
             "errorsThisRun": failures,
             "stoppedForRuntimeLimit": runtime_limit_reached,
+            "stoppedForValidationReady": validation_ready,
             "finishedAt": datetime.now(timezone.utc).isoformat(),
         }
     )
