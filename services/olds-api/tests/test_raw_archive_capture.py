@@ -18,6 +18,7 @@ from jojo_olds_api.raw_archive_capture import (
     NYT_SYNDICATION_SEARCH_ENDPOINT,
     REUTERS_SYNDICATION_SEARCH_ENDPOINT,
     WAYBACK_TIMEMAP_ENDPOINT,
+    WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     bloomberg_syndication_search_url,
     capture_item,
     capture_summary,
@@ -74,6 +75,193 @@ def candidate(url: str, timestamp: str) -> CaptureCandidate:
         mime_type="text/html",
         status_code=200,
     )
+
+
+def wsj_syndication_html(
+    *,
+    headline: str,
+    attribution: str,
+) -> bytes:
+    paragraphs = "".join(
+        (
+            "<p>Licensed financial reporting paragraph "
+            f"{index} contains substantive market analysis, interviews "
+            "with investors, company disclosures, historical comparisons "
+            "and enough detail to represent the complete news article "
+            "rather than a headline, preview, or subscription prompt.</p>"
+        )
+        for index in range(1, 6)
+    )
+    return f"""
+    <!doctype html><html><head>
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "{headline}",
+        "datePublished": "2024-06-03T12:34:56Z",
+        "author": {{"name": "{attribution}"}}
+      }}
+      </script>
+    </head><body><article>
+      <p>By Market Reporter, {attribution}</p>
+      {paragraphs}
+    </article></body></html>
+    """.encode() + (b" " * 2_048)
+
+
+def test_wsj_manifest_partner_copy_requires_strict_validation(
+    tmp_path: Path,
+):
+    headline = "Investors Prepare for a Volatile Summer in Global Markets"
+    canonical_url = (
+        "https://www.wsj.com/finance/stocks/"
+        "investors-prepare-for-a-volatile-summer-in-global-markets-a1b2c3d4"
+    )
+    partner_url = (
+        "https://www.tovima.com/wsj/"
+        "a-complete-licensed-wsj-copy/"
+    )
+    item = ManifestItem(
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at="2024-06-03T12:34:56+00:00",
+        section="finance",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=partner_url,
+                expected_headline=headline,
+            ),
+        ),
+    )
+    client = StubArchiveClient(
+        {
+            partner_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                wsj_syndication_html(
+                    headline=headline,
+                    attribution="The Wall Street Journal",
+                ),
+                partner_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.OTHER
+    assert capture.quality_signals["wsjSyndicationValidated"] is True
+    assert capture.quality_signals["syndicationWsjAttributed"] is True
+    assert (
+        capture.quality_signals["syndicationBodyCharacters"]
+        >= WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS
+    )
+    assert capture.quality_signals["syndicationHeadlineOverlap"] == 1.0
+    assert capture.quality_signals["syndicationPartnerHostValidated"] is True
+
+
+def test_wsj_manifest_partner_copy_rejects_missing_attribution(
+    tmp_path: Path,
+):
+    headline = "Investors Prepare for a Volatile Summer in Global Markets"
+    partner_url = "https://www.tovima.com/wsj/unattributed-copy/"
+    item = ManifestItem(
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/finance/stocks/"
+            "investors-prepare-for-a-volatile-summer-in-global-markets-"
+            "a1b2c3d4"
+        ),
+        published_at="2024-06-03T12:34:56+00:00",
+        section="finance",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=partner_url,
+                expected_headline=headline,
+            ),
+        ),
+    )
+    client = StubArchiveClient(
+        {
+            partner_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                wsj_syndication_html(
+                    headline=headline,
+                    attribution="Independent Market Desk",
+                ),
+                partner_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "error"
+    assert "missing-wsj-attribution" in result["error"]
+    assert not (tmp_path / "objects").exists()
+
+
+def test_wsj_manifest_partner_copy_rejects_unapproved_host(
+    tmp_path: Path,
+):
+    headline = "Investors Prepare for a Volatile Summer in Global Markets"
+    partner_url = "https://example.com/wsj/copied-page/"
+    item = ManifestItem(
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/finance/stocks/"
+            "investors-prepare-for-a-volatile-summer-in-global-markets-"
+            "a1b2c3d4"
+        ),
+        published_at="2024-06-03T12:34:56+00:00",
+        section="finance",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=partner_url,
+                expected_headline=headline,
+            ),
+        ),
+    )
+    client = StubArchiveClient(
+        {
+            partner_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                wsj_syndication_html(
+                    headline=headline,
+                    attribution="The Wall Street Journal",
+                ),
+                partner_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "error"
+    assert "unexpected-partner-url" in result["error"]
+    assert not (tmp_path / "objects").exists()
 
 
 def test_legacy_manifest_loads_into_generic_capture_state(tmp_path: Path):

@@ -10,6 +10,12 @@ from jojo_olds_api.archive_sources import (
     normalize_article_url,
 )
 from jojo_olds_api.raw_archive_capture import manifest_item_from_row
+from jojo_olds_api.wsj_syndication_catalog import (
+    initialize_wsj_syndication_schema,
+    process_wsj_syndication_catalog,
+    process_wsj_syndication_resolutions,
+    wsj_syndication_count_for_year,
+)
 from jojo_olds_api.wayback_manifest import (
     CDXCapture,
     CDXPage,
@@ -32,6 +38,147 @@ from jojo_olds_api.wayback_manifest import (
     wsj_google_news_is_only_catalog_gap,
     wsj_google_news_should_continue,
 )
+
+
+class StubWsjSyndicationResponse:
+    def __init__(
+        self,
+        *,
+        json_value: object | None = None,
+        html_value: str = "",
+        status_code: int = 200,
+    ):
+        self._json_value = json_value
+        self.content = html_value.encode()
+        self.text = html_value
+        self.status_code = status_code
+
+    def json(self):
+        return self._json_value
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class StubWsjSyndicationClient:
+    def __init__(self):
+        self.requests: list[tuple[str, dict[str, str]]] = []
+
+    def get(self, url, params):
+        self.requests.append((url, params))
+        if url.endswith("/wp-json/wp/v2/posts"):
+            return StubWsjSyndicationResponse(
+                json_value=[
+                    {
+                        "id": 123,
+                        "date_gmt": "2024-06-03T12:34:56",
+                        "link": (
+                            "https://www.tovima.com/wsj/"
+                            "a-complete-licensed-wsj-copy/"
+                        ),
+                        "title": {
+                            "rendered": (
+                                "Investors Prepare for a Volatile "
+                                "Summer in Global Markets"
+                            )
+                        },
+                    },
+                    {
+                        "id": 456,
+                        "date_gmt": "2024-06-04T12:34:56",
+                        "link": "https://www.tovima.com/world/not-wsj/",
+                        "title": {"rendered": "This row must be rejected"},
+                    },
+                ]
+            )
+        assert url == "https://search.yahoo.com/search"
+        assert 'site:wsj.com' in params["p"]
+        canonical_url = (
+            "https://www.wsj.com/finance/stocks/"
+            "investors-prepare-for-a-volatile-summer-in-global-markets-"
+            "a1b2c3d4"
+        )
+        return StubWsjSyndicationResponse(
+            html_value=f"""
+            <html><body><ol id="web"><li>
+              <div class="compTitle"><a href="{canonical_url}">
+                <h3>Investors Prepare for a Volatile Summer in Global
+                Markets - The Wall Street Journal</h3>
+              </a></div>
+            </li></ol></body></html>
+            """,
+        )
+
+
+def test_wsj_syndication_catalog_resolves_and_exports_partner_copy(
+    tmp_path: Path,
+):
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2024,
+        to_year=2024,
+        collapse="urlkey",
+    )
+    initialize_wsj_syndication_schema(connection)
+    client = StubWsjSyndicationClient()
+
+    catalog = process_wsj_syndication_catalog(
+        connection,
+        http_client=client,
+        from_year=2024,
+        to_year=2024,
+        maximum_pages=1,
+    )
+    resolutions = process_wsj_syndication_resolutions(
+        connection,
+        spec=spec,
+        http_client=client,
+        maximum=10,
+    )
+    destination = tmp_path / "wsj-syndication-manifest.jsonl.gz"
+    summary = export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=destination,
+        from_year=2024,
+        to_year=2024,
+    )
+
+    assert catalog == {
+        "status": "complete",
+        "pages": 1,
+        "seen": 2,
+        "accepted": 1,
+    }
+    assert resolutions == {
+        "attempted": 1,
+        "resolved": 1,
+        "notFound": 0,
+        "errors": [],
+    }
+    assert wsj_syndication_count_for_year(connection, 2024) == 1
+    assert summary["articles"] == 1
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        row = json.loads(handle.readline())
+    assert row["canonicalUrl"] == (
+        "https://www.wsj.com/finance/stocks/"
+        "investors-prepare-for-a-volatile-summer-in-global-markets-a1b2c3d4"
+    )
+    assert row["publishedAt"] == "2024-06-03T12:34:56+00:00"
+    assert row["candidates"][0] == {
+        "provider": "other",
+        "snapshotUrl": (
+            "https://www.tovima.com/wsj/"
+            "a-complete-licensed-wsj-copy/"
+        ),
+        "expectedHeadline": (
+            "Investors Prepare for a Volatile Summer in Global Markets"
+        ),
+    }
 
 
 def test_parse_cdx_json_extracts_resume_key():

@@ -38,6 +38,7 @@ REUTERS_SYNDICATION_SEARCH_MAXIMUM_BYTES = 2_000_000
 REUTERS_SYNDICATION_MAXIMUM_CANDIDATES = 8
 REUTERS_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
+WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 NYT_SYNDICATION_SEARCH_ENDPOINT = REUTERS_SYNDICATION_SEARCH_ENDPOINT
 NYT_SYNDICATION_SEARCH_MAXIMUM_BYTES = 2_000_000
 NYT_SYNDICATION_MAXIMUM_CANDIDATES = 8
@@ -467,6 +468,35 @@ def capture_item(
                 if not validated:
                     failures.append(
                         "nyt-syndication:validation:"
+                        + str(
+                            validation_signals.get("reason") or "failed"
+                        )
+                    )
+                    continue
+                response = (
+                    response[0],
+                    response[1],
+                    response[2],
+                    response[3],
+                    response[4],
+                    response[5],
+                    response[6] | validation_signals,
+                )
+            if (
+                item.publisher == "wsj"
+                and candidate.provider == CaptureProvider.OTHER
+            ):
+                validated, validation_signals = (
+                    _validate_wsj_syndication_response(
+                        item,
+                        expected_headline=candidate.expected_headline,
+                        content=response[2],
+                        final_url=response[3],
+                    )
+                )
+                if not validated:
+                    failures.append(
+                        "wsj-syndication:validation:"
                         + str(
                             validation_signals.get("reason") or "failed"
                         )
@@ -1676,6 +1706,109 @@ def _validate_nyt_syndication_response(
         "syndicationExpectedDateVisible": date_visible,
         "syndicationOriginalHeadline": expected_headline,
         "syndicationCanonicalArticleLinked": canonical_linked,
+    }
+
+
+def _validate_wsj_syndication_response(
+    item: ManifestItem,
+    *,
+    expected_headline: str | None,
+    content: bytes,
+    final_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    parsed_final_url = urlsplit(final_url)
+    final_host = (parsed_final_url.hostname or "").casefold()
+    partner_host_validated = (
+        parsed_final_url.scheme == "https"
+        and final_host in {"tovima.com", "www.tovima.com"}
+        and parsed_final_url.path.startswith("/wsj/")
+    )
+    if not partner_host_validated:
+        return False, {
+            "reason": "unexpected-partner-url",
+            "wsjSyndicationValidated": False,
+            "syndicationFinalUrl": final_url,
+            "syndicationPartnerHostValidated": False,
+        }
+    if not expected_headline:
+        return False, {
+            "reason": "missing-original-headline",
+            "wsjSyndicationValidated": False,
+            "syndicationFinalUrl": final_url,
+            "syndicationPartnerHostValidated": True,
+        }
+    try:
+        article = parse_article(
+            content,
+            publisher="wsj",
+            canonical_url=item.canonical_url,
+            allow_generic_syndication=True,
+        )
+    except Exception as exc:
+        return False, {
+            "reason": f"parser-{type(exc).__name__}",
+            "wsjSyndicationValidated": False,
+            "syndicationFinalUrl": final_url,
+            "syndicationPartnerHostValidated": True,
+        }
+    soup = BeautifulSoup(content, "html.parser")
+    visible_text = soup.get_text(" ", strip=True)
+    author_text = " ".join(author.name for author in article.authors)
+    attribution_text = author_text + "\n" + visible_text[:30_000]
+    attributed = re.search(
+        r"(?i)(?:the\s+)?wall\s+street\s+journal|(?:^|\W)WSJ(?:\W|$)",
+        attribution_text,
+    ) is not None
+    headline_overlap = _headline_text_overlap(
+        expected_headline,
+        article.headline or "",
+    )
+    expected_date = _parse_iso_datetime(item.published_at)
+    date_delta_days: int | None = None
+    if expected_date is not None and article.published_at is not None:
+        date_delta_days = abs(
+            (article.published_at.date() - expected_date.date()).days
+        )
+    date_visible = _expected_date_visible(
+        content,
+        expected_date=expected_date,
+    )
+    date_matches = (
+        date_delta_days is not None and date_delta_days <= 2
+    ) or date_visible
+    body_characters = article.quality.body_characters
+    valid = (
+        article.quality.status == ArticleStatus.COMPLETE
+        and body_characters >= WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS
+        and attributed
+        and headline_overlap >= 0.8
+        and date_matches
+    )
+    if article.quality.status != ArticleStatus.COMPLETE:
+        reason = f"parser-{article.quality.status.value}"
+    elif body_characters < WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS:
+        reason = "body-too-short"
+    elif not attributed:
+        reason = "missing-wsj-attribution"
+    elif headline_overlap < 0.8:
+        reason = "headline-mismatch"
+    elif not date_matches:
+        reason = "publication-date-mismatch"
+    else:
+        reason = None
+    return valid, {
+        "reason": reason,
+        "wsjSyndicationValidated": valid,
+        "syndicationFinalUrl": final_url,
+        "syndicationHeadlineOverlap": round(headline_overlap, 4),
+        "syndicationBodyCharacters": body_characters,
+        "syndicationWsjAttributed": attributed,
+        "syndicationDateDeltaDays": date_delta_days,
+        "syndicationExpectedDateVisible": date_visible,
+        "syndicationOriginalHeadline": expected_headline,
+        "syndicationPartnerHostValidated": partner_host_validated,
     }
 
 

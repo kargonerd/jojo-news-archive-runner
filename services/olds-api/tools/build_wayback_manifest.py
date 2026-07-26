@@ -33,6 +33,12 @@ from jojo_olds_api.wayback_manifest import (
     wsj_google_news_is_only_catalog_gap,
     wsj_google_news_should_continue,
 )
+from jojo_olds_api.wsj_syndication_catalog import (
+    DEFAULT_RESOLUTIONS_PER_RUN,
+    initialize_wsj_syndication_schema,
+    process_wsj_syndication_catalog,
+    process_wsj_syndication_resolutions,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -78,12 +84,15 @@ def main() -> int:
     )
     bluesky_pages_this_run = 0
     google_news_items_this_run = 0
+    wsj_syndication_pages_this_run = 0
+    wsj_syndication_resolutions_this_run = 0
     cdx_paused_for_google_news = False
     deferred_errors: list[str] = []
     if args.publisher == "wsj" and args.collapse == "urlkey":
         initialize_wsj_bluesky_schema(connection)
         initialize_wsj_google_news_schema(connection)
         initialize_wsj_rss_schema(connection)
+        initialize_wsj_syndication_schema(connection)
         with httpx.Client(
             headers={
                 "User-Agent": (
@@ -161,6 +170,67 @@ def main() -> int:
                 ),
                 flush=True,
             )
+            try:
+                syndication_catalog = process_wsj_syndication_catalog(
+                    connection,
+                    http_client=http_client,
+                    from_year=args.from_year,
+                    to_year=args.to_year,
+                    maximum_pages=max(1, args.max_pages or 5),
+                    minimum_request_interval=args.min_request_interval,
+                )
+                wsj_syndication_pages_this_run = int(
+                    syndication_catalog["pages"]
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "wsj-syndication-catalog",
+                            **syndication_catalog,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+            except Exception as exc:
+                deferred_errors.append(
+                    "WSJ syndication catalog: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            try:
+                syndication_resolutions = (
+                    process_wsj_syndication_resolutions(
+                        connection,
+                        spec=spec,
+                        http_client=http_client,
+                        maximum=DEFAULT_RESOLUTIONS_PER_RUN,
+                        minimum_request_interval=args.min_request_interval,
+                    )
+                )
+                wsj_syndication_resolutions_this_run = int(
+                    syndication_resolutions["attempted"]
+                )
+                syndication_errors = syndication_resolutions.pop("errors")
+                deferred_errors.extend(
+                    f"WSJ syndication resolution: {error}"
+                    for error in syndication_errors
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "wsj-syndication-resolution",
+                            **syndication_resolutions,
+                            "errors": len(syndication_errors),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+            except Exception as exc:
+                deferred_errors.append(
+                    "WSJ syndication resolution: "
+                    f"{type(exc).__name__}: {exc}"
+                )
             while (
                 args.max_pages is None
                 or bluesky_pages_this_run < args.max_pages
@@ -283,6 +353,10 @@ def main() -> int:
         "pagesThisRun": pages_this_run,
         "blueskyPagesThisRun": bluesky_pages_this_run,
         "googleNewsItemsThisRun": google_news_items_this_run,
+        "wsjSyndicationPagesThisRun": wsj_syndication_pages_this_run,
+        "wsjSyndicationResolutionsThisRun": (
+            wsj_syndication_resolutions_this_run
+        ),
         "cdxPausedForGoogleNews": cdx_paused_for_google_news,
         "deferredError": (
             "; ".join(deferred_errors) if deferred_errors else None

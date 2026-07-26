@@ -170,6 +170,14 @@ archive discovery. When a canonical URL has no embedded date, the first capture
 timestamp supplies the provisional sampling year; the parser still prefers the
 publication metadata contained in the archived page.
 
+For WSJ articles from 2023 onward, the same shard also enumerates the public
+Wall Street Journal category on To Vima, resolves each licensed-copy headline
+to its canonical `wsj.com` URL, and records the partner page as a direct
+candidate. A copy is accepted only when the final host and `/wsj/` path,
+headline, publication date, complete-body threshold, and visible Wall Street
+Journal attribution all pass. Failed provenance checks never enter the parser
+validation sample.
+
 Reuters uses two catalog shards because its URL design changed:
 
 - `wayback` for the legacy `/article/` catalog (2016–2020);

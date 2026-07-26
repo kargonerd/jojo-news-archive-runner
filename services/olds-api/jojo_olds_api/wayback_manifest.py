@@ -17,6 +17,11 @@ import httpx
 
 from .archive_sources import ArchiveSourceSpec, normalize_article_url
 from .bloomberg_archive_download import GlobalRateLimiter
+from .wsj_syndication_catalog import (
+    wsj_syndication_articles,
+    wsj_syndication_should_continue,
+    wsj_syndication_summary,
+)
 
 
 CDX_ENDPOINT = "https://web.archive.org/cdx/search/cdx"
@@ -1068,6 +1073,17 @@ def wsj_catalog_count_for_year(
             """
         )
         parameters.append(str(year))
+    if _table_exists(connection, "wsj_syndication_articles"):
+        selects.append(
+            """
+            SELECT canonical_url
+            FROM wsj_syndication_articles
+            WHERE resolution_status='resolved'
+              AND canonical_url IS NOT NULL
+              AND substr(published_at, 1, 4)=?
+            """
+        )
+        parameters.append(str(year))
     return int(
         connection.execute(
             f"""
@@ -1115,6 +1131,13 @@ def _wsj_external_articles(
             previous = result.get(str(canonical_url))
             if previous is None or str(published_at) < previous:
                 result[str(canonical_url)] = str(published_at)
+    for canonical_url, article in wsj_syndication_articles(
+        connection
+    ).items():
+        published_at = article["publishedAt"]
+        previous = result.get(canonical_url)
+        if previous is None or published_at < previous:
+            result[canonical_url] = published_at
     return result
 
 
@@ -1276,6 +1299,7 @@ def export_capture_manifest(
     article_count = 0
     candidate_count = 0
     external_articles = _wsj_external_articles(connection)
+    syndicated_articles = wsj_syndication_articles(connection)
     written_urls: set[str] = set()
     with opener(temporary, "wt", encoding="utf-8") as handle:
         current_url: str | None = None
@@ -1292,6 +1316,15 @@ def export_capture_manifest(
                             current_url,
                             published_at=current_published_at,
                         ),
+                    )
+                if current_url in syndicated_articles:
+                    candidates = _merge_capture_candidates(
+                        [
+                            _wsj_syndication_candidate(
+                                syndicated_articles[current_url]
+                            )
+                        ],
+                        candidates,
                     )
                 _write_manifest_row(
                     handle,
@@ -1330,6 +1363,15 @@ def export_capture_manifest(
                         published_at=current_published_at,
                     ),
                 )
+            if current_url in syndicated_articles:
+                candidates = _merge_capture_candidates(
+                    [
+                        _wsj_syndication_candidate(
+                            syndicated_articles[current_url]
+                        )
+                    ],
+                    candidates,
+                )
             _write_manifest_row(
                 handle,
                 spec=spec,
@@ -1347,6 +1389,15 @@ def export_capture_manifest(
                 canonical_url,
                 published_at=published_at,
             )
+            if canonical_url in syndicated_articles:
+                candidates = _merge_capture_candidates(
+                    [
+                        _wsj_syndication_candidate(
+                            syndicated_articles[canonical_url]
+                        )
+                    ],
+                    candidates,
+                )
             _write_manifest_row(
                 handle,
                 spec=spec,
@@ -1372,6 +1423,8 @@ def export_capture_manifest(
         ).fetchone()[0]
         if not str(google_news_status).startswith("complete"):
             incomplete += 1
+    if wsj_syndication_should_continue(connection):
+        incomplete += 1
     year_counts = {
         str(year): wsj_catalog_count_for_year(connection, year)
         for year in range(from_year, to_year + 1)
@@ -1501,6 +1554,12 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
         result["shouldContinue"] = bool(result["shouldContinue"]) or not str(
             row[0]
         ).startswith("complete")
+    syndication = wsj_syndication_summary(connection)
+    if syndication is not None:
+        result["wsjSyndication"] = syndication
+        result["shouldContinue"] = bool(
+            result["shouldContinue"]
+        ) or wsj_syndication_should_continue(connection)
     return result
 
 
@@ -1639,6 +1698,16 @@ def _merge_capture_candidates(
         seen.add(snapshot_url)
         result.append(candidate)
     return result
+
+
+def _wsj_syndication_candidate(
+    article: dict[str, str],
+) -> dict[str, object]:
+    return {
+        "provider": "other",
+        "snapshotUrl": article["partnerUrl"],
+        "expectedHeadline": article["expectedHeadline"],
+    }
 
 
 def _parse_iso_datetime(value: object) -> datetime | None:
