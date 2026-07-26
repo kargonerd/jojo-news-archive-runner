@@ -115,6 +115,7 @@ _SUBSCRIPTION_SHELL_MARKERS = (
     b"<title>subscribe to read",
     b"<title>become an ft subscriber to read",
     b"<title>subscribe to a slice of the ft",
+    b"<title>try ft for free",
     b'id="barrier-page"',
     b"barrier-grid__article-title",
     b"subscribe to unlock this article",

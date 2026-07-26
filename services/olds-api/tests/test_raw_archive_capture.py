@@ -2295,6 +2295,7 @@ def test_raw_quality_rejects_ft_legacy_subscription_landing_pages():
     for title in (
         "Become an FT subscriber to read | Financial Times",
         "Subscribe to a slice of the FT | Financial Times",
+        "Try FT for free | Financial Times",
     ):
         score, signals = score_raw_capture(
             (
