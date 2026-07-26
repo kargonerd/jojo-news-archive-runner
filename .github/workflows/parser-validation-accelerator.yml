@@ -205,6 +205,58 @@ jobs:
             gzip -dc "$RUNNER_TEMP/capture.sqlite3.gz" \
               > "$LOCAL_ROOT/raw/capture.sqlite3"
           fi
+          if [ "$PUBLISHER" = "wsj" ]; then
+            restore_if_present \
+              "${SOURCE_ROOT}/state/capture.sqlite3.gz" \
+              "$RUNNER_TEMP/source-capture.sqlite3.gz"
+            if [ -f "$RUNNER_TEMP/source-capture.sqlite3.gz" ]; then
+              gzip -dc "$RUNNER_TEMP/source-capture.sqlite3.gz" \
+                > "$RUNNER_TEMP/source-capture.sqlite3"
+            fi
+          fi
+
+      - name: Seed validation from source archive
+        if: ${{ inputs.publisher == 'wsj' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+          SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
+        run: |
+          set -euo pipefail
+          source_state="$RUNNER_TEMP/source-capture.sqlite3"
+          files_from="$RUNNER_TEMP/source-import-files.txt"
+          if [ ! -f "$source_state" ]; then
+            echo "No source capture checkpoint is available; continuing normally."
+            exit 0
+          fi
+          python services/olds-api/tools/import_validation_source_captures.py \
+            --source-state "$source_state" \
+            --target-state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
+            --publisher "$PUBLISHER" \
+            --year "$SAMPLE_YEAR" \
+            --target-per-year 500 \
+            --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+            --files-from "$files_from"
+          if [ ! -s "$files_from" ]; then
+            exit 0
+          fi
+          rclone copy \
+            "${SOURCE_ROOT}/raw" \
+            "$LOCAL_ROOT/raw" \
+            --files-from "$files_from" \
+            --transfers 16 --checkers 32 \
+            --retries 8 --low-level-retries 20 \
+            --stats 30s
+          rclone copy \
+            "$LOCAL_ROOT/raw" \
+            "${REMOTE_ROOT}/raw" \
+            --files-from "$files_from" \
+            --checksum --immutable \
+            --transfers 16 --checkers 32 \
+            --retries 8 --low-level-retries 20 \
+            --stats 30s
 
       - name: Plan parser replay
         id: replay
