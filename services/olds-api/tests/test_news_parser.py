@@ -203,17 +203,17 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
           "associatedMedia": [
             {
               "@type": "ImageObject",
-              "caption": "The first pantry has a library ladder and shelves.",
+              "caption": "First pantry.",
               "contentUrl": "https://images.wsj.net/im-266300/"
             },
             {
               "@type": "ImageObject",
-              "caption": "A sliding barn door opens onto the second pantry.",
+              "caption": "Second pantry.",
               "contentUrl": "https://images.wsj.net/im-266301/"
             },
             {
               "@type": "ImageObject",
-              "caption": "The third pantry includes several small appliances.",
+              "caption": "Third pantry.",
               "contentUrl": "https://images.wsj.net/im-266302/"
             }
           ]
@@ -237,6 +237,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
 
     assert result.content_type.value == "gallery"
     assert result.quality.status.value == "complete"
+    assert result.quality.body_characters < 100
     assert result.quality.images_referenced == 3
     assert result.quality.images_selected == 3
     assert [image.original_url for image in result.images] == [
@@ -245,10 +246,10 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
         "https://images.wsj.net/im-266302/",
     ]
     assert len(result.images[0].candidate_urls) == 5
-    assert result.plain_text.index("first pantry") < result.plain_text.index(
-        "third pantry"
+    assert result.plain_text.index("First pantry") < result.plain_text.index(
+        "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.0"
+    assert result.extraction.parser_version == "wsj-parser/0.8.1"
 
 
 def test_parser_classifies_non_editorial_images_without_archiving_them():

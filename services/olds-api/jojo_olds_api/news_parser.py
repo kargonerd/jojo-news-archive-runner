@@ -100,10 +100,12 @@ def parse_article(
         body = _generic_syndication_body(soup)
     if body is None:
         body = _select_body(soup, spec)
+    structured_image_gallery_selected = False
     if spec.publisher == "wsj":
         gallery_body = _structured_image_gallery(soup)
         if gallery_body is not None:
             body = gallery_body
+            structured_image_gallery_selected = True
     if spec.embedded_html_body_keys and (
         body is None
         or body.select_one(
@@ -242,9 +244,12 @@ def parse_article(
                     block.asset_id = existing.asset_id
         blocks = _deduplicate_blocks(blocks)
 
-    if content_type == ContentType.ARTICLE and _looks_like_gallery(
-        blocks,
-        allow_uncaptioned=spec.publisher == "ft",
+    if content_type == ContentType.ARTICLE and (
+        structured_image_gallery_selected
+        or _looks_like_gallery(
+            blocks,
+            allow_uncaptioned=spec.publisher == "ft",
+        )
     ):
         content_type = ContentType.GALLERY
     plain_text = "\n\n".join(
