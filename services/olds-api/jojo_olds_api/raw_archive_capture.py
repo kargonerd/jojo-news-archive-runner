@@ -115,6 +115,7 @@ _SUBSCRIPTION_SHELL_MARKERS = (
     b"<title>become an ft subscriber to read",
     b"<title>subscribe to a slice of the ft",
     b'id="barrier-page"',
+    b"barrier-grid__article-title",
     b"subscribe to unlock this article",
     b"window.zephr.outcomes['paywall']",
     b"join over 300,000 finance professionals",
@@ -2720,6 +2721,7 @@ def score_raw_capture(
     archive_error_page = any(marker in prefix for marker in _ARCHIVE_ERROR_MARKERS)
     has_article_marker = b"<article" in prefix or b"newsarticle" in prefix
     final_url_lower = final_url.casefold()
+    decoded_final_url = unquote(final_url_lower)
     authentication_shell = (
         not has_article_marker
         and (
@@ -2764,11 +2766,17 @@ def score_raw_capture(
         and b"bloomberg" in prefix
     )
     wsj_snippet_shell = b'"issnippetview":true' in prefix
+    ft_legacy_barrier_url = (
+        "authorised=false" in decoded_final_url
+        or "iab=barrier-app" in decoded_final_url
+        or "classification=conditional_standard" in decoded_final_url
+    )
     subscription_shell = wsj_snippet_shell or (
         not has_strong_body_marker
         and (
             wsj_subscription_shell
             or bloomberg_subscription_shell
+            or ft_legacy_barrier_url
             or any(marker in prefix for marker in _SUBSCRIPTION_SHELL_MARKERS)
         )
     )
@@ -2803,6 +2811,7 @@ def score_raw_capture(
         "authenticationShell": authentication_shell,
         "accessChallengeShell": access_challenge_shell,
         "subscriptionShell": subscription_shell,
+        "ftLegacyBarrierUrl": ft_legacy_barrier_url,
         "redirectShell": redirect_shell,
         "ftTruncatedArticleShell": ft_truncated_article_shell,
         "ftBodyCharacters": ft_body_characters,

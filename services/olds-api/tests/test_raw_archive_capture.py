@@ -2298,6 +2298,44 @@ def test_raw_quality_rejects_ft_legacy_subscription_landing_pages():
         assert signals["subscriptionShell"] is True
 
 
+def test_raw_quality_rejects_ft_legacy_barrier_variants():
+    modern_score, modern_signals = score_raw_capture(
+        b"""
+        <html><body>
+          <div class="barrier-grid__article-title">
+            Archived headline without article body
+          </div>
+        </body></html>
+        """ + (b" " * 220_000),
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://web.archive.org/web/20161009061251id_/"
+            "https://www.ft.com/content/example"
+        ),
+    )
+    legacy_score, legacy_signals = score_raw_capture(
+        b"""
+        <html><head><title>Archived FT headline - FT.com</title></head>
+        <body><nav>World Companies Markets Subscribe Sign in</nav></body>
+        </html>
+        """ + (b" " * 32_000),
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://web.archive.org/web/20160622180631id_/"
+            "http://www.ft.com/cms/s/example,Authorised=false.html"
+            "?classification=conditional_standard&iab=barrier-app"
+        ),
+    )
+
+    assert modern_score < 85
+    assert modern_signals["subscriptionShell"] is True
+    assert legacy_score < 85
+    assert legacy_signals["subscriptionShell"] is True
+    assert legacy_signals["ftLegacyBarrierUrl"] is True
+
+
 def test_raw_quality_rejects_ft_professional_access_error_redirect():
     score, signals = score_raw_capture(
         b"""
