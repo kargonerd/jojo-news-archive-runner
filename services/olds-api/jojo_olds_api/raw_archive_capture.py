@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+import unicodedata
+from threading import Lock
 from typing import Callable, Iterable
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 from xml.etree import ElementTree
@@ -66,6 +68,14 @@ FT_IMAGE_LED_MINIMUM_IMAGES = 3
 FT_GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
 FT_GOOGLE_NEWS_MAXIMUM_PARTNER_SOURCES = 3
 FT_GOOGLE_NEWS_MAXIMUM_DATE_DELTA_DAYS = 2
+FT_SYNDICATION_MAXIMUM_DATE_DELTA_DAYS = 2
+FT_ADVISORSTREAM_MAXIMUM_DATE_DELTA_DAYS = 14
+FT_KNOWN_PARTNER_SITEMAPS = (
+    (
+        "https://www.davidruler.com",
+        "https://www.davidruler.com/sitemap.xml",
+    ),
+)
 NYT_SYNDICATION_SEARCH_ENDPOINT = REUTERS_SYNDICATION_SEARCH_ENDPOINT
 NYT_SYNDICATION_SEARCH_MAXIMUM_BYTES = 2_000_000
 NYT_SYNDICATION_MAXIMUM_CANDIDATES = 8
@@ -169,6 +179,8 @@ _WAYBACK_FINAL_RE = re.compile(
     r"https?://web\.archive\.org/web/(\d{14})(?:id_|im_|js_|cs_)?/",
     re.IGNORECASE,
 )
+_ft_known_partner_urls: dict[str, str] | None = None
+_ft_known_partner_urls_lock = Lock()
 
 
 @dataclass(frozen=True)
@@ -823,6 +835,39 @@ def capture_item(
         )
         candidates_considered.extend(fallback_candidates)
         consider_candidates(fallback_candidates)
+        if best_response is not None or not fallback_candidates:
+            return
+        fallback_headline = next(
+            (
+                candidate.expected_headline
+                for candidate in fallback_candidates
+                if candidate.expected_headline
+            ),
+            ft_original_headline,
+        )
+        try:
+            additional_candidates = discover_ft_syndication_candidates(
+                item,
+                archive_client=archive_client,
+                expected_headline=fallback_headline,
+                skip_title_search=True,
+                exhaustive=True,
+            )
+        except Exception as exc:
+            failures.append(
+                f"ft-syndication-additional:{type(exc).__name__}"
+            )
+            additional_candidates = ()
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        additional_candidates = tuple(
+            candidate
+            for candidate in additional_candidates
+            if candidate.snapshot_url not in existing_urls
+        )
+        candidates_considered.extend(additional_candidates)
+        consider_candidates(additional_candidates)
 
     direct_infini_candidates = tuple(
         candidate
@@ -1740,6 +1785,84 @@ def ft_syndication_partner_site_search_url(
     )
 
 
+def _discover_ft_known_partner_candidates(
+    item: ManifestItem,
+    *,
+    archive_client: ArchiveClient,
+    expected_headline: str,
+) -> tuple[CaptureCandidate, ...]:
+    expected_date = _parse_iso_datetime(item.published_at)
+    if expected_date is None or expected_date.year != 2026:
+        return ()
+    slug = _headline_slug(expected_headline)
+    if not slug:
+        return ()
+    partner_url = _load_ft_known_partner_urls(archive_client).get(slug)
+    if not partner_url:
+        return ()
+    return (
+        CaptureCandidate(
+            provider=CaptureProvider.OTHER,
+            snapshot_url=partner_url,
+            expected_headline=expected_headline,
+        ),
+    )
+
+
+def _load_ft_known_partner_urls(
+    archive_client: ArchiveClient,
+) -> dict[str, str]:
+    global _ft_known_partner_urls
+    with _ft_known_partner_urls_lock:
+        if _ft_known_partner_urls is not None:
+            return _ft_known_partner_urls
+        discovered: dict[str, str] = {}
+        for public_origin, sitemap_url in FT_KNOWN_PARTNER_SITEMAPS:
+            try:
+                status_code, headers, content, _ = archive_client.fetch(
+                    sitemap_url,
+                    maximum_bytes=REUTERS_SYNDICATION_SEARCH_MAXIMUM_BYTES,
+                )
+                content_type = headers.get("content-type", "").casefold()
+                if (
+                    status_code != 200
+                    or not content
+                    or (
+                        "xml" not in content_type
+                        and not content.lstrip().startswith(b"<?xml")
+                    )
+                ):
+                    continue
+                root = ElementTree.fromstring(content.lstrip())
+            except Exception:
+                continue
+            for location in root.findall(".//{*}loc"):
+                source_url = (location.text or "").strip()
+                source_path = urlsplit(source_url).path.rstrip("/")
+                prefix = "/resources/articles/"
+                if not source_path.startswith(prefix):
+                    continue
+                candidate_slug = source_path.removeprefix(prefix)
+                if not candidate_slug or "/" in candidate_slug:
+                    continue
+                discovered.setdefault(
+                    candidate_slug.casefold(),
+                    public_origin.rstrip("/") + source_path,
+                )
+        _ft_known_partner_urls = discovered
+        return _ft_known_partner_urls
+
+
+def _headline_slug(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    ascii_value = normalized.encode("ascii", errors="ignore").decode()
+    return re.sub(
+        r"[^a-z0-9]+",
+        "-",
+        ascii_value.casefold(),
+    ).strip("-")
+
+
 def _syndication_search_url(
     item: ManifestItem,
     *,
@@ -1818,6 +1941,8 @@ def discover_ft_syndication_candidates(
     *,
     archive_client: ArchiveClient,
     expected_headline: str | None = None,
+    skip_title_search: bool = False,
+    exhaustive: bool = False,
 ) -> tuple[CaptureCandidate, ...]:
     initial_results: list[tuple[int, str, str]] = []
     if not expected_headline:
@@ -1853,14 +1978,18 @@ def discover_ft_syndication_candidates(
         or len(_significant_tokens(expected_headline)) < 4
     ):
         return ()
-    try:
-        title_results = _fetch_syndication_search_results(
-            item,
-            archive_client=archive_client,
-            search_url=ft_syndication_title_search_url(expected_headline),
-        )
-    except ValueError:
-        title_results = []
+    title_results: list[tuple[int, str, str]] = []
+    if not skip_title_search:
+        try:
+            title_results = _fetch_syndication_search_results(
+                item,
+                archive_client=archive_client,
+                search_url=ft_syndication_title_search_url(
+                    expected_headline
+                ),
+            )
+        except ValueError:
+            title_results = []
     offset = len(initial_results)
     all_results = initial_results + [
         (offset + position, title, candidate_url)
@@ -1871,7 +2000,7 @@ def discover_ft_syndication_candidates(
         excluded_publisher="ft",
         expected_headline=expected_headline,
     )
-    if ranked:
+    if ranked and not exhaustive:
         return ranked
     try:
         broad_results = _fetch_syndication_search_results(
@@ -1893,16 +2022,40 @@ def discover_ft_syndication_candidates(
         excluded_publisher="ft",
         expected_headline=expected_headline,
     )
-    if ranked:
+    if ranked and not exhaustive:
         return ranked
     try:
-        return _discover_ft_partner_candidates_from_google_news(
+        google_news_ranked = (
+            _discover_ft_partner_candidates_from_google_news(
+                item,
+                archive_client=archive_client,
+                expected_headline=expected_headline,
+            )
+        )
+    except Exception:
+        google_news_ranked = ()
+    if not exhaustive:
+        return google_news_ranked
+    try:
+        known_partner_ranked = _discover_ft_known_partner_candidates(
             item,
             archive_client=archive_client,
             expected_headline=expected_headline,
         )
     except Exception:
-        return ()
+        known_partner_ranked = ()
+    combined: list[CaptureCandidate] = []
+    seen_urls: set[str] = set()
+    for candidate in (
+        *known_partner_ranked,
+        *google_news_ranked,
+        *ranked,
+    ):
+        if candidate.snapshot_url in seen_urls:
+            continue
+        seen_urls.add(candidate.snapshot_url)
+        combined.append(candidate)
+    return tuple(combined)
 
 
 def _discover_ft_partner_candidates_from_google_news(
@@ -3449,6 +3602,12 @@ def _validate_ft_syndication_response(
         r"(?:\s+20\d{2})?",
         visible_text,
     ) is not None
+    advisorstream_licensed = re.search(
+        r"(?i)(?:this(?:\s+financial\s+times)?|financial\s+times)"
+        r"\s+article\s+was\s+legally\s+licensed\s+"
+        r"(?:by|through)\s+advisorstream",
+        visible_text,
+    ) is not None
     headline_overlap = _headline_text_overlap(
         expected_headline,
         article.headline or "",
@@ -3459,12 +3618,27 @@ def _validate_ft_syndication_response(
         date_delta_days = abs(
             (article.published_at.date() - expected_date.date()).days
         )
+    visible_date_delta_days = _nearest_visible_date_delta_days(
+        visible_text,
+        expected_date=expected_date,
+    )
+    if visible_date_delta_days is not None and (
+        date_delta_days is None
+        or visible_date_delta_days < date_delta_days
+    ):
+        date_delta_days = visible_date_delta_days
     date_visible = _expected_date_visible(
         content,
         expected_date=expected_date,
     )
+    maximum_date_delta_days = (
+        FT_ADVISORSTREAM_MAXIMUM_DATE_DELTA_DAYS
+        if advisorstream_licensed
+        else FT_SYNDICATION_MAXIMUM_DATE_DELTA_DAYS
+    )
     date_matches = (
-        date_delta_days is not None and date_delta_days <= 2
+        date_delta_days is not None
+        and date_delta_days <= maximum_date_delta_days
     ) or date_visible
     body_characters = article.quality.body_characters
     valid = (
@@ -3493,7 +3667,9 @@ def _validate_ft_syndication_response(
         "syndicationHeadlineOverlap": round(headline_overlap, 4),
         "syndicationBodyCharacters": body_characters,
         "syndicationFtCopyrightAttributed": copyright_attributed,
+        "syndicationAdvisorStreamLicensed": advisorstream_licensed,
         "syndicationDateDeltaDays": date_delta_days,
+        "syndicationMaximumDateDeltaDays": maximum_date_delta_days,
         "syndicationExpectedDateVisible": date_visible,
         "syndicationOriginalHeadline": expected_headline,
         "syndicationPartnerHostValidated": partner_host_validated,
@@ -3733,6 +3909,57 @@ def _expected_date_visible(
     )
     haystack = raw.casefold() + "\n" + text.casefold()
     return any(value.casefold() in haystack for value in values)
+
+
+def _nearest_visible_date_delta_days(
+    visible_text: str,
+    *,
+    expected_date: datetime | None,
+) -> int | None:
+    if expected_date is None:
+        return None
+    patterns = (
+        (r"\b20\d{2}-\d{2}-\d{2}\b", "%Y-%m-%d"),
+        (
+            r"\b(?:January|February|March|April|May|June|July|August|"
+            r"September|October|November|December)\s+\d{1,2},?\s+"
+            r"20\d{2}\b",
+            "%B %d %Y",
+        ),
+        (
+            r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+            r"\.?\s+\d{1,2},?\s+20\d{2}\b",
+            "%b %d %Y",
+        ),
+        (
+            r"\b\d{1,2}\s+(?:January|February|March|April|May|June|"
+            r"July|August|September|October|November|December)\s+"
+            r"20\d{2}\b",
+            "%d %B %Y",
+        ),
+        (
+            r"\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|"
+            r"Oct|Nov|Dec)\.?\s+20\d{2}\b",
+            "%d %b %Y",
+        ),
+    )
+    deltas: list[int] = []
+    date_text = visible_text[:4_000]
+    for pattern, date_format in patterns:
+        for match in re.finditer(pattern, date_text, flags=re.IGNORECASE):
+            normalized = re.sub(
+                r"(?<=\b[A-Za-z]{3})\.",
+                "",
+                match.group(0),
+            ).replace(",", "")
+            try:
+                parsed = datetime.strptime(normalized, date_format)
+            except ValueError:
+                continue
+            deltas.append(
+                abs((parsed.date() - expected_date.date()).days)
+            )
+    return min(deltas) if deltas else None
 
 
 def _significant_tokens(value: str) -> set[str]:

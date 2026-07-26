@@ -184,7 +184,7 @@ def test_ft_manifest_partner_copy_requires_strict_validation(
     item = ManifestItem(
         publisher="ft",
         canonical_url=canonical_url,
-        published_at="2024-03-28T00:00:00+00:00",
+        published_at="2024-03-24T00:00:00+00:00",
         section="business",
         candidates=(
             CaptureCandidate(
@@ -234,6 +234,11 @@ def test_ft_manifest_partner_copy_requires_strict_validation(
         capture.quality_signals["syndicationFtCopyrightAttributed"]
         is True
     )
+    assert (
+        capture.quality_signals["syndicationAdvisorStreamLicensed"]
+        is True
+    )
+    assert capture.quality_signals["syndicationDateDeltaDays"] == 4
     assert (
         capture.quality_signals["syndicationBodyCharacters"]
         >= FT_SYNDICATION_MINIMUM_BODY_CHARACTERS
@@ -629,7 +634,7 @@ def test_ft_title_index_falls_back_to_validated_infini_row(
     )
 
 
-def test_ft_dynamic_syndication_runs_before_common_crawl(
+def test_ft_dynamic_syndication_keeps_searching_before_common_crawl(
     tmp_path: Path,
     monkeypatch,
 ):
@@ -644,6 +649,10 @@ def test_ft_dynamic_syndication_runs_before_common_crawl(
     )
     partner_url = (
         "https://www.example-adviser.test/resources/articles/"
+        "the-great-bond-and-equity-conundrum"
+    )
+    distractor_url = (
+        "https://www.example-blog.test/markets/"
         "the-great-bond-and-equity-conundrum"
     )
     item = ManifestItem(
@@ -687,19 +696,39 @@ def test_ft_dynamic_syndication_runs_before_common_crawl(
                 ),
                 partner_url,
             ),
+            distractor_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                ft_syndication_html(
+                    headline=headline,
+                    include_copyright=False,
+                ),
+                distractor_url,
+            ),
         }
     )
+
+    discovery_calls: list[dict[str, object]] = []
+
+    def fake_discovery(*args, **kwargs):
+        discovery_calls.append(kwargs)
+        candidate_url = (
+            partner_url
+            if kwargs.get("exhaustive")
+            else distractor_url
+        )
+        return (
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=candidate_url,
+                expected_headline=headline,
+            ),
+        )
 
     monkeypatch.setattr(
         "jojo_olds_api.raw_archive_capture."
         "discover_ft_syndication_candidates",
-        lambda *args, **kwargs: (
-            CaptureCandidate(
-                provider=CaptureProvider.OTHER,
-                snapshot_url=partner_url,
-                expected_headline=headline,
-            ),
-        ),
+        fake_discovery,
     )
 
     result = capture_item(
@@ -713,6 +742,11 @@ def test_ft_dynamic_syndication_runs_before_common_crawl(
     assert result["status"] == "complete"
     assert result["capture"].selected_candidate.snapshot_url == partner_url
     assert client.requests[-1] == partner_url
+    assert [call.get("exhaustive", False) for call in discovery_calls] == [
+        False,
+        True,
+    ]
+    assert discovery_calls[-1]["skip_title_search"] is True
     assert not any(
         "index.commoncrawl.org" in request
         for request in client.requests
@@ -3043,6 +3077,89 @@ def test_ft_syndication_refines_google_news_partner_host_with_yahoo():
         partner_url
     ]
     assert candidates[0].expected_headline == expected_headline
+
+
+def test_ft_syndication_uses_allowed_partner_sitemap(
+    monkeypatch,
+):
+    expected_headline = "The great bond and equity conundrum"
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "4389caaa-b87a-4d4c-82a1-db161d3265d3"
+        ),
+        published_at="2026-06-11T07:00:00Z",
+        section="markets",
+        candidates=(),
+    )
+    broad_search_url = ft_syndication_broad_title_search_url(
+        expected_headline
+    )
+    google_news_url = ft_google_news_partner_search_url(
+        expected_headline
+    )
+    sitemap_url = "https://www.davidruler.com/sitemap.xml"
+    partner_url = (
+        "https://www.davidruler.com/resources/articles/"
+        "the-great-bond-and-equity-conundrum"
+    )
+    empty_search = b"<html><ol id='web'></ol></html>"
+    empty_google_news = (
+        b"<?xml version='1.0'?><rss version='2.0'><channel></channel></rss>"
+    )
+    sitemap = f"""
+    <?xml version="1.0" encoding="UTF-8"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url><loc>
+        https://davidruler-staging.vercel.app/resources/articles/
+        the-great-bond-and-equity-conundrum
+      </loc></url>
+    </urlset>
+    """.replace("\n        ", "").encode()
+    client = StubArchiveClient(
+        {
+            broad_search_url: (
+                200,
+                {"content-type": "text/html"},
+                empty_search,
+                broad_search_url,
+            ),
+            google_news_url: (
+                200,
+                {"content-type": "application/rss+xml"},
+                empty_google_news,
+                google_news_url,
+            ),
+            sitemap_url: (
+                200,
+                {"content-type": "application/xml"},
+                sitemap,
+                sitemap_url,
+            ),
+        }
+    )
+    monkeypatch.setattr(
+        "jojo_olds_api.raw_archive_capture._ft_known_partner_urls",
+        None,
+    )
+
+    candidates = discover_ft_syndication_candidates(
+        item,
+        archive_client=client,
+        expected_headline=expected_headline,
+        skip_title_search=True,
+        exhaustive=True,
+    )
+
+    assert client.requests == [
+        broad_search_url,
+        google_news_url,
+        sitemap_url,
+    ]
+    assert [candidate.snapshot_url for candidate in candidates] == [
+        partner_url
+    ]
 
 
 def test_reuters_syndication_rejects_unattributed_related_article(
