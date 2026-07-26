@@ -212,6 +212,9 @@ class StubJsonResponse:
 
 
 class StubInfiniClient:
+    def __init__(self):
+        self.search_calls = 0
+
     def post(self, url, json):
         if url.endswith("/find"):
             assert json["query"] == "©2025 Bloomberg L.P."
@@ -244,6 +247,7 @@ class StubInfiniClient:
         )
 
     def get(self, url, params, headers=None):
+        self.search_calls += 1
         assert url == "https://search.yahoo.com/search"
         assert params["p"].endswith("site:bloomberg.com")
         assert headers and headers["User-Agent"].startswith("Mozilla/5.0")
@@ -329,6 +333,20 @@ class StubPartnerArchiveClient:
                 GENERIC_ARCHIVE_URL,
             )
         raise AssertionError(f"unexpected URL: {url}")
+
+
+class StubEmbeddedPartnerArchiveClient(StubPartnerArchiveClient):
+    def fetch(self, url: str, *, maximum_bytes: int):
+        status, headers, content, final_url = super().fetch(
+            url,
+            maximum_bytes=maximum_bytes,
+        )
+        if url == GENERIC_ARCHIVE_URL:
+            canonical = (
+                f'<link rel="canonical" href="{PARTNER_CANONICAL_URL}">'
+            ).encode()
+            content = content.replace(b"</head>", canonical + b"</head>")
+        return status, headers, content, final_url
 
 
 def test_bloomberg_bnn_catalog_maps_embedded_original_and_exports(
@@ -530,6 +548,11 @@ def test_bloomberg_infini_copyright_catalog_resolves_validated_copy(
         "rejected": 0,
         "errors": [],
     }
+    assert source_client.search_calls == 1
+    assert connection.execute(
+        "SELECT mapping_method FROM bloomberg_bnn_articles"
+    ).fetchone() == ("exact-headline-search",)
+
     summary = bloomberg_bnn_summary(connection)
     assert summary is not None
     assert summary["infiniQueriesByStatus"] == {"complete": 1}
@@ -561,6 +584,58 @@ def test_bloomberg_infini_copyright_catalog_resolves_validated_copy(
     signals = capture["capture"].quality_signals
     assert signals["bloombergPartnerValidated"] is True
     assert signals["syndicationBloombergCopyrightAttributed"] is True
+
+
+def test_bloomberg_infini_prefers_embedded_original_link():
+    connection = sqlite3.connect(":memory:")
+    initialize_bloomberg_bnn_schema(
+        connection,
+        from_year=2025,
+        to_year=2025,
+        today=date(2025, 1, 1),
+    )
+    connection.execute(
+        "UPDATE bloomberg_bnn_days SET status='complete'"
+    )
+    connection.commit()
+    source_client = StubInfiniClient()
+
+    process_bloomberg_infini_queries(
+        connection,
+        http_client=source_client,
+        maximum_years=1,
+    )
+    process_bloomberg_infini_documents(
+        connection,
+        http_client=source_client,
+        maximum=1,
+        workers=1,
+        minimum_request_interval=0,
+    )
+    result = process_bloomberg_infini_pages(
+        connection,
+        search_client=source_client,
+        archive_client=StubEmbeddedPartnerArchiveClient(),
+        maximum=1,
+        minimum_request_interval=0,
+    )
+
+    assert result == {
+        "attempted": 1,
+        "resolved": 1,
+        "rejected": 0,
+        "errors": [],
+    }
+    assert source_client.search_calls == 0
+    assert connection.execute(
+        """
+        SELECT canonical_url, mapping_method
+        FROM bloomberg_bnn_articles
+        """
+    ).fetchone() == (
+        PARTNER_CANONICAL_URL,
+        "embedded-original-link",
+    )
 
 
 def test_bloomberg_bnn_capture_requires_embedded_original_link(

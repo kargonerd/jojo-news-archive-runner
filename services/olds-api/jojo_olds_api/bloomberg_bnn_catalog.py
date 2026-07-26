@@ -51,7 +51,8 @@ MINIMUM_BODY_CHARACTERS = 400
 _BNN_HOSTS = {"bnnbloomberg.ca", "www.bnnbloomberg.ca"}
 _BLOOMBERG_LINK_RE = re.compile(
     r"https?:(?:\\?/){2}(?:www\.)?bloomberg\.com"
-    r"/news/articles/20\d{2}-\d{2}-\d{2}/[a-z0-9][a-z0-9-]*",
+    r"/(?:news|opinion)/articles/20\d{2}-\d{2}-\d{2}/"
+    r"[a-z0-9][a-z0-9-]*",
     re.IGNORECASE,
 )
 _WAYBACK_PARTNER_RE = re.compile(
@@ -681,26 +682,29 @@ def process_bloomberg_infini_pages(
         attempted += 1
         try:
             limiter.wait()
-            canonical_url = resolve_bloomberg_original_url(
-                str(expected_headline),
-                http_client=search_client,
-            )
-            if canonical_url is None:
-                rejected += 1
-                _record_infini_page_rejection(
-                    connection,
-                    partner_url=str(partner_url),
-                    reason="original-title-not-found",
-                )
-                consecutive_errors = 0
-                continue
             validation, reason = validate_bloomberg_partner_page(
                 str(partner_url),
-                canonical_url=canonical_url,
+                canonical_url=None,
                 expected_headline=str(expected_headline),
                 published_at=str(published_at),
                 archive_client=archive_client,
             )
+            if (
+                validation is None
+                and reason == "missing-embedded-original-link"
+            ):
+                canonical_url = resolve_bloomberg_original_url(
+                    str(expected_headline),
+                    http_client=search_client,
+                )
+                if canonical_url is not None:
+                    validation, reason = validate_bloomberg_partner_page(
+                        str(partner_url),
+                        canonical_url=canonical_url,
+                        expected_headline=str(expected_headline),
+                        published_at=str(published_at),
+                        archive_client=archive_client,
+                    )
             if validation is None:
                 rejected += 1
                 _record_infini_page_rejection(
@@ -710,6 +714,9 @@ def process_bloomberg_infini_pages(
                 )
                 consecutive_errors = 0
                 continue
+            canonical_url = validation.get("canonicalUrl")
+            if not isinstance(canonical_url, str):
+                raise ValueError("validated partner omitted canonical URL")
             _record_infini_page_resolution(
                 connection,
                 partner_url=str(partner_url),
@@ -792,7 +799,7 @@ def resolve_bloomberg_original_url(
 def validate_bloomberg_partner_page(
     partner_url: str,
     *,
-    canonical_url: str,
+    canonical_url: str | None,
     expected_headline: str,
     published_at: str,
     archive_client: ArchiveClient,
@@ -858,17 +865,30 @@ def _parse_bloomberg_partner_archive(
     *,
     partner_url: str,
     archive_url: str,
-    canonical_url: str,
+    canonical_url: str | None,
     expected_headline: str,
     published_at: str,
 ) -> tuple[dict[str, object] | None, str | None]:
     if not _archive_url_matches_partner(archive_url, partner_url):
         return None, "unexpected-wayback-partner"
+    mapping_method = "exact-headline-search"
+    resolved_canonical_url = canonical_url
+    if resolved_canonical_url is None:
+        resolved_canonical_url, original_overlap = _best_original_url(
+            _embedded_bloomberg_urls(content),
+            expected_headline,
+        )
+        if (
+            resolved_canonical_url is None
+            or original_overlap < 0.8
+        ):
+            return None, "missing-embedded-original-link"
+        mapping_method = "embedded-original-link"
     try:
         article = parse_article(
             content,
             publisher="bloomberg",
-            canonical_url=canonical_url,
+            canonical_url=resolved_canonical_url,
             allow_generic_syndication=True,
         )
     except Exception as exc:
@@ -912,6 +932,8 @@ def _parse_bloomberg_partner_archive(
     if date_delta_days > 2:
         return None, "publication-date-mismatch"
     return {
+        "canonicalUrl": resolved_canonical_url,
+        "mappingMethod": mapping_method,
         "archiveUrl": archive_url,
         "publishedAt": article.published_at.astimezone(
             timezone.utc
@@ -1597,7 +1619,7 @@ def _record_infini_page_resolution(
                 expected_headline,
                 mapping_method,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, 'infini-copyright-title-search', ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(canonical_url) DO NOTHING
             """,
             (
@@ -1606,6 +1628,7 @@ def _record_infini_page_resolution(
                 partner_url,
                 validation["archiveUrl"],
                 expected_headline,
+                validation["mappingMethod"],
                 now,
             ),
         )
