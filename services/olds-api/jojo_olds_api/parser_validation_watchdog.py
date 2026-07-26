@@ -50,6 +50,11 @@ def plan_validation_dispatch(
             "ready": False,
             "evaluated": 0,
             "replayableEvaluated": 0,
+            "target": MINIMUM_SAMPLES,
+            "completeRate": 0.0,
+            "qaPassRate": 0.0,
+            "errors": 0,
+            "parserVersion": None,
             "summaryPaths": [],
         }
         for publisher in PUBLISHER_ORDER
@@ -92,10 +97,21 @@ def plan_validation_dispatch(
                 paths.append(summary_path.relative_to(state_root).as_posix())
             if row.get("parserVersion") != versions[publisher]:
                 continue
-            cell["evaluated"] = max(
-                int(cell["evaluated"]),
-                _integer(row.get("evaluated")),
-            )
+            evaluated = _integer(row.get("evaluated"))
+            if evaluated >= int(cell["evaluated"]):
+                cell["evaluated"] = evaluated
+                cell["target"] = max(
+                    MINIMUM_SAMPLES,
+                    _integer(row.get("target")),
+                )
+                cell["completeRate"] = float(
+                    row.get("completeRate") or 0
+                )
+                cell["qaPassRate"] = float(
+                    row.get("qaPassRate") or 0
+                )
+                cell["errors"] = _integer(row.get("errors"))
+                cell["parserVersion"] = row.get("parserVersion")
             cell["ready"] = bool(cell["ready"]) or _year_ready(row)
 
     active_cells: set[tuple[str, int]] = set()
@@ -140,6 +156,27 @@ def plan_validation_dispatch(
         )
         for publisher, year in candidates[:max_dispatch]
     ]
+    cell_progress = [
+        {
+            "publisher": publisher,
+            "year": year,
+            "target": int(progress[(publisher, year)]["target"]),
+            "evaluated": int(progress[(publisher, year)]["evaluated"]),
+            "replayableEvaluated": int(
+                progress[(publisher, year)]["replayableEvaluated"]
+            ),
+            "completeRate": float(
+                progress[(publisher, year)]["completeRate"]
+            ),
+            "qaPassRate": float(progress[(publisher, year)]["qaPassRate"]),
+            "errors": int(progress[(publisher, year)]["errors"]),
+            "parserVersion": progress[(publisher, year)]["parserVersion"],
+            "ready": (publisher, year) in ready_cells,
+            "active": (publisher, year) in active_cells,
+        }
+        for publisher in PUBLISHER_ORDER
+        for year in TARGET_YEARS
+    ]
     return {
         "formatVersion": FORMAT_VERSION,
         "targetCells": len(progress),
@@ -149,6 +186,7 @@ def plan_validation_dispatch(
         "summariesRead": summaries_read,
         "invalidSummaries": invalid_summaries,
         "currentParserVersions": versions,
+        "cellProgress": cell_progress,
         "tasks": tasks,
     }
 

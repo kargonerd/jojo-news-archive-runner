@@ -126,6 +126,10 @@ jobs:
               activeCells,
               pendingCells,
               summariesRead,
+              unresolved: [
+                .cellProgress[]
+                | select(.ready == false)
+              ],
               tasks
             }' "$RUNNER_TEMP/validation-plan.json"
             echo '```'

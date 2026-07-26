@@ -79,6 +79,24 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
     assert plan["readyCells"] == 2
     assert ("ap", 2016) not in cells
     assert ("bloomberg", 2017) not in cells
+    ap_2016 = next(
+        row
+        for row in plan["cellProgress"]
+        if row["publisher"] == "ap" and row["year"] == 2016
+    )
+    assert ap_2016 == {
+        "publisher": "ap",
+        "year": 2016,
+        "target": 500,
+        "evaluated": 500,
+        "replayableEvaluated": 500,
+        "completeRate": 1.0,
+        "qaPassRate": 1.0,
+        "errors": 0,
+        "parserVersion": "ap-parser/0.5.0",
+        "ready": True,
+        "active": False,
+    }
 
 
 def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
@@ -107,6 +125,15 @@ def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
     assert plan["readyCells"] == 0
     assert plan["activeCells"] == 1
     assert ("ft", 2018) not in cells
+    ft_2018 = next(
+        row
+        for row in plan["cellProgress"]
+        if row["publisher"] == "ft" and row["year"] == 2018
+    )
+    assert ft_2018["evaluated"] == 0
+    assert ft_2018["replayableEvaluated"] == 500
+    assert ft_2018["parserVersion"] is None
+    assert ft_2018["active"] is True
 
 
 def test_watchdog_prioritizes_nearly_complete_current_sample(
