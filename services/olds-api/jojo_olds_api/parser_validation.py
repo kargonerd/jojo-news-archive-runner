@@ -198,6 +198,50 @@ def ensure_parser_validation_plan(
                 ),
             ).fetchone()[0]
         )
+        actionable_before_planning = actionable
+        completed_actionable = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM parser_validation_samples AS sample
+                JOIN captures AS capture
+                  ON capture.canonical_url=sample.canonical_url
+                LEFT JOIN parser_validation_results AS result
+                  ON result.canonical_url=sample.canonical_url
+                 AND result.parser_version=?
+                WHERE sample.sample_year=?
+                  AND result.canonical_url IS NULL
+                  AND capture.status='complete'
+                  AND capture.raw_path IS NOT NULL
+                """,
+                (current_parser_version, year),
+            ).fetchone()[0]
+        )
+        completed_needed = max(
+            0,
+            target_per_year - evaluated - completed_actionable,
+        )
+        completed_selected = _select_additional_samples(
+            connection,
+            publisher=publisher,
+            year=year,
+            limit=completed_needed,
+            seed=seed,
+            completed_only=True,
+        )
+        connection.executemany(
+            """
+            INSERT OR IGNORE INTO parser_validation_samples(
+                canonical_url, sample_year, sample_priority, selected_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                (canonical_url, year, priority, now)
+                for priority, canonical_url in completed_selected
+            ),
+        )
+        actionable += len(completed_selected)
         desired_actionable = max(0, target_per_year - evaluated) + reserve
         add_count = max(0, desired_actionable - actionable)
         selected = _select_additional_samples(
@@ -206,6 +250,7 @@ def ensure_parser_validation_plan(
             year=year,
             limit=add_count,
             seed=seed,
+            completed_only=False,
         )
         connection.executemany(
             """
@@ -222,8 +267,9 @@ def ensure_parser_validation_plan(
         years[str(year)] = {
             "available": available,
             "evaluated": evaluated,
-            "actionableBeforePlanning": actionable,
-            "addedToPlan": len(selected),
+            "actionableBeforePlanning": actionable_before_planning,
+            "addedCompletedToPlan": len(completed_selected),
+            "addedToPlan": len(completed_selected) + len(selected),
         }
     connection.commit()
     return {
@@ -697,14 +743,23 @@ def _select_additional_samples(
     year: int,
     limit: int,
     seed: str,
+    completed_only: bool,
 ) -> list[tuple[str, str]]:
     if limit <= 0:
         return []
     start = f"{year:04d}-01-01"
     end = f"{year + 1:04d}-01-01"
     selected: list[tuple[int, str, str]] = []
-    rows: Iterable[tuple[str]] = connection.execute(
+    completed_filter = (
         """
+          AND capture.status='complete'
+          AND capture.raw_path IS NOT NULL
+        """
+        if completed_only
+        else ""
+    )
+    rows: Iterable[tuple[str]] = connection.execute(
+        f"""
         SELECT capture.canonical_url
         FROM captures AS capture
         LEFT JOIN parser_validation_samples AS sample
@@ -715,6 +770,7 @@ def _select_additional_samples(
             capture.status != 'complete'
             OR capture.raw_path IS NOT NULL
           )
+          {completed_filter}
           AND sample.canonical_url IS NULL
         """,
         (start, end),

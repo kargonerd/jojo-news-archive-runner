@@ -184,9 +184,77 @@ def test_validation_plan_can_add_previously_completed_raw_captures(
         """
     ).fetchone()[0]
 
+    assert plan["years"]["2020"]["addedCompletedToPlan"] == 2
     assert plan["years"]["2020"]["addedToPlan"] == 2
     assert planned == 2
-    assert completed_planned >= 1
+    assert completed_planned == 2
+
+
+def test_validation_plan_adds_completed_samples_to_an_existing_pending_plan(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    first = ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    assert first["years"]["2020"]["addedCompletedToPlan"] == 0
+    initially_planned = {
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT canonical_url
+            FROM parser_validation_samples
+            WHERE sample_year=2020
+            """
+        ).fetchall()
+    }
+    placeholders = ",".join("?" for _ in initially_planned)
+    connection.execute(
+        f"""
+        UPDATE captures
+        SET status='complete',
+            raw_path='objects/html/aa/already-captured.html.gz',
+            raw_sha256=?,
+            raw_bytes=1000,
+            stored_bytes=500
+        WHERE published_at >= '2020-01-01'
+          AND published_at < '2021-01-01'
+          AND canonical_url NOT IN ({placeholders})
+        """,
+        ("a" * 64, *sorted(initially_planned)),
+    )
+    connection.commit()
+
+    second = ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    completed_planned = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM parser_validation_samples AS sample
+        JOIN captures AS capture
+          ON capture.canonical_url=sample.canonical_url
+        WHERE sample.sample_year=2020
+          AND capture.status='complete'
+          AND capture.raw_path IS NOT NULL
+        """
+    ).fetchone()[0]
+
+    assert second["years"]["2020"]["addedCompletedToPlan"] == 2
+    assert second["years"]["2020"]["addedToPlan"] == 2
+    assert completed_planned == 2
 
 
 def test_completed_validation_sample_records_parser_quality(tmp_path: Path):
