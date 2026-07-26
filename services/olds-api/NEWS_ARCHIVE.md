@@ -71,6 +71,15 @@ the same SQLite checkpoint. It is an acceleration and validation corpus, not
 a replacement for the full archive shard, which continues downloading in the
 background.
 
+`Parser validation watchdog` keeps the complete 6-publisher by 11-year matrix
+moving. Every 15 minutes, and whenever an accelerator finishes, it reads only
+the small B2 summary files from the full and per-year shards. A cell counts as
+ready only when its summary uses the publisher's current parser version and
+passes all four gates above. It skips an already active publisher/year,
+prioritizes the closest incomplete cells, and fills a conservative maximum of
+20 concurrent standard-runner jobs. Failed or interrupted cells are therefore
+restarted without treating an older parser result as current evidence.
+
 HTML objects are addressed by the SHA-256 of the uncompressed response. Gzip is
 deterministic (`mtime=0`), so repeated identical captures produce the same B2
 object. Each canonical publisher URL appears once in a manifest with ranked
