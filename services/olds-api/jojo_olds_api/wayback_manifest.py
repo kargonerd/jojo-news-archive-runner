@@ -29,8 +29,20 @@ WSJ_BLUESKY_ENDPOINT = (
 WSJ_BLUESKY_START_YEAR = 2024
 WSJ_CATALOG_TARGET_PER_YEAR = 750
 WSJ_GOOGLE_NEWS_YEAR = 2024
-WSJ_GOOGLE_NEWS_MINIMUM_CATALOG = 500
+WSJ_GOOGLE_NEWS_MINIMUM_CATALOG = 750
 WSJ_GOOGLE_NEWS_MAXIMUM_DECODES = 25
+WSJ_GOOGLE_NEWS_WINDOWS = (
+    ("2024-01-01", "2024-02-01"),
+    ("2024-02-01", "2024-03-01"),
+    ("2024-03-01", "2024-04-01"),
+    ("2024-04-01", "2024-05-01"),
+    ("2024-05-01", "2024-06-01"),
+    ("2024-06-01", "2024-07-01"),
+    ("2024-07-01", "2024-08-01"),
+    ("2024-08-01", "2024-09-01"),
+    ("2024-09-01", "2024-10-01"),
+    ("2024-10-01", "2024-11-13"),
+)
 GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
 GOOGLE_NEWS_DECODE_ENDPOINT = (
     "https://news.google.com/_/DotsSplashUi/data/batchexecute"
@@ -426,10 +438,10 @@ def wsj_google_news_should_continue(
                 (_now_iso(),),
             )
         return False
-    status = connection.execute(
-        "SELECT status FROM wsj_google_news_state WHERE singleton=1"
-    ).fetchone()[0]
-    return not str(status).startswith("complete")
+    # A previous release stopped at 500 and may have persisted
+    # complete-target-met. Reopen that state until the larger parser-QA
+    # reserve is actually present.
+    return True
 
 
 def process_wsj_google_news_feed(
@@ -447,9 +459,17 @@ def process_wsj_google_news_feed(
     if maximum_decodes < 1:
         raise ValueError("maximum_decodes must be positive")
     initialize_wsj_google_news_schema(connection)
+    polls = int(
+        connection.execute(
+            "SELECT polls FROM wsj_google_news_state WHERE singleton=1"
+        ).fetchone()[0]
+    )
+    window_start, window_end = WSJ_GOOGLE_NEWS_WINDOWS[
+        polls % len(WSJ_GOOGLE_NEWS_WINDOWS)
+    ]
     query = (
         "site:wsj.com/articles "
-        "after:2024-01-01 before:2024-11-13"
+        f"after:{window_start} before:{window_end}"
     )
     response = http_client.get(
         GOOGLE_NEWS_RSS_ENDPOINT,

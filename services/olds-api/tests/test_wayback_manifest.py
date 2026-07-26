@@ -28,6 +28,7 @@ from jojo_olds_api.wayback_manifest import (
     process_wsj_rss_feeds,
     record_discovery_page,
     wsj_catalog_count_for_year,
+    wsj_google_news_should_continue,
 )
 
 
@@ -429,9 +430,13 @@ class StubGoogleNewsResponse:
 
 
 class StubGoogleNewsClient:
+    def __init__(self):
+        self.queries: list[str] = []
+
     def get(self, url, params=None):
         if url.endswith("/rss/search"):
             assert params["q"].startswith("site:wsj.com/articles")
+            self.queries.append(params["q"])
             return StubGoogleNewsResponse(
                 """
                 <rss version="2.0">
@@ -483,10 +488,11 @@ def test_wsj_google_news_fills_historical_catalog_gap(
     )
     initialize_wsj_google_news_schema(connection)
 
+    client = StubGoogleNewsClient()
     result = process_wsj_google_news_feed(
         connection,
         spec=spec,
-        http_client=StubGoogleNewsClient(),
+        http_client=client,
         from_year=2024,
         to_year=2026,
         maximum_decodes=1,
@@ -510,6 +516,14 @@ def test_wsj_google_news_fills_historical_catalog_gap(
         "errors": [],
     }
     assert wsj_catalog_count_for_year(connection, 2024) == 1
+    assert client.queries == [
+        "site:wsj.com/articles after:2024-01-01 before:2024-02-01"
+    ]
+    assert wsj_google_news_should_continue(
+        connection,
+        from_year=2024,
+        to_year=2026,
+    ) is True
     assert summary["articles"] == 1
     with gzip.open(destination, "rt", encoding="utf-8") as handle:
         row = json.loads(handle.readline())
