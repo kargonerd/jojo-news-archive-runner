@@ -63,6 +63,14 @@ on:
         required: true
         default: true
         type: boolean
+      runner_os:
+        description: "Standard GitHub-hosted runner network used for capture."
+        required: true
+        default: "ubuntu-latest"
+        type: choice
+        options:
+          - ubuntu-latest
+          - macos-15-intel
 
 permissions:
   actions: write
@@ -92,7 +100,7 @@ env:
 
 jobs:
   advance:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner_os }}
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v6
@@ -106,8 +114,17 @@ jobs:
       - name: Install archive dependencies
         run: |
           python -m pip install -r services/olds-api/requirements.txt
-          sudo apt-get update
-          sudo apt-get install -y rclone
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y rclone
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install rclone coreutils
+            echo "$(brew --prefix coreutils)/libexec/gnubin" \
+              >> "$GITHUB_PATH"
+          else
+            echo "Unsupported runner OS: $RUNNER_OS" >&2
+            exit 2
+          fi
 
       - name: Validate private B2 storage
         run: |
@@ -681,7 +698,8 @@ jobs:
             -f max_captures="$MAX_CAPTURES" \
             -f workers="$DOWNLOAD_WORKERS" \
             -f max_runtime_minutes="$MAX_RUNTIME_MINUTES" \
-            -f auto_continue=true
+            -f auto_continue=true \
+            -f runner_os="${{ inputs.runner_os }}"
 
       - name: Propagate capture failure after checkpoint
         if: >-
