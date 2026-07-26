@@ -626,6 +626,97 @@ def test_ft_title_index_falls_back_to_validated_infini_row(
         for request in client.requests
     )
 
+
+def test_ft_dynamic_syndication_runs_before_common_crawl(
+    tmp_path: Path,
+    monkeypatch,
+):
+    headline = "The great bond and equity conundrum"
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "95b72cd7-a7b7-4fdd-9afb-ce5fb13f3811"
+    )
+    snapshot_url = (
+        "https://web.archive.org/web/20240328000000id_/"
+        + canonical_url
+    )
+    partner_url = (
+        "https://www.example-adviser.test/resources/articles/"
+        "the-great-bond-and-equity-conundrum"
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2024-03-28T00:00:00+00:00",
+        section="markets",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=snapshot_url,
+                expected_headline=headline,
+            ),
+        ),
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.ft.com%2Fcontent%2F"
+        "95b72cd7-a7b7-4fdd-9afb-ce5fb13f3811"
+    )
+    client = StubArchiveClient(
+        {
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                b'[["urlkey","timestamp","original","mimetype",'
+                b'"statuscode"]]',
+                timemap_url,
+            ),
+            snapshot_url: (
+                404,
+                {"content-type": "text/html; charset=utf-8"},
+                b"",
+                snapshot_url,
+            ),
+            partner_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                ft_syndication_html(
+                    headline=headline,
+                    include_copyright=True,
+                ),
+                partner_url,
+            ),
+        }
+    )
+
+    monkeypatch.setattr(
+        "jojo_olds_api.raw_archive_capture."
+        "discover_ft_syndication_candidates",
+        lambda *args, **kwargs: (
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=partner_url,
+                expected_headline=headline,
+            ),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        enable_common_crawl_fallback=True,
+    )
+
+    assert result["status"] == "complete"
+    assert result["capture"].selected_candidate.snapshot_url == partner_url
+    assert client.requests[-1] == partner_url
+    assert not any(
+        "index.commoncrawl.org" in request
+        for request in client.requests
+    )
+
+
 def test_ft_manifest_partner_copy_rejects_missing_copyright(
     tmp_path: Path,
 ):

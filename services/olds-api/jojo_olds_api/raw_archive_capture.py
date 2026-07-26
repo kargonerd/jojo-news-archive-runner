@@ -524,6 +524,7 @@ def capture_item(
     ft_raw_partner_validated = False
     ft_infini_origin_validated = False
     ft_title_index_attempted = False
+    ft_dynamic_syndication_attempted = False
     ft_original_headline = next(
         (
             candidate.expected_headline
@@ -794,6 +795,35 @@ def capture_item(
         candidates_considered.extend(indexed_candidates)
         consider_candidates(indexed_candidates)
 
+    def consider_ft_dynamic_syndication() -> None:
+        nonlocal ft_dynamic_syndication_attempted
+        if (
+            ft_dynamic_syndication_attempted
+            or best_response is not None
+            or item.publisher != "ft"
+        ):
+            return
+        ft_dynamic_syndication_attempted = True
+        try:
+            fallback_candidates = discover_ft_syndication_candidates(
+                item,
+                archive_client=archive_client,
+                expected_headline=ft_original_headline,
+            )
+        except Exception as exc:
+            failures.append(f"ft-syndication:{type(exc).__name__}")
+            fallback_candidates = ()
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        fallback_candidates = tuple(
+            candidate
+            for candidate in fallback_candidates
+            if candidate.snapshot_url not in existing_urls
+        )
+        candidates_considered.extend(fallback_candidates)
+        consider_candidates(fallback_candidates)
+
     direct_infini_candidates = tuple(
         candidate
         for candidate in item.candidates
@@ -841,6 +871,7 @@ def capture_item(
             consider_candidates(item.candidates)
 
         consider_ft_title_index()
+        consider_ft_dynamic_syndication()
 
         if (
             not ft_infini_origin_validated
@@ -1094,27 +1125,7 @@ def capture_item(
                 break
 
     consider_ft_title_index()
-
-    if best_response is None and item.publisher == "ft":
-        try:
-            fallback_candidates = discover_ft_syndication_candidates(
-                item,
-                archive_client=archive_client,
-                expected_headline=ft_original_headline,
-            )
-        except Exception as exc:
-            failures.append(f"ft-syndication:{type(exc).__name__}")
-            fallback_candidates = ()
-        existing_urls = {
-            candidate.snapshot_url for candidate in candidates_considered
-        }
-        fallback_candidates = tuple(
-            candidate
-            for candidate in fallback_candidates
-            if candidate.snapshot_url not in existing_urls
-        )
-        candidates_considered.extend(fallback_candidates)
-        consider_candidates(fallback_candidates)
+    consider_ft_dynamic_syndication()
 
     if (
         enable_arquivo_pt_fallback
