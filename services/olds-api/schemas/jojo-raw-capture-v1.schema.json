@@ -116,6 +116,18 @@
           "title": "Snapshoturl",
           "type": "string"
         },
+        "sourceUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourceurl"
+        },
         "statusCode": {
           "anyOf": [
             {
@@ -179,10 +191,19 @@
         "wayback",
         "arquivo-pt",
         "commoncrawl",
+        "infini-news",
         "live-origin",
         "other"
       ],
       "title": "CaptureProvider",
+      "type": "string"
+    },
+    "CaptureRepresentation": {
+      "enum": [
+        "raw-html",
+        "derived-html"
+      ],
+      "title": "CaptureRepresentation",
       "type": "string"
     }
   },
@@ -247,6 +268,14 @@
     },
     "rawHtml": {
       "$ref": "#/$defs/BlobReference"
+    },
+    "representation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/CaptureRepresentation"
+        }
+      ],
+      "default": "raw-html"
     },
     "retrievedAt": {
       "format": "date-time",

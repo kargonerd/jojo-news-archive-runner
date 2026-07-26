@@ -8,15 +8,23 @@ Raw acquisition and article interpretation are separate:
 publisher catalog
   -> Wayback CDX candidates
   -> publication-near Common Crawl WARC fallback where configured
+  -> validated partner HTML or explicit Infini-News derived fallback
   -> jojo-raw-capture/1 + content-addressed HTML
   -> versioned publisher parser
   -> jojo-article/1
   -> selected editorial image downloads (later stage)
 ```
 
-The raw stage stores the response bytes before Beautiful Soup or any other
-parser changes them. Image URLs are recorded only by the parser. Images are not
-downloaded by `capture_archive_batch.py`.
+The raw stage normally stores response bytes before Beautiful Soup or any other
+parser changes them. The one explicit exception is the FT `infini-news`
+fallback: when a mapped live partner page and archive captures are unusable, it
+stores deterministic HTML adapted from the complete extracted CC-News row.
+Those records are marked `representation: derived-html`, retain the dataset row
+URL, partner URL, WARC filename, and content hash in provenance, and can be
+excluded from raw-DOM studies. Ordinary responses remain `raw-html`. Image URLs
+are recorded only by the parser. Images are not downloaded by
+`capture_archive_batch.py`; derived Infini rows contain no images unless a
+separate validated page supplies them.
 
 Parser readiness is measured on a reproducible, publisher-and-year-stratified
 random sample. The archive workflow uses a stable SHA-256 pseudo-random
@@ -80,9 +88,11 @@ prioritizes the closest incomplete cells, and fills a conservative maximum of
 20 concurrent standard-runner jobs. Failed or interrupted cells are therefore
 restarted without treating an older parser result as current evidence.
 
-HTML objects are addressed by the SHA-256 of the uncompressed response. Gzip is
-deterministic (`mtime=0`), so repeated identical captures produce the same B2
-object. Each canonical publisher URL appears once in a manifest with ranked
+HTML objects are addressed by the SHA-256 of the uncompressed response or
+explicitly derived representation. Gzip is deterministic (`mtime=0`), so
+repeated identical captures produce the same B2 object. The raw capture record's
+`representation` field distinguishes the two without changing object layout.
+Each canonical publisher URL appears once in a manifest with ranked
 fallback snapshots. The capture worker evaluates usable candidates and stores
 only the highest-quality response; it stops early when a response reaches the
 maximum raw quality score. FT capture first queries the historically
@@ -231,12 +241,20 @@ copies. It searches Infini-News' CC-News index for the exact visible
 `Copyright The Financial Times Limited` attribution, samples occurrences
 across the whole result range for each year, and retains the CC-News WARC
 filename and document index as discovery provenance. Each partner headline is
-resolved to an `ft.com/content/` URL with an exact-title search. Infini-News
-text is never stored as the raw article: capture still downloads the live
-partner HTML. That HTML enters the archive only when its final partner host,
-headline, publication date, complete-body threshold, and visible FT copyright
-statement all pass. Failed or ambiguous mappings remain outside the parser
-validation sample.
+resolved to an `ft.com/content/` URL with an exact-title search. Capture first
+tries exact publisher archives and the live partner HTML. Partner HTML enters
+the archive only when its final host, headline, publication date, complete-body
+threshold, and visible FT copyright statement all pass.
+
+If those raw candidates fail, a mapped row can be fetched from Infini-News'
+official Hugging Face dataset by its exact year and document index. The adapter
+accepts only the expected dataset endpoint, one exact row, the mapped partner
+URL and headline, a `CC-NEWS-*.warc.gz` provenance match, at least 400 body
+characters, the publication-date gate, and visible FT copyright attribution.
+It then creates deterministic, escaped article HTML for the same FT parser.
+The resulting capture is explicitly `derived-html`, never presented as original
+FT or partner HTML, and retains both source links. Failed or ambiguous mappings
+remain outside the parser validation sample.
 
 Bloomberg discovery augments sparse canonical Wayback results with licensed
 partner copies. For 2017 onward, it searches Infini-News' CC-News index for the

@@ -24,13 +24,20 @@ class CaptureProvider(str, Enum):
     WAYBACK = "wayback"
     ARQUIVO_PT = "arquivo-pt"
     COMMON_CRAWL = "commoncrawl"
+    INFINI_NEWS = "infini-news"
     LIVE_ORIGIN = "live-origin"
     OTHER = "other"
+
+
+class CaptureRepresentation(str, Enum):
+    RAW_HTML = "raw-html"
+    DERIVED_HTML = "derived-html"
 
 
 class CaptureCandidate(ArchiveModel):
     provider: CaptureProvider
     snapshot_url: str
+    source_url: str | None = None
     expected_headline: str | None = None
     captured_at: datetime | None = None
     digest: str | None = None
@@ -63,6 +70,7 @@ class RawCapture(ArchiveModel):
     final_url: str
     http_status: int
     content_type: str
+    representation: CaptureRepresentation = CaptureRepresentation.RAW_HTML
     quality_score: int
     quality_signals: dict[str, Any] = Field(default_factory=dict)
     raw_html: BlobReference

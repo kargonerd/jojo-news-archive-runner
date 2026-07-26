@@ -256,6 +256,23 @@ def test_ft_infini_catalog_resolves_and_exports_licensed_copy(
             "for AI start-up Anthropic"
         ),
     }
+    assert row["candidates"][1] == {
+        "provider": "infini-news",
+        "snapshotUrl": (
+            "https://datasets-server.huggingface.co/rows?"
+            "dataset=ruggsea%2Finfini-news-corpus&config=year_2024&"
+            "split=train&offset=12345&length=1"
+        ),
+        "sourceUrl": (
+            "https://www.irishtimes.com/business/2024/03/28/"
+            "amazon-invests-in-ai-start-up/"
+        ),
+        "expectedHeadline": (
+            "Amazon writes its largest venture cheque yet "
+            "for AI start-up Anthropic"
+        ),
+        "warcFilename": "CC-NEWS-20240328160318-02712.warc.gz",
+    }
 
 
 def test_ft_catalog_work_is_balanced_across_years():

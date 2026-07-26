@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 import gzip
 import json
@@ -10,8 +11,10 @@ from urllib.parse import parse_qs, urlsplit
 from jojo_olds_api.news_models import (
     CaptureCandidate,
     CaptureProvider,
+    CaptureRepresentation,
     RawCapture,
 )
+from jojo_olds_api.news_parser import parse_article
 from jojo_olds_api.raw_archive_capture import (
     BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     CAPTURE_POLICY_VERSIONS,
@@ -187,6 +190,17 @@ def test_ft_manifest_partner_copy_requires_strict_validation(
                 snapshot_url=partner_url,
                 expected_headline=headline,
             ),
+            CaptureCandidate(
+                provider=CaptureProvider.INFINI_NEWS,
+                snapshot_url=(
+                    "https://datasets-server.huggingface.co/rows?"
+                    "dataset=ruggsea%2Finfini-news-corpus&"
+                    "config=year_2024&split=train&offset=12345&length=1"
+                ),
+                source_url=partner_url,
+                expected_headline=headline,
+                warc_filename="CC-NEWS-20240328160318-02712.warc.gz",
+            ),
         ),
     )
     client = StubArchiveClient(
@@ -224,6 +238,160 @@ def test_ft_manifest_partner_copy_requires_strict_validation(
     )
     assert capture.quality_signals["syndicationHeadlineOverlap"] == 1.0
     assert capture.quality_signals["syndicationPartnerHostValidated"] is True
+    assert client.requests[-1] == partner_url
+    assert not any("datasets-server.huggingface.co" in url for url in client.requests)
+
+
+def test_ft_infini_news_row_is_stored_as_validated_derived_html(
+    tmp_path: Path,
+):
+    headline = (
+        "Amazon writes its largest venture cheque yet "
+        "for AI start-up Anthropic"
+    )
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    partner_url = (
+        "https://www.irishtimes.com/business/2024/03/28/"
+        "amazon-invests-in-ai-start-up/"
+    )
+    row_url = (
+        "https://datasets-server.huggingface.co/rows?"
+        "dataset=ruggsea%2Finfini-news-corpus&config=year_2024&"
+        "split=train&offset=12345&length=1"
+    )
+    body = "\n".join(
+        [
+            (
+                "Licensed business reporting paragraph "
+                f"{index} contains substantive investment details, "
+                "executive comments, market conditions, financial "
+                "disclosures and competitive analysis."
+            )
+            for index in range(1, 8)
+        ]
+        + ["Copyright The Financial Times Limited 2024"]
+    )
+    payload = json.dumps(
+        {
+            "rows": [
+                {
+                    "row_idx": 12345,
+                    "row": {
+                        "url": partner_url,
+                        "year": 2024,
+                        "title": headline,
+                        "publish_date": "2024-03-28",
+                        "author": "Financial Times reporters",
+                        "description": "Licensed Financial Times report.",
+                        "text": body,
+                        "warc_filename": (
+                            "CC-NEWS-20240328160318-02712.warc.gz"
+                        ),
+                    }
+                }
+            ]
+        }
+    ).encode()
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2024-03-28T00:00:00+00:00",
+        section="business",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.INFINI_NEWS,
+                snapshot_url=row_url,
+                source_url=partner_url,
+                expected_headline=headline,
+                warc_filename=(
+                    "CC-NEWS-20240328160318-02712.warc.gz"
+                ),
+            ),
+        ),
+    )
+    client = StubArchiveClient(
+        {
+            row_url: (
+                200,
+                {"content-type": "application/json"},
+                payload,
+                row_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.INFINI_NEWS
+    assert capture.representation == CaptureRepresentation.DERIVED_HTML
+    assert capture.final_url == partner_url
+    assert capture.quality_signals["infiniNewsValidated"] is True
+    assert capture.quality_signals["infiniNewsDerivedHtml"] is True
+    assert capture.quality_signals["ftSyndicationValidated"] is True
+    with gzip.open(tmp_path / capture.raw_html.path, "rb") as handle:
+        derived = handle.read().decode("utf-8")
+    assert 'data-jojo-representation="derived-infini-news"' in derived
+    assert canonical_url in derived
+    assert "Licensed business reporting paragraph 7" in derived
+    article = parse_article(
+        derived.encode(),
+        publisher="ft",
+        canonical_url=canonical_url,
+        raw_capture=capture,
+    )
+    assert article.quality.status.value == "complete"
+    assert article.quality.body_characters >= 400
+    record = json.loads((tmp_path / result["recordPath"]).read_text())
+    assert record["representation"] == "derived-html"
+    assert record["selectedCandidate"]["sourceUrl"] == partner_url
+
+    tampered = json.loads(payload)
+    tampered["rows"][0]["row_idx"] = 12346
+    tampered_client = StubArchiveClient(
+        {
+            row_url: (
+                200,
+                {"content-type": "application/json"},
+                json.dumps(tampered).encode(),
+                row_url,
+            )
+        }
+    )
+    rejected_row = capture_item(
+        item,
+        archive_client=tampered_client,
+        output_dir=tmp_path / "wrong-row",
+        maximum_html_bytes=1_000_000,
+    )
+    assert rejected_row["status"] == "error"
+    assert "infini-news:ValueError" in rejected_row["error"]
+
+    missing_warc_item = replace(
+        item,
+        candidates=(
+            item.candidates[0].model_copy(
+                update={"warc_filename": None}
+            ),
+        ),
+    )
+    rejected_warc = capture_item(
+        missing_warc_item,
+        archive_client=client,
+        output_dir=tmp_path / "missing-warc",
+        maximum_html_bytes=1_000_000,
+    )
+    assert rejected_warc["status"] == "error"
+    assert "infini-news:ValueError" in rejected_warc["error"]
 
 
 def test_ft_manifest_partner_copy_rejects_missing_copyright(

@@ -21,6 +21,7 @@ from .archive_sources import (
     normalize_article_url,
 )
 from .bloomberg_archive_download import GlobalRateLimiter
+from .ft_syndication_catalog import infini_news_row_url
 from .wayback_manifest import (
     MANIFEST_FORMAT_VERSION,
     discovered_wayback_articles,
@@ -433,7 +434,10 @@ def export_sitemap_manifest(
                 sitemap.canonical_url,
                 COALESCE(syndication.published_at, sitemap.published_at),
                 syndication.partner_url,
-                syndication.expected_headline
+                syndication.expected_headline,
+                syndication.source_year,
+                syndication.document_index,
+                syndication.warc_source
             FROM sitemap_articles AS sitemap
             LEFT JOIN ft_syndication_articles AS syndication
               ON syndication.canonical_url=sitemap.canonical_url
@@ -442,7 +446,10 @@ def export_sitemap_manifest(
                 syndication.canonical_url,
                 syndication.published_at,
                 syndication.partner_url,
-                syndication.expected_headline
+                syndication.expected_headline,
+                syndication.source_year,
+                syndication.document_index,
+                syndication.warc_source
             FROM ft_syndication_articles AS syndication
             LEFT JOIN sitemap_articles AS sitemap
               ON sitemap.canonical_url=syndication.canonical_url
@@ -464,12 +471,18 @@ def export_sitemap_manifest(
         to_year=to_year,
     )
     with opener(temporary, "wt", encoding="utf-8") as handle:
-        for (
-            canonical_url,
-            published_at,
-            syndicated_url,
-            expected_headline,
-        ) in article_rows:
+        for article_row in article_rows:
+            (
+                canonical_url,
+                published_at,
+                syndicated_url,
+                expected_headline,
+            ) = article_row[:4]
+            source_year = article_row[4] if len(article_row) > 4 else None
+            document_index = (
+                article_row[5] if len(article_row) > 5 else None
+            )
+            warc_source = article_row[6] if len(article_row) > 6 else None
             exact = exact_wayback.pop(str(canonical_url), None)
             if exact is not None and not published_at:
                 published_at = exact[0]
@@ -484,18 +497,40 @@ def export_sitemap_manifest(
                     candidate_rows,
                 )
             if syndicated_url:
-                candidate_rows = _merge_manifest_candidates(
-                    [
+                partner_candidates = [
+                    {
+                        "provider": "other",
+                        "snapshotUrl": syndicated_url,
+                        **(
+                            {"expectedHeadline": expected_headline}
+                            if expected_headline
+                            else {}
+                        ),
+                    }
+                ]
+                if source_year is not None and document_index is not None:
+                    partner_candidates.append(
                         {
-                            "provider": "other",
-                            "snapshotUrl": syndicated_url,
+                            "provider": "infini-news",
+                            "snapshotUrl": infini_news_row_url(
+                                int(source_year),
+                                int(document_index),
+                            ),
+                            "sourceUrl": syndicated_url,
                             **(
                                 {"expectedHeadline": expected_headline}
                                 if expected_headline
                                 else {}
                             ),
+                            **(
+                                {"warcFilename": warc_source}
+                                if warc_source
+                                else {}
+                            ),
                         }
-                    ],
+                    )
+                candidate_rows = _merge_manifest_candidates(
+                    partner_candidates,
                     candidate_rows,
                 )
             row = {

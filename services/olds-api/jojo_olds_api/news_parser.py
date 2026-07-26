@@ -84,8 +84,14 @@ def parse_article(
         allow_generic_syndication
         or (
             raw_capture is not None
-            and raw_capture.selected_candidate.provider
-            == CaptureProvider.OTHER
+            and (
+                raw_capture.selected_candidate.provider == CaptureProvider.OTHER
+                or (
+                    spec.publisher == "ft"
+                    and raw_capture.selected_candidate.provider
+                    == CaptureProvider.INFINI_NEWS
+                )
+            )
         )
     )
     if (

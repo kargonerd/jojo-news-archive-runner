@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import gzip
+from html import escape
 import hashlib
 import ipaddress
 import json
@@ -11,7 +12,7 @@ from pathlib import Path
 import re
 import sqlite3
 from typing import Callable, Iterable
-from urllib.parse import unquote, urlencode, urlsplit
+from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
@@ -20,11 +21,16 @@ from .common_crawl import (
     discover_common_crawl_candidates,
     fetch_common_crawl_candidate,
 )
+from .ft_syndication_catalog import (
+    INFINI_DATASET,
+    INFINI_DATASET_ROWS_ENDPOINT,
+)
 from .news_models import (
     ArticleStatus,
     BlobReference,
     CaptureCandidate,
     CaptureProvider,
+    CaptureRepresentation,
     RawCapture,
 )
 
@@ -33,7 +39,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.9.3",
+    "ft": "ft-capture/0.10.0",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -510,6 +516,7 @@ def capture_item(
         int,
         dict[str, object],
     ] | None = None
+    ft_raw_partner_validated = False
     ft_original_headline = next(
         (
             candidate.expected_headline
@@ -540,8 +547,13 @@ def capture_item(
     def consider_candidates(
         candidates: Iterable[CaptureCandidate],
     ) -> None:
-        nonlocal best_response
+        nonlocal best_response, ft_raw_partner_validated
         for candidate in candidates:
+            if (
+                candidate.provider == CaptureProvider.INFINI_NEWS
+                and ft_raw_partner_validated
+            ):
+                continue
             response, failure = _fetch_usable_candidate(
                 candidate,
                 archive_client=archive_client,
@@ -614,12 +626,17 @@ def capture_item(
                 )
             if (
                 item.publisher == "ft"
-                and candidate.provider == CaptureProvider.OTHER
+                and candidate.provider in {
+                    CaptureProvider.OTHER,
+                    CaptureProvider.INFINI_NEWS,
+                }
             ):
                 validated, validation_signals = (
                     _validate_ft_syndication_response(
                         item,
-                        expected_partner_url=candidate.snapshot_url,
+                        expected_partner_url=(
+                            candidate.source_url or candidate.snapshot_url
+                        ),
                         expected_headline=candidate.expected_headline,
                         content=response[2],
                         final_url=response[3],
@@ -642,6 +659,8 @@ def capture_item(
                     response[5],
                     response[6] | validation_signals,
                 )
+                if candidate.provider == CaptureProvider.OTHER:
+                    ft_raw_partner_validated = True
             if (
                 item.publisher == "bloomberg"
                 and candidate.provider == CaptureProvider.OTHER
@@ -1066,6 +1085,11 @@ def capture_item(
             final_url=final_url,
             http_status=status_code,
             content_type=content_type or "text/html",
+            representation=(
+                CaptureRepresentation.DERIVED_HTML
+                if candidate.provider == CaptureProvider.INFINI_NEWS
+                else CaptureRepresentation.RAW_HTML
+            ),
             quality_score=quality_score,
             quality_signals=signals,
             raw_html=raw_reference,
@@ -1085,6 +1109,139 @@ def capture_item(
         "recordPath": None,
         "error": "; ".join(failures[-8:]) or "no usable capture candidates",
     }
+
+
+def _fetch_infini_news_candidate(
+    candidate: CaptureCandidate,
+    *,
+    archive_client: ArchiveClient,
+    maximum_html_bytes: int,
+    canonical_url: str,
+) -> tuple[int, dict[str, str], bytes, str]:
+    parsed = urlsplit(candidate.snapshot_url)
+    expected_endpoint = urlsplit(INFINI_DATASET_ROWS_ENDPOINT)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != expected_endpoint.hostname
+        or parsed.path != expected_endpoint.path
+        or query.get("dataset") != [INFINI_DATASET]
+        or query.get("split") != ["train"]
+        or query.get("length") != ["1"]
+        or len(query.get("config", [])) != 1
+        or re.fullmatch(r"year_\d{4}", query["config"][0]) is None
+        or len(query.get("offset", [])) != 1
+        or re.fullmatch(r"\d+", query["offset"][0]) is None
+        or not candidate.source_url
+    ):
+        raise ValueError("invalid Infini-News dataset row candidate")
+    status_code, headers, payload, _ = _fetch_limited_archive(
+        archive_client,
+        candidate.snapshot_url,
+        maximum_bytes=max(maximum_html_bytes, 2_000_000),
+        attempts=2,
+        timeout=45.0,
+    )
+    content_type = headers.get("content-type", "").casefold()
+    if status_code != 200 or not payload:
+        raise ValueError(f"Infini-News row returned HTTP {status_code}")
+    if "json" not in content_type and not payload.lstrip().startswith(b"{"):
+        raise ValueError("Infini-News row did not return JSON")
+    decoded = json.loads(payload)
+    rows = decoded.get("rows") if isinstance(decoded, dict) else None
+    row_wrapper = rows[0] if isinstance(rows, list) and len(rows) == 1 else None
+    row = row_wrapper.get("row") if isinstance(row_wrapper, dict) else None
+    if not isinstance(row, dict):
+        raise ValueError("Infini-News row response is invalid")
+    expected_index = int(query["offset"][0])
+    if row_wrapper.get("row_idx") != expected_index:
+        raise ValueError("Infini-News row index mismatch")
+    expected_year = int(query["config"][0].removeprefix("year_"))
+    if row.get("year") != expected_year:
+        raise ValueError("Infini-News row year mismatch")
+    source_url = str(row.get("url") or "").strip()
+    if not _same_article_url(source_url, candidate.source_url):
+        raise ValueError("Infini-News source URL mismatch")
+    expected_headline = candidate.expected_headline or ""
+    headline = str(row.get("title") or "").strip()
+    if (
+        len(_significant_tokens(expected_headline)) < 4
+        or _headline_text_overlap(expected_headline, headline) < 0.8
+    ):
+        raise ValueError("Infini-News headline mismatch")
+    text = str(row.get("text") or "").strip()
+    if len(text) < FT_SYNDICATION_MINIMUM_BODY_CHARACTERS:
+        raise ValueError("Infini-News document body is too short")
+    warc_filename = str(row.get("warc_filename") or "").strip()
+    if not candidate.warc_filename:
+        raise ValueError("Infini-News candidate WARC provenance is missing")
+    if warc_filename != candidate.warc_filename:
+        raise ValueError("Infini-News WARC provenance mismatch")
+    if (
+        not warc_filename.startswith("CC-NEWS-")
+        or not warc_filename.endswith(".warc.gz")
+    ):
+        raise ValueError("Infini-News WARC provenance is missing")
+    derived_html = _infini_news_derived_html(
+        row,
+        canonical_url=canonical_url,
+        source_url=source_url,
+        headline=headline,
+        text=text,
+    )
+    if len(derived_html) > maximum_html_bytes:
+        raise ValueError("Infini-News derived HTML exceeds the capture limit")
+    return (
+        200,
+        {"content-type": "text/html; charset=utf-8"},
+        derived_html,
+        source_url,
+    )
+
+
+def _infini_news_derived_html(
+    row: dict[str, object],
+    *,
+    canonical_url: str,
+    source_url: str,
+    headline: str,
+    text: str,
+) -> bytes:
+    published_at = str(
+        row.get("publish_date") or row.get("date") or ""
+    ).strip()
+    author = str(row.get("author") or "").strip()
+    description = str(row.get("description") or "").strip()
+    structured = {
+        "@context": "https://schema.org",
+        "@type": "NewsArticle",
+        "url": canonical_url,
+        "mainEntityOfPage": canonical_url,
+        "isBasedOn": source_url,
+        "headline": headline,
+        **({"datePublished": published_at} if published_at else {}),
+        **({"author": {"@type": "Person", "name": author}} if author else {}),
+        **({"description": description} if description else {}),
+    }
+    structured_json = json.dumps(
+        structured,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).replace("</", "<\\/")
+    paragraphs = [line.strip() for line in text.splitlines() if line.strip()]
+    body_html = "".join(f"<p>{escape(line)}</p>" for line in paragraphs)
+    html = (
+        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        f"<title>{escape(headline)}</title>"
+        f"<link rel=\"canonical\" href=\"{escape(canonical_url, quote=True)}\">"
+        f"<link rel=\"alternate\" href=\"{escape(source_url, quote=True)}\">"
+        f"<script type=\"application/ld+json\">{structured_json}</script>"
+        "</head><body>"
+        f"<article data-jojo-representation=\"derived-infini-news\">"
+        f"<h1>{escape(headline)}</h1>{body_html}</article>"
+        "</body></html>"
+    )
+    return html.encode("utf-8")
 
 
 def _fetch_usable_candidate(
@@ -1119,6 +1276,17 @@ def _fetch_usable_candidate(
                     candidate,
                     archive_client=archive_client,
                     maximum_html_bytes=maximum_html_bytes,
+                )
+            )
+        elif candidate.provider == CaptureProvider.INFINI_NEWS:
+            if publisher != "ft":
+                raise ValueError("Infini-News derived capture is FT-only")
+            status_code, headers, content, final_url = (
+                _fetch_infini_news_candidate(
+                    candidate,
+                    archive_client=archive_client,
+                    maximum_html_bytes=maximum_html_bytes,
+                    canonical_url=canonical_url,
                 )
             )
         elif (
@@ -1206,6 +1374,15 @@ def _fetch_usable_candidate(
                 if candidate.captured_at is not None
                 else None
             ),
+        }
+    elif candidate.provider == CaptureProvider.INFINI_NEWS:
+        signals = signals | {
+            "infiniNewsValidated": True,
+            "infiniNewsDerivedHtml": True,
+            "infiniNewsDatasetRowUrl": candidate.snapshot_url,
+            "infiniNewsSourceUrl": candidate.source_url,
+            "infiniNewsWarcFilename": candidate.warc_filename,
+            "infiniNewsDerivedHtmlSha256": hashlib.sha256(content).hexdigest(),
         }
     return (
         (
