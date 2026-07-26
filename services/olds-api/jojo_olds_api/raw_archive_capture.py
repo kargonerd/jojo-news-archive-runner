@@ -36,7 +36,7 @@ CAPTURE_POLICY_VERSIONS = {
     "ft": "ft-capture/0.9.1",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
-    "wsj": "wsj-capture/0.8.1",
+    "wsj": "wsj-capture/0.8.2",
 }
 ACCEPTED_HTTP_STATUSES = {200, 206}
 WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"
@@ -541,6 +541,7 @@ def capture_item(
                 archive_client=archive_client,
                 maximum_html_bytes=maximum_html_bytes,
                 canonical_url=item.canonical_url,
+                publisher=item.publisher,
                 response_observer=observe_candidate_response,
             )
             if failure:
@@ -793,6 +794,7 @@ def capture_item(
                 archive_client=archive_client,
                 maximum_html_bytes=maximum_html_bytes,
                 canonical_url=item.canonical_url,
+                publisher=item.publisher,
             )
             if failure:
                 failures.append(failure)
@@ -853,6 +855,7 @@ def capture_item(
                 archive_client=archive_client,
                 maximum_html_bytes=maximum_html_bytes,
                 canonical_url=item.canonical_url,
+                publisher=item.publisher,
             )
             if failure:
                 failures.append(failure)
@@ -887,6 +890,7 @@ def capture_item(
                 archive_client=archive_client,
                 maximum_html_bytes=maximum_html_bytes,
                 canonical_url=item.canonical_url,
+                publisher=item.publisher,
             )
             if failure:
                 failures.append(failure)
@@ -946,6 +950,7 @@ def capture_item(
                 archive_client=archive_client,
                 maximum_html_bytes=maximum_html_bytes,
                 canonical_url=item.canonical_url,
+                publisher=item.publisher,
             )
             if failure:
                 failures.append(failure)
@@ -1058,6 +1063,7 @@ def _fetch_usable_candidate(
     archive_client: ArchiveClient,
     maximum_html_bytes: int,
     canonical_url: str,
+    publisher: str,
     response_observer: Callable[
         [CaptureCandidate, bytes, str],
         None,
@@ -1119,6 +1125,19 @@ def _fetch_usable_candidate(
     )
     if response_observer is not None:
         response_observer(candidate, content, final_url)
+    structured_subscription_article = bool(
+        signals["subscriptionShell"]
+        and _structured_subscription_article_usable(
+            content,
+            publisher=publisher,
+            canonical_url=canonical_url,
+        )
+    )
+    if structured_subscription_article:
+        quality_score = min(100, quality_score + 60)
+        signals = signals | {
+            "structuredSubscriptionArticle": True,
+        }
     if (
         status_code not in ACCEPTED_HTTP_STATUSES
         or not content
@@ -1126,7 +1145,10 @@ def _fetch_usable_candidate(
         or signals["archiveErrorPage"]
         or signals["authenticationShell"]
         or signals["accessChallengeShell"]
-        or signals["subscriptionShell"]
+        or (
+            signals["subscriptionShell"]
+            and not structured_subscription_article
+        )
         or signals["ftTruncatedArticleShell"]
         or signals["redirectShell"]
     ):
@@ -1840,6 +1862,48 @@ def _discover_nyt_trusted_wordpress_copy(
             ),
         )
     return None
+
+
+def _structured_subscription_article_usable(
+    content: bytes,
+    *,
+    publisher: str,
+    canonical_url: str,
+    raw_capture: RawCapture | None = None,
+) -> bool:
+    if publisher != "wsj":
+        return False
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher=publisher,
+            canonical_url=canonical_url,
+            raw_capture=raw_capture,
+        )
+    except Exception:
+        return False
+    prefix = article.plain_text[:1_500].casefold()
+    suspected_paywall = (
+        article.quality.body_characters < 1_000
+        and any(
+            phrase in prefix
+            for phrase in (
+                "subscribe to read",
+                "subscribe to continue",
+                "sign in to continue",
+                "already a subscriber",
+                "unlock this article",
+            )
+        )
+    )
+    return bool(
+        article.quality.status.value == "complete"
+        and article.headline
+        and article.quality.body_characters >= 100
+        and not suspected_paywall
+    )
 
 
 def nyt_trusted_wordpress_search_url(
@@ -3682,13 +3746,28 @@ def completed_capture_rejection_reason(
         content_type=capture.content_type,
         final_url=capture.final_url,
     )
+    structured_subscription_article = bool(
+        signals["subscriptionShell"]
+        and _structured_subscription_article_usable(
+            content,
+            publisher=capture.publisher,
+            canonical_url=capture.canonical_url,
+            raw_capture=capture,
+        )
+    )
     checks = (
         ("empty-response", not content),
         ("not-html", not bool(signals["looksLikeHtml"])),
         ("archive-error-page", bool(signals["archiveErrorPage"])),
         ("authentication-shell", bool(signals["authenticationShell"])),
         ("access-challenge-shell", bool(signals["accessChallengeShell"])),
-        ("subscription-shell", bool(signals["subscriptionShell"])),
+        (
+            "subscription-shell",
+            bool(
+                signals["subscriptionShell"]
+                and not structured_subscription_article
+            ),
+        ),
         ("redirect-shell", bool(signals["redirectShell"])),
         (
             "ft-truncated-article-shell",

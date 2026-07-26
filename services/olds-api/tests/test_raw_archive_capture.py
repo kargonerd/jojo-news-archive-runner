@@ -3346,6 +3346,113 @@ def test_raw_quality_rejects_wsj_structured_snippet_view():
     assert signals["subscriptionShell"] is True
 
 
+def test_stored_wsj_subscription_shell_keeps_complete_article(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.wsj.com/articles/"
+        "a-complete-archived-article-1482289646"
+    )
+    shell = b"""
+    <!doctype html><html><head>
+      <meta property="og:title"
+            content="A Complete Archived Article">
+      <script type="application/json">
+        {"isSnippetView":true}
+      </script>
+    </head><body>
+      <article data-testid="article-body">
+        <p>The archived page contains the complete first paragraph with
+        enough reporting detail to establish that this is article text.</p>
+        <p>A second substantive paragraph continues the report and provides
+        additional facts, context and quotations from the original story.</p>
+      </article>
+      <div>Continue reading your article with a WSJ subscription.</div>
+      <div>Already a subscriber?</div>
+    </body></html>
+    """ + (b" " * 2_048)
+    blob = store_raw_html(tmp_path, shell)
+    capture = RawCapture(
+        article_id="wsj:" + ("c" * 64),
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at=datetime(2016, 12, 21, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20161222000000id_/"
+                + canonical_url
+            ),
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=40,
+        raw_html=blob,
+    )
+
+    _, signals = score_raw_capture(
+        shell,
+        http_status=200,
+        content_type="text/html",
+        final_url=canonical_url,
+    )
+    reason = completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    )
+
+    assert signals["subscriptionShell"] is True
+    assert reason is None
+
+
+def test_stored_wsj_subscription_shell_still_rejects_short_preview(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.wsj.com/articles/"
+        "a-short-archived-preview-1482289646"
+    )
+    shell = b"""
+    <html><head>
+      <meta property="og:title" content="A Short Archived Preview">
+      <script type="application/json">{"isSnippetView":true}</script>
+    </head><body><article>
+      <p>A short preview sentence.</p>
+    </article></body></html>
+    """ + (b" " * 2_048)
+    blob = store_raw_html(tmp_path, shell)
+    capture = RawCapture(
+        article_id="wsj:" + ("d" * 64),
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at=datetime(2016, 12, 21, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20161222000000id_/"
+                + canonical_url
+            ),
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=40,
+        raw_html=blob,
+    )
+
+    reason = completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    )
+
+    assert reason == "subscription-shell"
+
+
 def test_raw_quality_rejects_bloomberg_login_to_keep_reading_shell():
     score, signals = score_raw_capture(
         b"""
