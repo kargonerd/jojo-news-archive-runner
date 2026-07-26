@@ -559,7 +559,17 @@ def test_completed_validation_sample_records_parser_quality(tmp_path: Path):
         </script>
       </head>
       <body>
-        <article><p>{body}</p></article>
+        <article>
+          <p>{body}</p>
+          <figure>
+            <img
+              src="https://dims.apnews.com/dims4/default/example.jpg"
+              width="1200"
+              height="800"
+              alt="An editorial test image"
+            />
+          </figure>
+        </article>
       </body>
     </html>
     """.encode()
@@ -593,6 +603,11 @@ def test_completed_validation_sample_records_parser_quality(tmp_path: Path):
     assert summary["years"]["2020"]["complete"] == 1
     assert summary["years"]["2020"]["qaPassed"] == 1
     assert summary["years"]["2020"]["planned"] == 1
+    assert summary["years"]["2020"]["imagesReferenced"] == 1
+    assert summary["years"]["2020"]["imagesSelected"] == 1
+    assert summary["years"]["2020"]["articlesWithImagesReferenced"] == 1
+    assert summary["years"]["2020"]["articlesWithImagesSelected"] == 1
+    assert summary["years"]["2020"]["imageSelectionRate"] == 1.0
     assert summary["years"]["2020"]["issueCounts"] == {}
     assert summary["years"]["2020"]["failureExamples"] == []
 

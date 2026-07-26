@@ -717,7 +717,11 @@ def parser_validation_summary(
                 COALESCE(AVG(body_characters), 0),
                 COALESCE(SUM(headline_present=0), 0),
                 COALESCE(SUM(published_at_present=0), 0),
-                COALESCE(SUM(duplicate_text_blocks > 0), 0)
+                COALESCE(SUM(duplicate_text_blocks > 0), 0),
+                COALESCE(SUM(images_referenced), 0),
+                COALESCE(SUM(images_selected), 0),
+                COALESCE(SUM(images_referenced > 0), 0),
+                COALESCE(SUM(images_selected > 0), 0)
             FROM parser_validation_results
             WHERE sample_year=? AND parser_version=?
             """,
@@ -802,6 +806,14 @@ def parser_validation_summary(
             "missingHeadline": int(row[7]),
             "missingPublishedAt": int(row[8]),
             "articlesWithDuplicateBlocks": int(row[9]),
+            "imagesReferenced": int(row[10]),
+            "imagesSelected": int(row[11]),
+            "articlesWithImagesReferenced": int(row[12]),
+            "articlesWithImagesSelected": int(row[13]),
+            "imageSelectionRate": round(
+                int(row[11]) / int(row[10]) if int(row[10]) else 0.0,
+                4,
+            ),
             "issueCounts": dict(sorted(issue_counts.items())),
             "failureExamples": failure_examples,
         }
