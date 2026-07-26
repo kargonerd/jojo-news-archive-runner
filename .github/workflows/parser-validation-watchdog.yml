@@ -81,6 +81,8 @@ jobs:
                 .status == "in_progress"
                 or .status == "queued"
                 or .status == "waiting"
+                or .status == "pending"
+                or .status == "requested"
               )
             | .displayTitle
           ' "$runs" > "$active"
@@ -88,10 +90,12 @@ jobs:
             jq '[
               .[]
               | select(
-                  .status == "in_progress"
-                  or .status == "queued"
-                  or .status == "waiting"
-                )
+                .status == "in_progress"
+                or .status == "queued"
+                or .status == "waiting"
+                or .status == "pending"
+                or .status == "requested"
+              )
             ] | length' "$runs"
           )"
           # This watchdog itself occupies one runner while planning. Its slot
