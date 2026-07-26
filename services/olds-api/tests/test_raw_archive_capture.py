@@ -1005,6 +1005,87 @@ def test_reuters_capture_falls_back_to_exact_timemap_snapshot(
     assert result["capture"].selected_candidate.digest == "REUTERS-EXACT"
 
 
+def test_wsj_capture_falls_back_to_exact_timemap_snapshot(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.wsj.com/articles/"
+        "markets-rally-on-economic-news-11673533499"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20160102000000id_/" + canonical_url
+    )
+    exact_url = (
+        "https://web.archive.org/web/20160101121500id_/" + canonical_url
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.wsj.com%2Farticles%2F"
+        "markets-rally-on-economic-news-11673533499"
+    )
+    timemap = json.dumps(
+        [
+            [
+                "urlkey",
+                "timestamp",
+                "original",
+                "mimetype",
+                "statuscode",
+                "digest",
+                "length",
+            ],
+            [
+                "com,wsj)/articles/markets-rally",
+                "20160101121500",
+                canonical_url,
+                "text/html",
+                "200",
+                "WSJ-EXACT",
+                str(len(ARTICLE)),
+            ],
+        ]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                404,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                timemap,
+                timemap_url,
+            ),
+            exact_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                exact_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at="2016-01-01T12:00:00Z",
+        section=None,
+        candidates=(candidate(guessed_url, "20160102000000"),),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [guessed_url, timemap_url, exact_url]
+    assert result["capture"].selected_candidate.snapshot_url == exact_url
+    assert result["capture"].selected_candidate.digest == "WSJ-EXACT"
+
 def test_nyt_capture_uses_exact_timemap_snapshot(tmp_path: Path):
     canonical_url = (
         "https://www.nytimes.com/2025/11/24/briefing/"
