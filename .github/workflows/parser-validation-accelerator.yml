@@ -413,6 +413,7 @@ jobs:
           fi
           if [ "$PUBLISHER" = "ft" ]; then
             args+=(
+              --enable-ft-infini-direct-discovery
               --enable-arquivo-pt-fallback
               --enable-common-crawl-fallback
             )
