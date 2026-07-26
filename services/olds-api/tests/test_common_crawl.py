@@ -441,6 +441,7 @@ def test_ft_capture_uses_valid_common_crawl_after_wayback_shell(
         archive_client=client,
         output_dir=tmp_path,
         maximum_html_bytes=5_000_000,
+        enable_common_crawl_fallback=True,
     )
 
     assert result["status"] == "complete"

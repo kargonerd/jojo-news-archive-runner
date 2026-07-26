@@ -423,6 +423,7 @@ def capture_item(
     archive_client: ArchiveClient,
     output_dir: Path,
     maximum_html_bytes: int,
+    enable_common_crawl_fallback: bool = False,
 ) -> dict:
     failures: list[str] = []
     candidates_considered = list(item.candidates)
@@ -517,7 +518,10 @@ def capture_item(
         if best_response is None or best_response[5] < 100:
             consider_candidates(item.candidates)
 
-        if best_response is None or best_response[5] < 100:
+        if (
+            enable_common_crawl_fallback
+            and (best_response is None or best_response[5] < 100)
+        ):
             try:
                 common_crawl_candidates = discover_common_crawl_candidates(
                     item.canonical_url,

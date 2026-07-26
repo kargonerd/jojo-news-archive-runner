@@ -376,6 +376,10 @@ def pending_parser_validation_urls(
                 ROW_NUMBER() OVER (
                     PARTITION BY sample.sample_year
                     ORDER BY
+                        CASE capture.status
+                            WHEN 'pending' THEN 0
+                            ELSE 1
+                        END,
                         CASE
                             WHEN capture.candidates_json
                                  LIKE '%"provider":"other"%'

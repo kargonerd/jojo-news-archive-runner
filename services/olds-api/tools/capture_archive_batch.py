@@ -49,6 +49,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-runtime-minutes", type=float)
     parser.add_argument("--max-record-attempts", type=int, default=3)
     parser.add_argument("--retry-errors", action="store_true")
+    parser.add_argument(
+        "--enable-common-crawl-fallback",
+        action="store_true",
+        help=(
+            "Try the substantially slower per-article Common Crawl index and "
+            "WARC fallback after Wayback candidates are exhausted."
+        ),
+    )
     parser.add_argument("--max-html-mb", type=int, default=25)
     parser.add_argument("--progress-every", type=int, default=25)
     parser.add_argument("--minimum-free-gb", type=float, default=2.0)
@@ -174,6 +182,9 @@ def main() -> int:
             archive_client=archive_client,
             output_dir=args.output_dir,
             maximum_html_bytes=maximum_html_bytes,
+            enable_common_crawl_fallback=(
+                args.enable_common_crawl_fallback
+            ),
         )
         in_flight[future] = item
         return True
