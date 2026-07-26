@@ -2126,6 +2126,90 @@ def test_bloomberg_capture_falls_back_to_validated_syndicated_html(
     )
 
 
+def test_bloomberg_syndication_rejects_short_paywall_preview(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2020-12-14/"
+        "bank-m-a-deep-freeze-thaws-with-wave-of-billion-dollar-deals"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20201215000000id_/" + canonical_url
+    )
+    partner_url = (
+        "https://www.afr.com/companies/financial-services/"
+        "bank-m-and-a-deep-freeze-thaws-with-billion-dollar-deal-wave-"
+        "20201215-p56nn6"
+    )
+    item = ManifestItem(
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        published_at="2020-12-14T00:00:00Z",
+        section="business",
+        candidates=(candidate(guessed_url, "20201215000000"),),
+    )
+    search_url = bloomberg_syndication_search_url(item)
+    search_html = f"""
+    <html><body><ol id="web"><li><h3>
+      <a href="{partner_url}">Licensed Bloomberg copy</a>
+    </h3></li></ol></body></html>
+    """.encode()
+    partner_html = b"""
+    <!doctype html><html><head>
+      <script type="application/ld+json">
+      {
+        "@type": "NewsArticle",
+        "headline": "Bank M&A Deep Freeze Thaws With Wave of Billion-Dollar Deals",
+        "datePublished": "2020-12-14T12:00:00Z",
+        "author": {"name": "Bloomberg"}
+      }
+      </script>
+    </head><body><article><div class="article-content">
+      <p>Huntington Bancshares announced a multibillion-dollar regional bank
+      deal, and industry executives said more mergers and acquisitions were
+      likely after the market's pandemic freeze.</p>
+      <p>Bloomberg reported that low interest rates, tight margins, executive
+      succession and pressure to grow were driving the renewed deal wave.
+      These two paragraphs are only the publicly visible preview.</p>
+      <p>Subscribe to gift this article.</p>
+      <p>Already a subscriber? Login</p>
+    </div></article></body></html>
+    """ + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                401,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            search_url: (
+                200,
+                {"content-type": "text/html"},
+                search_html,
+                search_url,
+            ),
+            partner_url: (
+                200,
+                {"content-type": "text/html"},
+                partner_html,
+                partner_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "error"
+    assert "suspected-paywall-shell" in result["error"]
+    assert not (tmp_path / "objects").exists()
+
+
 def test_bloomberg_syndication_rejects_unattributed_related_article(
     tmp_path: Path,
 ):
@@ -2657,6 +2741,62 @@ def test_stored_challenge_shell_is_requeued_by_current_policy(
     assert reason == "access-challenge-shell"
     assert row[0:2] == ("pending", 0)
     assert "access-challenge-shell" in row[2]
+
+
+def test_stored_bloomberg_partner_paywall_preview_is_requeued(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2020-12-14/"
+        "bank-m-a-deep-freeze-thaws-with-wave-of-billion-dollar-deals"
+    )
+    partner_url = (
+        "https://www.afr.com/companies/financial-services/"
+        "bank-m-and-a-deep-freeze-thaws-with-billion-dollar-deal-wave-"
+        "20201215-p56nn6"
+    )
+    shell = b"""
+    <!doctype html><html><head>
+      <meta property="og:title"
+            content="Bank M&A Deep Freeze Thaws With Wave of Billion-Dollar Deals">
+      <meta property="article:published_time"
+            content="2020-12-14T12:00:00Z">
+    </head><body><article><div class="article-content">
+      <p>Huntington Bancshares announced a multibillion-dollar regional bank
+      deal, and industry executives said more mergers and acquisitions were
+      likely after the market's pandemic freeze.</p>
+      <p>Bloomberg reported that low interest rates, tight margins, executive
+      succession and pressure to grow were driving the renewed deal wave.
+      These two paragraphs are only the publicly visible preview.</p>
+      <p>Subscribe to gift this article.</p>
+      <p>Already a subscriber? Login</p>
+    </div></article></body></html>
+    """ + (b" " * 2_048)
+    blob = store_raw_html(tmp_path, shell)
+    capture = RawCapture(
+        article_id="bloomberg:" + ("b" * 64),
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        published_at=datetime(2020, 12, 14, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.OTHER,
+            snapshot_url=partner_url,
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=partner_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    reason = completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    )
+
+    assert reason == "bloomberg-syndication-paywall-shell"
 
 
 def test_raw_quality_rejects_subscription_shell_without_article_body():

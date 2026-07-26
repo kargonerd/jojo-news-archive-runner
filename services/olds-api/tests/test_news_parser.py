@@ -287,7 +287,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.1"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -329,7 +329,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.1"
 
 
 def test_bloomberg_parser_extracts_legacy_div_span_story_body():
@@ -361,7 +361,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.1"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -663,7 +663,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.1"
 
 
 def test_nyt_generic_syndication_extracts_local_newspaper_copy():

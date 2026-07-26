@@ -124,6 +124,14 @@ _SUBSCRIPTION_SHELL_MARKERS = (
     b"discover all the plans currently available in your country",
     b"during your trial you will have complete digital access to ft.com",
 )
+_PARSED_PAYWALL_PHRASES = (
+    "subscribe to read",
+    "subscribe to continue",
+    "sign in to continue",
+    "already a subscriber",
+    "unlock this article",
+)
+_PARSED_PAYWALL_MAXIMUM_BODY_CHARACTERS = 1_000
 _ARTICLE_BODY_MARKERS = (
     b"article__content-body",
     b'id="article-body"',
@@ -1935,11 +1943,16 @@ def _validate_bloomberg_syndication_response(
         date_delta_days is not None and date_delta_days <= 2
     ) or date_visible
     body_characters = article.quality.body_characters
+    paywall_shell = _short_parsed_paywall_shell(
+        body_characters=body_characters,
+        plain_text=article.plain_text,
+    )
     title_matches = headline_overlap >= 0.75
     valid = (
         article.quality.status == ArticleStatus.COMPLETE
         and body_characters
         >= BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS
+        and not paywall_shell
         and attributed
         and title_matches
         and date_matches
@@ -1948,6 +1961,8 @@ def _validate_bloomberg_syndication_response(
         reason = f"parser-{article.quality.status.value}"
     elif body_characters < BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS:
         reason = "body-too-short"
+    elif paywall_shell:
+        reason = "suspected-paywall-shell"
     elif not attributed:
         reason = "missing-bloomberg-attribution"
     elif not title_matches:
@@ -1962,10 +1977,23 @@ def _validate_bloomberg_syndication_response(
         "syndicationFinalUrl": final_url,
         "syndicationHeadlineOverlap": round(headline_overlap, 4),
         "syndicationBodyCharacters": body_characters,
+        "syndicationPaywallShell": paywall_shell,
         "syndicationBloombergAttributed": attributed,
         "syndicationDateDeltaDays": date_delta_days,
         "syndicationExpectedDateVisible": date_visible,
     }
+
+
+def _short_parsed_paywall_shell(
+    *,
+    body_characters: int,
+    plain_text: str,
+) -> bool:
+    prefix = plain_text[:1_500].casefold()
+    return bool(
+        body_characters < _PARSED_PAYWALL_MAXIMUM_BODY_CHARACTERS
+        and any(phrase in prefix for phrase in _PARSED_PAYWALL_PHRASES)
+    )
 
 
 def _validate_bloomberg_bnn_response(
@@ -3159,6 +3187,26 @@ def completed_capture_rejection_reason(
     for reason, rejected in checks:
         if rejected:
             return reason
+    if (
+        capture.publisher == "bloomberg"
+        and capture.selected_candidate.provider == CaptureProvider.OTHER
+    ):
+        from .news_parser import parse_article
+
+        try:
+            article = parse_article(
+                content,
+                publisher="bloomberg",
+                canonical_url=capture.canonical_url,
+                allow_generic_syndication=True,
+            )
+        except Exception:
+            article = None
+        if article is not None and _short_parsed_paywall_shell(
+            body_characters=article.quality.body_characters,
+            plain_text=article.plain_text,
+        ):
+            return "bloomberg-syndication-paywall-shell"
     if capture.http_status not in ACCEPTED_HTTP_STATUSES:
         return f"http-{capture.http_status}"
     return None
