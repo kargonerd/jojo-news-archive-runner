@@ -143,7 +143,9 @@ def ft_syndication_html(
         for index in range(1, 6)
     )
     copyright_text = (
-        "<p>Copyright The Financial Times Limited 2024</p>"
+        "<p>© 2024 The Financial Times Ltd. All rights reserved.</p>"
+        "<p>This Financial Times article was legally licensed "
+        "by AdvisorStream</p>"
         if include_copyright
         else ""
     )

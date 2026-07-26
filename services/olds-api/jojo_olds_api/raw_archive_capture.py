@@ -3444,7 +3444,8 @@ def _validate_ft_syndication_response(
     soup = BeautifulSoup(content, "html.parser")
     visible_text = soup.get_text(" ", strip=True)
     copyright_attributed = re.search(
-        r"(?i)copyright\s+(?:the\s+)?financial\s+times\s+limited"
+        r"(?i)(?:copyright|©|\(c\))\s*(?:20\d{2}\s+)?"
+        r"(?:the\s+)?financial\s+times\s+(?:limited|ltd\.?)"
         r"(?:\s+20\d{2})?",
         visible_text,
     ) is not None
