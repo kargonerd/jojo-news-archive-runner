@@ -51,6 +51,13 @@ from jojo_olds_api.sitemap_manifest import (
     sitemap_source,
     sitemap_summary,
 )
+from jojo_olds_api.wayback_manifest import (
+    WaybackCDXClient,
+    discovery_summary,
+    initialize_discovery_schema,
+    next_discovery_query,
+    record_discovery_page,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -126,6 +133,75 @@ def main() -> int:
             )
     finally:
         client.close()
+    wayback_pages = 0
+    wayback_error: str | None = None
+    wayback: dict[str, object] | None = None
+    if args.publisher in {"bloomberg", "ft"}:
+        initialize_discovery_schema(
+            connection,
+            spec=publisher_spec,
+            from_year=args.from_year,
+            to_year=args.to_year,
+            collapse="urlkey",
+        )
+        wayback_client = WaybackCDXClient(
+            minimum_interval=args.min_request_interval,
+            timeout=args.timeout,
+            attempts=args.attempts,
+            page_limit=2_000,
+            collapse="urlkey",
+        )
+        try:
+            while wayback_pages < args.max_sitemaps:
+                query = next_discovery_query(connection)
+                if query is None:
+                    break
+                pattern, resume_key = query
+                try:
+                    page = wayback_client.fetch_page(
+                        pattern=pattern,
+                        from_year=args.from_year,
+                        to_year=args.to_year,
+                        resume_key=resume_key,
+                    )
+                except RuntimeError as exc:
+                    wayback_error = str(exc)
+                    print(
+                        json.dumps(
+                            {
+                                "event": "wayback-discovery-deferred",
+                                "publisher": args.publisher,
+                                "pattern": pattern,
+                                "error": wayback_error,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        flush=True,
+                    )
+                    break
+                result = record_discovery_page(
+                    connection,
+                    spec=publisher_spec,
+                    pattern=pattern,
+                    page=page,
+                )
+                wayback_pages += 1
+                print(
+                    json.dumps(
+                        {
+                            "event": "wayback-discovery-page",
+                            "publisher": args.publisher,
+                            "pattern": pattern,
+                            "page": wayback_pages,
+                            **result,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+        finally:
+            wayback_client.close()
+        wayback = discovery_summary(connection)
     syndication_processed = 0
     syndication_resolutions = 0
     syndication_resolution_matches = 0
@@ -551,6 +627,8 @@ def main() -> int:
         ft_syndication and ft_syndication["shouldContinue"]
     ) or bool(
         bloomberg_bnn and bloomberg_bnn["shouldContinue"]
+    ) or bool(
+        wayback and wayback["shouldContinue"]
     )
     summary = {
         **sitemap_summary(connection),
@@ -561,6 +639,7 @@ def main() -> int:
         "captureReady": sitemap_is_complete,
         "state": str(state),
         "sitemapsThisRun": processed,
+        "waybackPagesThisRun": wayback_pages,
         "nytSyndicationPagesThisRun": syndication_processed,
         "nytSyndicationResolutionsThisRun": syndication_resolutions,
         "nytSyndicationResolutionMatchesThisRun": (
@@ -606,6 +685,8 @@ def main() -> int:
             if bloomberg_bnn_error
             else {}
         ),
+        **({"wayback": wayback} if wayback is not None else {}),
+        **({"waybackError": wayback_error} if wayback_error else {}),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if args.github_output:

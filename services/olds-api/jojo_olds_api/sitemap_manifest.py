@@ -23,6 +23,7 @@ from .archive_sources import (
 from .bloomberg_archive_download import GlobalRateLimiter
 from .wayback_manifest import (
     MANIFEST_FORMAT_VERSION,
+    discovered_wayback_articles,
     infer_published_at,
     with_current_year_live_fallback,
 )
@@ -457,6 +458,7 @@ def export_sitemap_manifest(
             ORDER BY canonical_url
             """
         )
+    exact_wayback = discovered_wayback_articles(connection)
     with opener(temporary, "wt", encoding="utf-8") as handle:
         for (
             canonical_url,
@@ -464,24 +466,59 @@ def export_sitemap_manifest(
             syndicated_url,
             expected_headline,
         ) in article_rows:
+            exact = exact_wayback.pop(str(canonical_url), None)
+            if exact is not None and not published_at:
+                published_at = exact[0]
             candidate_rows = sitemap_wayback_candidates(
                 publisher,
                 canonical_url,
                 published_at=published_at,
             )
+            if exact is not None:
+                candidate_rows = _merge_manifest_candidates(
+                    exact[1],
+                    candidate_rows,
+                )
             if syndicated_url:
-                candidate_rows = [
-                    {
-                        "provider": "other",
-                        "snapshotUrl": syndicated_url,
-                        **(
-                            {"expectedHeadline": expected_headline}
-                            if expected_headline
-                            else {}
-                        ),
-                    },
-                    *candidate_rows,
-                ]
+                candidate_rows = _merge_manifest_candidates(
+                    [
+                        {
+                            "provider": "other",
+                            "snapshotUrl": syndicated_url,
+                            **(
+                                {"expectedHeadline": expected_headline}
+                                if expected_headline
+                                else {}
+                            ),
+                        }
+                    ],
+                    candidate_rows,
+                )
+            row = {
+                "formatVersion": MANIFEST_FORMAT_VERSION,
+                "publisher": publisher,
+                "canonicalUrl": canonical_url,
+                **({"publishedAt": published_at} if published_at else {}),
+                "candidates": candidate_rows,
+            }
+            handle.write(
+                json.dumps(row, ensure_ascii=False, separators=(",", ":"))
+                + "\n"
+            )
+            articles += 1
+            candidates += len(candidate_rows)
+        for canonical_url, (
+            published_at,
+            exact_candidates,
+        ) in sorted(exact_wayback.items()):
+            candidate_rows = _merge_manifest_candidates(
+                exact_candidates,
+                sitemap_wayback_candidates(
+                    publisher,
+                    canonical_url,
+                    published_at=published_at,
+                ),
+            )
             row = {
                 "formatVersion": MANIFEST_FORMAT_VERSION,
                 "publisher": publisher,
@@ -621,6 +658,21 @@ def sitemap_wayback_candidates(
         canonical_url=canonical_url,
         published_at=published_at,
     )
+
+
+def _merge_manifest_candidates(
+    primary: list[dict[str, object]],
+    secondary: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for candidate in [*primary, *secondary]:
+        snapshot_url = str(candidate.get("snapshotUrl") or "")
+        if not snapshot_url or snapshot_url in seen:
+            continue
+        seen.add(snapshot_url)
+        result.append(candidate)
+    return result
 
 
 def _published_from_sitemap(

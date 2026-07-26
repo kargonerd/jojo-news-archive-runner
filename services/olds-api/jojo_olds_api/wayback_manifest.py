@@ -1471,6 +1471,67 @@ def export_capture_manifest(
     }
 
 
+def discovered_wayback_articles(
+    connection: sqlite3.Connection,
+) -> dict[str, tuple[str | None, list[dict[str, object]]]]:
+    if not _table_exists(connection, "candidates"):
+        return {}
+    result: dict[
+        str,
+        tuple[str | None, list[dict[str, object]]],
+    ] = {}
+    for (
+        canonical_url,
+        published_at,
+        timestamp,
+        original_url,
+        digest,
+        mimetype,
+        status_code,
+        byte_count,
+    ) in connection.execute(
+        """
+        SELECT
+            canonical_url,
+            published_at,
+            timestamp,
+            original_url,
+            digest,
+            mimetype,
+            status_code,
+            byte_count
+        FROM candidates
+        ORDER BY canonical_url, rank_score, timestamp, digest
+        """
+    ):
+        key = str(canonical_url)
+        existing_published_at, candidates = result.get(
+            key,
+            (str(published_at) if published_at else None, []),
+        )
+        captured_at = _timestamp_datetime(str(timestamp))
+        candidates.append(
+            {
+                "provider": "wayback",
+                "snapshotUrl": (
+                    "https://web.archive.org/web/"
+                    f"{timestamp}id_/{original_url}"
+                ),
+                "capturedAt": captured_at.isoformat(),
+                **({"digest": str(digest)} if digest else {}),
+                "mimeType": str(mimetype),
+                "statusCode": int(status_code),
+                **(
+                    {"byteCount": int(byte_count)}
+                    if byte_count is not None
+                    else {}
+                ),
+            }
+        )
+        result[key] = (existing_published_at, candidates)
+    return result
+
+
 def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
     query_counts = dict(
         connection.execute(

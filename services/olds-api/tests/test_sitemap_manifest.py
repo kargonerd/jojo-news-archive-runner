@@ -38,6 +38,13 @@ from jojo_olds_api.sitemap_manifest import (
     sitemap_source,
     wayback_candidates,
 )
+from jojo_olds_api.wayback_manifest import (
+    CDXCapture,
+    CDXPage,
+    initialize_discovery_schema,
+    next_discovery_query,
+    record_discovery_page,
+)
 
 
 INDEX_XML = b"""<?xml version="1.0"?>
@@ -521,6 +528,117 @@ def test_sitemap_state_exports_publication_near_wayback_candidates(
     assert len(item.candidates) == 3
     assert "/web/20200115000000id_/" in item.candidates[0].snapshot_url
     assert item.candidates[0].captured_at is None
+
+
+def test_ft_sitemap_manifest_merges_exact_wayback_urlkey_discovery(
+    tmp_path: Path,
+):
+    source = sitemap_source("ft")
+    spec = archive_source_spec("ft")
+    overlapping_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    discovered_url = (
+        "https://www.ft.com/content/"
+        "6eb9ad7b-c5eb-47e4-b27a-3d536fefe99a"
+    )
+    index = b"""<?xml version="1.0"?>
+    <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <sitemap>
+        <loc>https://www.ft.com/sitemaps/archive-2024-03.xml</loc>
+      </sitemap>
+    </sitemapindex>
+    """
+    sitemap = f"""<?xml version="1.0"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url>
+        <loc>{overlapping_url}</loc>
+        <lastmod>2024-03-28T12:00:00Z</lastmod>
+      </url>
+    </urlset>
+    """.encode()
+    connection = sqlite3.connect(":memory:")
+    initialize_sitemap_schema(
+        connection,
+        source=source,
+        from_year=2024,
+        to_year=2024,
+        sitemap_index=index,
+    )
+    sitemap_query = next_sitemap_query(connection)
+    assert sitemap_query is not None
+    record_sitemap(
+        connection,
+        publisher_spec=spec,
+        sitemap_url=sitemap_query[0],
+        year=sitemap_query[1],
+        month=sitemap_query[2],
+        content=sitemap,
+    )
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2024,
+        to_year=2024,
+        collapse="urlkey",
+    )
+    pattern, _ = next_discovery_query(connection)
+    record_discovery_page(
+        connection,
+        spec=spec,
+        pattern=pattern,
+        page=CDXPage(
+            captures=(
+                CDXCapture(
+                    timestamp="20240328121500",
+                    original=overlapping_url,
+                    mimetype="text/html",
+                    status_code=200,
+                    digest="OVERLAP",
+                    length=52_000,
+                ),
+                CDXCapture(
+                    timestamp="20240402100000",
+                    original=discovered_url,
+                    mimetype="text/html",
+                    status_code=200,
+                    digest="DISCOVERED",
+                    length=63_000,
+                ),
+            ),
+            resume_key=None,
+        ),
+    )
+
+    destination = tmp_path / "ft-merged-manifest.jsonl.gz"
+    summary = export_sitemap_manifest(
+        connection,
+        publisher="ft",
+        destination=destination,
+        from_year=2024,
+        to_year=2024,
+    )
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        rows = [json.loads(line) for line in handle]
+    by_url = {row["canonicalUrl"]: row for row in rows}
+
+    assert summary["articles"] == 2
+    assert set(by_url) == {overlapping_url, discovered_url}
+    overlap = manifest_item_from_row(
+        by_url[overlapping_url],
+        publisher="ft",
+    )
+    discovered = manifest_item_from_row(
+        by_url[discovered_url],
+        publisher="ft",
+    )
+    assert overlap.published_at == "2024-03-28T12:00:00+00:00"
+    assert overlap.candidates[0].digest == "OVERLAP"
+    assert overlap.candidates[0].captured_at is not None
+    assert discovered.candidates[0].digest == "DISCOVERED"
+    assert discovered.candidates[0].captured_at is not None
+    assert discovered.canonical_url == discovered_url
 
 
 def test_candidate_fallback_for_unknown_publication_date_uses_latest():
