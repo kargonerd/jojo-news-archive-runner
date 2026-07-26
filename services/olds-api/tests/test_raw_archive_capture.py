@@ -25,6 +25,7 @@ from jojo_olds_api.raw_archive_capture import (
     capture_summary,
     completed_capture_rejection_reason,
     discover_reuters_syndication_candidates,
+    ft_syndication_title_search_url,
     initialize_capture_schema,
     load_capture_manifest,
     mark_capture_downloading,
@@ -1943,6 +1944,156 @@ def test_reuters_syndication_keeps_initial_results_when_title_search_fails():
     assert [candidate.snapshot_url for candidate in candidates] == [
         partner_url
     ]
+
+
+def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "d8f6d8af-8235-43ae-a946-6d51da973ca4"
+    )
+    snapshot_url = (
+        "https://web.archive.org/web/20260308005629id_/"
+        + canonical_url
+    )
+    expected_headline = (
+        "Rachel Reeves sticks to stability in face of Iran war "
+        "and restive Labour MPs"
+    )
+    partner_url = (
+        "https://example.com/2026/03/03/"
+        "rachel-reeves-sticks-to-stability/"
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2026-03-03T16:04:04.200Z",
+        section="uk",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=snapshot_url,
+            ),
+        ),
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.ft.com%2Fcontent%2F"
+        "d8f6d8af-8235-43ae-a946-6d51da973ca4"
+    )
+    title_search_url = ft_syndication_title_search_url(
+        expected_headline
+    )
+    paywall_html = f"""
+    <!doctype html><html><head><title>Subscribe to read</title>
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "{expected_headline}",
+        "datePublished": "2026-03-03T16:04:04.200Z",
+        "isAccessibleForFree": "False"
+      }}
+      </script>
+    </head><body>
+      <h1>{expected_headline}</h1>
+      <div id="barrier-page">Subscribe to unlock this article</div>
+    </body></html>
+    """.encode() + (b" " * 90_000)
+    search_html = f"""
+    <html><body><ol id="web">
+      <li><h3><a href="{canonical_url}">
+        {expected_headline} - Financial Times
+      </a></h3></li>
+      <li><h3><a href="{partner_url}">
+        {expected_headline}
+      </a></h3></li>
+    </ol></body></html>
+    """.encode()
+    partner_html = f"""
+    <!doctype html><html><head>
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "{expected_headline}",
+        "datePublished": "2026-03-03T17:04:04Z",
+        "author": {{"name": "Financial Times"}}
+      }}
+      </script>
+    </head><body><article>
+      <p>Copyright The Financial Times Limited 2026</p>
+      <p>The chancellor used a deliberately short statement to project
+      economic credibility while conflict abroad unsettled investors and
+      members of her own party. The report describes the fiscal forecasts,
+      the reaction in parliament, and the political calculation behind the
+      speech in enough detail to identify a complete licensed copy.</p>
+      <p>Officials argued that stable public finances would help households
+      and businesses absorb the energy shock. Economists discussed gilt
+      yields, inflation, borrowing, and the assumptions made by the fiscal
+      watchdog, while Labour MPs pressed ministers for a clearer account of
+      the choices that could follow if the conflict continued.</p>
+      <p>The final section records responses from opposition politicians,
+      investors, and government advisers. It also explains how the spring
+      statement fits the wider budget timetable and why the chancellor
+      chose reassurance over announcing another package of measures.</p>
+    </article></body></html>
+    """.encode() + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                json.dumps(
+                    [[
+                        "urlkey",
+                        "timestamp",
+                        "original",
+                        "mimetype",
+                        "statuscode",
+                    ]]
+                ).encode(),
+                timemap_url,
+            ),
+            snapshot_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                paywall_html,
+                snapshot_url,
+            ),
+            title_search_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                search_html,
+                title_search_url,
+            ),
+            partner_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                partner_html,
+                partner_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [
+        timemap_url,
+        snapshot_url,
+        title_search_url,
+        partner_url,
+    ]
+    capture = result["capture"]
+    assert capture.selected_candidate.snapshot_url == partner_url
+    assert capture.quality_signals["ftSyndicationValidated"] is True
+    assert capture.quality_signals["syndicationHeadlineOverlap"] == 1.0
+    assert capture.quality_signals["syndicationFtCopyrightAttributed"] is True
+    assert capture.quality_signals["syndicationBodyCharacters"] >= 400
 
 
 def test_reuters_syndication_rejects_unattributed_related_article(

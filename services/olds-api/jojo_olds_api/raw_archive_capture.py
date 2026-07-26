@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 import re
 import sqlite3
-from typing import Iterable
+from typing import Callable, Iterable
 from urllib.parse import unquote, urlencode, urlsplit
 
 from bs4 import BeautifulSoup
@@ -463,6 +463,32 @@ def capture_item(
         int,
         dict[str, object],
     ] | None = None
+    ft_original_headline = next(
+        (
+            candidate.expected_headline
+            for candidate in item.candidates
+            if candidate.expected_headline
+        ),
+        None,
+    )
+
+    def observe_candidate_response(
+        candidate: CaptureCandidate,
+        content: bytes,
+        final_url: str,
+    ) -> None:
+        nonlocal ft_original_headline
+        if (
+            item.publisher != "ft"
+            or ft_original_headline
+            or candidate.provider == CaptureProvider.OTHER
+        ):
+            return
+        ft_original_headline = _extract_ft_original_headline(
+            content,
+            expected_published_at=item.published_at,
+            final_url=final_url,
+        )
 
     def consider_candidates(
         candidates: Iterable[CaptureCandidate],
@@ -474,6 +500,7 @@ def capture_item(
                 archive_client=archive_client,
                 maximum_html_bytes=maximum_html_bytes,
                 canonical_url=item.canonical_url,
+                response_observer=observe_candidate_response,
             )
             if failure:
                 failures.append(failure)
@@ -911,6 +938,27 @@ def capture_item(
             if response[5] == 100:
                 break
 
+    if best_response is None and item.publisher == "ft":
+        try:
+            fallback_candidates = discover_ft_syndication_candidates(
+                item,
+                archive_client=archive_client,
+                expected_headline=ft_original_headline,
+            )
+        except Exception as exc:
+            failures.append(f"ft-syndication:{type(exc).__name__}")
+            fallback_candidates = ()
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        fallback_candidates = tuple(
+            candidate
+            for candidate in fallback_candidates
+            if candidate.snapshot_url not in existing_urls
+        )
+        candidates_considered.extend(fallback_candidates)
+        consider_candidates(fallback_candidates)
+
     if best_response is not None:
         (
             candidate,
@@ -969,6 +1017,11 @@ def _fetch_usable_candidate(
     archive_client: ArchiveClient,
     maximum_html_bytes: int,
     canonical_url: str,
+    response_observer: Callable[
+        [CaptureCandidate, bytes, str],
+        None,
+    ]
+    | None = None,
 ) -> tuple[
     tuple[
         CaptureCandidate,
@@ -1023,6 +1076,8 @@ def _fetch_usable_candidate(
         content_type=content_type,
         final_url=final_url,
     )
+    if response_observer is not None:
+        response_observer(candidate, content, final_url)
     if (
         status_code not in ACCEPTED_HTTP_STATUSES
         or not content
@@ -1156,6 +1211,18 @@ def bloomberg_syndication_search_url(item: ManifestItem) -> str:
     return _syndication_search_url(item, publisher_label="Bloomberg")
 
 
+def ft_syndication_search_url(item: ManifestItem) -> str:
+    return REUTERS_SYNDICATION_SEARCH_ENDPOINT + "?" + urlencode(
+        {"p": item.canonical_url}
+    )
+
+
+def ft_syndication_title_search_url(expected_headline: str) -> str:
+    return REUTERS_SYNDICATION_SEARCH_ENDPOINT + "?" + urlencode(
+        {"p": f'"{expected_headline}" "Financial Times"'}
+    )
+
+
 def _syndication_search_url(
     item: ManifestItem,
     *,
@@ -1226,6 +1293,53 @@ def discover_bloomberg_syndication_candidates(
         archive_client=archive_client,
         search_url=bloomberg_syndication_search_url(item),
         excluded_publisher="bloomberg",
+    )
+
+
+def discover_ft_syndication_candidates(
+    item: ManifestItem,
+    *,
+    archive_client: ArchiveClient,
+    expected_headline: str | None = None,
+) -> tuple[CaptureCandidate, ...]:
+    initial_results: list[tuple[int, str, str]] = []
+    if not expected_headline:
+        initial_results = _fetch_syndication_search_results(
+            item,
+            archive_client=archive_client,
+            search_url=ft_syndication_search_url(item),
+        )
+        expected_headline = next(
+            (
+                title
+                for _, title, candidate_url in initial_results
+                if title
+                and _same_article_url(candidate_url, item.canonical_url)
+            ),
+            None,
+        )
+    if (
+        not expected_headline
+        or len(_significant_tokens(expected_headline)) < 4
+    ):
+        return ()
+    try:
+        title_results = _fetch_syndication_search_results(
+            item,
+            archive_client=archive_client,
+            search_url=ft_syndication_title_search_url(expected_headline),
+        )
+    except ValueError:
+        title_results = []
+    offset = len(initial_results)
+    all_results = initial_results + [
+        (offset + position, title, candidate_url)
+        for position, title, candidate_url in title_results
+    ]
+    return _rank_syndication_candidates(
+        all_results,
+        excluded_publisher="ft",
+        expected_headline=expected_headline,
     )
 
 
@@ -1715,7 +1829,9 @@ def _rank_syndication_candidates(
 
 def _clean_syndication_search_title(value: str) -> str:
     cleaned = re.sub(
-        r"\s+(?:[-|]\s*)?(?:Reuters|Bloomberg)(?:\s+News)?\s*$",
+        r"\s+(?:[-|]\s*)?"
+        r"(?:(?:Reuters|Bloomberg)(?:\s+News)?|"
+        r"Financial\s+Times|FT\.com)\s*$",
         "",
         value.strip(),
         flags=re.IGNORECASE,
@@ -1784,6 +1900,7 @@ def _is_public_syndication_url(
         "reuters": "reuters.com",
         "bloomberg": "bloomberg.com",
         "nyt": "nytimes.com",
+        "ft": "ft.com",
     }
     excluded_domain = excluded_domains[excluded_publisher]
     if host == excluded_domain or host.endswith("." + excluded_domain):
@@ -2607,6 +2724,90 @@ def _validate_ft_syndication_response(
         "syndicationOriginalHeadline": expected_headline,
         "syndicationPartnerHostValidated": partner_host_validated,
     }
+
+
+def _extract_ft_original_headline(
+    content: bytes,
+    *,
+    expected_published_at: str | None,
+    final_url: str,
+) -> str | None:
+    decoded_url = unquote(final_url).casefold()
+    if (
+        "/content/" not in decoded_url
+        or re.search(
+            r"https?://(?:[^/?#]+\.)?ft\.com(?:[/?#]|$)",
+            decoded_url,
+        )
+        is None
+    ):
+        return None
+    soup = BeautifulSoup(content, "html.parser")
+    expected_date = _parse_iso_datetime(expected_published_at)
+
+    def structured_articles(value: object) -> Iterable[dict]:
+        if isinstance(value, dict):
+            article_type = value.get("@type")
+            types = (
+                {str(item).casefold() for item in article_type}
+                if isinstance(article_type, list)
+                else {str(article_type).casefold()}
+            )
+            if types & {"article", "newsarticle", "reportagenewsarticle"}:
+                yield value
+            for child in value.values():
+                yield from structured_articles(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from structured_articles(child)
+
+    for script in soup.select('script[type="application/ld+json"]'):
+        serialized = script.string or script.get_text()
+        if not serialized.strip():
+            continue
+        try:
+            payload = json.loads(serialized)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for article in structured_articles(payload):
+            headline = article.get("headline")
+            if not isinstance(headline, str):
+                continue
+            published_at = _parse_iso_datetime(
+                article.get("datePublished")
+                if isinstance(article.get("datePublished"), str)
+                else None
+            )
+            if (
+                expected_date is not None
+                and published_at is not None
+                and abs(
+                    (published_at.date() - expected_date.date()).days
+                )
+                > 2
+            ):
+                continue
+            cleaned = _clean_syndication_search_title(
+                BeautifulSoup(
+                    headline,
+                    "html.parser",
+                ).get_text(" ", strip=True)
+            )
+            if len(_significant_tokens(cleaned)) >= 4:
+                return cleaned
+
+    for selector, attribute in (
+        ("meta[property='og:title']", "content"),
+        ("meta[name='twitter:title']", "content"),
+    ):
+        node = soup.select_one(selector)
+        value = node.get(attribute) if node is not None else None
+        if not isinstance(value, str):
+            continue
+        cleaned = _clean_syndication_search_title(value)
+        if len(_significant_tokens(cleaned)) >= 4:
+            return cleaned
+    return None
 
 
 def _reuters_syndication_headline_overlap(
