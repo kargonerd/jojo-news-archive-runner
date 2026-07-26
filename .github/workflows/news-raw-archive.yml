@@ -508,12 +508,19 @@ jobs:
               --retries 8 --low-level-retries 20
             echo "Published live capture checkpoint."
           }
+          request_interval=0.5
+          if [ "$PUBLISHER" = "nyt" ]; then
+            # Shared GitHub runner addresses are frequently throttled by
+            # Wayback. A slower global cadence produces more usable captures
+            # than parallel 403 responses and repeated timemap failures.
+            request_interval=1.5
+          fi
           args=(
             --publisher "$PUBLISHER"
             --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
             --output-dir "$LOCAL_ROOT/raw"
             --workers "$DOWNLOAD_WORKERS"
-            --min-request-interval 0.5
+            --min-request-interval "$request_interval"
             --max-captures "$MAX_CAPTURES"
             --max-runtime-minutes "$MAX_RUNTIME_MINUTES"
             --max-record-attempts "$MAX_RECORD_ATTEMPTS"
