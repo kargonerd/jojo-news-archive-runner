@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import gzip
 import hashlib
 import ipaddress
@@ -11,6 +12,7 @@ import re
 import sqlite3
 from typing import Callable, Iterable
 from urllib.parse import unquote, urlencode, urlsplit
+from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
 from .bloomberg_archive_download import ArchiveClient
@@ -47,6 +49,7 @@ WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 FT_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 FT_CAPTURE_MINIMUM_BODY_CHARACTERS = 100
 FT_IMAGE_LED_MINIMUM_IMAGES = 3
+FT_GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
 NYT_SYNDICATION_SEARCH_ENDPOINT = REUTERS_SYNDICATION_SEARCH_ENDPOINT
 NYT_SYNDICATION_SEARCH_MAXIMUM_BYTES = 2_000_000
 NYT_SYNDICATION_MAXIMUM_CANDIDATES = 8
@@ -1223,6 +1226,28 @@ def ft_syndication_title_search_url(expected_headline: str) -> str:
     )
 
 
+def ft_syndication_broad_title_search_url(
+    expected_headline: str,
+) -> str:
+    return REUTERS_SYNDICATION_SEARCH_ENDPOINT + "?" + urlencode(
+        {"p": expected_headline}
+    )
+
+
+def ft_google_news_headline_search_url(item: ManifestItem) -> str:
+    article_identifier = (
+        urlsplit(item.canonical_url).path.rstrip("/").rsplit("/", 1)[-1]
+    )
+    return FT_GOOGLE_NEWS_RSS_ENDPOINT + "?" + urlencode(
+        {
+            "q": f'"{article_identifier}"',
+            "hl": "en-US",
+            "gl": "US",
+            "ceid": "US:en",
+        }
+    )
+
+
 def _syndication_search_url(
     item: ManifestItem,
     *,
@@ -1304,11 +1329,14 @@ def discover_ft_syndication_candidates(
 ) -> tuple[CaptureCandidate, ...]:
     initial_results: list[tuple[int, str, str]] = []
     if not expected_headline:
-        initial_results = _fetch_syndication_search_results(
-            item,
-            archive_client=archive_client,
-            search_url=ft_syndication_search_url(item),
-        )
+        try:
+            initial_results = _fetch_syndication_search_results(
+                item,
+                archive_client=archive_client,
+                search_url=ft_syndication_search_url(item),
+            )
+        except Exception:
+            initial_results = []
         expected_headline = next(
             (
                 title
@@ -1318,6 +1346,16 @@ def discover_ft_syndication_candidates(
             ),
             None,
         )
+    if not expected_headline:
+        try:
+            expected_headline = (
+                _discover_ft_headline_from_google_news(
+                    item,
+                    archive_client=archive_client,
+                )
+            )
+        except Exception:
+            expected_headline = None
     if (
         not expected_headline
         or len(_significant_tokens(expected_headline)) < 4
@@ -1336,11 +1374,100 @@ def discover_ft_syndication_candidates(
         (offset + position, title, candidate_url)
         for position, title, candidate_url in title_results
     ]
+    ranked = _rank_syndication_candidates(
+        all_results,
+        excluded_publisher="ft",
+        expected_headline=expected_headline,
+    )
+    if ranked:
+        return ranked
+    try:
+        broad_results = _fetch_syndication_search_results(
+            item,
+            archive_client=archive_client,
+            search_url=ft_syndication_broad_title_search_url(
+                expected_headline
+            ),
+        )
+    except Exception:
+        broad_results = []
+    offset = len(all_results)
+    all_results.extend(
+        (offset + position, title, candidate_url)
+        for position, title, candidate_url in broad_results
+    )
     return _rank_syndication_candidates(
         all_results,
         excluded_publisher="ft",
         expected_headline=expected_headline,
     )
+
+
+def _discover_ft_headline_from_google_news(
+    item: ManifestItem,
+    *,
+    archive_client: ArchiveClient,
+) -> str | None:
+    search_url = ft_google_news_headline_search_url(item)
+    status_code, headers, content, _ = archive_client.fetch(
+        search_url,
+        maximum_bytes=REUTERS_SYNDICATION_SEARCH_MAXIMUM_BYTES,
+    )
+    content_type = headers.get("content-type", "").casefold()
+    if status_code != 200 or not content:
+        raise ValueError(
+            f"FT Google News search returned HTTP {status_code}"
+        )
+    if (
+        "xml" not in content_type
+        and not content.lstrip().startswith((b"<?xml", b"<rss"))
+    ):
+        raise ValueError("FT Google News search did not return XML")
+    root = ElementTree.fromstring(content.lstrip())
+    expected_date = _parse_iso_datetime(item.published_at)
+    if expected_date is None:
+        return None
+    ranked: list[tuple[int, int, str]] = []
+    for position, result in enumerate(root.findall("./channel/item")):
+        source = result.find("source")
+        source_name = (source.text or "").strip() if source is not None else ""
+        source_url = (
+            source.attrib.get("url", "").strip()
+            if source is not None
+            else ""
+        )
+        source_host = (urlsplit(source_url).hostname or "").casefold()
+        if (
+            source_name.casefold() != "financial times"
+            and source_host not in {"ft.com", "www.ft.com"}
+        ):
+            continue
+        try:
+            published_at = parsedate_to_datetime(
+                result.findtext("pubDate") or ""
+            )
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        date_delta = abs(
+            (
+                published_at.astimezone(timezone.utc).date()
+                - expected_date.date()
+            ).days
+        )
+        if date_delta > 2:
+            continue
+        cleaned = _clean_syndication_search_title(
+            result.findtext("title") or ""
+        )
+        if len(_significant_tokens(cleaned)) < 4:
+            continue
+        ranked.append((date_delta, position, cleaned))
+    if not ranked:
+        return None
+    ranked.sort()
+    return ranked[0][2]
 
 
 def discover_nyt_syndication(

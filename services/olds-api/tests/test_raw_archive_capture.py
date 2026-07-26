@@ -24,7 +24,11 @@ from jojo_olds_api.raw_archive_capture import (
     capture_item,
     capture_summary,
     completed_capture_rejection_reason,
+    discover_ft_syndication_candidates,
     discover_reuters_syndication_candidates,
+    ft_google_news_headline_search_url,
+    ft_syndication_broad_title_search_url,
+    ft_syndication_search_url,
     ft_syndication_title_search_url,
     initialize_capture_schema,
     load_capture_manifest,
@@ -2094,6 +2098,104 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
     assert capture.quality_signals["syndicationHeadlineOverlap"] == 1.0
     assert capture.quality_signals["syndicationFtCopyrightAttributed"] is True
     assert capture.quality_signals["syndicationBodyCharacters"] >= 400
+
+
+def test_ft_syndication_recovers_missing_headline_from_google_news():
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "02a3b935-62dc-44a1-9957-6867e8ee1890"
+    )
+    expected_headline = (
+        "Israel attacks Beirut days after Trump's showdown with Netanyahu"
+    )
+    partner_url = (
+        "https://example.com/world/"
+        "israel-attacks-beirut-after-trump-showdown"
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2026-06-07T15:02:53.730Z",
+        section="world",
+        candidates=(),
+    )
+    canonical_search_url = ft_syndication_search_url(item)
+    google_news_url = ft_google_news_headline_search_url(item)
+    title_search_url = ft_syndication_title_search_url(
+        expected_headline
+    )
+    broad_search_url = ft_syndication_broad_title_search_url(
+        expected_headline
+    )
+    google_news_xml = f"""
+    <?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0"><channel>
+      <item>
+        <title>{expected_headline} - Financial Times</title>
+        <pubDate>Sun, 07 Jun 2026 07:00:00 GMT</pubDate>
+        <source url="https://www.ft.com">Financial Times</source>
+      </item>
+      <item>
+        <title>A different report with a nearby publication date</title>
+        <pubDate>Sun, 07 Jun 2026 08:00:00 GMT</pubDate>
+        <source url="https://example.net">Another Publisher</source>
+      </item>
+    </channel></rss>
+    """.encode()
+    broad_search_html = f"""
+    <html><body><ol id="web">
+      <li><h3><a href="{canonical_url}">
+        {expected_headline} - Financial Times
+      </a></h3></li>
+      <li><h3><a href="{partner_url}">
+        {expected_headline}
+      </a></h3></li>
+    </ol></body></html>
+    """.encode()
+    client = StubArchiveClient(
+        {
+            canonical_search_url: (
+                200,
+                {"content-type": "text/html"},
+                b"<html><ol id='web'></ol></html>",
+                canonical_search_url,
+            ),
+            google_news_url: (
+                200,
+                {"content-type": "application/rss+xml"},
+                google_news_xml,
+                google_news_url,
+            ),
+            title_search_url: (
+                200,
+                {"content-type": "text/html"},
+                b"<html><ol id='web'></ol></html>",
+                title_search_url,
+            ),
+            broad_search_url: (
+                200,
+                {"content-type": "text/html"},
+                broad_search_html,
+                broad_search_url,
+            ),
+        }
+    )
+
+    candidates = discover_ft_syndication_candidates(
+        item,
+        archive_client=client,
+    )
+
+    assert client.requests == [
+        canonical_search_url,
+        google_news_url,
+        title_search_url,
+        broad_search_url,
+    ]
+    assert [candidate.snapshot_url for candidate in candidates] == [
+        partner_url
+    ]
+    assert candidates[0].expected_headline == expected_headline
 
 
 def test_reuters_syndication_rejects_unattributed_related_article(
