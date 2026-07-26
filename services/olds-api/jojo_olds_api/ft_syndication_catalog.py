@@ -160,7 +160,7 @@ class FtSyndicationTitleIndex:
             entry_tokens = _significant_tokens(entry.expected_headline)
             matching_tokens = len(expected_tokens & entry_tokens)
             overlap = (
-                matching_tokens / min(len(expected_tokens), len(entry_tokens))
+                matching_tokens / max(len(expected_tokens), len(entry_tokens))
                 if entry_tokens
                 else 0.0
             )
@@ -185,7 +185,7 @@ class FtSyndicationTitleIndex:
                     CaptureCandidate(
                         provider=CaptureProvider.OTHER,
                         snapshot_url=entry.partner_url,
-                        expected_headline=entry.expected_headline,
+                        expected_headline=headline,
                     ),
                     CaptureCandidate(
                         provider=CaptureProvider.INFINI_NEWS,
@@ -194,7 +194,7 @@ class FtSyndicationTitleIndex:
                             entry.document_index,
                         ),
                         source_url=entry.partner_url,
-                        expected_headline=entry.expected_headline,
+                        expected_headline=headline,
                         warc_filename=entry.warc_filename,
                     ),
                 )

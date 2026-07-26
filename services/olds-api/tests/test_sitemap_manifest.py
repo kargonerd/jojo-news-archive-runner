@@ -333,6 +333,10 @@ def test_ft_title_index_recovers_provenance_without_canonical_search(
     assert candidates[1].warc_filename == (
         "CC-NEWS-20240228173301-02619.warc.gz"
     )
+    assert candidates[0].expected_headline == (
+        "Russians rehearsed using tactical nuclear weapons "
+        "at early stage of conflict"
+    )
     assert index.candidates_for(
         published_at="2024-03-10T00:00:00+00:00",
         headline=candidates[1].expected_headline or "",
