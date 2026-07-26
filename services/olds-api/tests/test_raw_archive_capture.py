@@ -2831,6 +2831,47 @@ def test_raw_quality_rejects_wsj_continue_reading_shell():
     assert signals["subscriptionShell"] is True
 
 
+def test_raw_quality_rejects_wsj_full_story_subscription_preview():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>A WSJ gallery</title></head>
+        <body><article>
+          <h1>A Duplex Penthouse in the Heart of Singapore</h1>
+          <p>A single image caption survives in this archived preview.</p>
+          <div>To Read the Full Story, Subscribe or Sign In</div>
+        </article></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["subscriptionShell"] is True
+
+
+def test_raw_quality_rejects_wsj_empty_article_jsonld_shell():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><script type="application/ld+json">
+        {
+          "@type": "NewsArticle",
+          "headline": "",
+          "datePublished": "",
+          "url": "https://www.wsj.com/articles/"
+        }
+        </script></head><body><article>
+          <h2>Most Popular Articles</h2>
+        </article></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["subscriptionShell"] is True
+    assert signals["wsjEmptyArticleShell"] is True
+
+
 def test_raw_quality_rejects_wsj_structured_snippet_view():
     score, signals = score_raw_capture(
         b"""

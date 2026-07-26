@@ -6,7 +6,7 @@ import html as html_module
 import json
 import re
 from typing import Any, Iterable
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Tag
 from dateutil.parser import isoparse
@@ -100,6 +100,10 @@ def parse_article(
         body = _generic_syndication_body(soup)
     if body is None:
         body = _select_body(soup, spec)
+    if spec.publisher == "wsj":
+        gallery_body = _structured_image_gallery(soup)
+        if gallery_body is not None:
+            body = gallery_body
     if spec.embedded_html_body_keys and (
         body is None
         or body.select_one(
@@ -201,7 +205,12 @@ def parse_article(
             spec=spec,
             reasons=["structured-lead-image"],
         )
-        images_by_url.setdefault(image.original_url, image)
+        image_key = _image_identity(image.original_url)
+        existing = images_by_url.get(image_key)
+        if existing is None:
+            images_by_url[image_key] = image
+        else:
+            _merge_candidate_urls(existing, image)
 
     if clean_body:
         blocks, body_images = _extract_blocks(
@@ -211,12 +220,14 @@ def parse_article(
             starting_position=0,
         )
         for image in body_images:
-            existing = images_by_url.get(image.original_url)
+            image_key = _image_identity(image.original_url)
+            existing = images_by_url.get(image_key)
             if existing is None:
-                images_by_url[image.original_url] = image
+                images_by_url[image_key] = image
                 continue
             # A body occurrence provides position/caption evidence that metadata alone
             # does not. Keep the lead role but merge useful descriptive fields.
+            _merge_candidate_urls(existing, image)
             if not existing.caption and image.caption:
                 existing.caption = image.caption
             if not existing.credit and image.credit:
@@ -553,6 +564,69 @@ def _structured_article_body(
         node.string = paragraph
         article.append(node)
     return article
+
+
+def _structured_image_gallery(soup: BeautifulSoup) -> Tag | None:
+    for script in soup.select('script[type="application/ld+json"]'):
+        value = script.string or script.get_text()
+        if not value.strip():
+            continue
+        try:
+            payload = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for item in _walk_json_objects(payload):
+            types = item.get("@type")
+            if isinstance(types, str):
+                types = [types]
+            if not (
+                isinstance(types, list)
+                and "ImageGallery" in types
+            ):
+                continue
+            media = item.get("associatedMedia")
+            if not isinstance(media, list):
+                continue
+            rows: list[tuple[str, str, str | None]] = []
+            for image in media:
+                if not isinstance(image, dict):
+                    continue
+                image_url = _first_text(
+                    _string_or_none(image.get("contentUrl")),
+                    _string_or_none(image.get("url")),
+                )
+                caption = _string_or_none(image.get("caption"))
+                if not image_url or not caption:
+                    continue
+                creator = image.get("creator")
+                credit = (
+                    _string_or_none(creator.get("name"))
+                    if isinstance(creator, dict)
+                    else _string_or_none(creator)
+                )
+                rows.append((image_url, caption, credit))
+            if len(rows) < 3:
+                continue
+            document = BeautifulSoup("<article></article>", "html.parser")
+            article = document.article
+            if not isinstance(article, Tag):
+                return None
+            for image_url, caption, credit in rows:
+                figure = document.new_tag("figure")
+                image_node = document.new_tag("img")
+                image_node["src"] = image_url
+                image_node["alt"] = caption
+                figure.append(image_node)
+                figcaption = document.new_tag("figcaption")
+                figcaption.string = (
+                    f"{caption} Photographer: {credit}"
+                    if credit
+                    else caption
+                )
+                figure.append(figcaption)
+                article.append(figure)
+            return article
+    return None
 
 
 def _prefer_structured_body_with_media(
@@ -988,6 +1062,43 @@ def _image_candidate(
         should_archive=role in ARCHIVABLE_IMAGE_ROLES,
         selection_reasons=sorted(set(reasons)),
     )
+
+
+def _image_identity(url: str) -> str:
+    parts = urlsplit(url)
+    host = (parts.hostname or "").casefold()
+    wsj_image = (
+        re.fullmatch(
+            r"(/im-\d+)(?:/social)?/?",
+            parts.path,
+            re.IGNORECASE,
+        )
+        if host == "images.wsj.net"
+        else None
+    )
+    if wsj_image is not None:
+        return urlunsplit(
+            (
+                parts.scheme.casefold(),
+                parts.netloc.casefold(),
+                wsj_image.group(1),
+                "",
+                "",
+            )
+        )
+    return url
+
+
+def _merge_candidate_urls(
+    existing: ImageCandidate,
+    incoming: ImageCandidate,
+) -> None:
+    for url in (
+        incoming.original_url,
+        *incoming.candidate_urls,
+    ):
+        if url not in existing.candidate_urls:
+            existing.candidate_urls.append(url)
 
 
 def _image_urls(image: Tag, *, base_url: str) -> list[str]:

@@ -180,6 +180,77 @@ def test_six_publishers_emit_jojo_article_v1(
     assert result.source_capture.raw_html is not None
 
 
+def test_wsj_parser_extracts_structured_image_gallery_in_order():
+    html = b"""
+    <!doctype html><html><head>
+      <meta property="og:image"
+            content="https://images.wsj.net/im-266300/social">
+      <script type="application/ld+json">
+      [
+        {
+          "@type": "NewsArticle",
+          "headline": "A Look at High-End Pantries",
+          "datePublished": "2020-12-02T20:18:00Z",
+          "description": "Homeowners who made the most of their spaces",
+          "image": [
+            "https://images.wsj.net/im-266300?width=1280&size=1",
+            "https://images.wsj.net/im-266300?width=1280&size=1.33333333",
+            "https://images.wsj.net/im-266300?width=1280&size=1.77777778"
+          ]
+        },
+        {
+          "@type": "ImageGallery",
+          "associatedMedia": [
+            {
+              "@type": "ImageObject",
+              "caption": "The first pantry has a library ladder and shelves.",
+              "contentUrl": "https://images.wsj.net/im-266300/"
+            },
+            {
+              "@type": "ImageObject",
+              "caption": "A sliding barn door opens onto the second pantry.",
+              "contentUrl": "https://images.wsj.net/im-266301/"
+            },
+            {
+              "@type": "ImageObject",
+              "caption": "The third pantry includes several small appliances.",
+              "contentUrl": "https://images.wsj.net/im-266302/"
+            }
+          ]
+        }
+      ]
+      </script>
+    </head><body><article>
+      <h1>A Look at High-End Pantries</h1>
+      <p>Homeowners who made the most of their spaces</p>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "a-look-at-high-end-pantries-11606940328"
+        ),
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_referenced == 3
+    assert result.quality.images_selected == 3
+    assert [image.original_url for image in result.images] == [
+        "https://images.wsj.net/im-266300?width=1280&size=1",
+        "https://images.wsj.net/im-266301/",
+        "https://images.wsj.net/im-266302/",
+    ]
+    assert len(result.images[0].candidate_urls) == 5
+    assert result.plain_text.index("first pantry") < result.plain_text.index(
+        "third pantry"
+    )
+    assert result.extraction.parser_version == "wsj-parser/0.8.0"
+
+
 def test_parser_classifies_non_editorial_images_without_archiving_them():
     canonical_url = "https://apnews.com/article/example"
     html = b"""
