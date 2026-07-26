@@ -3095,6 +3095,60 @@ def test_ft_syndication_refines_google_news_partner_host_with_yahoo():
     assert candidates[0].expected_headline == expected_headline
 
 
+def test_ft_syndication_normalizes_ftchinese_result_to_full_mobile_view():
+    expected_headline = "The great bond and equity conundrum"
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "4389caaa-b87a-4d4c-82a1-db161d3265d3"
+        ),
+        published_at="2026-06-12T04:00:22.942Z",
+        section="markets",
+        candidates=(),
+    )
+    title_search_url = ft_syndication_title_search_url(
+        expected_headline
+    )
+    indexed_url = (
+        "https://www.ftchinese.com/interactive/283158/en"
+        "?utm_source=yahoo"
+    )
+    expected_url = (
+        "https://m.ftchinese.com/interactive/283158/en"
+        "?utm_source=yahoo&full=y"
+    )
+    search_html = f"""
+    <html><body><ol id="web"><li><h3>
+      <a href="{indexed_url}">
+        {expected_headline} - Financial Times
+      </a>
+    </h3></li></ol></body></html>
+    """.encode()
+    client = StubArchiveClient(
+        {
+            title_search_url: (
+                200,
+                {"content-type": "text/html"},
+                search_html,
+                title_search_url,
+            ),
+        }
+    )
+
+    candidates = discover_ft_syndication_candidates(
+        item,
+        archive_client=client,
+        expected_headline=expected_headline,
+    )
+
+    assert client.requests == [title_search_url]
+    assert [candidate.snapshot_url for candidate in candidates] == [
+        expected_url
+    ]
+    assert candidates[0].expected_headline == expected_headline
+
+
 def test_ft_syndication_uses_allowed_partner_sitemap(
     monkeypatch,
 ):

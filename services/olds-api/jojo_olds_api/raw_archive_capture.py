@@ -14,7 +14,7 @@ import sqlite3
 import unicodedata
 from threading import Lock
 from typing import Callable, Iterable
-from urllib.parse import parse_qs, unquote, urlencode, urlsplit
+from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
@@ -46,7 +46,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.12.0",
+    "ft": "ft-capture/0.13.0",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -2796,6 +2796,10 @@ def _rank_syndication_candidates(
     ranked: list[tuple[float, int, int, str]] = []
     seen: set[str] = set()
     for position, result_title, candidate_url in results:
+        if excluded_publisher == "ft":
+            candidate_url = _normalize_ft_syndication_candidate_url(
+                candidate_url
+            )
         if (
             candidate_url in seen
             or not _is_public_syndication_url(
@@ -2830,6 +2834,37 @@ def _rank_syndication_candidates(
         for _, _, _, candidate_url in ranked[
             :REUTERS_SYNDICATION_MAXIMUM_CANDIDATES
         ]
+    )
+
+
+def _normalize_ft_syndication_candidate_url(value: str) -> str:
+    parsed = urlsplit(value)
+    host = (parsed.hostname or "").casefold().rstrip(".")
+    if (
+        host
+        not in {
+            "ftchinese.com",
+            "www.ftchinese.com",
+            "m.ftchinese.com",
+            "cn.ft.com",
+        }
+        or not re.fullmatch(
+            r"/interactive/\d+(?:/en)?/?",
+            parsed.path,
+            flags=re.IGNORECASE,
+        )
+    ):
+        return value
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    query["full"] = ["y"]
+    return urlunsplit(
+        (
+            "https",
+            "m.ftchinese.com",
+            parsed.path,
+            urlencode(query, doseq=True),
+            "",
+        )
     )
 
 
