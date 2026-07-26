@@ -45,6 +45,11 @@ on:
         required: true
         default: true
         type: boolean
+      enable_ft_infini_direct_discovery:
+        description: "Opt in to the expensive direct FT Infini-News corpus scan."
+        required: true
+        default: false
+        type: boolean
       runner_os:
         description: "Standard GitHub-hosted runner network."
         required: true
@@ -76,6 +81,8 @@ env:
   DOWNLOAD_WORKERS: ${{ inputs.workers }}
   MAX_RUNTIME_MINUTES: ${{ inputs.max_runtime_minutes }}
   MAX_RECORD_ATTEMPTS: "3"
+  ENABLE_FT_INFINI_DIRECT_DISCOVERY: >-
+    ${{ inputs.enable_ft_infini_direct_discovery }}
 
 jobs:
   validate:
@@ -416,6 +423,9 @@ jobs:
               --enable-arquivo-pt-fallback
               --enable-common-crawl-fallback
             )
+            if [ "$ENABLE_FT_INFINI_DIRECT_DISCOVERY" = "true" ]; then
+              args+=(--enable-ft-infini-direct-discovery)
+            fi
             if [ -f "$LOCAL_ROOT/catalog/source-discovery.sqlite3" ]; then
               args+=(
                 --ft-syndication-catalog \
@@ -537,6 +547,7 @@ jobs:
             -f workers="$DOWNLOAD_WORKERS" \
             -f max_runtime_minutes="$MAX_RUNTIME_MINUTES" \
             -f auto_continue=true \
+            -f enable_ft_infini_direct_discovery="$ENABLE_FT_INFINI_DIRECT_DISCOVERY" \
             -f runner_os="${{ inputs.runner_os }}"
 
       - name: Propagate capture failure after checkpoint
