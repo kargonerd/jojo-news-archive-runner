@@ -398,7 +398,7 @@ def test_no_date_url_uses_capture_time_for_year_stratification():
     )
     pattern, _ = next_discovery_query(connection)
     original = "https://www.wsj.com/articles/example-slug"
-    record_discovery_page(
+    result = record_discovery_page(
         connection,
         spec=spec,
         pattern=pattern,
@@ -436,7 +436,7 @@ def test_discovery_initialization_prunes_out_of_window_candidates():
         collapse="urlkey",
     )
     pattern, _ = next_discovery_query(connection)
-    record_discovery_page(
+    result = record_discovery_page(
         connection,
         spec=spec,
         pattern=pattern,
@@ -459,7 +459,45 @@ def test_discovery_initialization_prunes_out_of_window_candidates():
     )
     assert connection.execute(
         "SELECT COUNT(*) FROM candidates"
-    ).fetchone()[0] == 1
+    ).fetchone()[0] == 0
+    assert result == {
+        "seen": 1,
+        "accepted": 0,
+        "hasMore": False,
+    }
+    connection.execute(
+        """
+        INSERT INTO candidates(
+            canonical_url,
+            published_at,
+            timestamp,
+            original_url,
+            digest,
+            mimetype,
+            status_code,
+            byte_count,
+            rank_score
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            (
+                "https://www.ft.com/content/"
+                "31fb47f2-9782-11e6-a1dc-bdf38d484582"
+            ),
+            "2013-03-15T12:00:00+00:00",
+            "20130315120000",
+            (
+                "https://www.ft.com/content/"
+                "31fb47f2-9782-11e6-a1dc-bdf38d484582"
+            ),
+            "OLD-MANUAL",
+            "text/html",
+            200,
+            50_000,
+            0,
+        ),
+    )
+    connection.commit()
 
     initialize_discovery_schema(
         connection,

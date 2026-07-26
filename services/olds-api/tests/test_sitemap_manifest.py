@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import sqlite3
 
+import httpx
+
 from jojo_olds_api.archive_sources import archive_source_spec
 from jojo_olds_api.ft_syndication_catalog import (
     _next_document_rows,
@@ -414,6 +416,55 @@ def test_ft_original_resolution_uses_strict_google_news_fallback(
     assert result == canonical_url
 
 
+def test_ft_original_resolution_uses_google_news_when_yahoo_errors(
+    monkeypatch,
+):
+    expected_headline = (
+        "Microsoft chief Satya Nadella warns AI boom could falter "
+        "without wider adoption"
+    )
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "2a29cbc9-7183-4f68-a1d2-bc88189672e6"
+    )
+
+    class YahooErrorClient:
+        def get(self, url, params, headers=None):
+            if url == "https://search.yahoo.com/search":
+                return httpx.Response(
+                    500,
+                    request=httpx.Request("GET", url),
+                )
+            return StubFtSyndicationResponse(
+                html_value="""
+                <rss><channel><item>
+                  <title>
+                    AI boom could falter without wider adoption,
+                    Microsoft chief Satya Nadella warns - Financial Times
+                  </title>
+                  <link>
+                    https://news.google.com/rss/articles/ENCODED-ID
+                  </link>
+                  <pubDate>Tue, 20 Jan 2026 08:00:00 GMT</pubDate>
+                </item></channel></rss>
+                """
+            )
+
+    monkeypatch.setattr(
+        "jojo_olds_api.ft_syndication_catalog._decode_google_news_url",
+        lambda http_client, url: canonical_url,
+    )
+
+    result = resolve_ft_original_url(
+        expected_headline,
+        expected_published_at="2026-01-20T00:00:00+00:00",
+        spec=archive_source_spec("ft"),
+        http_client=YahooErrorClient(),
+    )
+
+    assert result == canonical_url
+
+
 def test_ft_original_resolution_rejects_google_news_date_mismatch(
     monkeypatch,
 ):
@@ -620,6 +671,32 @@ def test_ft_sitemap_manifest_merges_exact_wayback_urlkey_discovery(
                 ),
             ),
             resume_key=None,
+        ),
+    )
+    connection.execute(
+        """
+        INSERT INTO candidates(
+            canonical_url,
+            published_at,
+            timestamp,
+            original_url,
+            digest,
+            mimetype,
+            status_code,
+            byte_count,
+            rank_score
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            out_of_window_url,
+            "2013-10-05T10:00:00+00:00",
+            "20131005100000",
+            out_of_window_url,
+            "OUT-OF-WINDOW-MANUAL",
+            "text/html",
+            200,
+            61_000,
+            0,
         ),
     )
 

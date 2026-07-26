@@ -1210,6 +1210,25 @@ def record_discovery_page(
     accepted = 0
     rows: list[tuple[object, ...]] = []
     touched_urls: set[str] = set()
+    window = dict(
+        connection.execute(
+            """
+            SELECT key, value
+            FROM discovery_metadata
+            WHERE key IN ('from_year', 'to_year')
+            """
+        ).fetchall()
+    )
+    publication_start = (
+        f"{int(window['from_year']):04d}-01-01"
+        if "from_year" in window
+        else None
+    )
+    publication_end = (
+        f"{int(window['to_year']) + 1:04d}-01-01"
+        if "to_year" in window
+        else None
+    )
     for capture in page.captures:
         canonical_url = normalize_article_url(spec, capture.original)
         if not canonical_url:
@@ -1218,6 +1237,12 @@ def record_discovery_page(
             infer_published_at(canonical_url)
             or _timestamp_datetime(capture.timestamp).isoformat()
         )
+        if (
+            publication_start is not None
+            and publication_end is not None
+            and not publication_start <= published_at < publication_end
+        ):
+            continue
         rows.append(
             (
                 canonical_url,
