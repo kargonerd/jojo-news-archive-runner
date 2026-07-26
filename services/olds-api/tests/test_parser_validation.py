@@ -78,6 +78,152 @@ def _state_with_years(tmp_path: Path) -> sqlite3.Connection:
     return connection
 
 
+def test_ft_infini_samples_are_added_even_when_random_plan_is_full(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "ft-manifest.jsonl"
+    rows = []
+    for suffix in range(8):
+        canonical_url = (
+            "https://www.ft.com/content/"
+            f"00000000-0000-0000-0000-{suffix:012d}"
+        )
+        candidates = [
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=(
+                    "https://web.archive.org/web/20240328000000id_/"
+                    + canonical_url
+                ),
+            )
+        ]
+        rows.append(
+            {
+                "publisher": "ft",
+                "canonicalUrl": canonical_url,
+                "publishedAt": "2024-03-28T00:00:00Z",
+                "candidates": [
+                    item.model_dump(
+                        mode="json",
+                        by_alias=True,
+                        exclude_none=True,
+                    )
+                    for item in candidates
+                ],
+            }
+        )
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="ft",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="ft",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ft",
+        from_year=2024,
+        to_year=2024,
+        target_per_year=4,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    initial_count = connection.execute(
+        "SELECT COUNT(*) FROM parser_validation_samples"
+    ).fetchone()[0]
+    unsampled = connection.execute(
+        """
+        SELECT capture.canonical_url, capture.candidates_json
+        FROM captures AS capture
+        LEFT JOIN parser_validation_samples AS sample
+          ON sample.canonical_url=capture.canonical_url
+        WHERE sample.canonical_url IS NULL
+        ORDER BY capture.canonical_url
+        LIMIT 2
+        """
+    ).fetchall()
+    for index, (canonical_url, candidates_json) in enumerate(unsampled):
+        candidates = json.loads(candidates_json)
+        candidates.insert(
+            0,
+            CaptureCandidate(
+                provider=CaptureProvider.INFINI_NEWS,
+                snapshot_url=(
+                    "https://datasets-server.huggingface.co/rows?"
+                    "dataset=ruggsea%2Finfini-news-corpus&"
+                    "config=year_2024&split=train&"
+                    f"offset={index}&length=1"
+                ),
+                source_url=canonical_url,
+                expected_headline=(
+                    f"A complete Financial Times article {index}"
+                ),
+                warc_filename=(
+                    "CC-NEWS-20240328120000-00001.warc.gz"
+                ),
+            ).model_dump(
+                mode="json",
+                by_alias=True,
+                exclude_none=True,
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE captures
+            SET candidates_json=?
+            WHERE canonical_url=?
+            """,
+            (
+                json.dumps(candidates, separators=(",", ":")),
+                canonical_url,
+            ),
+        )
+    connection.commit()
+    plan = ensure_parser_validation_plan(
+        connection,
+        publisher="ft",
+        from_year=2024,
+        to_year=2024,
+        target_per_year=4,
+        reserve_per_year=2,
+        maximum_record_attempts=3,
+    )
+    direct_count = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM parser_validation_samples AS sample
+        JOIN captures AS capture
+          ON capture.canonical_url=sample.canonical_url
+        WHERE capture.candidates_json LIKE '%"provider":"infini-news"%'
+        """
+    ).fetchone()[0]
+    pending = pending_parser_validation_urls(
+        connection,
+        maximum=2,
+        maximum_record_attempts=3,
+    )
+
+    assert initial_count == 4
+    assert plan["years"]["2024"]["addedDirectToPlan"] == 2
+    assert direct_count == 2
+    assert all(
+        "infini-news"
+        in connection.execute(
+            "SELECT candidates_json FROM captures WHERE canonical_url=?",
+            (url,),
+        ).fetchone()[0]
+        for url in pending
+    )
+
+
 def test_validation_plan_is_random_reproducible_and_balanced(tmp_path: Path):
     first = _state_with_years(tmp_path)
     plan = ensure_parser_validation_plan(

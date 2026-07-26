@@ -242,6 +242,93 @@ def test_ft_manifest_partner_copy_requires_strict_validation(
     assert not any("datasets-server.huggingface.co" in url for url in client.requests)
 
 
+def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
+    tmp_path: Path,
+):
+    headline = "Financial Times tests a complete direct-origin article"
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    row_url = (
+        "https://datasets-server.huggingface.co/rows?"
+        "dataset=ruggsea%2Finfini-news-corpus&config=year_2024&"
+        "split=train&offset=54321&length=1"
+    )
+    body = "\n".join(
+        (
+            "Direct Financial Times reporting paragraph "
+            f"{index} contains detailed market evidence, executive "
+            "interviews, financial disclosures, historical comparisons "
+            "and enough substantive analysis for a complete article."
+        )
+        for index in range(1, 12)
+    )
+    payload = json.dumps(
+        {
+            "rows": [
+                {
+                    "row_idx": 54321,
+                    "row": {
+                        "url": canonical_url,
+                        "year": 2024,
+                        "title": headline,
+                        "publish_date": "2024-03-28",
+                        "text": body,
+                        "warc_filename": (
+                            "CC-NEWS-20240328160318-02712.warc.gz"
+                        ),
+                    },
+                }
+            ]
+        }
+    ).encode()
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2024-03-28T00:00:00+00:00",
+        section="business",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.INFINI_NEWS,
+                snapshot_url=row_url,
+                source_url=canonical_url,
+                expected_headline=headline,
+                warc_filename=(
+                    "CC-NEWS-20240328160318-02712.warc.gz"
+                ),
+            ),
+        ),
+    )
+    client = StubArchiveClient(
+        {
+            row_url: (
+                200,
+                {"content-type": "application/json"},
+                payload,
+                row_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        enable_common_crawl_fallback=True,
+        enable_arquivo_pt_fallback=True,
+    )
+
+    assert result["status"] == "complete"
+    capture = result["capture"]
+    assert capture.quality_score == 100
+    assert capture.quality_signals["ftInfiniOriginValidated"] is True
+    assert capture.quality_signals["infiniOriginUrlValidated"] is True
+    assert capture.quality_signals["infiniOriginBodyCharacters"] >= 1_000
+    assert client.requests == [row_url]
+
+
 def test_ft_infini_news_row_is_stored_as_validated_derived_html(
     tmp_path: Path,
 ):

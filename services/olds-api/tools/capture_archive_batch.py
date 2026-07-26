@@ -10,12 +10,17 @@ import sqlite3
 import sys
 import time
 
+import httpx
+
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
 from jojo_olds_api.bloomberg_archive_download import ArchiveClient
+from jojo_olds_api.ft_infini_direct_catalog import (
+    discover_ft_infini_direct_candidates,
+)
 from jojo_olds_api.publisher_specs import publisher_spec
 from jojo_olds_api.parser_validation import (
     ensure_parser_validation_plan,
@@ -83,6 +88,14 @@ def parse_args() -> argparse.Namespace:
             "year when the primary validation sample is not retrievable."
         ),
     )
+    parser.add_argument(
+        "--enable-ft-infini-direct-discovery",
+        action="store_true",
+        help=(
+            "Scan provenance-bearing Infini-News Parquet rows for complete "
+            "direct FT captures before building the parser QA plan."
+        ),
+    )
     parser.add_argument("--validation-from-year", type=int)
     parser.add_argument("--validation-to-year", type=int)
     parser.add_argument(
@@ -128,6 +141,41 @@ def main() -> int:
         manifest_path=args.manifest,
         publisher=args.publisher,
     )
+    infini_direct_result = None
+    if args.enable_ft_infini_direct_discovery:
+        if args.publisher != "ft":
+            raise SystemExit(
+                "--enable-ft-infini-direct-discovery is only valid for FT"
+            )
+        if (
+            args.validation_from_year is None
+            or args.validation_to_year is None
+            or args.validation_from_year != args.validation_to_year
+        ):
+            raise SystemExit(
+                "FT Infini-News direct discovery requires one validation year"
+            )
+        target_articles = max(
+            850,
+            args.validation_sample_per_year
+            + min(args.validation_reserve_per_year or 0, 500),
+        )
+        with httpx.Client(
+            timeout=60.0,
+            follow_redirects=True,
+            headers={
+                "User-Agent": (
+                    "jojo-news-archive-runner/1.0 "
+                    "(personal academic parser validation)"
+                )
+            },
+        ) as discovery_client:
+            infini_direct_result = discover_ft_infini_direct_candidates(
+                connection,
+                year=args.validation_from_year,
+                http_client=discovery_client,
+                target_articles=target_articles,
+            )
     validation_plan = None
     if args.validation_sample_per_year:
         if args.validation_from_year is None or args.validation_to_year is None:
@@ -176,6 +224,7 @@ def main() -> int:
                 "freeGB": round(free_gb, 2),
                 "queued": len(items),
                 **manifest_result,
+                "ftInfiniDirectDiscovery": infini_direct_result,
                 "parserValidationPlan": validation_plan,
             },
             ensure_ascii=False,

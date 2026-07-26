@@ -39,7 +39,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.10.0",
+    "ft": "ft-capture/0.10.1",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -517,6 +517,7 @@ def capture_item(
         dict[str, object],
     ] | None = None
     ft_raw_partner_validated = False
+    ft_infini_origin_validated = False
     ft_original_headline = next(
         (
             candidate.expected_headline
@@ -547,11 +548,16 @@ def capture_item(
     def consider_candidates(
         candidates: Iterable[CaptureCandidate],
     ) -> None:
-        nonlocal best_response, ft_raw_partner_validated
+        nonlocal best_response
+        nonlocal ft_raw_partner_validated
+        nonlocal ft_infini_origin_validated
         for candidate in candidates:
             if (
                 candidate.provider == CaptureProvider.INFINI_NEWS
-                and ft_raw_partner_validated
+                and (
+                    ft_raw_partner_validated
+                    or ft_infini_origin_validated
+                )
             ):
                 continue
             response, failure = _fetch_usable_candidate(
@@ -631,20 +637,43 @@ def capture_item(
                     CaptureProvider.INFINI_NEWS,
                 }
             ):
-                validated, validation_signals = (
-                    _validate_ft_syndication_response(
-                        item,
-                        expected_partner_url=(
-                            candidate.source_url or candidate.snapshot_url
-                        ),
-                        expected_headline=candidate.expected_headline,
-                        content=response[2],
-                        final_url=response[3],
-                    )
+                direct_infini_origin = bool(
+                    candidate.provider == CaptureProvider.INFINI_NEWS
+                    and _is_ft_origin_url(candidate.source_url)
                 )
+                if direct_infini_origin:
+                    validated, validation_signals = (
+                        _validate_ft_infini_origin_response(
+                            item,
+                            expected_source_url=(
+                                candidate.source_url or ""
+                            ),
+                            expected_headline=candidate.expected_headline,
+                            content=response[2],
+                            final_url=response[3],
+                        )
+                    )
+                else:
+                    validated, validation_signals = (
+                        _validate_ft_syndication_response(
+                            item,
+                            expected_partner_url=(
+                                candidate.source_url
+                                or candidate.snapshot_url
+                            ),
+                            expected_headline=candidate.expected_headline,
+                            content=response[2],
+                            final_url=response[3],
+                        )
+                    )
                 if not validated:
                     failures.append(
-                        "ft-syndication:validation:"
+                        (
+                            "ft-infini-origin"
+                            if direct_infini_origin
+                            else "ft-syndication"
+                        )
+                        + ":validation:"
                         + str(
                             validation_signals.get("reason") or "failed"
                         )
@@ -656,10 +685,12 @@ def capture_item(
                     response[2],
                     response[3],
                     response[4],
-                    response[5],
+                    100 if direct_infini_origin else response[5],
                     response[6] | validation_signals,
                 )
-                if candidate.provider == CaptureProvider.OTHER:
+                if direct_infini_origin:
+                    ft_infini_origin_validated = True
+                elif candidate.provider == CaptureProvider.OTHER:
                     ft_raw_partner_validated = True
             if (
                 item.publisher == "bloomberg"
@@ -727,21 +758,32 @@ def capture_item(
             if response[5] == 100:
                 break
 
+    direct_infini_candidates = tuple(
+        candidate
+        for candidate in item.candidates
+        if (
+            candidate.provider == CaptureProvider.INFINI_NEWS
+            and _is_ft_origin_url(candidate.source_url)
+        )
+    )
+    consider_candidates(direct_infini_candidates)
+
     if item.publisher in COMMON_CRAWL_FALLBACK_PUBLISHERS:
         # Exact Wayback captures have historically produced far more usable FT
         # articles than Common Crawl WARC records. Try the nearest exact
         # snapshots first and avoid three index plus Range lookups when one is
         # already a maximum-quality article.
         timemap_candidates: tuple[CaptureCandidate, ...] = ()
-        try:
-            timemap_candidates = discover_wayback_timemap_candidates(
-                item,
-                archive_client=archive_client,
-                maximum_candidates=WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES,
-            )
-        except Exception as exc:
-            failures.append(f"wayback-timemap:{type(exc).__name__}")
-            timemap_candidates = ()
+        if not ft_infini_origin_validated:
+            try:
+                timemap_candidates = discover_wayback_timemap_candidates(
+                    item,
+                    archive_client=archive_client,
+                    maximum_candidates=WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES,
+                )
+            except Exception as exc:
+                failures.append(f"wayback-timemap:{type(exc).__name__}")
+                timemap_candidates = ()
         existing_urls = {
             candidate.snapshot_url for candidate in candidates_considered
         }
@@ -756,11 +798,15 @@ def capture_item(
         # Publication-near Wayback URLs are cheap to resolve and can select a
         # useful later capture outside the bounded exact-capture shortlist.
         # Exhaust them before the slower Common Crawl index/WARC fallback.
-        if best_response is None or best_response[5] < 100:
+        if (
+            not ft_infini_origin_validated
+            and (best_response is None or best_response[5] < 100)
+        ):
             consider_candidates(item.candidates)
 
         if (
-            enable_common_crawl_fallback
+            not ft_infini_origin_validated
+            and enable_common_crawl_fallback
             and (best_response is None or best_response[5] < 100)
         ):
             try:
@@ -1170,7 +1216,12 @@ def _fetch_infini_news_candidate(
     ):
         raise ValueError("Infini-News headline mismatch")
     text = str(row.get("text") or "").strip()
-    if len(text) < FT_SYNDICATION_MINIMUM_BODY_CHARACTERS:
+    minimum_body_characters = (
+        1_000
+        if _is_ft_origin_url(candidate.source_url)
+        else FT_SYNDICATION_MINIMUM_BODY_CHARACTERS
+    )
+    if len(text) < minimum_body_characters:
         raise ValueError("Infini-News document body is too short")
     warc_filename = str(row.get("warc_filename") or "").strip()
     if not candidate.warc_filename:
@@ -3397,6 +3448,94 @@ def _validate_ft_syndication_response(
     }
 
 
+def _validate_ft_infini_origin_response(
+    item: ManifestItem,
+    *,
+    expected_source_url: str,
+    expected_headline: str | None,
+    content: bytes,
+    final_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    origin_url_validated = (
+        _same_ft_origin_article_url(expected_source_url, item.canonical_url)
+        and _same_ft_origin_article_url(final_url, item.canonical_url)
+    )
+    if not origin_url_validated:
+        return False, {
+            "reason": "unexpected-origin-url",
+            "ftInfiniOriginValidated": False,
+            "infiniOriginUrlValidated": False,
+            "infiniOriginFinalUrl": final_url,
+        }
+    if not expected_headline:
+        return False, {
+            "reason": "missing-original-headline",
+            "ftInfiniOriginValidated": False,
+            "infiniOriginUrlValidated": True,
+            "infiniOriginFinalUrl": final_url,
+        }
+    try:
+        article = parse_article(
+            content,
+            publisher="ft",
+            canonical_url=item.canonical_url,
+        )
+    except Exception as exc:
+        return False, {
+            "reason": f"parser-{type(exc).__name__}",
+            "ftInfiniOriginValidated": False,
+            "infiniOriginUrlValidated": True,
+            "infiniOriginFinalUrl": final_url,
+        }
+    headline_overlap = _headline_text_overlap(
+        expected_headline,
+        article.headline or "",
+    )
+    expected_date = _parse_iso_datetime(item.published_at)
+    date_delta_days: int | None = None
+    if expected_date is not None and article.published_at is not None:
+        date_delta_days = abs(
+            (article.published_at.date() - expected_date.date()).days
+        )
+    date_visible = _expected_date_visible(
+        content,
+        expected_date=expected_date,
+    )
+    date_matches = (
+        date_delta_days is not None and date_delta_days <= 2
+    ) or date_visible
+    body_characters = article.quality.body_characters
+    valid = (
+        article.quality.status == ArticleStatus.COMPLETE
+        and body_characters >= 1_000
+        and headline_overlap >= 0.8
+        and date_matches
+    )
+    if article.quality.status != ArticleStatus.COMPLETE:
+        reason = f"parser-{article.quality.status.value}"
+    elif body_characters < 1_000:
+        reason = "body-too-short"
+    elif headline_overlap < 0.8:
+        reason = "headline-mismatch"
+    elif not date_matches:
+        reason = "publication-date-mismatch"
+    else:
+        reason = None
+    return valid, {
+        "reason": reason,
+        "ftInfiniOriginValidated": valid,
+        "infiniOriginUrlValidated": origin_url_validated,
+        "infiniOriginFinalUrl": final_url,
+        "infiniOriginHeadlineOverlap": round(headline_overlap, 4),
+        "infiniOriginBodyCharacters": body_characters,
+        "infiniOriginDateDeltaDays": date_delta_days,
+        "infiniOriginExpectedDateVisible": date_visible,
+        "infiniOriginExpectedHeadline": expected_headline,
+    }
+
+
 def _extract_ft_original_headline(
     content: bytes,
     *,
@@ -3594,6 +3733,22 @@ def _same_article_url(first: str, second: str) -> bool:
         first_host == second_host
         and bool(first_host)
         and first_parts.path.rstrip("/") == second_parts.path.rstrip("/")
+    )
+
+
+def _is_ft_origin_url(value: str | None) -> bool:
+    hostname = (urlsplit(value or "").hostname or "").casefold()
+    return hostname == "ft.com" or hostname.endswith(".ft.com")
+
+
+def _same_ft_origin_article_url(first: str, second: str) -> bool:
+    first_parts = urlsplit(first)
+    second_parts = urlsplit(second)
+    return bool(
+        _is_ft_origin_url(first)
+        and _is_ft_origin_url(second)
+        and first_parts.path.rstrip("/").casefold()
+        == second_parts.path.rstrip("/").casefold()
     )
 
 

@@ -273,8 +273,48 @@ def ensure_parser_validation_plan(
         )
         actionable += len(completed_selected)
         desired_actionable = max(0, target_per_year - evaluated) + reserve
-        add_count = max(0, desired_actionable - actionable)
         direct_selected: list[tuple[str, str]] = []
+        if publisher == "ft":
+            existing_direct = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM parser_validation_samples AS sample
+                    JOIN captures AS capture
+                      ON capture.canonical_url=sample.canonical_url
+                    WHERE sample.sample_year=?
+                      AND capture.candidates_json
+                          LIKE '%"provider":"infini-news"%'
+                    """,
+                    (year,),
+                ).fetchone()[0]
+            )
+            direct_selected = _select_additional_samples(
+                connection,
+                publisher=publisher,
+                year=year,
+                limit=max(0, desired_actionable - existing_direct),
+                seed=seed,
+                completed_only=False,
+                direct_provider="infini-news",
+            )
+            connection.executemany(
+                """
+                INSERT OR IGNORE INTO parser_validation_samples(
+                    canonical_url,
+                    sample_year,
+                    sample_priority,
+                    selected_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    (canonical_url, year, priority, now)
+                    for priority, canonical_url in direct_selected
+                ),
+            )
+            actionable += len(direct_selected)
+        add_count = max(0, desired_actionable - actionable)
         if publisher == "nyt" and add_count:
             direct_selected = _select_additional_samples(
                 connection,
@@ -283,7 +323,7 @@ def ensure_parser_validation_plan(
                 limit=add_count,
                 seed=seed,
                 completed_only=False,
-                direct_only=True,
+                direct_provider="other",
             )
             connection.executemany(
                 """
@@ -382,9 +422,12 @@ def pending_parser_validation_urls(
                         END,
                         CASE
                             WHEN capture.candidates_json
-                                 LIKE '%"provider":"other"%'
+                                 LIKE '%"provider":"infini-news"%'
                             THEN 0
-                            ELSE 1
+                            WHEN capture.candidates_json
+                                 LIKE '%"provider":"other"%'
+                            THEN 1
+                            ELSE 2
                         END,
                         sample.sample_priority
                 ) AS sample_rank
@@ -831,7 +874,7 @@ def _select_additional_samples(
     limit: int,
     seed: str,
     completed_only: bool,
-    direct_only: bool = False,
+    direct_provider: str | None = None,
 ) -> list[tuple[str, str]]:
     if limit <= 0:
         return []
@@ -846,13 +889,16 @@ def _select_additional_samples(
         if completed_only
         else ""
     )
+    if direct_provider not in {None, "other", "infini-news"}:
+        raise ValueError("unsupported direct capture provider")
     direct_filter = (
-        """
-          AND capture.candidates_json LIKE '%"provider":"other"%'
-        """
-        if direct_only
+        "AND capture.candidates_json LIKE ?"
+        if direct_provider is not None
         else ""
     )
+    parameters: list[object] = [start, end]
+    if direct_provider is not None:
+        parameters.append(f'%"provider":"{direct_provider}"%')
     rows: Iterable[tuple[str]] = connection.execute(
         f"""
         SELECT capture.canonical_url
@@ -869,7 +915,7 @@ def _select_additional_samples(
           {direct_filter}
           AND sample.canonical_url IS NULL
         """,
-        (start, end),
+        parameters,
     )
     source_spec = archive_source_spec(publisher)
     for (canonical_url,) in rows:
