@@ -1,0 +1,459 @@
+name: Parser validation accelerator
+
+run-name: parser-qa-${{ inputs.publisher }}-${{ inputs.year }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      publisher:
+        description: "Publisher parser to validate."
+        required: true
+        type: choice
+        options:
+          - ap
+          - wsj
+          - bloomberg
+          - nyt
+          - reuters
+          - ft
+      year:
+        description: "Single publication year to sample."
+        required: true
+        default: "2026"
+        type: string
+      source_manifest_shard:
+        description: "Existing publisher/year-window/mode manifest shard."
+        required: true
+        type: string
+      max_captures:
+        description: "Maximum raw captures in this bounded run."
+        required: true
+        default: "500"
+        type: string
+      workers:
+        description: "Concurrent archive replay downloads."
+        required: true
+        default: "4"
+        type: string
+      max_runtime_minutes:
+        description: "Stop starting captures after this many minutes."
+        required: true
+        default: "300"
+        type: string
+      auto_continue:
+        description: "Dispatch another batch until the year passes QA."
+        required: true
+        default: true
+        type: boolean
+      runner_os:
+        description: "Standard GitHub-hosted runner network."
+        required: true
+        default: "ubuntu-latest"
+        type: choice
+        options:
+          - ubuntu-latest
+          - macos-15-intel
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: parser-qa-${{ inputs.publisher }}-${{ inputs.year }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+  B2_ARCHIVE_KEY_ID: ${{ secrets.B2_ARCHIVE_KEY_ID }}
+  B2_ARCHIVE_APPLICATION_KEY: ${{ secrets.B2_ARCHIVE_APPLICATION_KEY }}
+  B2_ARCHIVE_BUCKET: ${{ secrets.B2_ARCHIVE_BUCKET }}
+  B2_REMOTE: jojo-b2
+  ARCHIVE_ROOT: ${{ github.workspace }}/.archive-work
+  PUBLISHER: ${{ inputs.publisher }}
+  SAMPLE_YEAR: ${{ inputs.year }}
+  SOURCE_MANIFEST_SHARD: ${{ inputs.source_manifest_shard }}
+  MAX_CAPTURES: ${{ inputs.max_captures }}
+  DOWNLOAD_WORKERS: ${{ inputs.workers }}
+  MAX_RUNTIME_MINUTES: ${{ inputs.max_runtime_minutes }}
+  MAX_RECORD_ATTEMPTS: "3"
+
+jobs:
+  validate:
+    runs-on: ${{ inputs.runner_os }}
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/olds-api/requirements.txt
+
+      - name: Install archive dependencies
+        run: |
+          python -m pip install -r services/olds-api/requirements.txt
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y rclone
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install rclone coreutils
+            echo "$(brew --prefix coreutils)/libexec/gnubin" \
+              >> "$GITHUB_PATH"
+          else
+            echo "Unsupported runner OS: $RUNNER_OS" >&2
+            exit 2
+          fi
+
+      - name: Validate private B2 storage
+        run: |
+          python services/olds-api/tools/verify_b2_private_bucket.py
+          rclone config create "$B2_REMOTE" b2 \
+            account "$B2_ARCHIVE_KEY_ID" \
+            key "$B2_ARCHIVE_APPLICATION_KEY" \
+            --non-interactive
+
+      - name: Resolve validation paths
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$SAMPLE_YEAR" =~ ^20[0-9]{2}$ ]]; then
+            echo "year must be a four-digit 20xx value." >&2
+            exit 2
+          fi
+          if [[ ! "$SOURCE_MANIFEST_SHARD" =~ ^[a-z0-9-]+/[0-9]{4}-[0-9]{4}/[a-z0-9-]+$ ]]; then
+            echo "source_manifest_shard has an invalid shape." >&2
+            exit 2
+          fi
+          if [[ "$SOURCE_MANIFEST_SHARD" != "$PUBLISHER/"* ]]; then
+            echo "source manifest publisher does not match." >&2
+            exit 2
+          fi
+          local_root="${ARCHIVE_ROOT}/validation/${PUBLISHER}/${SAMPLE_YEAR}"
+          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/validation/${PUBLISHER}/${SAMPLE_YEAR}"
+          source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${SOURCE_MANIFEST_SHARD}"
+          mkdir -p "$local_root/catalog" "$local_root/raw"
+          {
+            echo "local_root=$local_root"
+            echo "remote_root=$remote_root"
+            echo "source_root=$source_root"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore filtered manifest and validation checkpoint
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+          SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
+        run: |
+          set -euo pipefail
+          restore_if_present() {
+            remote_file="$1"
+            local_file="$2"
+            remote_dir="${remote_file%/*}"
+            remote_name="${remote_file##*/}"
+            listing="$RUNNER_TEMP/rclone-listing.txt"
+            errors="$RUNNER_TEMP/rclone-listing-errors.txt"
+            if ! rclone lsf "$remote_dir" --files-only \
+                >"$listing" 2>"$errors"; then
+              if grep -qiE "directory not found|object not found" "$errors"; then
+                return 0
+              fi
+              cat "$errors" >&2
+              return 1
+            fi
+            if grep -Fxq "$remote_name" "$listing"; then
+              mkdir -p "$(dirname "$local_file")"
+              rclone copyto "$remote_file" "$local_file" \
+                --retries 8 --low-level-retries 20
+            fi
+          }
+
+          manifest="$LOCAL_ROOT/catalog/manifest.jsonl.gz"
+          restore_if_present \
+            "${REMOTE_ROOT}/catalog/manifest.jsonl.gz" \
+            "$manifest"
+          if [ ! -f "$manifest" ]; then
+            source_manifest="$RUNNER_TEMP/source-manifest.jsonl.gz"
+            rclone copyto \
+              "${SOURCE_ROOT}/catalog/manifest.jsonl.gz" \
+              "$source_manifest" \
+              --retries 8 --low-level-retries 20
+            python services/olds-api/tools/filter_archive_manifest.py \
+              --input "$source_manifest" \
+              --output "$manifest" \
+              --publisher "$PUBLISHER" \
+              --from-year "$SAMPLE_YEAR" \
+              --to-year "$SAMPLE_YEAR"
+            rclone copyto \
+              "$manifest" \
+              "${REMOTE_ROOT}/catalog/manifest.jsonl.gz" \
+              --retries 8 --low-level-retries 20
+          fi
+
+          restore_if_present \
+            "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
+            "$RUNNER_TEMP/capture.sqlite3.gz"
+          if [ -f "$RUNNER_TEMP/capture.sqlite3.gz" ]; then
+            gzip -dc "$RUNNER_TEMP/capture.sqlite3.gz" \
+              > "$LOCAL_ROOT/raw/capture.sqlite3"
+          fi
+
+      - name: Plan parser replay
+        id: replay
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python services/olds-api/tools/prepare_parser_validation_replay.py \
+            --publisher "$PUBLISHER" \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --from-year "$SAMPLE_YEAR" \
+            --to-year "$SAMPLE_YEAR" \
+            --target-per-year 500 \
+            --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+            --max-replays 1000 \
+            --files-from "$RUNNER_TEMP/parser-validation-files.txt" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Restore previous parser sample HTML
+        if: ${{ steps.replay.outputs.replays != '0' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+        run: |
+          rclone copy \
+            "${REMOTE_ROOT}/raw" \
+            "$LOCAL_ROOT/raw" \
+            --files-from "$RUNNER_TEMP/parser-validation-files.txt" \
+            --transfers 16 --checkers 32 \
+            --retries 8 --low-level-retries 20 \
+            --stats 30s
+
+      - name: Replay current parser
+        if: ${{ steps.replay.outputs.replays != '0' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python services/olds-api/tools/revalidate_parser_samples.py \
+            --publisher "$PUBLISHER" \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --archive-root "$LOCAL_ROOT/raw" \
+            --max-replays 1000 \
+            --progress-every 50 \
+            --summary "$LOCAL_ROOT/raw/summary.json"
+
+      - name: Plan capture batch
+        id: before
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python services/olds-api/tools/capture_action_state.py \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Capture random year sample
+        id: capture
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+        run: |
+          set -uo pipefail
+          live_checkpoint() {
+            local checkpoint="$RUNNER_TEMP/capture-live.sqlite3.gz"
+            if ! python \
+              services/olds-api/tools/checkpoint_capture_state.py \
+              --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+              --output "$checkpoint"; then
+              echo "::warning::Could not snapshot live validation state."
+              return 0
+            fi
+            if [ -d "$LOCAL_ROOT/raw/objects" ]; then
+              if ! rclone copy \
+                  "$LOCAL_ROOT/raw/objects" \
+                  "${REMOTE_ROOT}/raw/objects" \
+                  --exclude '*.tmp' \
+                  --checksum --immutable --fast-list \
+                  --transfers 32 --checkers 64 \
+                  --retries 8 --low-level-retries 20; then
+                echo "::warning::Live object upload failed; state withheld."
+                return 0
+              fi
+            fi
+            if [ -d "$LOCAL_ROOT/raw/records" ]; then
+              if ! rclone copy \
+                  "$LOCAL_ROOT/raw/records" \
+                  "${REMOTE_ROOT}/raw/records" \
+                  --exclude '*.tmp' \
+                  --checksum --fast-list \
+                  --transfers 32 --checkers 64 \
+                  --retries 8 --low-level-retries 20; then
+                echo "::warning::Live record upload failed; state withheld."
+                return 0
+              fi
+            fi
+            if [ -f "$LOCAL_ROOT/raw/summary.json" ]; then
+              rclone copyto \
+                "$LOCAL_ROOT/raw/summary.json" \
+                "${REMOTE_ROOT}/state/summary.json" \
+                --retries 8 --low-level-retries 20
+            fi
+            rclone copyto \
+              "$checkpoint" \
+              "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
+              --retries 8 --low-level-retries 20
+            echo "Published live validation checkpoint."
+          }
+
+          request_interval=0.5
+          if [ "$PUBLISHER" = "nyt" ]; then
+            request_interval=1.5
+          fi
+          args=(
+            --publisher "$PUBLISHER"
+            --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
+            --output-dir "$LOCAL_ROOT/raw"
+            --workers "$DOWNLOAD_WORKERS"
+            --min-request-interval "$request_interval"
+            --max-captures "$MAX_CAPTURES"
+            --max-runtime-minutes "$MAX_RUNTIME_MINUTES"
+            --max-record-attempts "$MAX_RECORD_ATTEMPTS"
+            --validation-sample-per-year 500
+            --validation-from-year "$SAMPLE_YEAR"
+            --validation-to-year "$SAMPLE_YEAR"
+            --progress-every 25
+            --minimum-free-gb 2
+          )
+          if [ "${{ steps.before.outputs.retry_errors }}" = "true" ]; then
+            args+=(--retry-errors)
+          fi
+          if [ "$PUBLISHER" = "ft" ]; then
+            args+=(--enable-common-crawl-fallback)
+          fi
+          set +e
+          python services/olds-api/tools/capture_archive_batch.py "${args[@]}" &
+          capture_pid=$!
+          while kill -0 "$capture_pid" 2>/dev/null; do
+            timeout 600 tail --pid="$capture_pid" -f /dev/null
+            wait_code=$?
+            if [ "$wait_code" -eq 124 ]; then
+              live_checkpoint
+            else
+              break
+            fi
+          done
+          wait "$capture_pid"
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Checkpoint validation state
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          set -euo pipefail
+          python services/olds-api/tools/checkpoint_capture_state.py \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --output "$RUNNER_TEMP/capture.sqlite3.gz"
+
+      - name: Publish validation objects and checkpoint
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+        run: |
+          set -euo pipefail
+          if [ -d "$LOCAL_ROOT/raw/objects" ]; then
+            rclone copy \
+              "$LOCAL_ROOT/raw/objects" \
+              "${REMOTE_ROOT}/raw/objects" \
+              --exclude '*.tmp' \
+              --checksum --immutable --fast-list \
+              --transfers 32 --checkers 64 \
+              --retries 8 --low-level-retries 20 \
+              --stats 30s
+          fi
+          if [ -d "$LOCAL_ROOT/raw/records" ]; then
+            rclone copy \
+              "$LOCAL_ROOT/raw/records" \
+              "${REMOTE_ROOT}/raw/records" \
+              --exclude '*.tmp' \
+              --checksum --fast-list \
+              --transfers 32 --checkers 64 \
+              --retries 8 --low-level-retries 20 \
+              --stats 30s
+          fi
+          if [ -f "$LOCAL_ROOT/raw/summary.json" ]; then
+            rclone copyto \
+              "$LOCAL_ROOT/raw/summary.json" \
+              "${REMOTE_ROOT}/state/summary.json" \
+              --retries 8 --low-level-retries 20
+          fi
+          rclone copyto \
+            "$RUNNER_TEMP/capture.sqlite3.gz" \
+            "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
+            --retries 8 --low-level-retries 20
+
+      - name: Report validation state
+        id: after
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python services/olds-api/tools/capture_action_state.py \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Dispatch next validation batch
+        if: >-
+          ${{
+            inputs.auto_continue &&
+            steps.capture.outputs.exit_code == '0' &&
+            steps.after.outputs.should_continue == 'true'
+          }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run parser-validation-accelerator.yml \
+            --ref "$GITHUB_REF_NAME" \
+            -f publisher="$PUBLISHER" \
+            -f year="$SAMPLE_YEAR" \
+            -f source_manifest_shard="$SOURCE_MANIFEST_SHARD" \
+            -f max_captures="$MAX_CAPTURES" \
+            -f workers="$DOWNLOAD_WORKERS" \
+            -f max_runtime_minutes="$MAX_RUNTIME_MINUTES" \
+            -f auto_continue=true \
+            -f runner_os="${{ inputs.runner_os }}"
+
+      - name: Propagate capture failure after checkpoint
+        if: ${{ steps.capture.outputs.exit_code != '0' }}
+        run: |
+          echo "Capture process exited with code ${{ steps.capture.outputs.exit_code }}." >&2
+          exit 1

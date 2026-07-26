@@ -1,0 +1,144 @@
+from __future__ import annotations
+
+import argparse
+import gzip
+import json
+from pathlib import Path
+import sys
+from typing import Iterable
+
+
+SERVICE_ROOT = Path(__file__).resolve().parents[1]
+if str(SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICE_ROOT))
+
+from jojo_olds_api.wayback_manifest import infer_published_at
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Filter an existing archive manifest to one publication window "
+            "without rediscovering its source catalog."
+        )
+    )
+    parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--publisher", required=True)
+    parser.add_argument("--from-year", type=int, required=True)
+    parser.add_argument("--to-year", type=int, required=True)
+    return parser.parse_args()
+
+
+def filter_archive_manifest(
+    source: Path,
+    destination: Path,
+    *,
+    publisher: str,
+    from_year: int,
+    to_year: int,
+) -> dict[str, int | str]:
+    if from_year > to_year:
+        raise ValueError("from_year must not exceed to_year")
+    if source.resolve() == destination.resolve():
+        raise ValueError("input and output manifests must be different")
+    if not source.exists():
+        raise FileNotFoundError(source)
+
+    start = f"{from_year:04d}-01-01"
+    end = f"{to_year + 1:04d}-01-01"
+    seen = 0
+    selected = 0
+    missing_publication_date = 0
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    opener = gzip.open if destination.suffix == ".gz" else open
+    with opener(temporary, "wt", encoding="utf-8") as handle:
+        for row in _read_jsonl(source):
+            seen += 1
+            row_publisher = str(
+                row.get("publisher") or publisher
+            ).strip().casefold()
+            if row_publisher != publisher.casefold():
+                raise ValueError(
+                    "manifest publisher "
+                    f"{row_publisher!r} does not match {publisher!r}"
+                )
+            canonical_url = str(
+                row.get("canonical_url")
+                or row.get("canonicalUrl")
+                or row.get("url")
+                or ""
+            ).strip()
+            published_at = str(
+                row.get("published_at")
+                or row.get("publishedAt")
+                or row.get("catalog_date")
+                or infer_published_at(canonical_url)
+                or ""
+            ).strip()
+            if not published_at:
+                missing_publication_date += 1
+                continue
+            if not start <= published_at < end:
+                continue
+            handle.write(
+                json.dumps(
+                    row,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            )
+            selected += 1
+    if selected == 0:
+        temporary.unlink(missing_ok=True)
+        raise ValueError(
+            f"manifest has no {publisher} rows from {from_year} to {to_year}"
+        )
+    temporary.replace(destination)
+    return {
+        "publisher": publisher,
+        "fromYear": from_year,
+        "toYear": to_year,
+        "rowsSeen": seen,
+        "rowsSelected": selected,
+        "rowsMissingPublicationDate": missing_publication_date,
+        "output": str(destination),
+    }
+
+
+def _read_jsonl(path: Path) -> Iterable[dict[str, object]]:
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"invalid JSON on manifest line {line_number}"
+                ) from exc
+            if not isinstance(row, dict):
+                raise ValueError(
+                    f"manifest line {line_number} must be an object"
+                )
+            yield row
+
+
+def main() -> int:
+    args = parse_args()
+    result = filter_archive_manifest(
+        args.input,
+        args.output,
+        publisher=args.publisher,
+        from_year=args.from_year,
+        to_year=args.to_year,
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
