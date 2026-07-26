@@ -205,7 +205,14 @@ jobs:
             gzip -dc "$RUNNER_TEMP/capture.sqlite3.gz" \
               > "$LOCAL_ROOT/raw/capture.sqlite3"
           fi
-          if [ "$PUBLISHER" = "wsj" ]; then
+          restore_if_present \
+            "${SOURCE_ROOT}/state/completed-captures.sqlite3.gz" \
+            "$RUNNER_TEMP/source-capture.sqlite3.gz"
+          if [ -f "$RUNNER_TEMP/source-capture.sqlite3.gz" ]; then
+            gzip -dc "$RUNNER_TEMP/source-capture.sqlite3.gz" \
+              > "$RUNNER_TEMP/source-capture.sqlite3"
+          elif [ "$PUBLISHER" = "wsj" ]; then
+            # Compatibility fallback for the small pre-index WSJ checkpoint.
             restore_if_present \
               "${SOURCE_ROOT}/state/capture.sqlite3.gz" \
               "$RUNNER_TEMP/source-capture.sqlite3.gz"
@@ -216,7 +223,6 @@ jobs:
           fi
 
       - name: Seed validation from source archive
-        if: ${{ inputs.publisher == 'wsj' }}
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}

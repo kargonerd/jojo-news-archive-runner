@@ -27,6 +27,93 @@ SOURCE_CAPTURE_COLUMNS = (
 )
 
 
+def export_completed_capture_index(
+    *,
+    source_connection: sqlite3.Connection,
+    destination_connection: sqlite3.Connection,
+) -> dict[str, int | str]:
+    destination_connection.executescript(
+        """
+        PRAGMA journal_mode=DELETE;
+        DROP TABLE IF EXISTS captures;
+        CREATE TABLE captures (
+            canonical_url TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            selected_candidate_json TEXT,
+            final_url TEXT,
+            http_status INTEGER,
+            content_type TEXT,
+            quality_score INTEGER,
+            quality_signals_json TEXT,
+            raw_path TEXT NOT NULL,
+            raw_sha256 TEXT NOT NULL,
+            raw_bytes INTEGER,
+            stored_bytes INTEGER,
+            retrieved_at TEXT
+        );
+        """
+    )
+    total_complete = int(
+        source_connection.execute(
+            "SELECT COUNT(*) FROM captures WHERE status='complete'"
+        ).fetchone()[0]
+    )
+    exported = 0
+    skipped = 0
+    cursor = source_connection.execute(
+        f"""
+        SELECT {", ".join(SOURCE_CAPTURE_COLUMNS)}
+        FROM captures
+        WHERE status='complete'
+        ORDER BY canonical_url
+        """
+    )
+    with destination_connection:
+        while rows := cursor.fetchmany(1000):
+            accepted: list[tuple] = []
+            for row in rows:
+                values = dict(
+                    zip(SOURCE_CAPTURE_COLUMNS, row, strict=True)
+                )
+                raw_path = values["raw_path"]
+                raw_sha256 = values["raw_sha256"]
+                if (
+                    not isinstance(raw_path, str)
+                    or not raw_path.startswith("objects/")
+                    or ".." in Path(raw_path).parts
+                    or not isinstance(raw_sha256, str)
+                    or len(raw_sha256) != 64
+                ):
+                    skipped += 1
+                    continue
+                accepted.append(
+                    (
+                        values["canonical_url"],
+                        "complete",
+                        *(values[column] for column in SOURCE_CAPTURE_COLUMNS[1:]),
+                    )
+                )
+            destination_connection.executemany(
+                f"""
+                INSERT INTO captures (
+                    canonical_url,
+                    status,
+                    {", ".join(SOURCE_CAPTURE_COLUMNS[1:])}
+                )
+                VALUES ({", ".join("?" for _ in range(len(SOURCE_CAPTURE_COLUMNS) + 1))})
+                """,
+                accepted,
+            )
+            exported += len(accepted)
+    destination_connection.execute("PRAGMA optimize")
+    return {
+        "formatVersion": "jojo-completed-capture-index/1",
+        "totalComplete": total_complete,
+        "exported": exported,
+        "skipped": skipped,
+    }
+
+
 def import_selected_source_captures(
     *,
     source_connection: sqlite3.Connection,

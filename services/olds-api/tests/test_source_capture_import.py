@@ -9,6 +9,7 @@ from jojo_olds_api.raw_archive_capture import (
     load_capture_manifest,
 )
 from jojo_olds_api.source_capture_import import (
+    export_completed_capture_index,
     import_selected_source_captures,
 )
 
@@ -122,4 +123,87 @@ def test_imports_only_selected_incomplete_source_captures(
     assert rows == [
         (first_url, "complete", raw_sha256, None),
         (second_url, "pending", None, None),
+    ]
+
+
+def test_compact_index_round_trips_completed_capture(tmp_path: Path):
+    manifest = tmp_path / "manifest.jsonl"
+    first_url, second_url = _write_manifest(manifest)
+    source = sqlite3.connect(":memory:")
+    index = sqlite3.connect(":memory:")
+    target = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        source,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        source,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    raw_sha256 = "b" * 64
+    source.execute(
+        """
+        UPDATE captures
+        SET status='complete',
+            final_url=canonical_url,
+            http_status=200,
+            content_type='text/html',
+            quality_score=100,
+            quality_signals_json='{"usable":true}',
+            raw_path=?,
+            raw_sha256=?,
+            raw_bytes=4096,
+            stored_bytes=1024,
+            retrieved_at='2026-07-26T00:00:00+00:00'
+        WHERE canonical_url=?
+        """,
+        (
+            f"objects/{raw_sha256[:2]}/{raw_sha256}.html.gz",
+            raw_sha256,
+            first_url,
+        ),
+    )
+    source.execute(
+        """
+        UPDATE captures
+        SET status='complete',
+            raw_path='../invalid.html.gz',
+            raw_sha256='short'
+        WHERE canonical_url=?
+        """,
+        (second_url,),
+    )
+    source.commit()
+
+    export_result = export_completed_capture_index(
+        source_connection=source,
+        destination_connection=index,
+    )
+    import_result = import_selected_source_captures(
+        source_connection=index,
+        target_connection=target,
+        manifest_path=manifest,
+        publisher="wsj",
+        sample_year=2016,
+        target_per_year=1,
+    )
+
+    assert export_result == {
+        "formatVersion": "jojo-completed-capture-index/1",
+        "totalComplete": 2,
+        "exported": 1,
+        "skipped": 1,
+    }
+    assert import_result["imported"] == 1
+    assert target.execute(
+        """
+        SELECT canonical_url, status, raw_sha256
+        FROM captures
+        ORDER BY canonical_url
+        """
+    ).fetchall() == [
+        (first_url, "complete", raw_sha256),
+        (second_url, "pending", None),
     ]

@@ -517,6 +517,18 @@ jobs:
                 "${REMOTE_ROOT}/state/summary.json" \
                 --retries 8 --low-level-retries 20
             fi
+            gzip -dc "$checkpoint" \
+              > "$RUNNER_TEMP/capture-live.sqlite3"
+            python \
+              services/olds-api/tools/export_completed_capture_index.py \
+              --state "$RUNNER_TEMP/capture-live.sqlite3" \
+              --output "$RUNNER_TEMP/completed-captures.sqlite3"
+            gzip -9 -c "$RUNNER_TEMP/completed-captures.sqlite3" \
+              > "$RUNNER_TEMP/completed-captures.sqlite3.gz"
+            rclone copyto \
+              "$RUNNER_TEMP/completed-captures.sqlite3.gz" \
+              "${REMOTE_ROOT}/state/completed-captures.sqlite3.gz" \
+              --retries 8 --low-level-retries 20
             # The snapshot was taken before object upload and is published
             # last, so every capture it references is already durable.
             rclone copyto \
@@ -599,6 +611,11 @@ jobs:
           PY
           gzip -9 -c "$LOCAL_ROOT/raw/capture.sqlite3" \
             > "$RUNNER_TEMP/capture.sqlite3.gz"
+          python services/olds-api/tools/export_completed_capture_index.py \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --output "$RUNNER_TEMP/completed-captures.sqlite3"
+          gzip -9 -c "$RUNNER_TEMP/completed-captures.sqlite3" \
+            > "$RUNNER_TEMP/completed-captures.sqlite3.gz"
 
       - name: Publish raw objects, records, and capture checkpoint
         if: >-
@@ -645,6 +662,10 @@ jobs:
               "${REMOTE_ROOT}/state/summary.json" \
               --retries 8 --low-level-retries 20
           fi
+          rclone copyto \
+            "$RUNNER_TEMP/completed-captures.sqlite3.gz" \
+            "${REMOTE_ROOT}/state/completed-captures.sqlite3.gz" \
+            --retries 8 --low-level-retries 20
           # Publish state last so it never references objects absent from B2.
           rclone copyto \
             "$RUNNER_TEMP/capture.sqlite3.gz" \
