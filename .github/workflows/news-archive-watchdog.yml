@@ -24,7 +24,7 @@ jobs:
             from_year: "2016"
             to_year: "2026"
             manifest_mode: sitemap-wayback
-            discovery_units: "5"
+            discovery_units: "1"
           - publisher: nyt
             from_year: "2016"
             to_year: "2026"
@@ -34,7 +34,7 @@ jobs:
             from_year: "2016"
             to_year: "2026"
             manifest_mode: sitemap-wayback
-            discovery_units: "5"
+            discovery_units: "1"
           - publisher: wsj
             from_year: "2016"
             to_year: "2026"
