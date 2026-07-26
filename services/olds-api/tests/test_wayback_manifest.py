@@ -28,6 +28,7 @@ from jojo_olds_api.wayback_manifest import (
     process_wsj_rss_feeds,
     record_discovery_page,
     wsj_catalog_count_for_year,
+    wsj_catalog_ready_for_capture,
     wsj_google_news_is_only_catalog_gap,
     wsj_google_news_should_continue,
 )
@@ -615,6 +616,7 @@ def test_wsj_google_news_can_pause_cdx_when_only_supported_years_are_short():
         to_year=2024,
         collapse="urlkey",
     )
+    initialize_wsj_google_news_schema(connection)
 
     assert wsj_google_news_is_only_catalog_gap(
         connection,
@@ -646,6 +648,38 @@ def test_wsj_google_news_can_pause_cdx_when_only_supported_years_are_short():
     )
 
     assert wsj_google_news_is_only_catalog_gap(
+        connection,
+        from_year=2022,
+        to_year=2024,
+        minimum_catalog=1,
+    ) is True
+    assert wsj_catalog_ready_for_capture(
+        connection,
+        from_year=2022,
+        to_year=2024,
+        minimum_catalog=1,
+    ) is False
+
+    connection.executemany(
+        """
+        INSERT INTO wsj_google_news_articles(
+            canonical_url,
+            published_at,
+            google_news_url,
+            updated_at
+        ) VALUES (?, ?, ?, ?)
+        """,
+        [
+            (
+                f"https://www.wsj.com/articles/ready-{year}-a1b2c3d4",
+                f"{year}-06-01T00:00:00+00:00",
+                f"https://news.google.com/rss/articles/{year}",
+                "2026-01-01T00:00:00+00:00",
+            )
+            for year in (2023, 2024)
+        ],
+    )
+    assert wsj_catalog_ready_for_capture(
         connection,
         from_year=2022,
         to_year=2024,

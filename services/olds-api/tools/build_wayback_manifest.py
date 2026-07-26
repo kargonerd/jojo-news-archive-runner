@@ -29,6 +29,7 @@ from jojo_olds_api.wayback_manifest import (
     process_wsj_rss_feeds,
     record_discovery_page,
     wsj_bluesky_should_continue,
+    wsj_catalog_ready_for_capture,
     wsj_google_news_is_only_catalog_gap,
     wsj_google_news_should_continue,
 )
@@ -195,6 +196,12 @@ def main() -> int:
                 )
                 if args.min_request_interval:
                     time.sleep(args.min_request_interval)
+        if wsj_catalog_ready_for_capture(
+            connection,
+            from_year=args.from_year,
+            to_year=args.to_year,
+        ):
+            cdx_paused_for_google_news = True
     client = WaybackCDXClient(
         minimum_interval=args.min_request_interval,
         timeout=args.timeout,

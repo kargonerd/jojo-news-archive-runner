@@ -1081,6 +1081,19 @@ def wsj_catalog_count_for_year(
     )
 
 
+def wsj_catalog_ready_for_capture(
+    connection: sqlite3.Connection,
+    *,
+    from_year: int,
+    to_year: int,
+    minimum_catalog: int = PARSER_VALIDATION_CATALOG_MINIMUM_PER_YEAR,
+) -> bool:
+    return all(
+        wsj_catalog_count_for_year(connection, year) >= minimum_catalog
+        for year in range(from_year, to_year + 1)
+    )
+
+
 def _wsj_external_articles(
     connection: sqlite3.Connection,
 ) -> dict[str, str]:
@@ -1368,9 +1381,11 @@ def export_capture_manifest(
         "fromYear": from_year,
         "toYear": to_year,
         "complete": incomplete == 0,
-        "captureReady": all(
-            count >= capture_minimum_per_year
-            for count in year_counts.values()
+        "captureReady": wsj_catalog_ready_for_capture(
+            connection,
+            from_year=from_year,
+            to_year=to_year,
+            minimum_catalog=capture_minimum_per_year,
         ),
         "captureMinimumPerYear": capture_minimum_per_year,
         "yearCounts": year_counts,
