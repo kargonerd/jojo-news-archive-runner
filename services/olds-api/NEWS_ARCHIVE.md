@@ -21,10 +21,11 @@ downloaded by `capture_archive_batch.py`.
 Parser readiness is measured on a reproducible, publisher-and-year-stratified
 sample. The archive workflow selects URLs by a stable SHA-256 priority, captures
 years in round-robin order, and evaluates at least 500 articles for every
-configured year. Validation stores metrics and issue codes, never article body
-text. A publisher/year is not ready until it has 500 evaluated samples, no
-parser exceptions, at least a 95% complete-extraction rate, and at least a 95%
-QA-pass rate.
+configured year. Already stored raw captures are sampled and replayed first;
+uncaptured URLs fill only the remaining shortfall. Validation stores metrics
+and issue codes, never article body text. A publisher/year is not ready until
+it has 500 evaluated samples, no parser exceptions, at least a 95%
+complete-extraction rate, and at least a 95% QA-pass rate.
 
 ## B2 layout
 
@@ -52,14 +53,20 @@ deterministic (`mtime=0`), so repeated identical captures produce the same B2
 object. Each canonical publisher URL appears once in a manifest with ranked
 fallback snapshots. The capture worker evaluates usable candidates and stores
 only the highest-quality response; it stops early when a response reaches the
-maximum raw quality score. FT capture first queries the nearest Common Crawl
-indexes for the exact canonical URL. It range-downloads only the indexed WARC
-record, validates the WARC target URL, reconstructs the original HTTP response,
-and applies the same subscription-shell and raw-quality gates. It then uses an
-exact Wayback timemap and finally the manifest's publication-near AMP and
-canonical guesses. Common Crawl and Wayback use separate host circuit breakers
-and bounded retries so one unhealthy archive cannot stall every source. The raw
-record retains the Common Crawl object URL, WARC filename, offset, and length.
+maximum raw quality score. FT capture first queries the historically
+higher-yield exact Wayback timemap. Common Crawl is the bounded fallback: it
+queries the nearest indexes for the exact canonical URL, range-downloads only
+the indexed WARC record, validates the WARC target URL, reconstructs the
+original HTTP response, and applies the same subscription-shell and raw-quality
+gates. Publication-near guesses are used only when the timemap is empty.
+Common Crawl and Wayback use separate host circuit breakers and bounded retries
+so one unhealthy archive cannot stall every source. The raw record retains the
+Common Crawl object URL, WARC filename, offset, and length.
+
+Wayback URL-key discovery may begin capture before every query is exhausted
+once every requested year has at least 750 unique article candidates. Discovery
+continues in later resumable runs, while the 250-article buffer allows the
+500-sample parser gate to tolerate unusable archive responses.
 
 Objects and records are uploaded before the capture checkpoint. A restored
 checkpoint therefore never references data that has not reached B2.
