@@ -509,10 +509,11 @@ def test_wsj_google_news_fills_historical_catalog_gap(
 
     assert result == {
         "status": "complete-target-met",
+        "targetYear": 2024,
         "itemsSeen": 1,
         "decodesAttempted": 1,
         "accepted": 1,
-        "catalogCount2024": 1,
+        "catalogCount": 1,
         "errors": [],
     }
     assert wsj_catalog_count_for_year(connection, 2024) == 1
@@ -531,6 +532,76 @@ def test_wsj_google_news_fills_historical_catalog_gap(
         "/google-news-story-a1b2c3d4"
     )
     assert row["publishedAt"] == "2024-09-21T07:00:00+00:00"
+
+
+def test_wsj_google_news_keeps_filling_2023_after_2024_is_ready():
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2023,
+        to_year=2024,
+        collapse="urlkey",
+    )
+    initialize_wsj_google_news_schema(connection)
+    rows = [
+        (
+            f"https://www.wsj.com/articles/ready-2024-{index}",
+            "2024-06-01T00:00:00+00:00",
+            f"https://news.google.com/rss/articles/2024-{index}",
+            "2026-01-01T00:00:00+00:00",
+        )
+        for index in range(2)
+    ]
+    rows.append(
+        (
+            "https://www.wsj.com/articles/one-2023",
+            "2023-06-01T00:00:00+00:00",
+            "https://news.google.com/rss/articles/2023-1",
+            "2026-01-01T00:00:00+00:00",
+        )
+    )
+    connection.executemany(
+        """
+        INSERT INTO wsj_google_news_articles(
+            canonical_url,
+            published_at,
+            google_news_url,
+            updated_at
+        ) VALUES (?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+    assert wsj_google_news_should_continue(
+        connection,
+        from_year=2023,
+        to_year=2024,
+        minimum_catalog=2,
+    ) is True
+    connection.execute(
+        """
+        INSERT INTO wsj_google_news_articles(
+            canonical_url,
+            published_at,
+            google_news_url,
+            updated_at
+        ) VALUES (?, ?, ?, ?)
+        """,
+        (
+            "https://www.wsj.com/articles/two-2023",
+            "2023-07-01T00:00:00+00:00",
+            "https://news.google.com/rss/articles/2023-2",
+            "2026-01-01T00:00:00+00:00",
+        ),
+    )
+    assert wsj_google_news_should_continue(
+        connection,
+        from_year=2023,
+        to_year=2024,
+        minimum_catalog=2,
+    ) is False
 
 
 def test_digest_discovery_keeps_exhausting_current_pattern():

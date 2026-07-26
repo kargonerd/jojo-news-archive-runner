@@ -28,21 +28,9 @@ WSJ_BLUESKY_ENDPOINT = (
 )
 WSJ_BLUESKY_START_YEAR = 2024
 WSJ_CATALOG_TARGET_PER_YEAR = 750
-WSJ_GOOGLE_NEWS_YEAR = 2024
+WSJ_GOOGLE_NEWS_YEARS = (2023, 2024)
 WSJ_GOOGLE_NEWS_MINIMUM_CATALOG = 750
 WSJ_GOOGLE_NEWS_MAXIMUM_DECODES = 25
-WSJ_GOOGLE_NEWS_WINDOWS = (
-    ("2024-01-01", "2024-02-01"),
-    ("2024-02-01", "2024-03-01"),
-    ("2024-03-01", "2024-04-01"),
-    ("2024-04-01", "2024-05-01"),
-    ("2024-05-01", "2024-06-01"),
-    ("2024-06-01", "2024-07-01"),
-    ("2024-07-01", "2024-08-01"),
-    ("2024-08-01", "2024-09-01"),
-    ("2024-09-01", "2024-10-01"),
-    ("2024-10-01", "2024-11-13"),
-)
 GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
 GOOGLE_NEWS_DECODE_ENDPOINT = (
     "https://news.google.com/_/DotsSplashUi/data/batchexecute"
@@ -420,11 +408,14 @@ def wsj_google_news_should_continue(
     minimum_catalog: int = WSJ_GOOGLE_NEWS_MINIMUM_CATALOG,
 ) -> bool:
     initialize_wsj_google_news_schema(connection)
-    if not from_year <= WSJ_GOOGLE_NEWS_YEAR <= to_year:
-        return False
     if (
-        wsj_catalog_count_for_year(connection, WSJ_GOOGLE_NEWS_YEAR)
-        >= minimum_catalog
+        _wsj_google_news_target_year(
+            connection,
+            from_year=from_year,
+            to_year=to_year,
+            minimum_catalog=minimum_catalog,
+        )
+        is None
     ):
         with connection:
             connection.execute(
@@ -438,9 +429,9 @@ def wsj_google_news_should_continue(
                 (_now_iso(),),
             )
         return False
-    # A previous release stopped at 500 and may have persisted
-    # complete-target-met. Reopen that state until the larger parser-QA
-    # reserve is actually present.
+    # A previous release may have persisted complete-target-met after filling
+    # only one historical year. Reopen until every supported gap year has the
+    # parser-QA reserve.
     return True
 
 
@@ -464,9 +455,28 @@ def process_wsj_google_news_feed(
             "SELECT polls FROM wsj_google_news_state WHERE singleton=1"
         ).fetchone()[0]
     )
-    window_start, window_end = WSJ_GOOGLE_NEWS_WINDOWS[
-        polls % len(WSJ_GOOGLE_NEWS_WINDOWS)
-    ]
+    target_year = _wsj_google_news_target_year(
+        connection,
+        from_year=from_year,
+        to_year=to_year,
+        minimum_catalog=minimum_catalog,
+    )
+    if target_year is None:
+        return {
+            "status": "complete-target-met",
+            "targetYear": None,
+            "itemsSeen": 0,
+            "decodesAttempted": 0,
+            "accepted": 0,
+            "catalogCount": None,
+            "errors": [],
+        }
+    month = polls % 12 + 1
+    window_start = f"{target_year:04d}-{month:02d}-01"
+    if month == 12:
+        window_end = f"{target_year + 1:04d}-01-01"
+    else:
+        window_end = f"{target_year:04d}-{month + 1:02d}-01"
     query = (
         "site:wsj.com/articles "
         f"after:{window_start} before:{window_end}"
@@ -492,7 +502,7 @@ def process_wsj_google_news_feed(
         published_at = _parse_rss_datetime(item.findtext("pubDate"))
         if (
             published_at is None
-            or published_at.year != WSJ_GOOGLE_NEWS_YEAR
+            or published_at.year != target_year
             or not from_year <= published_at.year <= to_year
         ):
             continue
@@ -541,11 +551,17 @@ def process_wsj_google_news_feed(
         accepted = connection.total_changes - before
         catalog_count = wsj_catalog_count_for_year(
             connection,
-            WSJ_GOOGLE_NEWS_YEAR,
+            target_year,
         )
         status = (
             "complete-target-met"
-            if catalog_count >= minimum_catalog
+            if _wsj_google_news_target_year(
+                connection,
+                from_year=from_year,
+                to_year=to_year,
+                minimum_catalog=minimum_catalog,
+            )
+            is None
             else "partial"
         )
         connection.execute(
@@ -571,12 +587,34 @@ def process_wsj_google_news_feed(
         )
     return {
         "status": status,
+        "targetYear": target_year,
         "itemsSeen": len(items),
         "decodesAttempted": decodes_attempted,
         "accepted": accepted,
-        "catalogCount2024": catalog_count,
+        "catalogCount": catalog_count,
         "errors": errors,
     }
+
+
+def _wsj_google_news_target_year(
+    connection: sqlite3.Connection,
+    *,
+    from_year: int,
+    to_year: int,
+    minimum_catalog: int,
+) -> int | None:
+    years = [
+        year
+        for year in WSJ_GOOGLE_NEWS_YEARS
+        if from_year <= year <= to_year
+        and wsj_catalog_count_for_year(connection, year) < minimum_catalog
+    ]
+    if not years:
+        return None
+    return min(
+        years,
+        key=lambda year: (wsj_catalog_count_for_year(connection, year), year),
+    )
 
 
 def _decode_google_news_url(
