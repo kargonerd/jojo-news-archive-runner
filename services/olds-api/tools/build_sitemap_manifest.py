@@ -407,7 +407,7 @@ def main() -> int:
                 document_result = process_ft_infini_documents(
                     connection,
                     http_client=ft_client,
-                    maximum=args.max_sitemaps * 100,
+                    maximum=args.max_sitemaps * 25,
                     workers=4,
                     minimum_request_interval=(
                         args.min_request_interval
@@ -431,7 +431,7 @@ def main() -> int:
                     process_ft_syndication_resolutions(
                         connection,
                         http_client=ft_client,
-                        maximum=args.max_sitemaps * 100,
+                        maximum=args.max_sitemaps * 25,
                         minimum_request_interval=(
                             args.min_request_interval
                         ),
@@ -511,7 +511,7 @@ def main() -> int:
                     process_bloomberg_infini_documents(
                         connection,
                         http_client=bloomberg_source_client,
-                        maximum=args.max_sitemaps * 100,
+                        maximum=args.max_sitemaps * 25,
                         workers=4,
                         minimum_request_interval=(
                             args.min_request_interval
@@ -538,7 +538,7 @@ def main() -> int:
                     connection,
                     search_client=bloomberg_source_client,
                     archive_client=bnn_client,
-                    maximum=args.max_sitemaps * 50,
+                    maximum=args.max_sitemaps * 10,
                     minimum_request_interval=(
                         args.min_request_interval
                     ),
@@ -562,7 +562,7 @@ def main() -> int:
             day_result = process_bloomberg_bnn_sitemaps(
                 connection,
                 http_client=bnn_client,
-                maximum_days=args.max_sitemaps * 10,
+                maximum_days=args.max_sitemaps * 2,
             )
             bloomberg_bnn_days = int(day_result["processed"])
             print(
@@ -579,7 +579,7 @@ def main() -> int:
             page_result = process_bloomberg_bnn_pages(
                 connection,
                 http_client=bnn_client,
-                maximum=args.max_sitemaps * 100,
+                maximum=args.max_sitemaps * 25,
             )
             bloomberg_bnn_pages = int(page_result["attempted"])
             print(
