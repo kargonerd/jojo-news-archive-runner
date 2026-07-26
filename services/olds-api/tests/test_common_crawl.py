@@ -406,7 +406,7 @@ def test_archive_client_limited_fetch_caps_transport_attempts():
     http_client.close()
 
 
-def test_ft_capture_prefers_valid_common_crawl_before_wayback(
+def test_ft_capture_uses_valid_common_crawl_after_wayback_shell(
     tmp_path: Path,
 ):
     compressed = _warc_record()
@@ -449,4 +449,7 @@ def test_ft_capture_prefers_valid_common_crawl_before_wayback(
     assert capture.final_url == CANONICAL_URL
     assert capture.quality_score == 100
     assert capture.quality_signals["commonCrawlWarcValidated"] is True
-    assert wayback_url not in client.requests
+    assert wayback_url in client.requests
+    assert client.requests.index(wayback_url) < client.requests.index(
+        COLLECTION_INFO_URL
+    )

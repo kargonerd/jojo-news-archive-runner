@@ -469,6 +469,12 @@ def capture_item(
         candidates_considered.extend(timemap_candidates)
         consider_candidates(timemap_candidates)
 
+        # Publication-near Wayback URLs are cheap to resolve and can select a
+        # useful later capture outside the bounded exact-capture shortlist.
+        # Exhaust them before the slower Common Crawl index/WARC fallback.
+        if best_response is None or best_response[5] < 100:
+            consider_candidates(item.candidates)
+
         if best_response is None or best_response[5] < 100:
             try:
                 common_crawl_candidates = discover_common_crawl_candidates(
@@ -499,15 +505,6 @@ def capture_item(
             )
             candidates_considered.extend(common_crawl_candidates)
             consider_candidates(common_crawl_candidates)
-
-        # Guessed publication-near URLs are useful only when Timemap itself is
-        # unavailable or empty. If Timemap returned exact captures, retrying
-        # six guesses adds latency without another archived version.
-        if (
-            (best_response is None or best_response[5] < 100)
-            and not timemap_candidates
-        ):
-            consider_candidates(item.candidates)
     else:
         consider_candidates(item.candidates)
 

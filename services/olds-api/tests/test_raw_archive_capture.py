@@ -306,7 +306,6 @@ def test_capture_keeps_strong_article_instead_of_first_html_shell(
             "https://web.archive.org/web/timemap/json?"
             "url=https%3A%2F%2Fwww.ft.com%2Fcontent%2Fexample"
         ),
-        "https://index.commoncrawl.org/collinfo.json",
         shell_url,
         article_url,
     ]
