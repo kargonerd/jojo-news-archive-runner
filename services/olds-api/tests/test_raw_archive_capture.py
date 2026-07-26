@@ -1820,6 +1820,23 @@ def test_raw_quality_rejects_wsj_continue_reading_shell():
     assert signals["subscriptionShell"] is True
 
 
+def test_raw_quality_rejects_bloomberg_login_to_keep_reading_shell():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>A Bloomberg article preview</title></head>
+        <body><article><p>Several preview paragraphs are shown here.</p>
+        <h2>Already a subscriber?</h2>
+        <p>Log in to keep reading or access research tools and resources.</p>
+        </article></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["subscriptionShell"] is True
+
+
 def test_raw_quality_keeps_subscription_page_with_structured_article_body():
     score, signals = score_raw_capture(
         b"""

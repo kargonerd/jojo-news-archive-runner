@@ -547,7 +547,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.6.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.7.0"
 
 
 def test_nyt_generic_syndication_extracts_local_newspaper_copy():
