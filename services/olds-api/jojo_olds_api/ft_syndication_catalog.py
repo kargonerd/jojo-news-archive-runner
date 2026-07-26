@@ -514,6 +514,32 @@ def resolve_ft_original_url(
     spec: ArchiveSourceSpec,
     http_client: httpx.Client,
 ) -> str | None:
+    try:
+        yahoo_result = _resolve_ft_original_url_from_yahoo(
+            expected_headline,
+            spec=spec,
+            http_client=http_client,
+        )
+    except httpx.HTTPError:
+        yahoo_result = None
+    if yahoo_result is not None:
+        return yahoo_result
+    if expected_published_at is None:
+        return None
+    return _resolve_ft_original_url_from_google_news(
+        expected_headline,
+        expected_published_at=expected_published_at,
+        spec=spec,
+        http_client=http_client,
+    )
+
+
+def _resolve_ft_original_url_from_yahoo(
+    expected_headline: str,
+    *,
+    spec: ArchiveSourceSpec,
+    http_client: httpx.Client,
+) -> str | None:
     expected_tokens = _significant_tokens(expected_headline)
     if len(expected_tokens) < 4:
         return None
@@ -553,17 +579,10 @@ def resolve_ft_original_url(
         if coverage < 0.8 or len(expected_tokens & result_tokens) < 4:
             continue
         ranked.append((coverage, -position, canonical_url))
-    if ranked:
-        ranked.sort(reverse=True)
-        return ranked[0][2]
-    if expected_published_at is None:
+    if not ranked:
         return None
-    return _resolve_ft_original_url_from_google_news(
-        expected_headline,
-        expected_published_at=expected_published_at,
-        spec=spec,
-        http_client=http_client,
-    )
+    ranked.sort(reverse=True)
+    return ranked[0][2]
 
 
 def _resolve_ft_original_url_from_google_news(
