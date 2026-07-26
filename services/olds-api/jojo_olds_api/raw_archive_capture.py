@@ -27,6 +27,11 @@ from .ft_syndication_catalog import (
     INFINI_DATASET,
     INFINI_DATASET_ROWS_ENDPOINT,
 )
+from .ghostarchive import (
+    discover_ghostarchive_candidates,
+    fetch_ghostarchive_candidate,
+    is_ghostarchive_candidate_url,
+)
 from .news_models import (
     ArticleStatus,
     BlobReference,
@@ -41,7 +46,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.11.0",
+    "ft": "ft-capture/0.12.0",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -537,6 +542,7 @@ def capture_item(
     ft_infini_origin_validated = False
     ft_title_index_attempted = False
     ft_dynamic_syndication_attempted = False
+    ft_ghostarchive_attempted = False
     ft_original_headline = next(
         (
             candidate.expected_headline
@@ -660,7 +666,22 @@ def capture_item(
                     candidate.provider == CaptureProvider.INFINI_NEWS
                     and _is_ft_origin_url(candidate.source_url)
                 )
-                if direct_infini_origin:
+                ghostarchive_origin = bool(
+                    candidate.provider == CaptureProvider.OTHER
+                    and is_ghostarchive_candidate_url(
+                        candidate.snapshot_url
+                    )
+                )
+                if ghostarchive_origin:
+                    validated, validation_signals = (
+                        _validate_ft_ghostarchive_response(
+                            item,
+                            expected_headline=candidate.expected_headline,
+                            content=response[2],
+                            final_url=response[3],
+                        )
+                    )
+                elif direct_infini_origin:
                     validated, validation_signals = (
                         _validate_ft_infini_origin_response(
                             item,
@@ -688,9 +709,13 @@ def capture_item(
                 if not validated:
                     failures.append(
                         (
-                            "ft-infini-origin"
-                            if direct_infini_origin
-                            else "ft-syndication"
+                            "ft-ghostarchive-origin"
+                            if ghostarchive_origin
+                            else (
+                                "ft-infini-origin"
+                                if direct_infini_origin
+                                else "ft-syndication"
+                            )
                         )
                         + ":validation:"
                         + str(
@@ -704,10 +729,14 @@ def capture_item(
                     response[2],
                     response[3],
                     response[4],
-                    100 if direct_infini_origin else response[5],
+                    (
+                        100
+                        if direct_infini_origin or ghostarchive_origin
+                        else response[5]
+                    ),
                     response[6] | validation_signals,
                 )
-                if direct_infini_origin:
+                if direct_infini_origin or ghostarchive_origin:
                     ft_infini_origin_validated = True
                 elif candidate.provider == CaptureProvider.OTHER:
                     ft_raw_partner_validated = True
@@ -869,6 +898,38 @@ def capture_item(
         candidates_considered.extend(additional_candidates)
         consider_candidates(additional_candidates)
 
+    def consider_ft_ghostarchive() -> None:
+        nonlocal ft_ghostarchive_attempted
+        expected_date = _parse_iso_datetime(item.published_at)
+        if (
+            ft_ghostarchive_attempted
+            or best_response is not None
+            or item.publisher != "ft"
+            or expected_date is None
+            or expected_date.year < 2022
+        ):
+            return
+        ft_ghostarchive_attempted = True
+        try:
+            ghostarchive_candidates = discover_ghostarchive_candidates(
+                item.canonical_url,
+                archive_client=archive_client,
+                expected_headline=ft_original_headline,
+            )
+        except Exception as exc:
+            failures.append(f"ghostarchive-index:{type(exc).__name__}")
+            ghostarchive_candidates = ()
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        ghostarchive_candidates = tuple(
+            candidate
+            for candidate in ghostarchive_candidates
+            if candidate.snapshot_url not in existing_urls
+        )
+        candidates_considered.extend(ghostarchive_candidates)
+        consider_candidates(ghostarchive_candidates)
+
     direct_infini_candidates = tuple(
         candidate
         for candidate in item.candidates
@@ -878,6 +939,7 @@ def capture_item(
         )
     )
     consider_candidates(direct_infini_candidates)
+    consider_ft_ghostarchive()
 
     if item.publisher in COMMON_CRAWL_FALLBACK_PUBLISHERS:
         # Exact Wayback captures have historically produced far more usable FT
@@ -1416,6 +1478,7 @@ def _fetch_usable_candidate(
     | None,
     str | None,
 ]:
+    transport_signals: dict[str, object] = {}
     try:
         if candidate.provider == CaptureProvider.COMMON_CRAWL:
             status_code, headers, content, final_url = (
@@ -1435,6 +1498,22 @@ def _fetch_usable_candidate(
                     maximum_html_bytes=maximum_html_bytes,
                     canonical_url=canonical_url,
                 )
+            )
+        elif (
+            candidate.provider == CaptureProvider.OTHER
+            and is_ghostarchive_candidate_url(candidate.snapshot_url)
+        ):
+            (
+                status_code,
+                headers,
+                content,
+                final_url,
+                transport_signals,
+            ) = fetch_ghostarchive_candidate(
+                candidate,
+                canonical_url=canonical_url,
+                archive_client=archive_client,
+                maximum_html_bytes=maximum_html_bytes,
             )
         elif (
             candidate.provider == CaptureProvider.WAYBACK
@@ -1473,6 +1552,7 @@ def _fetch_usable_candidate(
         content_type=content_type,
         final_url=final_url,
     )
+    signals = signals | transport_signals
     if response_observer is not None:
         response_observer(candidate, content, final_url)
     structured_subscription_article = bool(
@@ -3761,6 +3841,102 @@ def _validate_ft_infini_origin_response(
         "infiniOriginDateDeltaDays": date_delta_days,
         "infiniOriginExpectedDateVisible": date_visible,
         "infiniOriginExpectedHeadline": expected_headline,
+    }
+
+
+def _validate_ft_ghostarchive_response(
+    item: ManifestItem,
+    *,
+    expected_headline: str | None,
+    content: bytes,
+    final_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    origin_url_validated = _same_ft_origin_article_url(
+        final_url,
+        item.canonical_url,
+    )
+    if not origin_url_validated:
+        return False, {
+            "reason": "unexpected-origin-url",
+            "ftGhostarchiveOriginValidated": False,
+            "ghostarchiveOriginUrlValidated": False,
+            "ghostarchiveOriginFinalUrl": final_url,
+        }
+    try:
+        article = parse_article(
+            content,
+            publisher="ft",
+            canonical_url=item.canonical_url,
+        )
+    except Exception as exc:
+        return False, {
+            "reason": f"parser-{type(exc).__name__}",
+            "ftGhostarchiveOriginValidated": False,
+            "ghostarchiveOriginUrlValidated": True,
+            "ghostarchiveOriginFinalUrl": final_url,
+        }
+    parsed_headline = article.headline or ""
+    headline_present = len(_significant_tokens(parsed_headline)) >= 4
+    headline_overlap = (
+        _headline_text_overlap(expected_headline, parsed_headline)
+        if expected_headline
+        else None
+    )
+    headline_matches = (
+        headline_present
+        and (
+            headline_overlap is None
+            or headline_overlap >= 0.8
+        )
+    )
+    expected_date = _parse_iso_datetime(item.published_at)
+    date_delta_days: int | None = None
+    if expected_date is not None and article.published_at is not None:
+        date_delta_days = abs(
+            (article.published_at.date() - expected_date.date()).days
+        )
+    date_visible = _expected_date_visible(
+        content,
+        expected_date=expected_date,
+    )
+    date_matches = (
+        date_delta_days is not None
+        and date_delta_days <= FT_SYNDICATION_MAXIMUM_DATE_DELTA_DAYS
+    ) or date_visible
+    body_characters = article.quality.body_characters
+    valid = (
+        article.quality.status == ArticleStatus.COMPLETE
+        and body_characters >= 1_000
+        and headline_matches
+        and date_matches
+    )
+    if article.quality.status != ArticleStatus.COMPLETE:
+        reason = f"parser-{article.quality.status.value}"
+    elif body_characters < 1_000:
+        reason = "body-too-short"
+    elif not headline_matches:
+        reason = "headline-mismatch"
+    elif not date_matches:
+        reason = "publication-date-mismatch"
+    else:
+        reason = None
+    return valid, {
+        "reason": reason,
+        "ftGhostarchiveOriginValidated": valid,
+        "ghostarchiveOriginUrlValidated": origin_url_validated,
+        "ghostarchiveOriginFinalUrl": final_url,
+        "ghostarchiveOriginHeadline": parsed_headline,
+        "ghostarchiveOriginHeadlineOverlap": (
+            round(headline_overlap, 4)
+            if headline_overlap is not None
+            else None
+        ),
+        "ghostarchiveOriginBodyCharacters": body_characters,
+        "ghostarchiveOriginDateDeltaDays": date_delta_days,
+        "ghostarchiveOriginExpectedDateVisible": date_visible,
+        "ghostarchiveOriginExpectedHeadline": expected_headline,
     }
 
 

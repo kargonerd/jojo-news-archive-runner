@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 from urllib.parse import parse_qs, urlsplit
 
+from jojo_olds_api.ghostarchive import ghostarchive_search_url
 from jojo_olds_api.news_models import (
     CaptureCandidate,
     CaptureProvider,
@@ -559,8 +560,15 @@ def test_ft_title_index_falls_back_to_validated_infini_row(
         "https%3A%2F%2Fwww.ft.com%2Fcontent%2F"
         "6544119e-a511-4cfa-9243-13b8cf855c13"
     )
+    ghost_search_url = ghostarchive_search_url(canonical_url)
     client = StubArchiveClient(
         {
+            ghost_search_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                b"<html><body>No archives</body></html>",
+                ghost_search_url,
+            ),
             timemap_url: (
                 200,
                 {"content-type": "application/json"},
@@ -2759,6 +2767,7 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
         "https%3A%2F%2Fwww.ft.com%2Fcontent%2F"
         "d8f6d8af-8235-43ae-a946-6d51da973ca4"
     )
+    ghost_search_url = ghostarchive_search_url(canonical_url)
     title_search_url = ft_syndication_title_search_url(
         expected_headline
     )
@@ -2817,6 +2826,12 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
     """.encode() + (b" " * 2_048)
     client = StubArchiveClient(
         {
+            ghost_search_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                b"<html><body>No archives</body></html>",
+                ghost_search_url,
+            ),
             timemap_url: (
                 200,
                 {"content-type": "application/json"},
@@ -2861,6 +2876,7 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
 
     assert result["status"] == "complete"
     assert client.requests == [
+        ghost_search_url,
         timemap_url,
         snapshot_url,
         title_search_url,
