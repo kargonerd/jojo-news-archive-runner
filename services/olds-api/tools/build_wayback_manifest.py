@@ -39,6 +39,11 @@ from jojo_olds_api.wsj_syndication_catalog import (
     process_wsj_syndication_catalog,
     process_wsj_syndication_resolutions,
 )
+from jojo_olds_api.wsj_infini_catalog import (
+    initialize_wsj_infini_schema,
+    process_wsj_infini_documents,
+    process_wsj_infini_queries,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,6 +91,8 @@ def main() -> int:
     google_news_items_this_run = 0
     wsj_syndication_pages_this_run = 0
     wsj_syndication_resolutions_this_run = 0
+    wsj_infini_queries_this_run = 0
+    wsj_infini_documents_this_run = 0
     cdx_paused_for_google_news = False
     deferred_errors: list[str] = []
     if args.publisher == "wsj" and args.collapse == "urlkey":
@@ -93,6 +100,11 @@ def main() -> int:
         initialize_wsj_google_news_schema(connection)
         initialize_wsj_rss_schema(connection)
         initialize_wsj_syndication_schema(connection)
+        initialize_wsj_infini_schema(
+            connection,
+            from_year=args.from_year,
+            to_year=args.to_year,
+        )
         with httpx.Client(
             headers={
                 "User-Agent": (
@@ -103,6 +115,65 @@ def main() -> int:
             follow_redirects=True,
             timeout=args.timeout,
         ) as http_client:
+            try:
+                infini_query_result = process_wsj_infini_queries(
+                    connection,
+                    http_client=http_client,
+                    maximum_queries=max(1, args.max_pages or 5),
+                )
+                wsj_infini_queries_this_run = int(
+                    infini_query_result["processed"]
+                )
+                infini_query_errors = infini_query_result.pop("errors")
+                deferred_errors.extend(
+                    f"WSJ Infini-News query: {error}"
+                    for error in infini_query_errors
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "wsj-infini-queries",
+                            **infini_query_result,
+                            "errors": len(infini_query_errors),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                infini_document_result = process_wsj_infini_documents(
+                    connection,
+                    spec=spec,
+                    http_client=http_client,
+                    maximum=max(1, args.max_pages or 5) * 100,
+                    workers=4,
+                    minimum_request_interval=args.min_request_interval,
+                )
+                wsj_infini_documents_this_run = int(
+                    infini_document_result["attempted"]
+                )
+                infini_document_errors = infini_document_result.pop(
+                    "errors"
+                )
+                deferred_errors.extend(
+                    f"WSJ Infini-News document: {error}"
+                    for error in infini_document_errors
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "wsj-infini-documents",
+                            **infini_document_result,
+                            "errors": len(infini_document_errors),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+            except Exception as exc:
+                deferred_errors.append(
+                    "WSJ Infini-News: "
+                    f"{type(exc).__name__}: {exc}"
+                )
             if wsj_google_news_should_continue(
                 connection,
                 from_year=args.from_year,
@@ -357,6 +428,8 @@ def main() -> int:
         "wsjSyndicationResolutionsThisRun": (
             wsj_syndication_resolutions_this_run
         ),
+        "wsjInfiniQueriesThisRun": wsj_infini_queries_this_run,
+        "wsjInfiniDocumentsThisRun": wsj_infini_documents_this_run,
         "cdxPausedForGoogleNews": cdx_paused_for_google_news,
         "deferredError": (
             "; ".join(deferred_errors) if deferred_errors else None

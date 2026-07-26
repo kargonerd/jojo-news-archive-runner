@@ -17,6 +17,12 @@ TOVIMA_POSTS_ENDPOINT = "https://www.tovima.com/wp-json/wp/v2/posts"
 TOVIMA_CATEGORY_ID = 261
 TOVIMA_PAGE_SIZE = 30
 YAHOO_SEARCH_ENDPOINT = "https://search.yahoo.com/search"
+YAHOO_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/138.0.0.0 Safari/537.36"
+)
+RESOLVER_VERSION = "browser-yahoo-v1"
 DEFAULT_CATALOG_PAGES_PER_RUN = 5
 DEFAULT_RESOLUTIONS_PER_RUN = 100
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -70,6 +76,11 @@ def initialize_wsj_syndication_schema(
             updated_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS wsj_syndication_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS wsj_syndication_articles (
             partner_url TEXT PRIMARY KEY,
             published_at TEXT NOT NULL,
@@ -99,6 +110,35 @@ def initialize_wsj_syndication_schema(
         """,
         (_now_iso(),),
     )
+    resolver_version = connection.execute(
+        """
+        SELECT value
+        FROM wsj_syndication_metadata
+        WHERE key='resolver_version'
+        """
+    ).fetchone()
+    if resolver_version is None or str(resolver_version[0]) != (
+        RESOLVER_VERSION
+    ):
+        connection.execute(
+            """
+            UPDATE wsj_syndication_articles
+            SET resolution_status='pending',
+                resolution_attempts=0,
+                last_error=NULL,
+                updated_at=?
+            WHERE resolution_status='not-found'
+            """,
+            (_now_iso(),),
+        )
+        connection.execute(
+            """
+            INSERT INTO wsj_syndication_metadata(key, value)
+            VALUES ('resolver_version', ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+            """,
+            (RESOLVER_VERSION,),
+        )
     connection.commit()
 
 
@@ -328,6 +368,7 @@ def resolve_wsj_original_url(
     response = http_client.get(
         YAHOO_SEARCH_ENDPOINT,
         params={"p": f'"{expected_headline}" site:wsj.com'},
+        headers={"User-Agent": YAHOO_USER_AGENT},
     )
     response.raise_for_status()
     soup = BeautifulSoup(response.content, "html.parser")

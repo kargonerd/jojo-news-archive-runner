@@ -65,7 +65,7 @@ class StubWsjSyndicationClient:
     def __init__(self):
         self.requests: list[tuple[str, dict[str, str]]] = []
 
-    def get(self, url, params):
+    def get(self, url, params, headers=None):
         self.requests.append((url, params))
         if url.endswith("/wp-json/wp/v2/posts"):
             return StubWsjSyndicationResponse(
@@ -94,6 +94,7 @@ class StubWsjSyndicationClient:
             )
         assert url == "https://search.yahoo.com/search"
         assert 'site:wsj.com' in params["p"]
+        assert headers and headers["User-Agent"].startswith("Mozilla/5.0")
         canonical_url = (
             "https://www.wsj.com/finance/stocks/"
             "investors-prepare-for-a-volatile-summer-in-global-markets-"
@@ -179,6 +180,46 @@ def test_wsj_syndication_catalog_resolves_and_exports_partner_copy(
             "Investors Prepare for a Volatile Summer in Global Markets"
         ),
     }
+
+
+def test_wsj_syndication_retries_not_found_after_resolver_upgrade():
+    connection = sqlite3.connect(":memory:")
+    initialize_wsj_syndication_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO wsj_syndication_articles(
+            partner_url,
+            published_at,
+            expected_headline,
+            resolution_status,
+            resolution_attempts,
+            updated_at
+        ) VALUES (?, ?, ?, 'not-found', 3, ?)
+        """,
+        (
+            "https://www.tovima.com/wsj/retry-this-copy/",
+            "2024-06-03T12:34:56+00:00",
+            "A Complete Wall Street Journal Headline",
+            "2024-06-03T12:34:56+00:00",
+        ),
+    )
+    connection.execute(
+        """
+        UPDATE wsj_syndication_metadata
+        SET value='legacy-resolver'
+        WHERE key='resolver_version'
+        """
+    )
+    connection.commit()
+
+    initialize_wsj_syndication_schema(connection)
+
+    assert connection.execute(
+        """
+        SELECT resolution_status, resolution_attempts, last_error
+        FROM wsj_syndication_articles
+        """
+    ).fetchone() == ("pending", 0, None)
 
 
 def test_parse_cdx_json_extracts_resume_key():

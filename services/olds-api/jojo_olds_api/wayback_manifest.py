@@ -17,6 +17,11 @@ import httpx
 
 from .archive_sources import ArchiveSourceSpec, normalize_article_url
 from .bloomberg_archive_download import GlobalRateLimiter
+from .wsj_infini_catalog import (
+    wsj_infini_articles,
+    wsj_infini_should_continue,
+    wsj_infini_summary,
+)
 from .wsj_syndication_catalog import (
     wsj_syndication_articles,
     wsj_syndication_should_continue,
@@ -1084,6 +1089,15 @@ def wsj_catalog_count_for_year(
             """
         )
         parameters.append(str(year))
+    if _table_exists(connection, "wsj_infini_articles"):
+        selects.append(
+            """
+            SELECT canonical_url
+            FROM wsj_infini_articles
+            WHERE substr(published_at, 1, 4)=?
+            """
+        )
+        parameters.append(str(year))
     return int(
         connection.execute(
             f"""
@@ -1135,6 +1149,12 @@ def _wsj_external_articles(
         connection
     ).items():
         published_at = article["publishedAt"]
+        previous = result.get(canonical_url)
+        if previous is None or published_at < previous:
+            result[canonical_url] = published_at
+    for canonical_url, published_at in wsj_infini_articles(
+        connection
+    ).items():
         previous = result.get(canonical_url)
         if previous is None or published_at < previous:
             result[canonical_url] = published_at
@@ -1425,6 +1445,8 @@ def export_capture_manifest(
             incomplete += 1
     if wsj_syndication_should_continue(connection):
         incomplete += 1
+    if wsj_infini_should_continue(connection):
+        incomplete += 1
     year_counts = {
         str(year): wsj_catalog_count_for_year(connection, year)
         for year in range(from_year, to_year + 1)
@@ -1560,6 +1582,12 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
         result["shouldContinue"] = bool(
             result["shouldContinue"]
         ) or wsj_syndication_should_continue(connection)
+    infini = wsj_infini_summary(connection)
+    if infini is not None:
+        result["wsjInfini"] = infini
+        result["shouldContinue"] = bool(
+            result["shouldContinue"]
+        ) or wsj_infini_should_continue(connection)
     return result
 
 

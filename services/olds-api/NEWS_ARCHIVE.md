@@ -172,6 +172,15 @@ archive discovery. When a canonical URL has no embedded date, the first capture
 timestamp supplies the provisional sampling year; the parser still prefers the
 publication metadata contained in the archived page.
 
+For WSJ years 2016–2023, the URL-key shard also searches Infini-News for
+historical WSJ paywall/copyright templates, draws a reproducible random sample
+across every matching shard, and accepts only normalized official `wsj.com`
+article URLs with matching-year metadata. Infini-News supplies URL discovery
+metadata only; its extracted text is never used as the raw article. Each
+official URL still goes through the normal publication-near Wayback capture and
+the same 500-article parser gate. This avoids treating other Dow Jones
+publications that share the copyright template as WSJ articles.
+
 For WSJ articles from 2023 onward, the same shard also enumerates the public
 Wall Street Journal category on To Vima, resolves each licensed-copy headline
 to its canonical `wsj.com` URL, and records the partner page as a direct
