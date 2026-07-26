@@ -55,6 +55,11 @@ def main() -> int:
                 "activeCells": plan["activeCells"],
                 "pendingCells": plan["pendingCells"],
                 "dispatches": len(plan["tasks"]),
+                "unresolved": [
+                    row
+                    for row in plan["cellProgress"]
+                    if not row["ready"]
+                ],
             },
             ensure_ascii=False,
         )
