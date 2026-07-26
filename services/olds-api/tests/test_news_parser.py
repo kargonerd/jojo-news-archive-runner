@@ -287,7 +287,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.9.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.0"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -329,7 +329,39 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.9.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.0"
+
+
+def test_bloomberg_parser_extracts_legacy_div_span_story_body():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Legacy Bloomberg story">
+      <meta property="article:published_time"
+            content="2018-09-18T15:21:25Z">
+    </head><body><article>
+      <div class="body-copy-v2">
+        <div><span>The first legacy paragraph contains substantive reporting
+        about a workplace settlement and enough context for extraction.</span></div>
+        <div><span>The second legacy paragraph explains the response, timing,
+        evidence and consequences in additional detail for readers.</span></div>
+      </div>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2018-09-18/example"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters >= 200
+    assert len(result.blocks) == 2
+    assert "first legacy paragraph" in result.plain_text
+    assert "second legacy paragraph" in result.plain_text
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.0"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -631,7 +663,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.9.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.0"
 
 
 def test_nyt_generic_syndication_extracts_local_newspaper_copy():

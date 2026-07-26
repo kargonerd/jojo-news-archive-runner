@@ -68,7 +68,7 @@ PUBLISHER_SPECS = {
     ),
     "bloomberg": PublisherSpec(
         publisher="bloomberg",
-        parser_version="bloomberg-parser/0.9.0",
+        parser_version="bloomberg-parser/0.10.0",
         domains=("bloomberg.com", "www.bloomberg.com"),
         default_language="en",
         edition="global",
@@ -86,6 +86,7 @@ PUBLISHER_SPECS = {
             "[data-position='mobile-box']",
         ),
         text_block_selectors=(
+            ".body-copy-v2 > div:not([class])",
             ".timeline_header #current-title",
             ".event .text",
             ".event .caption",
