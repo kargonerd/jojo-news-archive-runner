@@ -458,7 +458,11 @@ def export_sitemap_manifest(
             ORDER BY canonical_url
             """
         )
-    exact_wayback = discovered_wayback_articles(connection)
+    exact_wayback = discovered_wayback_articles(
+        connection,
+        from_year=from_year,
+        to_year=to_year,
+    )
     with opener(temporary, "wt", encoding="utf-8") as handle:
         for (
             canonical_url,

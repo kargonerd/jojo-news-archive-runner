@@ -543,6 +543,10 @@ def test_ft_sitemap_manifest_merges_exact_wayback_urlkey_discovery(
         "https://www.ft.com/content/"
         "6eb9ad7b-c5eb-47e4-b27a-3d536fefe99a"
     )
+    out_of_window_url = (
+        "https://www.ft.com/content/"
+        "31fb47f2-9782-11e6-a1dc-bdf38d484582"
+    )
     index = b"""<?xml version="1.0"?>
     <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
       <sitemap>
@@ -606,6 +610,14 @@ def test_ft_sitemap_manifest_merges_exact_wayback_urlkey_discovery(
                     digest="DISCOVERED",
                     length=63_000,
                 ),
+                CDXCapture(
+                    timestamp="20131005100000",
+                    original=out_of_window_url,
+                    mimetype="text/html",
+                    status_code=200,
+                    digest="OUT-OF-WINDOW",
+                    length=61_000,
+                ),
             ),
             resume_key=None,
         ),
@@ -625,6 +637,7 @@ def test_ft_sitemap_manifest_merges_exact_wayback_urlkey_discovery(
 
     assert summary["articles"] == 2
     assert set(by_url) == {overlapping_url, discovered_url}
+    assert out_of_window_url not in by_url
     overlap = manifest_item_from_row(
         by_url[overlapping_url],
         publisher="ft",

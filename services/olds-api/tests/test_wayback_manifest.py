@@ -425,6 +425,55 @@ def test_no_date_url_uses_capture_time_for_year_stratification():
     assert published_at == "2020-06-15T12:00:00+00:00"
 
 
+def test_discovery_initialization_prunes_out_of_window_candidates():
+    spec = archive_source_spec("ft")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2020,
+        to_year=2020,
+        collapse="urlkey",
+    )
+    pattern, _ = next_discovery_query(connection)
+    record_discovery_page(
+        connection,
+        spec=spec,
+        pattern=pattern,
+        page=CDXPage(
+            captures=(
+                CDXCapture(
+                    timestamp="20130315120000",
+                    original=(
+                        "https://www.ft.com/content/"
+                        "31fb47f2-9782-11e6-a1dc-bdf38d484582"
+                    ),
+                    mimetype="text/html",
+                    status_code=200,
+                    digest="OLD",
+                    length=50_000,
+                ),
+            ),
+            resume_key=None,
+        ),
+    )
+    assert connection.execute(
+        "SELECT COUNT(*) FROM candidates"
+    ).fetchone()[0] == 1
+
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2020,
+        to_year=2020,
+        collapse="urlkey",
+    )
+
+    assert connection.execute(
+        "SELECT COUNT(*) FROM candidates"
+    ).fetchone()[0] == 0
+
+
 def test_urlkey_discovery_round_robins_patterns():
     spec = archive_source_spec("wsj")
     connection = sqlite3.connect(":memory:")

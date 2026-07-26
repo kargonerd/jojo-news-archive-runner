@@ -289,6 +289,20 @@ def initialize_discovery_schema(
         """,
         [(pattern, _now_iso()) for pattern in patterns],
     )
+    connection.execute(
+        """
+        DELETE FROM candidates
+        WHERE published_at IS NOT NULL
+          AND (
+            published_at < ?
+            OR published_at >= ?
+          )
+        """,
+        (
+            f"{from_year:04d}-01-01",
+            f"{to_year + 1:04d}-01-01",
+        ),
+    )
     connection.commit()
 
 
@@ -1311,8 +1325,14 @@ def export_capture_manifest(
             status_code,
             byte_count
         FROM candidates
+        WHERE published_at >= ?
+          AND published_at < ?
         ORDER BY canonical_url, rank_score, timestamp, digest
-        """
+        """,
+        (
+            f"{from_year:04d}-01-01",
+            f"{to_year + 1:04d}-01-01",
+        ),
     )
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     opener = gzip.open if destination.suffix == ".gz" else open
@@ -1473,7 +1493,12 @@ def export_capture_manifest(
 
 def discovered_wayback_articles(
     connection: sqlite3.Connection,
+    *,
+    from_year: int,
+    to_year: int,
 ) -> dict[str, tuple[str | None, list[dict[str, object]]]]:
+    if from_year > to_year:
+        raise ValueError("from_year must not exceed to_year")
     if not _table_exists(connection, "candidates"):
         return {}
     result: dict[
@@ -1501,8 +1526,14 @@ def discovered_wayback_articles(
             status_code,
             byte_count
         FROM candidates
+        WHERE published_at >= ?
+          AND published_at < ?
         ORDER BY canonical_url, rank_score, timestamp, digest
-        """
+        """,
+        (
+            f"{from_year:04d}-01-01",
+            f"{to_year + 1:04d}-01-01",
+        ),
     ):
         key = str(canonical_url)
         existing_published_at, candidates = result.get(
