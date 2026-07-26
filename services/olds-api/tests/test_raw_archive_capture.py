@@ -24,6 +24,7 @@ from jojo_olds_api.raw_archive_capture import (
     capture_item,
     capture_summary,
     completed_capture_rejection_reason,
+    discover_reuters_syndication_candidates,
     initialize_capture_schema,
     load_capture_manifest,
     mark_capture_downloading,
@@ -34,6 +35,7 @@ from jojo_olds_api.raw_archive_capture import (
     pending_captures,
     record_capture_result,
     reuters_syndication_search_url,
+    reuters_syndication_title_search_url,
     reset_completed_capture_for_retry,
     resolved_capture_candidate,
     score_raw_capture,
@@ -1816,6 +1818,131 @@ def test_reuters_capture_falls_back_to_validated_syndicated_html(
     assert capture.quality_signals["reutersSyndicationValidated"] is True
     assert capture.quality_signals["syndicationReutersAttributed"] is True
     assert capture.quality_signals["syndicationBodyCharacters"] >= 400
+
+
+def test_reuters_syndication_uses_exact_title_second_search():
+    canonical_url = (
+        "https://www.reuters.com/business/autos-transportation/"
+        "auto-industry-rocked-by-trumps-25-tariffs-us-imports-"
+        "2025-03-27"
+    )
+    item = ManifestItem(
+        publisher="reuters",
+        canonical_url=canonical_url,
+        published_at="2025-03-27T00:00:00Z",
+        section="business",
+        candidates=(),
+    )
+    expected_headline = (
+        "Auto industry rocked by Trump's 25% tariffs on US imports"
+    )
+    initial_url = reuters_syndication_search_url(item)
+    title_url = reuters_syndication_title_search_url(expected_headline)
+    radio_url = (
+        "https://www.933thedrive.com/2025/03/27/"
+        "auto-industry-rocked-by-trumps-25-tariffs-on-us-imports/"
+    )
+    initial_html = f"""
+    <html><body><ol id="web">
+      <li><h3><a href="{canonical_url}">
+        {expected_headline} - Reuters
+      </a></h3></li>
+      <li><h3><a href="https://example.com/different-story">
+        A different story
+      </a></h3></li>
+    </ol></body></html>
+    """.encode()
+    title_html = f"""
+    <html><body><ol id="web">
+      <li><h3><a href="{radio_url}">
+        {expected_headline} | Reuters
+      </a></h3></li>
+      <li><h3><a href="https://example.net/unrelated">
+        Unrelated market report
+      </a></h3></li>
+    </ol></body></html>
+    """.encode()
+    client = StubArchiveClient(
+        {
+            initial_url: (
+                200,
+                {"content-type": "text/html"},
+                initial_html,
+                initial_url,
+            ),
+            title_url: (
+                200,
+                {"content-type": "text/html"},
+                title_html,
+                title_url,
+            ),
+        }
+    )
+
+    candidates = discover_reuters_syndication_candidates(
+        item,
+        archive_client=client,
+    )
+
+    assert client.requests == [initial_url, title_url]
+    assert [candidate.snapshot_url for candidate in candidates] == [
+        radio_url
+    ]
+    assert candidates[0].provider == CaptureProvider.OTHER
+    assert candidates[0].expected_headline == expected_headline
+
+
+def test_reuters_syndication_keeps_initial_results_when_title_search_fails():
+    canonical_url = (
+        "https://www.reuters.com/world/example-reuters-story-2025-03-27"
+    )
+    partner_url = "https://example.com/example-reuters-story"
+    expected_headline = "Example Reuters story has a sufficiently long title"
+    item = ManifestItem(
+        publisher="reuters",
+        canonical_url=canonical_url,
+        published_at="2025-03-27T00:00:00Z",
+        section="world",
+        candidates=(),
+    )
+    initial_url = reuters_syndication_search_url(item)
+    title_url = reuters_syndication_title_search_url(expected_headline)
+    initial_html = f"""
+    <html><body><ol id="web">
+      <li><h3><a href="{canonical_url}">
+        {expected_headline} - Reuters
+      </a></h3></li>
+      <li><h3><a href="{partner_url}">
+        {expected_headline}
+      </a></h3></li>
+    </ol></body></html>
+    """.encode()
+    client = StubArchiveClient(
+        {
+            initial_url: (
+                200,
+                {"content-type": "text/html"},
+                initial_html,
+                initial_url,
+            ),
+            title_url: (
+                503,
+                {"content-type": "text/html"},
+                b"",
+                title_url,
+            ),
+        }
+    )
+
+    candidates = discover_reuters_syndication_candidates(
+        item,
+        archive_client=client,
+    )
+
+    assert client.requests == [initial_url, title_url]
+    assert [candidate.snapshot_url for candidate in candidates] == [
+        partner_url
+    ]
 
 
 def test_reuters_syndication_rejects_unattributed_related_article(

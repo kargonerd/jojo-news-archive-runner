@@ -723,6 +723,7 @@ def capture_item(
             validated, validation_signals = (
                 _validate_reuters_syndication_response(
                     item,
+                    expected_headline=candidate.expected_headline,
                     content=response[2],
                     final_url=response[3],
                 )
@@ -1135,6 +1136,12 @@ def reuters_syndication_search_url(item: ManifestItem) -> str:
     return _syndication_search_url(item, publisher_label="Reuters")
 
 
+def reuters_syndication_title_search_url(expected_headline: str) -> str:
+    return REUTERS_SYNDICATION_SEARCH_ENDPOINT + "?" + urlencode(
+        {"p": f'"{expected_headline}" Reuters'}
+    )
+
+
 def bloomberg_syndication_search_url(item: ManifestItem) -> str:
     return _syndication_search_url(item, publisher_label="Bloomberg")
 
@@ -1158,11 +1165,44 @@ def discover_reuters_syndication_candidates(
     *,
     archive_client: ArchiveClient,
 ) -> tuple[CaptureCandidate, ...]:
-    return _discover_syndication_candidates(
+    initial_results = _fetch_syndication_search_results(
         item,
         archive_client=archive_client,
         search_url=reuters_syndication_search_url(item),
+    )
+    expected_headline = next(
+        (
+            title
+            for _, title, candidate_url in initial_results
+            if title and _same_article_url(candidate_url, item.canonical_url)
+        ),
+        None,
+    )
+    all_results = list(initial_results)
+    if (
+        expected_headline
+        and len(_significant_tokens(expected_headline)) >= 4
+    ):
+        try:
+            title_results = _fetch_syndication_search_results(
+                item,
+                archive_client=archive_client,
+                search_url=reuters_syndication_title_search_url(
+                    expected_headline
+                ),
+            )
+        except ValueError:
+            title_results = []
+        if title_results:
+            offset = len(all_results)
+            all_results.extend(
+                (offset + position, title, candidate_url)
+                for position, title, candidate_url in title_results
+            )
+    return _rank_syndication_candidates(
+        all_results,
         excluded_publisher="reuters",
+        expected_headline=expected_headline,
     )
 
 
@@ -1565,6 +1605,23 @@ def _discover_syndication_candidates(
     search_url: str,
     excluded_publisher: str,
 ) -> tuple[CaptureCandidate, ...]:
+    results = _fetch_syndication_search_results(
+        item,
+        archive_client=archive_client,
+        search_url=search_url,
+    )
+    return _rank_syndication_candidates(
+        results,
+        excluded_publisher=excluded_publisher,
+    )
+
+
+def _fetch_syndication_search_results(
+    item: ManifestItem,
+    *,
+    archive_client: ArchiveClient,
+    search_url: str,
+) -> list[tuple[int, str, str]]:
     status_code, headers, content, _ = archive_client.fetch(
         search_url,
         maximum_bytes=REUTERS_SYNDICATION_SEARCH_MAXIMUM_BYTES,
@@ -1580,25 +1637,54 @@ def _discover_syndication_candidates(
         )
 
     soup = BeautifulSoup(content, "html.parser")
-    ranked: list[tuple[int, int, str]] = []
-    seen: set[str] = set()
+    results: list[tuple[int, str, str]] = []
     for position, result in enumerate(soup.select("#web li")):
         anchor = result.select_one("h3 a") or result.select_one("a")
+        heading = result.select_one("h3")
         if anchor is None:
             continue
         candidate_url = _decode_yahoo_search_result(anchor.get("href"))
+        if candidate_url is None:
+            continue
+        title = (
+            _clean_syndication_search_title(
+                heading.get_text(" ", strip=True)
+            )
+            if heading is not None
+            else ""
+        )
+        results.append((position, title, candidate_url))
+    return results
+
+
+def _rank_syndication_candidates(
+    results: Iterable[tuple[int, str, str]],
+    *,
+    excluded_publisher: str,
+    expected_headline: str | None = None,
+) -> tuple[CaptureCandidate, ...]:
+    ranked: list[tuple[float, int, int, str]] = []
+    seen: set[str] = set()
+    for position, result_title, candidate_url in results:
         if (
-            candidate_url is None
-            or candidate_url in seen
+            candidate_url in seen
             or not _is_public_syndication_url(
                 candidate_url,
                 excluded_publisher=excluded_publisher,
             )
         ):
             continue
+        headline_overlap = (
+            _headline_text_overlap(expected_headline, result_title)
+            if expected_headline and result_title
+            else 0.0
+        )
+        if expected_headline and headline_overlap < 0.35:
+            continue
         seen.add(candidate_url)
         ranked.append(
             (
+                -headline_overlap,
                 _reuters_syndication_url_priority(candidate_url),
                 position,
                 candidate_url,
@@ -1609,11 +1695,22 @@ def _discover_syndication_candidates(
         CaptureCandidate(
             provider=CaptureProvider.OTHER,
             snapshot_url=candidate_url,
+            expected_headline=expected_headline,
         )
-        for _, _, candidate_url in ranked[
+        for _, _, _, candidate_url in ranked[
             :REUTERS_SYNDICATION_MAXIMUM_CANDIDATES
         ]
     )
+
+
+def _clean_syndication_search_title(value: str) -> str:
+    cleaned = re.sub(
+        r"\s+(?:[-|]\s*)?(?:Reuters|Bloomberg)(?:\s+News)?\s*$",
+        "",
+        value.strip(),
+        flags=re.IGNORECASE,
+    ).strip()
+    return re.sub(r"\s*(?:…|\.\.\.)\s*$", "", cleaned).strip()
 
 
 def _decode_yahoo_search_result(value: object) -> str | None:
@@ -1708,6 +1805,7 @@ def _reuters_syndication_url_priority(value: str) -> int:
 def _validate_reuters_syndication_response(
     item: ManifestItem,
     *,
+    expected_headline: str | None = None,
     content: bytes,
     final_url: str,
 ) -> tuple[bool, dict[str, object]]:
@@ -1729,6 +1827,14 @@ def _validate_reuters_syndication_response(
         item.canonical_url,
         article.headline or "",
     )
+    if expected_headline:
+        headline_overlap = max(
+            headline_overlap,
+            _headline_text_overlap(
+                expected_headline,
+                article.headline or "",
+            ),
+        )
     author_text = " ".join(author.name for author in article.authors)
     attribution_text = (
         author_text + "\n" + article.plain_text[:1_000]
@@ -1773,6 +1879,7 @@ def _validate_reuters_syndication_response(
         "syndicationBodyCharacters": body_characters,
         "syndicationReutersAttributed": attributed,
         "syndicationDateDeltaDays": date_delta_days,
+        "syndicationExpectedHeadline": expected_headline,
     }
 
 
