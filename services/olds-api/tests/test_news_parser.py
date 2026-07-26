@@ -288,7 +288,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.7.0"
+    assert result.extraction.parser_version == "nyt-parser/0.8.0"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -354,7 +354,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.6.0"
+    assert result.extraction.parser_version == "reuters-parser/0.7.0"
 
 
 @pytest.mark.parametrize(
@@ -434,7 +434,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.6.0"
+    assert result.extraction.parser_version == "reuters-parser/0.7.0"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():
@@ -547,7 +547,69 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.5.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.6.0"
+
+
+def test_nyt_generic_syndication_extracts_local_newspaper_copy():
+    canonical_url = (
+        "https://www.nytimes.com/2026/04/15/us/"
+        "floods-michigan-cheboygan-dams-evacuation.html"
+    )
+    syndicated_url = (
+        "https://example.net/nation-world-news/"
+        "dam-failure-could-imperil-thousands/"
+    )
+    capture = raw_capture("nyt", canonical_url)
+    capture = capture.model_copy(
+        update={
+            "selected_candidate": CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=syndicated_url,
+            ),
+            "final_url": syndicated_url,
+        }
+    )
+    paragraphs = "".join(
+        (
+            "<p>New York Times reporting paragraph "
+            f"{index} contains substantive details about emergency crews, "
+            "evacuation warnings, rising water and the condition of several "
+            "dams across northern Michigan.</p>"
+        )
+        for index in range(1, 9)
+    )
+    html = f"""
+    <!doctype html><html><head>
+      <meta property="og:title"
+            content="Dam Failure Could Imperil Thousands in Northern Michigan">
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "Dam Failure Could Imperil Thousands in Northern Michigan",
+        "datePublished": "2026-04-16T00:05:00Z",
+        "author": {{"name": "New York Times"}}
+      }}
+      </script>
+    </head><body>
+      <div class="article-content">
+        <aside><p>Related article text must not enter the body.</p></aside>
+        <div class="post-content">{paragraphs}</div>
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+        raw_capture=capture,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters >= 1_000
+    assert "paragraph 8" in result.plain_text
+    assert "Related article" not in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.0"
 
 
 def test_parser_falls_back_to_catalog_publication_time():
@@ -891,7 +953,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.7.0"
+    assert result.extraction.parser_version == "nyt-parser/0.8.0"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():

@@ -14,6 +14,8 @@ from jojo_olds_api.news_models import (
 from jojo_olds_api.raw_archive_capture import (
     BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     ManifestItem,
+    NYT_SYNDICATION_MINIMUM_BODY_CHARACTERS,
+    NYT_SYNDICATION_SEARCH_ENDPOINT,
     REUTERS_SYNDICATION_SEARCH_ENDPOINT,
     WAYBACK_TIMEMAP_ENDPOINT,
     bloomberg_syndication_search_url,
@@ -23,6 +25,9 @@ from jojo_olds_api.raw_archive_capture import (
     initialize_capture_schema,
     load_capture_manifest,
     mark_capture_downloading,
+    nyt_syndication_search_url,
+    nyt_syndication_title_search_url,
+    nyt_trusted_wordpress_search_url,
     pending_captures,
     record_capture_result,
     reuters_syndication_search_url,
@@ -733,6 +738,263 @@ def test_nyt_capture_uses_exact_timemap_snapshot(tmp_path: Path):
     assert result["status"] == "complete"
     assert client.requests == [guessed_url, timemap_url, exact_url]
     assert result["capture"].selected_candidate.digest == "NYT-EXACT"
+
+
+def test_nyt_capture_falls_back_to_validated_local_newspaper_copy(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.nytimes.com/2026/04/15/us/"
+        "floods-michigan-cheboygan-dams-evacuation.html"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20260416000000id_/" + canonical_url
+    )
+    syndicated_url = (
+        "https://www.hawaiitribune-herald.com/2026/04/16/"
+        "nation-world-news/dam-failure-could-imperil-thousands/"
+    )
+    item = ManifestItem(
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at="2026-04-15T16:00:00Z",
+        section="us",
+        candidates=(candidate(guessed_url, "20260416000000"),),
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.nytimes.com%2F2026%2F04%2F15%2Fus%2F"
+        "floods-michigan-cheboygan-dams-evacuation.html"
+    )
+    trusted_search_url = nyt_trusted_wordpress_search_url(item)
+    expected_headline = (
+        "Dam Failure Could Imperil Thousands in Northern Michigan"
+    )
+    trusted_search_json = json.dumps(
+        [
+            {
+                "date": "2026-04-16T00:05:00",
+                "date_gmt": "2026-04-16T10:05:00",
+                "link": syndicated_url,
+                "title": {"rendered": expected_headline},
+                "content": {
+                    "rendered": (
+                        "<p>Licensed copy.</p>"
+                        f'<p>This article originally appeared in '
+                        f'<a href="{canonical_url}">The New York Times</a>.</p>'
+                    )
+                },
+            }
+        ]
+    ).encode()
+    paragraphs = "".join(
+        (
+            "<p>Emergency reporting paragraph "
+            f"{index} contains substantive details about evacuations, "
+            "rising rivers, public safety warnings, emergency crews and "
+            "the structural condition of multiple dams in Michigan. "
+            "Officials described the affected communities and the response "
+            "under way while residents prepared to leave their homes.</p>"
+        )
+        for index in range(1, 9)
+    )
+    syndicated_html = f"""
+    <!doctype html><html><head>
+      <meta property="og:title"
+            content="Dam Failure Could Imperil Thousands in Northern Michigan">
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "Dam Failure Could Imperil Thousands in Northern Michigan",
+        "datePublished": "2026-04-16T00:05:00Z",
+        "author": {{"name": "New York Times"}}
+      }}
+      </script>
+    </head><body><main><div class="post-content">
+      {paragraphs}
+      <p>This article originally appeared in
+        <a href="{canonical_url}">The New York Times</a>.
+      </p>
+    </div></main></body></html>
+    """.encode() + (b" " * 2_048)
+    empty_timemap = json.dumps(
+        [["urlkey", "timestamp", "original", "mimetype", "statuscode"]]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                403,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                empty_timemap,
+                timemap_url,
+            ),
+            trusted_search_url: (
+                200,
+                {"content-type": "application/json; charset=utf-8"},
+                trusted_search_json,
+                trusted_search_url,
+            ),
+            syndicated_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                syndicated_html,
+                syndicated_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [
+        guessed_url,
+        timemap_url,
+        trusted_search_url,
+        syndicated_url,
+    ]
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.OTHER
+    assert capture.final_url == syndicated_url
+    assert capture.quality_signals["nytSyndicationValidated"] is True
+    assert capture.quality_signals["syndicationNytAttributed"] is True
+    assert (
+        capture.quality_signals["syndicationCanonicalArticleLinked"]
+        is True
+    )
+    assert (
+        capture.quality_signals["syndicationBodyCharacters"]
+        >= NYT_SYNDICATION_MINIMUM_BODY_CHARACTERS
+    )
+    assert capture.quality_signals["syndicationHeadlineOverlap"] == 1.0
+
+
+def test_nyt_syndication_rejects_unattributed_same_topic_article(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.nytimes.com/2026/04/15/us/"
+        "floods-michigan-cheboygan-dams-evacuation.html"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20260416000000id_/" + canonical_url
+    )
+    related_url = "https://example.com/michigan-dam-emergency"
+    item = ManifestItem(
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at="2026-04-15T16:00:00Z",
+        section="us",
+        candidates=(candidate(guessed_url, "20260416000000"),),
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.nytimes.com%2F2026%2F04%2F15%2Fus%2F"
+        "floods-michigan-cheboygan-dams-evacuation.html"
+    )
+    headline = "Dam Failure Could Imperil Thousands in Northern Michigan"
+    search_url = nyt_syndication_search_url(item)
+    title_search_url = nyt_syndication_title_search_url(headline)
+    trusted_search_url = nyt_trusted_wordpress_search_url(item)
+    search_html = f"""
+    <html><body><ol id="web"><li><div class="compTitle">
+      <a href="{canonical_url}"><h3>
+        {headline} - The New York Times
+      </h3></a>
+    </div></li></ol></body></html>
+    """.encode()
+    title_search_html = f"""
+    <html><body><ol id="web"><li><div class="compTitle">
+      <a href="{related_url}"><h3>{headline}</h3></a>
+    </div></li></ol></body></html>
+    """.encode()
+    paragraphs = "".join(
+        (
+            "<p>Independent reporting paragraph "
+            f"{index} discusses the same emergency and contains enough "
+            "substantive material to exceed the body threshold, but this "
+            "copy has no source-service attribution and must be rejected. "
+            "It includes descriptions of warnings, emergency crews, roads, "
+            "weather conditions and residents leaving nearby homes.</p>"
+        )
+        for index in range(1, 9)
+    )
+    related_html = f"""
+    <!doctype html><html><head>
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "{headline}",
+        "datePublished": "2026-04-16T00:05:00Z",
+        "author": {{"name": "Independent Local Reporter"}}
+      }}
+      </script>
+    </head><body><div class="post-content">
+      {paragraphs}
+    </div></body></html>
+    """.encode() + (b" " * 2_048)
+    empty_timemap = json.dumps(
+        [["urlkey", "timestamp", "original", "mimetype", "statuscode"]]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                403,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                empty_timemap,
+                timemap_url,
+            ),
+            trusted_search_url: (
+                200,
+                {"content-type": "application/json"},
+                b"[]",
+                trusted_search_url,
+            ),
+            search_url: (
+                200,
+                {"content-type": "text/html"},
+                search_html,
+                search_url,
+            ),
+            title_search_url: (
+                200,
+                {"content-type": "text/html"},
+                title_search_html,
+                title_search_url,
+            ),
+            related_url: (
+                200,
+                {"content-type": "text/html"},
+                related_html,
+                related_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "error"
+    assert "missing-nyt-attribution" in result["error"]
+    assert not (tmp_path / "objects").exists()
 
 
 def test_unsupported_publisher_does_not_query_wayback_timemap(

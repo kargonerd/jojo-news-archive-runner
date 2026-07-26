@@ -41,6 +41,7 @@ _NOISE_RE = re.compile(
 _TRACKING_RE = re.compile(r"(?i)(pixel|tracking|spacer|transparent)")
 _GRAPHIC_RE = re.compile(r"(?i)(chart|graphic|infographic|interactive)")
 _MINIMUM_BODY_CHARACTERS = 100
+_MINIMUM_SYNDICATED_BODY_CHARACTERS = 400
 _EXACT_NOISE_TEXT = {
     "advertisement",
     "advertiser content",
@@ -63,6 +64,7 @@ def parse_article(
     canonical_url: str,
     raw_capture: RawCapture | None = None,
     parsed_at: datetime | None = None,
+    allow_generic_syndication: bool = False,
 ) -> JojoArticle:
     spec = publisher_spec(publisher)
     soup = BeautifulSoup(html_bytes, "html.parser")
@@ -78,6 +80,15 @@ def parse_article(
             soup,
             stop_at_reporting_by=spec.publisher == "reuters",
         )
+    if body is None and (
+        allow_generic_syndication
+        or (
+            raw_capture is not None
+            and raw_capture.selected_candidate.provider
+            == CaptureProvider.OTHER
+        )
+    ):
+        body = _generic_syndication_body(soup)
     if body is None:
         body = _select_body(soup, spec)
     if spec.embedded_html_body_keys and (
@@ -334,6 +345,48 @@ def _yahoo_syndication_body(
         ):
             break
     return wrapper if wrapper.select_one("p") is not None else None
+
+
+def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
+    selectors = (
+        "[itemprop='articleBody']",
+        ".post-content",
+        ".entry-content",
+        ".article-content",
+        ".article-body",
+        ".story-body",
+        "[class*='article-body' i]",
+        "[class*='story-body' i]",
+        "article",
+        "main",
+    )
+    for selector in selectors:
+        for node in soup.select(selector):
+            document = BeautifulSoup(str(node), "html.parser")
+            copy = document.select_one(selector)
+            if copy is None:
+                copy = document.find(node.name)
+            if not isinstance(copy, Tag):
+                continue
+            for noise in copy.select(
+                "aside, header, nav, footer, form, button, "
+                "[class*='recommend' i], [class*='related' i], "
+                "[class*='newsletter' i], [class*='advert' i]"
+            ):
+                noise.decompose()
+            paragraphs = [
+                _clean_text(paragraph.get_text(" ", strip=True))
+                for paragraph in copy.select("p")
+            ]
+            body_characters = sum(
+                len(paragraph) for paragraph in paragraphs if paragraph
+            )
+            if len([value for value in paragraphs if value]) >= 2 and (
+                body_characters
+                >= _MINIMUM_SYNDICATED_BODY_CHARACTERS
+            ):
+                return copy
+    return None
 
 
 def _capture_reference(

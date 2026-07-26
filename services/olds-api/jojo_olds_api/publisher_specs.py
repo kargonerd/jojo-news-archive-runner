@@ -68,7 +68,7 @@ PUBLISHER_SPECS = {
     ),
     "bloomberg": PublisherSpec(
         publisher="bloomberg",
-        parser_version="bloomberg-parser/0.5.0",
+        parser_version="bloomberg-parser/0.6.0",
         domains=("bloomberg.com", "www.bloomberg.com"),
         default_language="en",
         edition="global",
@@ -93,7 +93,7 @@ PUBLISHER_SPECS = {
     ),
     "nyt": PublisherSpec(
         publisher="nyt",
-        parser_version="nyt-parser/0.7.0",
+        parser_version="nyt-parser/0.8.0",
         domains=("nytimes.com", "www.nytimes.com"),
         default_language="en",
         edition="us",
@@ -113,7 +113,7 @@ PUBLISHER_SPECS = {
     ),
     "reuters": PublisherSpec(
         publisher="reuters",
-        parser_version="reuters-parser/0.6.0",
+        parser_version="reuters-parser/0.7.0",
         domains=("reuters.com", "www.reuters.com"),
         default_language="en",
         edition="global",
