@@ -102,6 +102,8 @@ _REDIRECT_SHELL_MARKERS = (
 )
 _SUBSCRIPTION_SHELL_MARKERS = (
     b"<title>subscribe to read",
+    b"<title>become an ft subscriber to read",
+    b"<title>subscribe to a slice of the ft",
     b'id="barrier-page"',
     b"subscribe to unlock this article",
     b"window.zephr.outcomes['paywall']",
@@ -2515,7 +2517,10 @@ def score_raw_capture(
     )
     access_challenge_shell = (
         not has_article_marker
-        and any(marker in prefix for marker in _ACCESS_CHALLENGE_MARKERS)
+        and (
+            any(marker in prefix for marker in _ACCESS_CHALLENGE_MARKERS)
+            or "/access-error/" in final_url_lower
+        )
     )
     has_strong_body_marker = (
         b'"articlebody"' in prefix

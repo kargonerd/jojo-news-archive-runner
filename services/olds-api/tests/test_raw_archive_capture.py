@@ -2028,6 +2028,52 @@ def test_raw_quality_rejects_ft_zephr_barrier_shell():
     assert signals["subscriptionShell"] is True
 
 
+def test_raw_quality_rejects_ft_legacy_subscription_landing_pages():
+    for title in (
+        "Become an FT subscriber to read | Financial Times",
+        "Subscribe to a slice of the FT | Financial Times",
+    ):
+        score, signals = score_raw_capture(
+            (
+                f"""
+                <html><head><title>{title}</title>
+                <script type="application/ld+json">
+                {{"@type":"NewsArticle","headline":"Navigation teaser"}}
+                </script></head>
+                <body><main>Choose a subscription to continue.</main></body>
+                </html>
+                """
+            ).encode()
+            + (b" " * 90_000),
+            http_status=200,
+            content_type="text/html",
+        )
+
+        assert score < 85
+        assert signals["hasArticleMarker"] is True
+        assert signals["hasStrongBodyMarker"] is False
+        assert signals["subscriptionShell"] is True
+
+
+def test_raw_quality_rejects_ft_professional_access_error_redirect():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Monetary Policy Radar | Financial Times</title>
+        </head><body></body></html>
+        """ + (b" " * 90_000),
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://web.archive.org/web/20260223182234id_/"
+            "https://professional-monetary-policy-radar.ft.com/"
+            "access-error/example"
+        ),
+    )
+
+    assert score < 85
+    assert signals["accessChallengeShell"] is True
+
+
 def test_raw_quality_rejects_javascript_redirect_shell():
     score, signals = score_raw_capture(
         b"""
