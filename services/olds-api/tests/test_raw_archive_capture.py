@@ -21,10 +21,12 @@ from jojo_olds_api.raw_archive_capture import (
     REUTERS_SYNDICATION_SEARCH_ENDPOINT,
     WAYBACK_TIMEMAP_ENDPOINT,
     WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS,
+    arquivo_pt_cdx_url,
     bloomberg_syndication_search_url,
     capture_item,
     capture_summary,
     completed_capture_rejection_reason,
+    discover_arquivo_pt_candidates,
     discover_ft_syndication_candidates,
     discover_reuters_syndication_candidates,
     ft_google_news_headline_search_url,
@@ -765,6 +767,151 @@ def test_capture_keeps_strong_article_instead_of_first_html_shell(
     assert capture.quality_score == 100
     assert capture.raw_html.byte_count == len(ARTICLE)
     assert len(list((tmp_path / "objects").rglob("*.html.gz"))) == 1
+
+
+def test_arquivo_pt_candidates_are_exact_deduplicated_and_ranked():
+    canonical_url = "https://www.ft.com/content/example"
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2020-01-01T00:00:00Z",
+        section=None,
+        candidates=(),
+    )
+    query_url = arquivo_pt_cdx_url(item)
+    rows = [
+        {
+            "url": canonical_url,
+            "timestamp": "20200201000000",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "FAR",
+            "length": "30000",
+        },
+        {
+            "url": canonical_url,
+            "timestamp": "20200102000000",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "NEAR",
+            "length": "25000",
+        },
+        {
+            "url": canonical_url,
+            "timestamp": "20200103000000",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "NEAR",
+            "length": "26000",
+        },
+        {
+            "url": "https://www.ft.com/content/different",
+            "timestamp": "20200101000000",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "WRONG",
+            "length": "27000",
+        },
+    ]
+    payload = "\n".join(json.dumps(row) for row in rows).encode()
+    client = StubArchiveClient(
+        {
+            query_url: (
+                200,
+                {"content-type": "text/x-ndjson"},
+                payload,
+                query_url,
+            )
+        }
+    )
+
+    candidates = discover_arquivo_pt_candidates(
+        item,
+        archive_client=client,
+    )
+
+    assert client.requests == [query_url]
+    assert [candidate.digest for candidate in candidates] == ["NEAR", "FAR"]
+    assert all(
+        candidate.provider == CaptureProvider.ARQUIVO_PT
+        for candidate in candidates
+    )
+    assert candidates[0].snapshot_url == (
+        "https://arquivo.pt/noFrame/replay/20200102000000/"
+        + canonical_url
+    )
+
+
+def test_ft_capture_falls_back_to_validated_arquivo_pt_replay(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.ft.com/content/example"
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2020-01-01T00:00:00Z",
+        section=None,
+        candidates=(),
+    )
+    timemap_url = (
+        "https://web.archive.org/web/timemap/json?"
+        "url=https%3A%2F%2Fwww.ft.com%2Fcontent%2Fexample"
+    )
+    timemap = json.dumps(
+        [["urlkey", "timestamp", "original", "mimetype", "statuscode"]]
+    ).encode()
+    query_url = arquivo_pt_cdx_url(item)
+    replay_url = (
+        "https://arquivo.pt/noFrame/replay/20210208222255/"
+        + canonical_url
+    )
+    index = json.dumps(
+        {
+            "url": canonical_url,
+            "timestamp": "20210208222255",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "ARQUIVO",
+            "length": "28508",
+        }
+    ).encode()
+    client = StubArchiveClient(
+        {
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                timemap,
+                timemap_url,
+            ),
+            query_url: (
+                200,
+                {"content-type": "text/x-ndjson"},
+                index,
+                query_url,
+            ),
+            replay_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                ARTICLE,
+                replay_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        enable_arquivo_pt_fallback=True,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [timemap_url, query_url, replay_url]
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.ARQUIVO_PT
+    assert capture.final_url == replay_url
+    assert capture.quality_signals["arquivoPtReplayValidated"] is True
 
 
 def test_ft_capture_uses_exact_wayback_before_common_crawl(tmp_path: Path):

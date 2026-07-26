@@ -563,7 +563,10 @@ jobs:
             args+=(--retry-errors)
           fi
           if [ "$PUBLISHER" = "ft" ]; then
-            args+=(--enable-common-crawl-fallback)
+            args+=(
+              --enable-arquivo-pt-fallback
+              --enable-common-crawl-fallback
+            )
           fi
           set +e
           python services/olds-api/tools/capture_archive_batch.py "${args[@]}" &

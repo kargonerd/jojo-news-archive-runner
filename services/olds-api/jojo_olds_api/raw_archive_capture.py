@@ -33,7 +33,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.9.1",
+    "ft": "ft-capture/0.9.2",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -71,6 +71,11 @@ NYT_HEADLINE_WORDPRESS_ENDPOINTS = (
     "https://dnyuz.com/wp-json/wp/v2/posts",
 )
 COMMON_CRAWL_FALLBACK_PUBLISHERS = {"ft"}
+ARQUIVO_PT_FALLBACK_PUBLISHERS = {"ft"}
+ARQUIVO_PT_CDX_ENDPOINT = "https://arquivo.pt/wayback/cdx"
+ARQUIVO_PT_REPLAY_ENDPOINT = "https://arquivo.pt/noFrame/replay"
+ARQUIVO_PT_INDEX_MAXIMUM_BYTES = 2_000_000
+ARQUIVO_PT_MAXIMUM_CANDIDATES = 3
 REUTERS_SYNDICATION_STOP_WORDS = {
     "a",
     "after",
@@ -492,6 +497,7 @@ def capture_item(
     output_dir: Path,
     maximum_html_bytes: int,
     enable_common_crawl_fallback: bool = False,
+    enable_arquivo_pt_fallback: bool = False,
 ) -> dict:
     failures: list[str] = []
     candidates_considered = list(item.candidates)
@@ -733,6 +739,30 @@ def capture_item(
         # Exhaust them before the slower Common Crawl index/WARC fallback.
         if best_response is None or best_response[5] < 100:
             consider_candidates(item.candidates)
+
+        if (
+            enable_arquivo_pt_fallback
+            and item.publisher in ARQUIVO_PT_FALLBACK_PUBLISHERS
+            and (best_response is None or best_response[5] < 100)
+        ):
+            try:
+                arquivo_pt_candidates = discover_arquivo_pt_candidates(
+                    item,
+                    archive_client=archive_client,
+                )
+            except Exception as exc:
+                failures.append(f"arquivo-pt-index:{type(exc).__name__}")
+                arquivo_pt_candidates = ()
+            existing_urls = {
+                candidate.snapshot_url for candidate in candidates_considered
+            }
+            arquivo_pt_candidates = tuple(
+                candidate
+                for candidate in arquivo_pt_candidates
+                if candidate.snapshot_url not in existing_urls
+            )
+            candidates_considered.extend(arquivo_pt_candidates)
+            consider_candidates(arquivo_pt_candidates)
 
         if (
             enable_common_crawl_fallback
@@ -1116,6 +1146,11 @@ def _fetch_usable_candidate(
         and not _same_article_url(final_url, canonical_url)
     ):
         return None, "commoncrawl:target-mismatch"
+    if (
+        candidate.provider == CaptureProvider.ARQUIVO_PT
+        and not _arquivo_pt_replay_matches(final_url, canonical_url)
+    ):
+        return None, "arquivo-pt:target-mismatch"
     content_type = headers.get("content-type", "").split(";", 1)[0].strip()
     quality_score, signals = score_raw_capture(
         content,
@@ -1163,6 +1198,15 @@ def _fetch_usable_candidate(
             "commonCrawlWarcOffset": candidate.warc_offset,
             "commonCrawlWarcLength": candidate.warc_length,
         }
+    elif candidate.provider == CaptureProvider.ARQUIVO_PT:
+        signals = signals | {
+            "arquivoPtReplayValidated": True,
+            "arquivoPtCapturedAt": (
+                candidate.captured_at.isoformat()
+                if candidate.captured_at is not None
+                else None
+            ),
+        }
     return (
         (
             candidate,
@@ -1175,6 +1219,93 @@ def _fetch_usable_candidate(
         ),
         None,
     )
+
+
+def arquivo_pt_cdx_url(item: ManifestItem) -> str:
+    return ARQUIVO_PT_CDX_ENDPOINT + "?" + urlencode(
+        [
+            ("url", item.canonical_url),
+            ("output", "json"),
+            ("filter", "statuscode:200"),
+            ("filter", "mimetype:text/html"),
+            ("collapse", "digest"),
+        ]
+    )
+
+
+def discover_arquivo_pt_candidates(
+    item: ManifestItem,
+    *,
+    archive_client: ArchiveClient,
+    maximum_candidates: int = ARQUIVO_PT_MAXIMUM_CANDIDATES,
+) -> tuple[CaptureCandidate, ...]:
+    if maximum_candidates < 1:
+        raise ValueError("maximum_candidates must be positive")
+    query_url = arquivo_pt_cdx_url(item)
+    status_code, headers, content, _ = _fetch_limited_archive(
+        archive_client,
+        query_url,
+        maximum_bytes=ARQUIVO_PT_INDEX_MAXIMUM_BYTES,
+        attempts=2,
+        timeout=30.0,
+    )
+    if status_code == 404 or not content:
+        return ()
+    if status_code != 200:
+        raise ValueError(f"Arquivo.pt CDX returned HTTP {status_code}")
+    content_type = headers.get("content-type", "").casefold()
+    if "json" not in content_type and not content.lstrip().startswith(b"{"):
+        raise ValueError("Arquivo.pt CDX did not return NDJSON")
+
+    candidates: list[CaptureCandidate] = []
+    seen: set[str] = set()
+    for line in content.splitlines():
+        try:
+            row = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(row, dict):
+            continue
+        original = str(row.get("url") or row.get("original") or "").strip()
+        timestamp = str(row.get("timestamp") or "").strip()
+        mime_type = str(
+            row.get("mime") or row.get("mimetype") or ""
+        ).strip()
+        archived_status = str(
+            row.get("status") or row.get("statuscode") or ""
+        ).strip()
+        if (
+            not _same_article_url(original, item.canonical_url)
+            or not re.fullmatch(r"\d{14}", timestamp)
+            or archived_status != "200"
+            or mime_type.casefold() != "text/html"
+        ):
+            continue
+        digest = _optional_string(row.get("digest"))
+        deduplication_key = digest or f"{timestamp}:{original}"
+        if deduplication_key in seen:
+            continue
+        seen.add(deduplication_key)
+        candidates.append(
+            CaptureCandidate(
+                provider=CaptureProvider.ARQUIVO_PT,
+                snapshot_url=(
+                    f"{ARQUIVO_PT_REPLAY_ENDPOINT}/{timestamp}/{original}"
+                ),
+                captured_at=_wayback_datetime(timestamp),
+                digest=digest,
+                mime_type=mime_type,
+                status_code=200,
+                byte_count=_optional_int(row.get("length")),
+            )
+        )
+    candidates.sort(
+        key=lambda candidate: _timemap_candidate_sort_key(
+            candidate,
+            published_at=item.published_at,
+        )
+    )
+    return tuple(candidates[:maximum_candidates])
 
 
 def discover_wayback_timemap_candidates(
@@ -3286,6 +3417,24 @@ def _same_article_url(first: str, second: str) -> bool:
         first_host == second_host
         and bool(first_host)
         and first_parts.path.rstrip("/") == second_parts.path.rstrip("/")
+    )
+
+
+def _arquivo_pt_replay_matches(
+    replay_url: str,
+    canonical_url: str,
+) -> bool:
+    parsed = urlsplit(unquote(replay_url))
+    host = (parsed.hostname or "").casefold().removeprefix("www.")
+    marker = "/noFrame/replay/"
+    if host != "arquivo.pt" or marker not in parsed.path:
+        return False
+    remainder = parsed.path.split(marker, 1)[1]
+    _, separator, target_url = remainder.partition("/")
+    return bool(
+        separator
+        and target_url.startswith(("http://", "https://"))
+        and _same_article_url(target_url, canonical_url)
     )
 
 

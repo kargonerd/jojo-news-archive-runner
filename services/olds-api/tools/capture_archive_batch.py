@@ -58,6 +58,14 @@ def parse_args() -> argparse.Namespace:
             "WARC fallback after Wayback candidates are exhausted."
         ),
     )
+    parser.add_argument(
+        "--enable-arquivo-pt-fallback",
+        action="store_true",
+        help=(
+            "Try exact Arquivo.pt CDX and replay candidates after Wayback "
+            "captures are exhausted."
+        ),
+    )
     parser.add_argument("--max-html-mb", type=int, default=25)
     parser.add_argument("--progress-every", type=int, default=25)
     parser.add_argument("--minimum-free-gb", type=float, default=2.0)
@@ -219,6 +227,9 @@ def main() -> int:
             maximum_html_bytes=maximum_html_bytes,
             enable_common_crawl_fallback=(
                 args.enable_common_crawl_fallback
+            ),
+            enable_arquivo_pt_fallback=(
+                args.enable_arquivo_pt_fallback
             ),
         )
         in_flight[future] = item

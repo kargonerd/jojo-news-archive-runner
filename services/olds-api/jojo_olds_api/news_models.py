@@ -22,6 +22,7 @@ class ArchiveModel(BaseModel):
 
 class CaptureProvider(str, Enum):
     WAYBACK = "wayback"
+    ARQUIVO_PT = "arquivo-pt"
     COMMON_CRAWL = "commoncrawl"
     LIVE_ORIGIN = "live-origin"
     OTHER = "other"
