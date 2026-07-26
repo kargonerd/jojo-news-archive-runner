@@ -20,11 +20,6 @@ jobs:
       fail-fast: false
       matrix:
         archive:
-          - publisher: ap
-            from_year: "2016"
-            to_year: "2026"
-            manifest_mode: sitemap-wayback
-            discovery_units: "10"
           - publisher: bloomberg
             from_year: "2016"
             to_year: "2026"

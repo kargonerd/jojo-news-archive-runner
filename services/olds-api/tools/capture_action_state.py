@@ -29,6 +29,7 @@ def action_state(
             "capturesByStatus": {},
             "retryErrors": False,
             "actionable": 1,
+            "validationReady": False,
             "terminalUnresolved": 0,
             "shouldContinue": True,
         }
@@ -52,6 +53,7 @@ def action_state(
             (maximum_record_attempts,),
         ).fetchone()[0]
         validation_replays = 0
+        validation_ready = False
         validation_tables = {
             str(row[0])
             for row in connection.execute(
@@ -68,6 +70,60 @@ def action_state(
             ).fetchall()
         }
         if len(validation_tables) == 3:
+            result_columns = {
+                str(row[1])
+                for row in connection.execute(
+                    "PRAGMA table_info(parser_validation_results)"
+                ).fetchall()
+            }
+            readiness_columns = {
+                "canonical_url",
+                "sample_year",
+                "parser_version",
+                "extraction_status",
+                "qa_pass",
+            }
+            if readiness_columns.issubset(result_columns):
+                readiness_rows = connection.execute(
+                    """
+                    SELECT
+                        config.sample_year,
+                        config.target_size,
+                        COUNT(result.canonical_url) AS evaluated,
+                        COALESCE(SUM(result.qa_pass), 0) AS qa_passed,
+                        COALESCE(
+                            SUM(result.extraction_status='complete'),
+                            0
+                        ) AS complete,
+                        COALESCE(
+                            SUM(result.extraction_status='error'),
+                            0
+                        ) AS parser_errors
+                    FROM parser_validation_config AS config
+                    LEFT JOIN parser_validation_results AS result
+                      ON result.sample_year=config.sample_year
+                     AND result.parser_version=config.parser_version
+                    GROUP BY
+                        config.sample_year,
+                        config.target_size,
+                        config.parser_version
+                    ORDER BY config.sample_year
+                    """
+                ).fetchall()
+                validation_ready = bool(readiness_rows) and all(
+                    int(evaluated) >= int(target_size)
+                    and int(complete) / int(evaluated) >= 0.95
+                    and int(qa_passed) / int(evaluated) >= 0.95
+                    and int(parser_errors) == 0
+                    for (
+                        _sample_year,
+                        target_size,
+                        evaluated,
+                        qa_passed,
+                        complete,
+                        parser_errors,
+                    ) in readiness_rows
+                )
             validation_replays = int(
                 connection.execute(
                     """
@@ -114,8 +170,9 @@ def action_state(
         "retryErrors": pending == 0 and downloading == 0 and recoverable > 0,
         "actionable": actionable,
         "validationReplays": validation_replays,
+        "validationReady": validation_ready,
         "terminalUnresolved": max(0, unresolved - recoverable),
-        "shouldContinue": actionable > 0,
+        "shouldContinue": actionable > 0 and not validation_ready,
     }
 
 
@@ -126,6 +183,9 @@ def write_github_output(path: Path, result: dict[str, object]) -> None:
         "actionable": str(result["actionable"]),
         "terminal_unresolved": str(result["terminalUnresolved"]),
         "validation_replays": str(result.get("validationReplays", 0)),
+        "validation_ready": str(
+            bool(result.get("validationReady", False))
+        ).lower(),
     }
     with path.open("a", encoding="utf-8") as handle:
         for key, value in values.items():
