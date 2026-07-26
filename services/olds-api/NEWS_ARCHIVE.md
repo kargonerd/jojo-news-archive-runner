@@ -19,13 +19,15 @@ parser changes them. Image URLs are recorded only by the parser. Images are not
 downloaded by `capture_archive_batch.py`.
 
 Parser readiness is measured on a reproducible, publisher-and-year-stratified
-sample. The archive workflow selects URLs by a stable SHA-256 priority, captures
-years in round-robin order, and evaluates at least 500 articles for every
-configured year. Already stored raw captures are sampled and replayed first;
-uncaptured URLs fill only the remaining shortfall. Validation stores metrics
-and issue codes, never article body text. A publisher/year is not ready until
-it has 500 evaluated samples, no parser exceptions, at least a 95%
-complete-extraction rate, and at least a 95% QA-pass rate.
+random sample. The archive workflow uses a stable SHA-256 pseudo-random
+priority, captures years in round-robin order, and evaluates at least 500
+articles for every configured year. The stable priority prevents resumptions
+from changing the selected sample while keeping selection independent of URL
+order. Already stored raw captures are sampled and replayed first; uncaptured
+URLs fill only the remaining shortfall. Validation stores metrics and issue
+codes, never article body text. A publisher/year is not ready until it has 500
+evaluated samples, no parser exceptions, at least a 95% complete-extraction
+rate, and at least a 95% QA-pass rate.
 
 ## B2 layout
 
@@ -189,6 +191,25 @@ partner HTML. That HTML enters the archive only when its final partner host,
 headline, publication date, complete-body threshold, and visible FT copyright
 statement all pass. Failed or ambiguous mappings remain outside the parser
 validation sample.
+
+Bloomberg discovery augments sparse canonical Wayback results with licensed
+partner copies. For 2017 onward, it searches Infini-News' CC-News index for the
+exact year-specific visible `©YYYY Bloomberg L.P.` statement and draws a
+reproducible random sample across each year's entire occurrence range. It
+retains the CC-News WARC filename and document index solely as discovery
+provenance, resolves each partner headline to its canonical `bloomberg.com`
+URL, then obtains the publication-near partner capture from Wayback.
+
+From 2025 onward it additionally enumerates BNN Bloomberg's public
+date-addressable daily sitemaps. Because older BNN article routes now redirect
+to the home page, it resolves the nearest exact Wayback capture of each partner
+URL. Every Bloomberg partner capture must pass complete-body, headline,
+publication-date, Bloomberg News attribution, and visible year-matched
+`Bloomberg L.P.` copyright checks. BNN copies must additionally contain the
+canonical Bloomberg link or a matching mirrored source slug. Infini-News text
+is never stored as article content; only the independently fetched and
+validated archived partner HTML is stored, with the canonical Bloomberg URL
+preserved as the source link.
 
 Reuters uses two catalog shards because its URL design changed:
 

@@ -80,13 +80,22 @@ def parse_article(
             soup,
             stop_at_reporting_by=spec.publisher == "reuters",
         )
-    if body is None and (
+    generic_syndication_allowed = (
         allow_generic_syndication
         or (
             raw_capture is not None
             and raw_capture.selected_candidate.provider
             == CaptureProvider.OTHER
         )
+    )
+    if (
+        body is None
+        and spec.publisher == "bloomberg"
+        and generic_syndication_allowed
+    ):
+        body = _bloomberg_partner_body(soup)
+    if body is None and (
+        generic_syndication_allowed
     ):
         body = _generic_syndication_body(soup)
     if body is None:
@@ -386,6 +395,22 @@ def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
                 >= _MINIMUM_SYNDICATED_BODY_CHARACTERS
             ):
                 return copy
+    return None
+
+
+def _bloomberg_partner_body(soup: BeautifulSoup) -> Tag | None:
+    for node in soup.select("[class*='storyContent' i]"):
+        paragraphs = [
+            _clean_text(paragraph.get_text(" ", strip=True))
+            for paragraph in node.select("p")
+        ]
+        substantial = [value for value in paragraphs if value]
+        if (
+            len(substantial) >= 2
+            and sum(len(value) for value in substantial)
+            >= _MINIMUM_SYNDICATED_BODY_CHARACTERS
+        ):
+            return node
     return None
 
 

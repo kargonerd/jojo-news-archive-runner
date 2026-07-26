@@ -248,6 +248,48 @@ def test_parser_supports_legacy_nyt_story_body_and_pdate():
     assert result.quality.body_characters >= 200
 
 
+def test_bloomberg_parser_extracts_livemint_partner_story_content():
+    canonical_url = (
+        "https://www.bloomberg.com/opinion/articles/2025-06-04/"
+        "texas-is-going-about-its-hollywood-ambitions-all-wrong"
+    )
+    paragraphs = "".join(
+        (
+            "<p class='storyParagraph'>Bloomberg licensed reporting "
+            f"paragraph {index} contains substantive analysis about the "
+            "film industry, public investment, tax credits and economic "
+            "development policy.</p>"
+        )
+        for index in range(1, 7)
+    )
+    html = f"""
+    <html><head>
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "Texas Is Going About Its Hollywood Ambitions All Wrong",
+        "datePublished": "2025-06-04T18:37:00+05:30",
+        "author": {{"name": "Bloomberg News"}}
+      }}
+      </script>
+    </head><body>
+      <div class="storyPage_storyContent__3xuFc">{paragraphs}</div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters >= 400
+    assert "paragraph 6" in result.plain_text
+    assert result.extraction.parser_version == "bloomberg-parser/0.8.0"
+
+
 def test_nyt_parser_joins_distributed_story_companion_columns():
     canonical_url = (
         "https://www.nytimes.com/2018/10/03/briefing/"
@@ -547,7 +589,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.7.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.8.0"
 
 
 def test_nyt_generic_syndication_extracts_local_newspaper_copy():

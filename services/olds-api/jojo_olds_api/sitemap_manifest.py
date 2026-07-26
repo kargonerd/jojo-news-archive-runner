@@ -366,6 +366,17 @@ def export_sitemap_manifest(
         ).fetchone()
         is not None
     )
+    has_bloomberg_bnn = (
+        publisher == "bloomberg"
+        and connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type='table' AND name='bloomberg_bnn_articles'
+            """
+        ).fetchone()
+        is not None
+    )
     if has_nyt_syndication:
         article_rows = connection.execute(
             """
@@ -386,6 +397,30 @@ def export_sitemap_manifest(
             FROM nyt_syndication_articles AS syndication
             LEFT JOIN sitemap_articles AS sitemap
               ON sitemap.canonical_url=syndication.canonical_url
+            WHERE sitemap.canonical_url IS NULL
+            ORDER BY 1
+            """
+        )
+    elif has_bloomberg_bnn:
+        article_rows = connection.execute(
+            """
+            SELECT
+                sitemap.canonical_url,
+                COALESCE(partner.published_at, sitemap.published_at),
+                partner.archive_url,
+                partner.expected_headline
+            FROM sitemap_articles AS sitemap
+            LEFT JOIN bloomberg_bnn_articles AS partner
+              ON partner.canonical_url=sitemap.canonical_url
+            UNION ALL
+            SELECT
+                partner.canonical_url,
+                partner.published_at,
+                partner.archive_url,
+                partner.expected_headline
+            FROM bloomberg_bnn_articles AS partner
+            LEFT JOIN sitemap_articles AS sitemap
+              ON sitemap.canonical_url=partner.canonical_url
             WHERE sitemap.canonical_url IS NULL
             ORDER BY 1
             """

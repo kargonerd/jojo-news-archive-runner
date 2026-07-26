@@ -15,6 +15,15 @@ if str(SERVICE_ROOT) not in sys.path:
 
 from jojo_olds_api.archive_sources import archive_source_spec
 from jojo_olds_api.bloomberg_archive_download import ArchiveClient
+from jojo_olds_api.bloomberg_bnn_catalog import (
+    bloomberg_bnn_summary,
+    initialize_bloomberg_bnn_schema,
+    process_bloomberg_infini_documents,
+    process_bloomberg_infini_pages,
+    process_bloomberg_infini_queries,
+    process_bloomberg_bnn_pages,
+    process_bloomberg_bnn_sitemaps,
+)
 from jojo_olds_api.ft_syndication_catalog import (
     initialize_ft_syndication_schema,
     ft_syndication_summary,
@@ -125,6 +134,13 @@ def main() -> int:
     ft_infini_queries = 0
     ft_infini_documents = 0
     ft_resolution_attempts = 0
+    bloomberg_bnn: dict[str, object] | None = None
+    bloomberg_bnn_days = 0
+    bloomberg_bnn_pages = 0
+    bloomberg_infini_queries = 0
+    bloomberg_infini_documents = 0
+    bloomberg_infini_pages = 0
+    bloomberg_bnn_error: str | None = None
     if args.publisher == "nyt":
         initialize_nyt_syndication_schema(
             connection,
@@ -372,6 +388,150 @@ def main() -> int:
                 flush=True,
             )
         ft_syndication = ft_syndication_summary(connection)
+    if args.publisher == "bloomberg":
+        initialize_bloomberg_bnn_schema(
+            connection,
+            from_year=args.from_year,
+            to_year=args.to_year,
+        )
+        bnn_client = ArchiveClient(
+            minimum_interval=args.min_request_interval,
+            timeout=args.timeout,
+            attempts=args.attempts,
+        )
+        try:
+            with httpx.Client(
+                headers={
+                    "User-Agent": (
+                        "JOJO-News-Archive-Research/0.1 "
+                        "(authorized nonprofit academic archive)"
+                    )
+                },
+                follow_redirects=True,
+                timeout=args.timeout,
+            ) as bloomberg_source_client:
+                infini_query_result = process_bloomberg_infini_queries(
+                    connection,
+                    http_client=bloomberg_source_client,
+                    maximum_years=args.max_sitemaps,
+                )
+                bloomberg_infini_queries = int(
+                    infini_query_result["processed"]
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "bloomberg-infini-queries",
+                            **infini_query_result,
+                            "errors": len(
+                                infini_query_result["errors"]
+                            ),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                infini_document_result = (
+                    process_bloomberg_infini_documents(
+                        connection,
+                        http_client=bloomberg_source_client,
+                        maximum=args.max_sitemaps * 100,
+                        workers=4,
+                        minimum_request_interval=(
+                            args.min_request_interval
+                        ),
+                    )
+                )
+                bloomberg_infini_documents = int(
+                    infini_document_result["attempted"]
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "bloomberg-infini-documents",
+                            **infini_document_result,
+                            "errors": len(
+                                infini_document_result["errors"]
+                            ),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                infini_page_result = process_bloomberg_infini_pages(
+                    connection,
+                    search_client=bloomberg_source_client,
+                    archive_client=bnn_client,
+                    maximum=args.max_sitemaps * 50,
+                    minimum_request_interval=(
+                        args.min_request_interval
+                    ),
+                )
+                bloomberg_infini_pages = int(
+                    infini_page_result["attempted"]
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "bloomberg-infini-pages",
+                            **infini_page_result,
+                            "errors": len(
+                                infini_page_result["errors"]
+                            ),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+            day_result = process_bloomberg_bnn_sitemaps(
+                connection,
+                http_client=bnn_client,
+                maximum_days=args.max_sitemaps * 10,
+            )
+            bloomberg_bnn_days = int(day_result["processed"])
+            print(
+                json.dumps(
+                    {
+                        "event": "bloomberg-bnn-sitemaps",
+                        **day_result,
+                        "errors": len(day_result["errors"]),
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+            page_result = process_bloomberg_bnn_pages(
+                connection,
+                http_client=bnn_client,
+                maximum=args.max_sitemaps * 100,
+            )
+            bloomberg_bnn_pages = int(page_result["attempted"])
+            print(
+                json.dumps(
+                    {
+                        "event": "bloomberg-bnn-pages",
+                        **page_result,
+                        "errors": len(page_result["errors"]),
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+        except Exception as exc:
+            bloomberg_bnn_error = f"{type(exc).__name__}: {exc}"
+            print(
+                json.dumps(
+                    {
+                        "event": "bloomberg-bnn-error",
+                        "error": bloomberg_bnn_error,
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+        finally:
+            bnn_client.close()
+        bloomberg_bnn = bloomberg_bnn_summary(connection)
     manifest = export_sitemap_manifest(
         connection,
         publisher=args.publisher,
@@ -389,6 +549,8 @@ def main() -> int:
         syndication and syndication["shouldContinue"]
     ) or bool(
         ft_syndication and ft_syndication["shouldContinue"]
+    ) or bool(
+        bloomberg_bnn and bloomberg_bnn["shouldContinue"]
     )
     summary = {
         **sitemap_summary(connection),
@@ -407,6 +569,13 @@ def main() -> int:
         "ftInfiniQueriesThisRun": ft_infini_queries,
         "ftInfiniDocumentsThisRun": ft_infini_documents,
         "ftSyndicationResolutionsThisRun": ft_resolution_attempts,
+        "bloombergBnnDaysThisRun": bloomberg_bnn_days,
+        "bloombergBnnPagesThisRun": bloomberg_bnn_pages,
+        "bloombergInfiniQueriesThisRun": bloomberg_infini_queries,
+        "bloombergInfiniDocumentsThisRun": (
+            bloomberg_infini_documents
+        ),
+        "bloombergInfiniPagesThisRun": bloomberg_infini_pages,
         **(
             {"nytSyndication": syndication}
             if syndication is not None
@@ -425,6 +594,16 @@ def main() -> int:
         **(
             {"ftSyndicationError": syndication_error}
             if syndication_error and args.publisher == "ft"
+            else {}
+        ),
+        **(
+            {"bloombergBnn": bloomberg_bnn}
+            if bloomberg_bnn is not None
+            else {}
+        ),
+        **(
+            {"bloombergBnnError": bloomberg_bnn_error}
+            if bloomberg_bnn_error
             else {}
         ),
     }

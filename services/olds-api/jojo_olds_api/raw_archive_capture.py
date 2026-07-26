@@ -542,6 +542,67 @@ def capture_item(
                     response[5],
                     response[6] | validation_signals,
                 )
+            if (
+                item.publisher == "bloomberg"
+                and candidate.provider == CaptureProvider.OTHER
+                and _is_bnn_wayback_candidate(candidate.snapshot_url)
+            ):
+                validated, validation_signals = (
+                    _validate_bloomberg_bnn_response(
+                        item,
+                        expected_headline=candidate.expected_headline,
+                        content=response[2],
+                        final_url=response[3],
+                    )
+                )
+                if not validated:
+                    failures.append(
+                        "bloomberg-bnn:validation:"
+                        + str(
+                            validation_signals.get("reason") or "failed"
+                        )
+                    )
+                    continue
+                response = (
+                    response[0],
+                    response[1],
+                    response[2],
+                    response[3],
+                    response[4],
+                    response[5],
+                    response[6] | validation_signals,
+                )
+            if (
+                item.publisher == "bloomberg"
+                and candidate.provider == CaptureProvider.OTHER
+                and candidate.expected_headline
+                and not _is_bnn_wayback_candidate(candidate.snapshot_url)
+            ):
+                validated, validation_signals = (
+                    _validate_bloomberg_partner_archive_response(
+                        item,
+                        expected_headline=candidate.expected_headline,
+                        content=response[2],
+                        final_url=response[3],
+                    )
+                )
+                if not validated:
+                    failures.append(
+                        "bloomberg-partner:validation:"
+                        + str(
+                            validation_signals.get("reason") or "failed"
+                        )
+                    )
+                    continue
+                response = (
+                    response[0],
+                    response[1],
+                    response[2],
+                    response[3],
+                    response[4],
+                    response[5],
+                    response[6] | validation_signals,
+                )
             if best_response is None or response[5] > best_response[5]:
                 best_response = response
             if response[5] == 100:
@@ -1642,6 +1703,311 @@ def _validate_bloomberg_syndication_response(
         "syndicationDateDeltaDays": date_delta_days,
         "syndicationExpectedDateVisible": date_visible,
     }
+
+
+def _validate_bloomberg_bnn_response(
+    item: ManifestItem,
+    *,
+    expected_headline: str | None,
+    content: bytes,
+    final_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    partner_match = re.match(
+        r"^https?://web\.archive\.org/web/\d{14}"
+        r"(?:id_|im_|js_|cs_)?/(https?://.+)$",
+        final_url,
+        flags=re.IGNORECASE,
+    )
+    archived_partner_url = (
+        unquote(partner_match.group(1)) if partner_match else ""
+    )
+    archived_partner = urlsplit(archived_partner_url)
+    partner_validated = (
+        archived_partner.scheme in {"http", "https"}
+        and (archived_partner.hostname or "").casefold()
+        in {"bnnbloomberg.ca", "www.bnnbloomberg.ca"}
+    )
+    if not partner_validated:
+        return False, {
+            "reason": "unexpected-bnn-archive-url",
+            "bloombergBnnValidated": False,
+            "syndicationFinalUrl": final_url,
+            "syndicationPartnerHostValidated": False,
+        }
+    if not expected_headline:
+        return False, {
+            "reason": "missing-original-headline",
+            "bloombergBnnValidated": False,
+            "syndicationFinalUrl": final_url,
+            "syndicationPartnerHostValidated": True,
+        }
+    try:
+        article = parse_article(
+            content,
+            publisher="bloomberg",
+            canonical_url=item.canonical_url,
+            allow_generic_syndication=True,
+        )
+    except Exception as exc:
+        return False, {
+            "reason": f"parser-{type(exc).__name__}",
+            "bloombergBnnValidated": False,
+            "syndicationFinalUrl": final_url,
+            "syndicationPartnerHostValidated": True,
+        }
+    soup = BeautifulSoup(content, "html.parser")
+    visible_text = soup.get_text(" ", strip=True)
+    author_text = " ".join(author.name for author in article.authors)
+    attributed = re.search(
+        r"(?i)(?:^|\W)bloomberg(?:\s+news)?(?:\W|$)",
+        author_text + "\n" + visible_text[:5_000],
+    ) is not None
+    expected_date = _parse_iso_datetime(item.published_at)
+    copyright_attributed = (
+        expected_date is not None
+        and re.search(
+            rf"(?i)(?:©|\(c\)|copyright)\s*{expected_date.year}\s+"
+            r"bloomberg\s+l\.p\.",
+            visible_text,
+        )
+        is not None
+    )
+    decoded_html = content.decode(
+        "utf-8",
+        errors="ignore",
+    ).replace("\\/", "/")
+    canonical_linked = (
+        item.canonical_url.rstrip("/").casefold()
+        in decoded_html.casefold()
+    )
+    mirrored_slug_validated = _bnn_mirrored_slug_matches(
+        archived_partner_url,
+        item.canonical_url,
+    )
+    canonical_provenance_validated = (
+        canonical_linked or mirrored_slug_validated
+    )
+    headline_overlap = _headline_text_overlap(
+        expected_headline,
+        article.headline or "",
+    )
+    date_delta_days: int | None = None
+    if expected_date is not None and article.published_at is not None:
+        date_delta_days = abs(
+            (article.published_at.date() - expected_date.date()).days
+        )
+    date_visible = _expected_date_visible(
+        content,
+        expected_date=expected_date,
+    )
+    date_matches = (
+        date_delta_days is not None and date_delta_days <= 2
+    ) or date_visible
+    body_characters = article.quality.body_characters
+    valid = (
+        article.quality.status == ArticleStatus.COMPLETE
+        and body_characters
+        >= BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS
+        and attributed
+        and copyright_attributed
+        and canonical_provenance_validated
+        and headline_overlap >= 0.8
+        and date_matches
+    )
+    if article.quality.status != ArticleStatus.COMPLETE:
+        reason = f"parser-{article.quality.status.value}"
+    elif body_characters < BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS:
+        reason = "body-too-short"
+    elif not attributed:
+        reason = "missing-bloomberg-attribution"
+    elif not copyright_attributed:
+        reason = "missing-bloomberg-copyright"
+    elif not canonical_provenance_validated:
+        reason = "missing-original-url-provenance"
+    elif headline_overlap < 0.8:
+        reason = "headline-mismatch"
+    elif not date_matches:
+        reason = "publication-date-mismatch"
+    else:
+        reason = None
+    return valid, {
+        "reason": reason,
+        "bloombergBnnValidated": valid,
+        "syndicationFinalUrl": final_url,
+        "syndicationHeadlineOverlap": round(headline_overlap, 4),
+        "syndicationBodyCharacters": body_characters,
+        "syndicationBloombergAttributed": attributed,
+        "syndicationBloombergCopyrightAttributed": copyright_attributed,
+        "syndicationCanonicalArticleLinked": canonical_linked,
+        "syndicationMirroredSlugValidated": mirrored_slug_validated,
+        "syndicationDateDeltaDays": date_delta_days,
+        "syndicationExpectedDateVisible": date_visible,
+        "syndicationOriginalHeadline": expected_headline,
+        "syndicationPartnerHostValidated": partner_validated,
+        "syndicationPartnerUrl": archived_partner_url,
+    }
+
+
+def _validate_bloomberg_partner_archive_response(
+    item: ManifestItem,
+    *,
+    expected_headline: str,
+    content: bytes,
+    final_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    partner_match = re.match(
+        r"^https?://web\.archive\.org/web/\d{14}"
+        r"(?:id_|im_|js_|cs_)?/(https?://.+)$",
+        final_url,
+        flags=re.IGNORECASE,
+    )
+    archived_partner_url = (
+        unquote(partner_match.group(1)) if partner_match else ""
+    )
+    archived_partner = urlsplit(archived_partner_url)
+    partner_host = (archived_partner.hostname or "").casefold()
+    partner_validated = (
+        archived_partner.scheme in {"http", "https"}
+        and bool(partner_host)
+        and partner_host not in {"bloomberg.com", "www.bloomberg.com"}
+    )
+    if not partner_validated:
+        return False, {
+            "reason": "unexpected-partner-archive-url",
+            "bloombergPartnerValidated": False,
+            "syndicationFinalUrl": final_url,
+            "syndicationPartnerHostValidated": False,
+        }
+    try:
+        article = parse_article(
+            content,
+            publisher="bloomberg",
+            canonical_url=item.canonical_url,
+            allow_generic_syndication=True,
+        )
+    except Exception as exc:
+        return False, {
+            "reason": f"parser-{type(exc).__name__}",
+            "bloombergPartnerValidated": False,
+            "syndicationFinalUrl": final_url,
+            "syndicationPartnerHostValidated": True,
+        }
+    soup = BeautifulSoup(content, "html.parser")
+    visible_text = soup.get_text(" ", strip=True)
+    author_text = " ".join(author.name for author in article.authors)
+    attributed = re.search(
+        r"(?i)(?:^|\W)bloomberg(?:\s+news)?(?:\W|$)",
+        author_text + "\n" + visible_text[:5_000],
+    ) is not None
+    expected_date = _parse_iso_datetime(item.published_at)
+    copyright_attributed = (
+        expected_date is not None
+        and re.search(
+            rf"(?i)(?:©|\(c\)|copyright)\s*{expected_date.year}\s+"
+            r"bloomberg\s+l\.p\.",
+            visible_text,
+        )
+        is not None
+    )
+    headline_overlap = _headline_text_overlap(
+        expected_headline,
+        article.headline or "",
+    )
+    date_delta_days: int | None = None
+    if expected_date is not None and article.published_at is not None:
+        date_delta_days = abs(
+            (article.published_at.date() - expected_date.date()).days
+        )
+    date_visible = _expected_date_visible(
+        content,
+        expected_date=expected_date,
+    )
+    date_matches = (
+        date_delta_days is not None and date_delta_days <= 2
+    ) or date_visible
+    body_characters = article.quality.body_characters
+    valid = (
+        article.quality.status == ArticleStatus.COMPLETE
+        and body_characters
+        >= BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS
+        and attributed
+        and copyright_attributed
+        and headline_overlap >= 0.8
+        and date_matches
+    )
+    if article.quality.status != ArticleStatus.COMPLETE:
+        reason = f"parser-{article.quality.status.value}"
+    elif body_characters < BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS:
+        reason = "body-too-short"
+    elif not attributed:
+        reason = "missing-bloomberg-attribution"
+    elif not copyright_attributed:
+        reason = "missing-bloomberg-copyright"
+    elif headline_overlap < 0.8:
+        reason = "headline-mismatch"
+    elif not date_matches:
+        reason = "publication-date-mismatch"
+    else:
+        reason = None
+    return valid, {
+        "reason": reason,
+        "bloombergPartnerValidated": valid,
+        "syndicationFinalUrl": final_url,
+        "syndicationHeadlineOverlap": round(headline_overlap, 4),
+        "syndicationBodyCharacters": body_characters,
+        "syndicationBloombergAttributed": attributed,
+        "syndicationBloombergCopyrightAttributed": copyright_attributed,
+        "syndicationDateDeltaDays": date_delta_days,
+        "syndicationExpectedDateVisible": date_visible,
+        "syndicationOriginalHeadline": expected_headline,
+        "syndicationPartnerHostValidated": partner_validated,
+        "syndicationPartnerUrl": archived_partner_url,
+    }
+
+
+def _is_bnn_wayback_candidate(value: str) -> bool:
+    return (
+        re.match(
+            r"^https?://web\.archive\.org/web/\d{14}"
+            r"(?:id_|im_|js_|cs_)?/https?://"
+            r"(?:www\.)?bnnbloomberg\.ca/",
+            value,
+            flags=re.IGNORECASE,
+        )
+        is not None
+    )
+
+
+def _bnn_mirrored_slug_matches(
+    partner_url: str,
+    canonical_url: str,
+) -> bool:
+    partner = urlsplit(partner_url)
+    canonical = urlsplit(canonical_url)
+    partner_match = re.fullmatch(
+        r"/bloomberg/(20\d{2})/(\d{2})/(\d{2})/"
+        r"([a-z0-9][a-z0-9-]*)/?",
+        partner.path,
+        flags=re.IGNORECASE,
+    )
+    if (
+        partner_match is None
+        or (partner.hostname or "").casefold()
+        not in {"bnnbloomberg.ca", "www.bnnbloomberg.ca"}
+        or (canonical.hostname or "").casefold()
+        not in {"bloomberg.com", "www.bloomberg.com"}
+    ):
+        return False
+    expected_path = (
+        "/news/articles/"
+        f"{partner_match.group(1)}-{partner_match.group(2)}-"
+        f"{partner_match.group(3)}/{partner_match.group(4)}"
+    )
+    return canonical.path.rstrip("/").casefold() == expected_path.casefold()
 
 
 def _validate_nyt_syndication_response(
