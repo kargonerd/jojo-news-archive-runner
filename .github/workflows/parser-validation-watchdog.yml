@@ -1,0 +1,153 @@
+name: Parser validation watchdog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_run:
+    workflows:
+      - Parser validation accelerator
+    types:
+      - completed
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: parser-validation-watchdog
+  cancel-in-progress: false
+
+env:
+  B2_ARCHIVE_KEY_ID: ${{ secrets.B2_ARCHIVE_KEY_ID }}
+  B2_ARCHIVE_APPLICATION_KEY: ${{ secrets.B2_ARCHIVE_APPLICATION_KEY }}
+  B2_ARCHIVE_BUCKET: ${{ secrets.B2_ARCHIVE_BUCKET }}
+  B2_REMOTE: jojo-b2
+  MAX_STANDARD_CONCURRENCY: "20"
+  MAX_DISPATCH_PER_RUN: "6"
+  DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rclone
+
+      - name: Validate private B2 storage
+        run: |
+          python services/olds-api/tools/verify_b2_private_bucket.py
+          rclone config create "$B2_REMOTE" b2 \
+            account "$B2_ARCHIVE_KEY_ID" \
+            key "$B2_ARCHIVE_APPLICATION_KEY" \
+            --non-interactive
+
+      - name: Restore validation summaries
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/archive-state"
+          rclone copy \
+            "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1" \
+            "$RUNNER_TEMP/archive-state" \
+            --include "ap/2016-2026/sitemap-wayback/state/summary.json" \
+            --include "bloomberg/2016-2026/sitemap-wayback/state/summary.json" \
+            --include "ft/2016-2026/sitemap-wayback/state/summary.json" \
+            --include "nyt/2016-2026/sitemap-wayback/state/summary.json" \
+            --include "reuters/2016-2020/wayback-urlkey/state/summary.json" \
+            --include "reuters/2021-2026/reuters-sitemap-wayback/state/summary.json" \
+            --include "wsj/2016-2026/wayback-urlkey/state/summary.json" \
+            --include "validation/*/*/state/summary.json" \
+            --transfers 16 --checkers 32 \
+            --retries 8 --low-level-retries 20
+
+      - name: Plan available validation slots
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs="$RUNNER_TEMP/runs.json"
+          active="$RUNNER_TEMP/active-titles.txt"
+          gh run list --limit 100 \
+            --json status,displayTitle > "$runs"
+          jq -r '
+            .[]
+            | select(
+                .status == "in_progress"
+                or .status == "queued"
+                or .status == "waiting"
+              )
+            | .displayTitle
+          ' "$runs" > "$active"
+          active_count="$(
+            jq '[
+              .[]
+              | select(
+                  .status == "in_progress"
+                  or .status == "queued"
+                  or .status == "waiting"
+                )
+            ] | length' "$runs"
+          )"
+          # This watchdog itself occupies one runner while planning. Its slot
+          # becomes available as soon as dispatch completes.
+          available=$((MAX_STANDARD_CONCURRENCY - active_count + 1))
+          if [ "$available" -lt 0 ]; then
+            available=0
+          fi
+          dispatches="$available"
+          if [ "$dispatches" -gt "$MAX_DISPATCH_PER_RUN" ]; then
+            dispatches="$MAX_DISPATCH_PER_RUN"
+          fi
+          python \
+            services/olds-api/tools/plan_parser_validation_watchdog.py \
+            --state-root "$RUNNER_TEMP/archive-state" \
+            --active-titles "$active" \
+            --max-dispatch "$dispatches" \
+            --output "$RUNNER_TEMP/validation-plan.json"
+          echo "tasks=$(jq -c '.tasks' \
+            "$RUNNER_TEMP/validation-plan.json")" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Parser validation watchdog"
+            echo
+            echo '```json'
+            jq '{
+              targetCells,
+              readyCells,
+              activeCells,
+              pendingCells,
+              summariesRead,
+              tasks
+            }' "$RUNNER_TEMP/validation-plan.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch missing publisher years
+        if: ${{ steps.plan.outputs.tasks != '[]' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TASKS: ${{ steps.plan.outputs.tasks }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r task; do
+            publisher="$(jq -r '.publisher' <<<"$task")"
+            year="$(jq -r '.year' <<<"$task")"
+            shard="$(jq -r '.sourceManifestShard' <<<"$task")"
+            runner="$(jq -r '.runnerOs' <<<"$task")"
+            gh workflow run parser-validation-accelerator.yml \
+              --ref "$DEFAULT_BRANCH" \
+              -f publisher="$publisher" \
+              -f year="$year" \
+              -f source_manifest_shard="$shard" \
+              -f max_captures=500 \
+              -f workers=8 \
+              -f max_runtime_minutes=300 \
+              -f auto_continue=true \
+              -f runner_os="$runner"
+            echo "Dispatched $publisher/$year from $shard on $runner."
+          done < <(jq -c '.[]' <<<"$TASKS")
