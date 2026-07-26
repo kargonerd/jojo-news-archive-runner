@@ -105,6 +105,7 @@ _ACCESS_CHALLENGE_MARKERS = (
     b"<title>client challenge</title>",
     b"javascript is disabled in your browser",
     b"a required part of this site couldn",
+    b"terms of service violation",
 )
 _REDIRECT_SHELL_MARKERS = (
     b"window.location = fullurl",
@@ -2738,6 +2739,7 @@ def score_raw_capture(
         and (
             any(marker in prefix for marker in _ACCESS_CHALLENGE_MARKERS)
             or "/access-error/" in final_url_lower
+            or "/tosv2.html" in final_url_lower
         )
     )
     has_strong_body_marker = (

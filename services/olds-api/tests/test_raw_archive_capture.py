@@ -2199,6 +2199,26 @@ def test_raw_quality_rejects_access_challenge_shell():
     assert signals["accessChallengeShell"] is True
 
 
+def test_raw_quality_rejects_bloomberg_terms_violation_redirect():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><title>Terms of Service Violation</title></head>
+        <body><p>Your usage has been flagged as a violation of our terms
+        of service. Please confirm that you are not a robot.</p></body>
+        </html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://web.archive.org/web/20180919041634id_/"
+            "https://www.bloomberg.com/tosv2.html?url=encoded"
+        ),
+    )
+
+    assert score < 85
+    assert signals["accessChallengeShell"] is True
+
+
 def test_raw_quality_rejects_email_login_redirect_with_empty_shell():
     score, signals = score_raw_capture(
         b"""

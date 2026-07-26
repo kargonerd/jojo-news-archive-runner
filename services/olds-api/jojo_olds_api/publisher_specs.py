@@ -68,7 +68,7 @@ PUBLISHER_SPECS = {
     ),
     "bloomberg": PublisherSpec(
         publisher="bloomberg",
-        parser_version="bloomberg-parser/0.8.0",
+        parser_version="bloomberg-parser/0.9.0",
         domains=("bloomberg.com", "www.bloomberg.com"),
         default_language="en",
         edition="global",
@@ -77,6 +77,7 @@ PUBLISHER_SPECS = {
             "[data-component='article-body']",
             "article .body-content",
             "article [itemprop='articleBody']",
+            "main article[data-story-id]",
             "#main",
             "article",
         ),

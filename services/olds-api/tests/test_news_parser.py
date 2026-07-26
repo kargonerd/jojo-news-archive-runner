@@ -287,7 +287,49 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.8.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.9.0"
+
+
+def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Main Bloomberg investigation">
+      <meta property="article:published_time"
+            content="2019-07-18T15:21:25Z">
+    </head><body>
+      <header>
+        <article class="live-now-story">
+          <p>Bloomberg Television live programming card that is not part
+          of the requested archived news article.</p>
+        </article>
+      </header>
+      <main>
+        <article data-story-id="PUUBB06VDKHS01">
+          <h1>Main Bloomberg investigation</h1>
+          <div>
+            <p>The first paragraph contains substantive reporting about
+            a financial investigation and the people involved.</p>
+            <p>The second paragraph provides court records, responses,
+            dates and additional context for the archived story.</p>
+          </div>
+        </article>
+      </main>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2019-07-18/example"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "first paragraph" in result.plain_text
+    assert "second paragraph" in result.plain_text
+    assert "Television live programming" not in result.plain_text
+    assert result.extraction.parser_version == "bloomberg-parser/0.9.0"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -589,7 +631,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.8.0"
+    assert result.extraction.parser_version == "bloomberg-parser/0.9.0"
 
 
 def test_nyt_generic_syndication_extracts_local_newspaper_copy():
