@@ -816,6 +816,89 @@ def test_parser_deduplicates_responsive_text_and_image_blocks():
     )
 
 
+def test_ft_parser_accepts_image_led_data_story_without_prose():
+    images = "\n".join(
+        (
+            "<figure><img "
+            f"src='https://www.ft.com/__origami/service/image/{index}.png'>"
+            "</figure>"
+        )
+        for index in range(7)
+    )
+    html = f"""
+    <html>
+      <head>
+        <meta property="og:title" content="City statistics">
+        <meta property="article:published_time"
+              content="2018-10-26T10:00:35Z">
+      </head>
+      <body>
+        <article>
+          <div class="article__content-body">
+            {images}
+          </div>
+        </article>
+      </body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/image-led-story",
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected == 7
+    assert "body-too-short" not in result.quality.warnings
+
+
+def test_ft_parser_merges_structured_copy_with_dom_media():
+    article_body = (
+        "City data comparing population, housing, transport and household "
+        "income across two metropolitan areas, with explanatory context."
+    )
+    images = "\n".join(
+        (
+            "<figure><img "
+            f"src='https://www.ft.com/__origami/service/image/{index}.png'>"
+            "</figure>"
+        )
+        for index in range(3)
+    )
+    html = f"""
+    <html>
+      <head>
+        <script type="application/ld+json">
+          {{
+            "@type": "NewsArticle",
+            "headline": "City statistics",
+            "datePublished": "2018-10-26T10:00:35Z",
+            "articleBody": {json.dumps(article_body)}
+          }}
+        </script>
+      </head>
+      <body><article><div class="article__content-body">
+        {images}
+      </div></article></body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/structured-media-story",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert article_body in result.plain_text
+    assert result.quality.images_selected == 3
+    assert len(
+        [block for block in result.blocks if block.type.value == "image"]
+    ) == 3
+
+
 def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     article_body = "\n\n".join(
         [
@@ -852,7 +935,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.7.0"
+    assert article.extraction.parser_version == "ft-parser/0.8.0"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():

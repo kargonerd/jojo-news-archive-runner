@@ -113,8 +113,15 @@ def parse_article(
         )
         if embedded_body is not None:
             body = embedded_body
-    if body is None and spec.use_structured_article_body:
-        body = _structured_article_body(news_article)
+    if spec.use_structured_article_body:
+        structured_body = _structured_article_body(news_article)
+        if body is None:
+            body = structured_body
+        elif structured_body is not None:
+            body = _prefer_structured_body_with_media(
+                body,
+                structured_body=structured_body,
+            )
     if spec.publisher == "nyt":
         birdkit_body = _nyt_birdkit_attendee_body(soup)
         if birdkit_body is not None:
@@ -224,7 +231,10 @@ def parse_article(
                     block.asset_id = existing.asset_id
         blocks = _deduplicate_blocks(blocks)
 
-    if content_type == ContentType.ARTICLE and _looks_like_gallery(blocks):
+    if content_type == ContentType.ARTICLE and _looks_like_gallery(
+        blocks,
+        allow_uncaptioned=spec.publisher == "ft",
+    ):
         content_type = ContentType.GALLERY
     plain_text = "\n\n".join(
         value
@@ -236,7 +246,16 @@ def parse_article(
     warnings: list[str] = []
     if not headline:
         warnings.append("missing-headline")
-    if len(plain_text) < _MINIMUM_BODY_CHARACTERS:
+    image_block_count = sum(
+        block.type == BlockType.IMAGE for block in blocks
+    )
+    image_led_gallery = (
+        content_type == ContentType.GALLERY and image_block_count >= 3
+    )
+    if (
+        len(plain_text) < _MINIMUM_BODY_CHARACTERS
+        and not image_led_gallery
+    ):
         warnings.append("body-too-short")
     if not published_at:
         warnings.append("missing-published-at")
@@ -534,6 +553,47 @@ def _structured_article_body(
         node.string = paragraph
         article.append(node)
     return article
+
+
+def _prefer_structured_body_with_media(
+    body: Tag,
+    *,
+    structured_body: Tag,
+) -> Tag:
+    body_text = _clean_text(body.get_text(" ", strip=True))
+    structured_text = _clean_text(
+        structured_body.get_text(" ", strip=True)
+    )
+    if (
+        len(body_text) >= _MINIMUM_BODY_CHARACTERS
+        or len(structured_text) <= len(body_text)
+    ):
+        return body
+
+    media_nodes = list(body.select("figure"))
+    media_nodes.extend(
+        node
+        for node in body.select("iframe")
+        if node.find_parent("figure") is None
+    )
+    media_nodes.extend(
+        node
+        for node in body.select("img")
+        if node.find_parent("figure") is None
+    )
+    for media in media_nodes:
+        clone_document = BeautifulSoup(str(media), "html.parser")
+        clone = clone_document.find(media.name)
+        if not isinstance(clone, Tag):
+            continue
+        if media.name == "img":
+            wrapper = clone_document.new_tag("figure")
+            clone.extract()
+            wrapper.append(clone)
+            structured_body.append(wrapper)
+        else:
+            structured_body.append(clone)
+    return structured_body
 
 
 def _nyt_birdkit_attendee_body(
@@ -1084,7 +1144,11 @@ def _content_type(article: dict[str, Any], canonical_url: str) -> ContentType:
     return ContentType.ARTICLE
 
 
-def _looks_like_gallery(blocks: list[ContentBlock]) -> bool:
+def _looks_like_gallery(
+    blocks: list[ContentBlock],
+    *,
+    allow_uncaptioned: bool = False,
+) -> bool:
     image_blocks = [
         block for block in blocks if block.type == BlockType.IMAGE
     ]
@@ -1108,10 +1172,16 @@ def _looks_like_gallery(blocks: list[ContentBlock]) -> bool:
         len(_clean_text(block.text or ""))
         for block in text_blocks
     )
+    if not image_blocks or len(text_blocks) > 2:
+        return False
+    if (
+        allow_uncaptioned
+        and len(image_blocks) >= 3
+        and text_characters < _MINIMUM_BODY_CHARACTERS
+    ):
+        return True
     return bool(
-        image_blocks
-        and len(text_blocks) <= 2
-        and caption_characters >= 100
+        caption_characters >= 100
         and caption_characters >= text_characters
     )
 

@@ -2317,6 +2317,58 @@ def test_raw_quality_rejects_ft_professional_access_error_redirect():
     assert signals["accessChallengeShell"] is True
 
 
+def test_raw_quality_rejects_truncated_ft_article_body():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head><script type="application/ld+json">
+        {"@type":"NewsArticle","headline":"Archived FT article",
+         "articleBody":"Only a short archived teaser survives here."}
+        </script></head><body><article>
+        <div class="article__content-body">
+          <p>Only a short archived teaser survives here.</p>
+        </div></article></body></html>
+        """ + (b" " * 90_000),
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://web.archive.org/web/20180901000000id_/"
+            "https://www.ft.com/content/example"
+        ),
+    )
+
+    assert score < 85
+    assert signals["ftTruncatedArticleShell"] is True
+    assert signals["ftBodyCharacters"] < 100
+
+
+def test_raw_quality_keeps_image_led_ft_data_story():
+    images = b"".join(
+        b"<figure><img src='https://www.ft.com/image.png'></figure>"
+        for _ in range(3)
+    )
+    score, signals = score_raw_capture(
+        (
+            b"<html><head><script type='application/ld+json'>"
+            b'{"@type":"NewsArticle","headline":"FT data story"}'
+            b"</script></head><body><article>"
+            b"<div class='article__content-body'>"
+            + images
+            + b"</div></article></body></html>"
+            + (b" " * 90_000)
+        ),
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://web.archive.org/web/20181001000000id_/"
+            "https://www.ft.com/content/image-led"
+        ),
+    )
+
+    assert score >= 85
+    assert signals["ftTruncatedArticleShell"] is False
+    assert signals["ftBodyImages"] == 3
+
+
 def test_raw_quality_rejects_javascript_redirect_shell():
     score, signals = score_raw_capture(
         b"""

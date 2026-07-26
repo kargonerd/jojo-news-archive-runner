@@ -45,6 +45,8 @@ REUTERS_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 FT_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
+FT_CAPTURE_MINIMUM_BODY_CHARACTERS = 100
+FT_IMAGE_LED_MINIMUM_IMAGES = 3
 NYT_SYNDICATION_SEARCH_ENDPOINT = REUTERS_SYNDICATION_SEARCH_ENDPOINT
 NYT_SYNDICATION_SEARCH_MAXIMUM_BYTES = 2_000_000
 NYT_SYNDICATION_MAXIMUM_CANDIDATES = 8
@@ -1015,6 +1017,7 @@ def _fetch_usable_candidate(
         or signals["authenticationShell"]
         or signals["accessChallengeShell"]
         or signals["subscriptionShell"]
+        or signals["ftTruncatedArticleShell"]
         or signals["redirectShell"]
     ):
         return (
@@ -2632,6 +2635,71 @@ def resolved_capture_candidate(
     return candidate.model_copy(update=updates)
 
 
+def _ft_article_body_evidence(
+    content: bytes,
+    *,
+    final_url: str,
+) -> tuple[int | None, int]:
+    decoded_url = unquote(final_url).casefold()
+    if (
+        "/content/" not in decoded_url
+        or re.search(
+            r"https?://(?:[^/?#]+\.)?ft\.com(?:[/?#]|$)",
+            decoded_url,
+        )
+        is None
+    ):
+        return None, 0
+
+    soup = BeautifulSoup(content, "html.parser")
+    body_nodes = soup.select(".article__content-body")
+    if not body_nodes:
+        for selector in (
+            "#article-body",
+            "[data-trackable='article-body']",
+            "[data-testid='article-body']",
+        ):
+            body_nodes.extend(soup.select(selector))
+
+    body_characters = 0
+    body_images = 0
+    for node in body_nodes:
+        text = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+        body_characters = max(body_characters, len(text))
+        image_count = sum(
+            bool(
+                image.get("src")
+                or image.get("data-src")
+                or image.get("srcset")
+            )
+            for image in node.select("img")
+        )
+        body_images = max(body_images, image_count)
+
+    def visit(value: object) -> None:
+        nonlocal body_characters
+        if isinstance(value, dict):
+            article_body = value.get("articleBody")
+            if isinstance(article_body, str):
+                normalized = re.sub(r"\s+", " ", article_body).strip()
+                body_characters = max(body_characters, len(normalized))
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    for script in soup.select('script[type="application/ld+json"]'):
+        value = script.string or script.get_text()
+        if not value.strip():
+            continue
+        try:
+            visit(json.loads(value))
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return body_characters, body_images
+
+
 def score_raw_capture(
     content: bytes,
     *,
@@ -2674,6 +2742,17 @@ def score_raw_capture(
         b'"articlebody"' in prefix
         or any(marker in prefix for marker in _ARTICLE_BODY_MARKERS)
     )
+    ft_body_characters, ft_body_images = _ft_article_body_evidence(
+        sampled_content,
+        final_url=final_url,
+    )
+    ft_truncated_article_shell = (
+        ft_body_characters is not None
+        and has_article_marker
+        and has_strong_body_marker
+        and ft_body_characters < FT_CAPTURE_MINIMUM_BODY_CHARACTERS
+        and ft_body_images < FT_IMAGE_LED_MINIMUM_IMAGES
+    )
     wsj_subscription_shell = (
         b"continue reading" in prefix
         and b"wsj subscription" in prefix
@@ -2713,6 +2792,7 @@ def score_raw_capture(
         or access_challenge_shell
         or subscription_shell
         or redirect_shell
+        or ft_truncated_article_shell
     ):
         score = max(0, score - 60)
     return score, {
@@ -2724,6 +2804,9 @@ def score_raw_capture(
         "accessChallengeShell": access_challenge_shell,
         "subscriptionShell": subscription_shell,
         "redirectShell": redirect_shell,
+        "ftTruncatedArticleShell": ft_truncated_article_shell,
+        "ftBodyCharacters": ft_body_characters,
+        "ftBodyImages": ft_body_images,
         "substantialResponse": substantial,
         "rawBytes": len(content),
     }
@@ -2949,6 +3032,10 @@ def completed_capture_rejection_reason(
         ("access-challenge-shell", bool(signals["accessChallengeShell"])),
         ("subscription-shell", bool(signals["subscriptionShell"])),
         ("redirect-shell", bool(signals["redirectShell"])),
+        (
+            "ft-truncated-article-shell",
+            bool(signals["ftTruncatedArticleShell"]),
+        ),
     )
     for reason, rejected in checks:
         if rejected:

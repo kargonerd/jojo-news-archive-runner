@@ -45,14 +45,16 @@ ARTICLE = b"""
         "@type": "NewsArticle",
         "headline": "US-China tensions have upended global order",
         "datePublished": "2023-05-31T17:13:52Z",
-        "articleBody": "A complete Financial Times article body."
+        "articleBody": "A complete Financial Times article body includes substantive reporting, source context and enough detail for the normalized parser quality threshold."
       }
     </script>
   </head>
   <body>
     <article>
       <div data-trackable="article-body">
-        <p>A complete Financial Times article body used for archive QA.</p>
+        <p>A complete Financial Times article body used for archive QA
+        includes substantive reporting, source context and enough detail
+        for the normalized parser quality threshold.</p>
       </div>
     </article>
   </body>
