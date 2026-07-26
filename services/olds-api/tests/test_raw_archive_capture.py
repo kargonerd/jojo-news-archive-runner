@@ -574,6 +574,89 @@ def test_bloomberg_capture_falls_back_to_exact_timemap_snapshot(
     ]
 
 
+def test_reuters_capture_falls_back_to_exact_timemap_snapshot(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.reuters.com/business/energy/"
+        "reactor-uses-fuel-2023-12-21"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20231222000000id_/" + canonical_url
+    )
+    exact_url = (
+        "https://web.archive.org/web/20231221121500id_/" + canonical_url
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.reuters.com%2Fbusiness%2Fenergy%2F"
+        "reactor-uses-fuel-2023-12-21"
+    )
+    timemap = json.dumps(
+        [
+            [
+                "urlkey",
+                "timestamp",
+                "original",
+                "mimetype",
+                "statuscode",
+                "digest",
+                "length",
+            ],
+            [
+                "com,reuters)/business/energy/reactor-uses-fuel",
+                "20231221121500",
+                canonical_url,
+                "text/html",
+                "200",
+                "REUTERS-EXACT",
+                str(len(ARTICLE)),
+            ],
+        ]
+    ).encode()
+    missing = b"<html>Wayback Machine doesn't have that page archived.</html>"
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                404,
+                {"content-type": "text/html"},
+                missing,
+                guessed_url,
+            ),
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                timemap,
+                timemap_url,
+            ),
+            exact_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                exact_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="reuters",
+        canonical_url=canonical_url,
+        published_at="2023-12-21T00:00:00Z",
+        section="energy",
+        candidates=(candidate(guessed_url, "20231222000000"),),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [guessed_url, timemap_url, exact_url]
+    assert result["capture"].selected_candidate.snapshot_url == exact_url
+    assert result["capture"].selected_candidate.digest == "REUTERS-EXACT"
+
+
 def test_nyt_capture_uses_exact_timemap_snapshot(tmp_path: Path):
     canonical_url = (
         "https://www.nytimes.com/2025/11/24/briefing/"
@@ -713,6 +796,11 @@ def test_reuters_capture_falls_back_to_validated_syndicated_html(
         candidates=(candidate(guessed_url, "20250704000000"),),
     )
     search_url = reuters_syndication_search_url(item)
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.reuters.com%2Fbusiness%2F"
+        "autos-transportation%2Fboeing-justice-department-seek-"
+        "judges-approval-deal-opposed-by-crash-victims-2025-07-03"
+    )
     assert search_url.startswith(REUTERS_SYNDICATION_SEARCH_ENDPOINT)
     search_html = f"""
     <html><body><ol id="web"><li><h3>
@@ -752,6 +840,20 @@ def test_reuters_capture_falls_back_to_validated_syndicated_html(
                 b"",
                 guessed_url,
             ),
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                json.dumps(
+                    [[
+                        "urlkey",
+                        "timestamp",
+                        "original",
+                        "mimetype",
+                        "statuscode",
+                    ]]
+                ).encode(),
+                timemap_url,
+            ),
             search_url: (
                 200,
                 {"content-type": "text/html; charset=utf-8"},
@@ -775,7 +877,12 @@ def test_reuters_capture_falls_back_to_validated_syndicated_html(
     )
 
     assert result["status"] == "complete"
-    assert client.requests == [guessed_url, search_url, syndicated_url]
+    assert client.requests == [
+        guessed_url,
+        timemap_url,
+        search_url,
+        syndicated_url,
+    ]
     capture = result["capture"]
     assert capture.selected_candidate.provider == CaptureProvider.OTHER
     assert capture.selected_candidate.snapshot_url == syndicated_url
