@@ -174,22 +174,28 @@ jobs:
           restore_if_present \
             "${REMOTE_ROOT}/catalog/manifest.jsonl.gz" \
             "$manifest"
-          if [ ! -f "$manifest" ]; then
-            source_manifest="$RUNNER_TEMP/source-manifest.jsonl.gz"
-            rclone copyto \
+          source_manifest="$RUNNER_TEMP/source-manifest.jsonl.gz"
+          refreshed_manifest="$RUNNER_TEMP/refreshed-manifest.jsonl.gz"
+          if rclone copyto \
               "${SOURCE_ROOT}/catalog/manifest.jsonl.gz" \
               "$source_manifest" \
-              --retries 8 --low-level-retries 20
+              --retries 8 --low-level-retries 20; then
             python services/olds-api/tools/filter_archive_manifest.py \
               --input "$source_manifest" \
-              --output "$manifest" \
+              --output "$refreshed_manifest" \
               --publisher "$PUBLISHER" \
               --from-year "$SAMPLE_YEAR" \
               --to-year "$SAMPLE_YEAR"
+            cp "$refreshed_manifest" "$manifest"
             rclone copyto \
               "$manifest" \
               "${REMOTE_ROOT}/catalog/manifest.jsonl.gz" \
               --retries 8 --low-level-retries 20
+          elif [ ! -f "$manifest" ]; then
+            echo "No source or cached validation manifest is available." >&2
+            exit 1
+          else
+            echo "::warning::Using cached validation manifest because the source refresh failed."
           fi
 
           restore_if_present \
