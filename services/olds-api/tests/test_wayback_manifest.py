@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import sqlite3
 
+import httpx
+
 from jojo_olds_api.archive_sources import (
     archive_source_spec,
     normalize_article_url,
@@ -14,6 +16,7 @@ from jojo_olds_api.wsj_syndication_catalog import (
     initialize_wsj_syndication_schema,
     process_wsj_syndication_catalog,
     process_wsj_syndication_resolutions,
+    resolve_wsj_original_url,
     wsj_syndication_count_for_year,
 )
 from jojo_olds_api.wayback_manifest import (
@@ -220,6 +223,111 @@ def test_wsj_syndication_retries_not_found_after_resolver_upgrade():
         FROM wsj_syndication_articles
         """
     ).fetchone() == ("pending", 0, None)
+
+
+def test_wsj_syndication_uses_google_news_when_yahoo_errors(
+    monkeypatch,
+):
+    headline = (
+        "Trump Makes a Call and U.S. Soccer Gets a Star Back—and "
+        "the World Cup Is Raging"
+    )
+    canonical_url = (
+        "https://www.wsj.com/sports/soccer/"
+        "balogun-red-card-fifa-trump-infantino-abd58604"
+    )
+
+    class GoogleFallbackClient:
+        def get(self, url, params, headers=None):
+            if url == "https://search.yahoo.com/search":
+                return httpx.Response(
+                    500,
+                    request=httpx.Request("GET", url),
+                )
+            assert url == "https://news.google.com/rss/search"
+            assert params["q"] == f"{headline} site:wsj.com"
+            return StubWsjSyndicationResponse(
+                html_value="""
+                <rss><channel><item>
+                  <title>
+                    Trump Makes a Call and U.S. Soccer Gets a Star Back—and
+                    the World Cup Is Raging - The Wall Street Journal
+                  </title>
+                  <link>
+                    https://news.google.com/rss/articles/ENCODED-ID
+                  </link>
+                  <pubDate>Mon, 06 Jul 2026 07:00:00 GMT</pubDate>
+                </item></channel></rss>
+                """
+            )
+
+    monkeypatch.setattr(
+        "jojo_olds_api.wayback_manifest._decode_google_news_url",
+        lambda http_client, url: canonical_url,
+    )
+
+    result = resolve_wsj_original_url(
+        headline,
+        expected_published_at="2026-07-06T23:00:16+00:00",
+        spec=archive_source_spec("wsj"),
+        http_client=GoogleFallbackClient(),
+    )
+
+    assert result == canonical_url
+
+
+def test_wsj_syndication_rejects_stale_google_news_match(
+    monkeypatch,
+):
+    headline = (
+        "Trump Makes a Call and U.S. Soccer Gets a Star Back—and "
+        "the World Cup Is Raging"
+    )
+    decoder_called = False
+
+    class StaleGoogleClient:
+        def get(self, url, params, headers=None):
+            if url == "https://search.yahoo.com/search":
+                return StubWsjSyndicationResponse(
+                    html_value="<html><ol id='web'></ol></html>"
+                )
+            return StubWsjSyndicationResponse(
+                html_value="""
+                <rss><channel><item>
+                  <title>
+                    Trump Makes a Call and U.S. Soccer Gets a Star Back—and
+                    the World Cup Is Raging - The Wall Street Journal
+                  </title>
+                  <link>
+                    https://news.google.com/rss/articles/ENCODED-ID
+                  </link>
+                  <pubDate>Mon, 01 Jun 2026 07:00:00 GMT</pubDate>
+                </item></channel></rss>
+                """
+            )
+
+    def decode_google_news_url(http_client, url):
+        nonlocal decoder_called
+        decoder_called = True
+        return (
+            "https://www.wsj.com/sports/soccer/"
+            "balogun-red-card-fifa-trump-infantino-abd58604"
+        )
+
+    monkeypatch.setattr(
+        "jojo_olds_api.wayback_manifest._decode_google_news_url",
+        decode_google_news_url,
+    )
+
+    result = resolve_wsj_original_url(
+        headline,
+        expected_published_at="2026-07-06T23:00:16+00:00",
+        spec=archive_source_spec("wsj"),
+        http_client=StaleGoogleClient(),
+    )
+
+    assert result is None
+    assert decoder_called is False
 
 
 def test_parse_cdx_json_extracts_resume_key():

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import html
 import re
 import sqlite3
 import time
 from urllib.parse import unquote, urlsplit
+from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
 import httpx
@@ -22,7 +24,10 @@ YAHOO_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/138.0.0.0 Safari/537.36"
 )
-RESOLVER_VERSION = "browser-yahoo-v1"
+GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
+GOOGLE_NEWS_MAXIMUM_DECODES_PER_TITLE = 3
+GOOGLE_NEWS_MAXIMUM_DATE_DELTA_DAYS = 14
+RESOLVER_VERSION = "browser-yahoo-google-v2"
 DEFAULT_CATALOG_PAGES_PER_RUN = 5
 DEFAULT_RESOLUTIONS_PER_RUN = 100
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -290,11 +295,12 @@ def process_wsj_syndication_resolutions(
     resolved = 0
     not_found = 0
     errors: list[str] = []
-    for partner_url, _, expected_headline in rows:
+    for partner_url, published_at, expected_headline in rows:
         attempted += 1
         try:
             canonical_url = resolve_wsj_original_url(
                 str(expected_headline),
+                expected_published_at=str(published_at),
                 spec=spec,
                 http_client=http_client,
             )
@@ -357,6 +363,33 @@ def process_wsj_syndication_resolutions(
 
 
 def resolve_wsj_original_url(
+    expected_headline: str,
+    *,
+    expected_published_at: str | None = None,
+    spec: ArchiveSourceSpec,
+    http_client: httpx.Client,
+) -> str | None:
+    try:
+        yahoo_result = _resolve_wsj_original_url_from_yahoo(
+            expected_headline,
+            spec=spec,
+            http_client=http_client,
+        )
+    except httpx.HTTPError:
+        yahoo_result = None
+    if yahoo_result is not None:
+        return yahoo_result
+    if expected_published_at is None:
+        return None
+    return _resolve_wsj_original_url_from_google_news(
+        expected_headline,
+        expected_published_at=expected_published_at,
+        spec=spec,
+        http_client=http_client,
+    )
+
+
+def _resolve_wsj_original_url_from_yahoo(
     expected_headline: str,
     *,
     spec: ArchiveSourceSpec,
@@ -423,6 +456,92 @@ def resolve_wsj_original_url(
             (
                 title_coverage,
                 slug_coverage,
+                -position,
+                canonical_url,
+            )
+        )
+    if not ranked:
+        return None
+    ranked.sort(reverse=True)
+    return ranked[0][3]
+
+
+def _resolve_wsj_original_url_from_google_news(
+    expected_headline: str,
+    *,
+    expected_published_at: str,
+    spec: ArchiveSourceSpec,
+    http_client: httpx.Client,
+) -> str | None:
+    expected_date = _parse_tovima_datetime(expected_published_at)
+    expected_tokens = _significant_tokens(expected_headline)
+    if expected_date is None or len(expected_tokens) < 4:
+        return None
+    response = http_client.get(
+        GOOGLE_NEWS_RSS_ENDPOINT,
+        params={
+            "q": f"{_clean_search_title(expected_headline)} site:wsj.com",
+            "hl": "en-US",
+            "gl": "US",
+            "ceid": "US:en",
+        },
+        headers={"User-Agent": YAHOO_USER_AGENT},
+    )
+    response.raise_for_status()
+    root = ElementTree.fromstring(response.content)
+    ranked: list[tuple[float, float, int, str]] = []
+    seen: set[str] = set()
+    decodes_attempted = 0
+    for position, item in enumerate(root.findall("./channel/item")):
+        result_tokens = _significant_tokens(
+            _clean_search_title(item.findtext("title") or "")
+        )
+        shared = len(expected_tokens & result_tokens)
+        coverage = (
+            shared / len(expected_tokens) if result_tokens else 0.0
+        )
+        if coverage < 0.8 or shared < 4:
+            continue
+        try:
+            published_at = parsedate_to_datetime(
+                item.findtext("pubDate") or ""
+            )
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        date_delta_seconds = abs(
+            (
+                published_at.astimezone(timezone.utc) - expected_date
+            ).total_seconds()
+        )
+        if date_delta_seconds > (
+            GOOGLE_NEWS_MAXIMUM_DATE_DELTA_DAYS * 86_400
+        ):
+            continue
+        google_news_url = (item.findtext("link") or "").strip()
+        if not google_news_url:
+            continue
+        if decodes_attempted >= GOOGLE_NEWS_MAXIMUM_DECODES_PER_TITLE:
+            break
+        decodes_attempted += 1
+        try:
+            from .wayback_manifest import _decode_google_news_url
+
+            decoded_url = _decode_google_news_url(
+                http_client,
+                google_news_url,
+            )
+        except (httpx.HTTPError, ValueError):
+            continue
+        canonical_url = normalize_article_url(spec, decoded_url)
+        if canonical_url is None or canonical_url in seen:
+            continue
+        seen.add(canonical_url)
+        ranked.append(
+            (
+                coverage,
+                -date_delta_seconds,
                 -position,
                 canonical_url,
             )
