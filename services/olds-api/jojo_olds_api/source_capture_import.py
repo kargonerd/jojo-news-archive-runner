@@ -122,6 +122,7 @@ def import_selected_source_captures(
     publisher: str,
     sample_year: int,
     target_per_year: int = 500,
+    reserve_per_year: int | None = None,
     maximum_record_attempts: int = 3,
 ) -> dict[str, object]:
     initialize_capture_schema(
@@ -140,6 +141,7 @@ def import_selected_source_captures(
         from_year=sample_year,
         to_year=sample_year,
         target_per_year=target_per_year,
+        reserve_per_year=reserve_per_year,
         maximum_record_attempts=maximum_record_attempts,
     )
     selected_urls = [

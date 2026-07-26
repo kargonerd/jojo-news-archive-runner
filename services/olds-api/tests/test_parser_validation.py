@@ -137,6 +137,52 @@ def test_validation_plan_is_random_reproducible_and_balanced(tmp_path: Path):
     ]
 
 
+def test_validation_plan_expands_reserve_without_replacing_samples(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2022,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    original = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    }
+
+    expanded = ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2022,
+        target_per_year=2,
+        reserve_per_year=3,
+        maximum_record_attempts=3,
+    )
+    expanded_urls = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    }
+
+    assert original < expanded_urls
+    assert len(original) == 6
+    assert len(expanded_urls) == 15
+    assert expanded["reservePerYear"] == 3
+    assert all(
+        year["addedToPlan"] == 3
+        for year in expanded["years"].values()
+    )
+
+
 def test_validation_plan_tries_fresh_samples_before_retrying_errors(
     tmp_path: Path,
 ):

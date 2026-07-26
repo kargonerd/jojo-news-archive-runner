@@ -67,6 +67,14 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Prioritize a reproducible random parser QA sample for every year.",
     )
+    parser.add_argument(
+        "--validation-reserve-per-year",
+        type=int,
+        help=(
+            "Additional deterministic random candidates kept available per "
+            "year when the primary validation sample is not retrievable."
+        ),
+    )
     parser.add_argument("--validation-from-year", type=int)
     parser.add_argument("--validation-to-year", type=int)
     parser.add_argument(
@@ -125,6 +133,7 @@ def main() -> int:
             from_year=args.validation_from_year,
             to_year=args.validation_to_year,
             target_per_year=args.validation_sample_per_year,
+            reserve_per_year=args.validation_reserve_per_year,
             maximum_record_attempts=args.max_record_attempts,
         )
     elif args.stop_when_validation_ready:

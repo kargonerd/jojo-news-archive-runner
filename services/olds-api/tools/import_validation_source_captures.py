@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--publisher", required=True)
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--target-per-year", type=int, default=500)
+    parser.add_argument("--reserve-per-year", type=int)
     parser.add_argument("--max-record-attempts", type=int, default=3)
     parser.add_argument("--files-from", type=Path, required=True)
     return parser.parse_args()
@@ -49,6 +50,7 @@ def main() -> int:
             publisher=args.publisher,
             sample_year=args.year,
             target_per_year=args.target_per_year,
+            reserve_per_year=args.reserve_per_year,
             maximum_record_attempts=args.max_record_attempts,
         )
     finally:
