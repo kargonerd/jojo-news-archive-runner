@@ -608,6 +608,7 @@ def test_ft_title_index_falls_back_to_validated_infini_row(
         archive_client=client,
         output_dir=tmp_path,
         maximum_html_bytes=1_000_000,
+        enable_common_crawl_fallback=True,
         ft_syndication_lookup=lookup,
     )
 
@@ -620,6 +621,10 @@ def test_ft_title_index_falls_back_to_validated_infini_row(
     assert capture.quality_signals["ftSyndicationValidated"] is True
     assert capture.quality_signals["infiniNewsWarcFilename"] == warc_filename
     assert client.requests[-2:] == [partner_url, row_url]
+    assert not any(
+        "index.commoncrawl.org" in request
+        for request in client.requests
+    )
 
 def test_ft_manifest_partner_copy_rejects_missing_copyright(
     tmp_path: Path,

@@ -523,6 +523,7 @@ def capture_item(
     ] | None = None
     ft_raw_partner_validated = False
     ft_infini_origin_validated = False
+    ft_title_index_attempted = False
     ft_original_headline = next(
         (
             candidate.expected_headline
@@ -763,6 +764,36 @@ def capture_item(
             if response[5] == 100:
                 break
 
+    def consider_ft_title_index() -> None:
+        nonlocal ft_title_index_attempted
+        if (
+            ft_title_index_attempted
+            or best_response is not None
+            or item.publisher != "ft"
+            or ft_syndication_lookup is None
+            or not ft_original_headline
+        ):
+            return
+        ft_title_index_attempted = True
+        try:
+            indexed_candidates = ft_syndication_lookup(
+                item,
+                ft_original_headline,
+            )
+        except Exception as exc:
+            failures.append(f"ft-title-index:{type(exc).__name__}")
+            indexed_candidates = ()
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        indexed_candidates = tuple(
+            candidate
+            for candidate in indexed_candidates
+            if candidate.snapshot_url not in existing_urls
+        )
+        candidates_considered.extend(indexed_candidates)
+        consider_candidates(indexed_candidates)
+
     direct_infini_candidates = tuple(
         candidate
         for candidate in item.candidates
@@ -808,6 +839,8 @@ def capture_item(
             and (best_response is None or best_response[5] < 100)
         ):
             consider_candidates(item.candidates)
+
+        consider_ft_title_index()
 
         if (
             not ft_infini_origin_validated
@@ -1060,30 +1093,7 @@ def capture_item(
             if response[5] == 100:
                 break
 
-    if (
-        best_response is None
-        and item.publisher == "ft"
-        and ft_syndication_lookup is not None
-        and ft_original_headline
-    ):
-        try:
-            indexed_candidates = ft_syndication_lookup(
-                item,
-                ft_original_headline,
-            )
-        except Exception as exc:
-            failures.append(f"ft-title-index:{type(exc).__name__}")
-            indexed_candidates = ()
-        existing_urls = {
-            candidate.snapshot_url for candidate in candidates_considered
-        }
-        indexed_candidates = tuple(
-            candidate
-            for candidate in indexed_candidates
-            if candidate.snapshot_url not in existing_urls
-        )
-        candidates_considered.extend(indexed_candidates)
-        consider_candidates(indexed_candidates)
+    consider_ft_title_index()
 
     if best_response is None and item.publisher == "ft":
         try:
