@@ -543,9 +543,34 @@ def _resolve_ft_original_url_from_yahoo(
     expected_tokens = _significant_tokens(expected_headline)
     if len(expected_tokens) < 4:
         return None
+    for query in (
+        f'"{expected_headline}" site:ft.com',
+        f'"{expected_headline}"',
+    ):
+        try:
+            result = _resolve_ft_original_url_from_yahoo_query(
+                query,
+                expected_tokens=expected_tokens,
+                spec=spec,
+                http_client=http_client,
+            )
+        except httpx.HTTPError:
+            continue
+        if result is not None:
+            return result
+    return None
+
+
+def _resolve_ft_original_url_from_yahoo_query(
+    query: str,
+    *,
+    expected_tokens: set[str],
+    spec: ArchiveSourceSpec,
+    http_client: httpx.Client,
+) -> str | None:
     response = http_client.get(
         YAHOO_SEARCH_ENDPOINT,
-        params={"p": f'"{expected_headline}" site:ft.com'},
+        params={"p": query},
         headers={"User-Agent": YAHOO_USER_AGENT},
     )
     response.raise_for_status()

@@ -329,7 +329,10 @@ def test_ft_original_resolution_rejects_partial_title_match():
     class PartialTitleClient:
         def get(self, url, params, headers=None):
             assert url == "https://search.yahoo.com/search"
-            assert params["p"].endswith("site:ft.com")
+            assert params["p"] in {
+                f'"{expected_headline}" site:ft.com',
+                f'"{expected_headline}"',
+            }
             assert headers and headers["User-Agent"].startswith(
                 "Mozilla/5.0"
             )
@@ -350,6 +353,51 @@ def test_ft_original_resolution_rejects_partial_title_match():
     )
 
     assert result is None
+
+
+def test_ft_original_resolution_retries_yahoo_without_site_filter():
+    expected_headline = (
+        "AI forecast to put 200,000 European banking jobs at risk by 2030"
+    )
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "71e12f85-1edb-4156-8cb5-3fe8aef36d93"
+    )
+    encoded_url = (
+        "https%3a%2f%2fwww.ft.com%2fcontent%2f"
+        "71e12f85-1edb-4156-8cb5-3fe8aef36d93"
+    )
+
+    class BroadYahooClient:
+        def get(self, url, params, headers=None):
+            assert url == "https://search.yahoo.com/search"
+            assert headers and headers["User-Agent"].startswith(
+                "Mozilla/5.0"
+            )
+            if params["p"].endswith("site:ft.com"):
+                return StubFtSyndicationResponse(
+                    html_value="<html><ol id='web'></ol></html>"
+                )
+            assert params["p"] == f'"{expected_headline}"'
+            return StubFtSyndicationResponse(
+                html_value=f"""
+                <html><body><ol id="web"><li>
+                  <div class="compTitle">
+                    <a href="https://r.search.yahoo.com/RU={encoded_url}/RK=2">
+                      <h3>{expected_headline}</h3>
+                    </a>
+                  </div>
+                </li></ol></body></html>
+                """
+            )
+
+    result = resolve_ft_original_url(
+        expected_headline,
+        spec=archive_source_spec("ft"),
+        http_client=BroadYahooClient(),
+    )
+
+    assert result == canonical_url
 
 
 def test_ft_original_resolution_uses_strict_google_news_fallback(
