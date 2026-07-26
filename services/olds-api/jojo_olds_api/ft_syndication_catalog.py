@@ -30,6 +30,11 @@ INFINI_DOCUMENT_ENDPOINT = (
 )
 INFINI_QUERY = "Copyright The Financial Times Limited"
 YAHOO_SEARCH_ENDPOINT = "https://search.yahoo.com/search"
+YAHOO_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/138.0.0.0 Safari/537.36"
+)
 RESOLUTION_TARGET_PER_YEAR = 750
 MAXIMUM_OCCURRENCES_PER_YEAR = 1_000
 DEFAULT_DOCUMENTS_PER_RUN = 500
@@ -505,6 +510,7 @@ def resolve_ft_original_url(
     response = http_client.get(
         YAHOO_SEARCH_ENDPOINT,
         params={"p": f'"{expected_headline}" site:ft.com'},
+        headers={"User-Agent": YAHOO_USER_AGENT},
     )
     response.raise_for_status()
     soup = BeautifulSoup(response.content, "html.parser")

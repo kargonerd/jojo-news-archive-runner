@@ -120,9 +120,10 @@ class StubFtSyndicationClient:
             }
         )
 
-    def get(self, url, params):
+    def get(self, url, params, headers=None):
         assert url == "https://search.yahoo.com/search"
         assert "site:ft.com" in params["p"]
+        assert headers and headers["User-Agent"].startswith("Mozilla/5.0")
         return StubFtSyndicationResponse(
             html_value="""
             <html><body><ol id="web"><li>
@@ -317,9 +318,12 @@ def test_ft_original_resolution_rejects_partial_title_match():
     )
 
     class PartialTitleClient:
-        def get(self, url, params):
+        def get(self, url, params, headers=None):
             assert url == "https://search.yahoo.com/search"
             assert params["p"].endswith("site:ft.com")
+            assert headers and headers["User-Agent"].startswith(
+                "Mozilla/5.0"
+            )
             return StubFtSyndicationResponse(
                 html_value=f"""
                 <html><body><ol id="web"><li>
