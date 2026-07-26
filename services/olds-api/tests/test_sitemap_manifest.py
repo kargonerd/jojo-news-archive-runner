@@ -343,6 +343,124 @@ def test_ft_original_resolution_rejects_partial_title_match():
     assert result is None
 
 
+def test_ft_original_resolution_uses_strict_google_news_fallback(
+    monkeypatch,
+):
+    expected_headline = (
+        "Microsoft chief Satya Nadella warns AI boom could falter "
+        "without wider adoption"
+    )
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "2a29cbc9-7183-4f68-a1d2-bc88189672e6"
+    )
+    google_news_url = (
+        "https://news.google.com/rss/articles/ENCODED-ID"
+    )
+
+    class GoogleFallbackClient:
+        def get(self, url, params, headers=None):
+            assert headers and headers["User-Agent"].startswith(
+                "Mozilla/5.0"
+            )
+            if url == "https://search.yahoo.com/search":
+                return StubFtSyndicationResponse(
+                    html_value="<html><ol id='web'></ol></html>"
+                )
+            assert url == "https://news.google.com/rss/search"
+            assert params == {
+                "q": f"{expected_headline} site:ft.com",
+                "hl": "en-US",
+                "gl": "US",
+                "ceid": "US:en",
+            }
+            return StubFtSyndicationResponse(
+                html_value=f"""
+                <rss><channel><item>
+                  <title>
+                    AI boom could falter without wider adoption,
+                    Microsoft chief Satya Nadella warns - Financial Times
+                  </title>
+                  <link>{google_news_url}</link>
+                  <pubDate>Tue, 20 Jan 2026 08:00:00 GMT</pubDate>
+                </item></channel></rss>
+                """
+            )
+
+    def decode_google_news_url(http_client, url):
+        assert isinstance(http_client, GoogleFallbackClient)
+        assert url == google_news_url
+        return canonical_url
+
+    monkeypatch.setattr(
+        "jojo_olds_api.ft_syndication_catalog._decode_google_news_url",
+        decode_google_news_url,
+    )
+
+    result = resolve_ft_original_url(
+        expected_headline,
+        expected_published_at="2026-01-20T00:00:00+00:00",
+        spec=archive_source_spec("ft"),
+        http_client=GoogleFallbackClient(),
+    )
+
+    assert result == canonical_url
+
+
+def test_ft_original_resolution_rejects_google_news_date_mismatch(
+    monkeypatch,
+):
+    expected_headline = (
+        "Microsoft chief Satya Nadella warns AI boom could falter "
+        "without wider adoption"
+    )
+    decoder_called = False
+
+    class WrongDateClient:
+        def get(self, url, params, headers=None):
+            if url == "https://search.yahoo.com/search":
+                return StubFtSyndicationResponse(
+                    html_value="<html><ol id='web'></ol></html>"
+                )
+            return StubFtSyndicationResponse(
+                html_value="""
+                <rss><channel><item>
+                  <title>
+                    AI boom could falter without wider adoption,
+                    Microsoft chief Satya Nadella warns - Financial Times
+                  </title>
+                  <link>
+                    https://news.google.com/rss/articles/ENCODED-ID
+                  </link>
+                  <pubDate>Tue, 13 Jan 2026 08:00:00 GMT</pubDate>
+                </item></channel></rss>
+                """
+            )
+
+    def decode_google_news_url(http_client, url):
+        nonlocal decoder_called
+        decoder_called = True
+        return (
+            "https://www.ft.com/content/"
+            "2a29cbc9-7183-4f68-a1d2-bc88189672e6"
+        )
+
+    monkeypatch.setattr(
+        "jojo_olds_api.ft_syndication_catalog._decode_google_news_url",
+        decode_google_news_url,
+    )
+
+    result = resolve_ft_original_url(
+        expected_headline,
+        expected_published_at="2026-01-20T00:00:00+00:00",
+        spec=archive_source_spec("ft"),
+        http_client=WrongDateClient(),
+    )
+
+    assert result is None
+    assert decoder_called is False
+
+
 def test_index_and_url_sitemap_parsing():
     source = sitemap_source("nyt")
     children = parse_sitemap_index(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import hashlib
 import ipaddress
 import json
@@ -9,6 +10,7 @@ import math
 import re
 import sqlite3
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
+from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
 import httpx
@@ -19,6 +21,10 @@ from .archive_sources import (
     normalize_article_url,
 )
 from .bloomberg_archive_download import GlobalRateLimiter
+from .wayback_manifest import (
+    GOOGLE_NEWS_RSS_ENDPOINT,
+    _decode_google_news_url,
+)
 
 
 SCHEMA_VERSION = "jojo-ft-syndication-catalog/1"
@@ -40,6 +46,8 @@ MAXIMUM_OCCURRENCES_PER_YEAR = 1_000
 DEFAULT_DOCUMENTS_PER_RUN = 500
 DEFAULT_RESOLUTIONS_PER_RUN = 500
 DEFAULT_WORKERS = 4
+GOOGLE_NEWS_MAXIMUM_DECODES_PER_TITLE = 3
+GOOGLE_NEWS_MAXIMUM_DATE_DELTA_DAYS = 2
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z0-9]+")
 _STOP_WORDS = {
     "a",
@@ -425,6 +433,7 @@ def process_ft_syndication_resolutions(
             limiter.wait()
             canonical_url = resolve_ft_original_url(
                 str(expected_headline),
+                expected_published_at=str(published_at),
                 spec=spec,
                 http_client=http_client,
             )
@@ -501,6 +510,7 @@ def process_ft_syndication_resolutions(
 def resolve_ft_original_url(
     expected_headline: str,
     *,
+    expected_published_at: str | None = None,
     spec: ArchiveSourceSpec,
     http_client: httpx.Client,
 ) -> str | None:
@@ -543,10 +553,108 @@ def resolve_ft_original_url(
         if coverage < 0.8 or len(expected_tokens & result_tokens) < 4:
             continue
         ranked.append((coverage, -position, canonical_url))
+    if ranked:
+        ranked.sort(reverse=True)
+        return ranked[0][2]
+    if expected_published_at is None:
+        return None
+    return _resolve_ft_original_url_from_google_news(
+        expected_headline,
+        expected_published_at=expected_published_at,
+        spec=spec,
+        http_client=http_client,
+    )
+
+
+def _resolve_ft_original_url_from_google_news(
+    expected_headline: str,
+    *,
+    expected_published_at: str,
+    spec: ArchiveSourceSpec,
+    http_client: httpx.Client,
+) -> str | None:
+    normalized_expected_date = _parse_partner_date(expected_published_at)
+    if normalized_expected_date is None:
+        return None
+    expected_date = datetime.fromisoformat(normalized_expected_date)
+    expected_tokens = _significant_tokens(expected_headline)
+    if len(expected_tokens) < 4:
+        return None
+    clean_headline = _clean_search_title(expected_headline)
+    response = http_client.get(
+        GOOGLE_NEWS_RSS_ENDPOINT,
+        params={
+            "q": f"{clean_headline} site:ft.com",
+            "hl": "en-US",
+            "gl": "US",
+            "ceid": "US:en",
+        },
+        headers={"User-Agent": YAHOO_USER_AGENT},
+    )
+    response.raise_for_status()
+    root = ElementTree.fromstring(response.content)
+    ranked: list[tuple[float, float, int, str]] = []
+    decodes_attempted = 0
+    seen: set[str] = set()
+    for position, item in enumerate(root.findall("./channel/item")):
+        result_tokens = _significant_tokens(
+            _clean_search_title(item.findtext("title") or "")
+        )
+        matching_tokens = len(expected_tokens & result_tokens)
+        coverage = (
+            matching_tokens / len(expected_tokens)
+            if result_tokens
+            else 0.0
+        )
+        if coverage < 0.8 or matching_tokens < 4:
+            continue
+        try:
+            published_at = parsedate_to_datetime(
+                item.findtext("pubDate") or ""
+            )
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        date_delta_seconds = abs(
+            (
+                published_at.astimezone(timezone.utc)
+                - expected_date
+            ).total_seconds()
+        )
+        if date_delta_seconds > (
+            GOOGLE_NEWS_MAXIMUM_DATE_DELTA_DAYS * 86_400
+        ):
+            continue
+        google_news_url = (item.findtext("link") or "").strip()
+        if not google_news_url:
+            continue
+        if decodes_attempted >= GOOGLE_NEWS_MAXIMUM_DECODES_PER_TITLE:
+            break
+        decodes_attempted += 1
+        try:
+            decoded_url = _decode_google_news_url(
+                http_client,
+                google_news_url,
+            )
+        except (httpx.HTTPError, ValueError):
+            continue
+        canonical_url = normalize_article_url(spec, decoded_url)
+        if canonical_url is None or canonical_url in seen:
+            continue
+        seen.add(canonical_url)
+        ranked.append(
+            (
+                coverage,
+                -date_delta_seconds,
+                -position,
+                canonical_url,
+            )
+        )
     if not ranked:
         return None
     ranked.sort(reverse=True)
-    return ranked[0][2]
+    return ranked[0][3]
 
 
 def ft_syndication_articles(
