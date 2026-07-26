@@ -30,6 +30,14 @@ from .news_models import (
 
 
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
+CAPTURE_POLICY_VERSIONS = {
+    "ap": "ap-capture/0.5.0",
+    "bloomberg": "bloomberg-capture/0.10.1",
+    "ft": "ft-capture/0.9.0",
+    "nyt": "nyt-capture/0.8.0",
+    "reuters": "reuters-capture/0.7.0",
+    "wsj": "wsj-capture/0.8.1",
+}
 ACCEPTED_HTTP_STATUSES = {200, 206}
 WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"
 WAYBACK_TIMEMAP_MAXIMUM_BYTES = 2_000_000
@@ -219,10 +227,26 @@ def initialize_capture_schema(
             ON captures(published_at);
         """
     )
+    capture_policy_version = CAPTURE_POLICY_VERSIONS.get(
+        publisher,
+        f"{publisher}-capture/1",
+    )
+    previous_policy = connection.execute(
+        """
+        SELECT value
+        FROM archive_metadata
+        WHERE key='capture_policy_version'
+        """
+    ).fetchone()
+    policy_changed = (
+        previous_policy is None
+        or str(previous_policy[0]) != capture_policy_version
+    )
     metadata = {
         "schema_version": SCHEMA_VERSION,
         "publisher": publisher,
         "authorization_reference": authorization_reference,
+        "capture_policy_version": capture_policy_version,
     }
     connection.executemany(
         """
@@ -232,6 +256,18 @@ def initialize_capture_schema(
         """,
         metadata.items(),
     )
+    if policy_changed:
+        connection.execute(
+            """
+            UPDATE captures
+            SET status='pending',
+                attempts=0,
+                last_error=NULL,
+                updated_at=?
+            WHERE status='error'
+            """,
+            (_now_iso(),),
+        )
     connection.execute(
         """
         UPDATE captures

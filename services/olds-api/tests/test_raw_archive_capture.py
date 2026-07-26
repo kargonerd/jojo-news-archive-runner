@@ -13,6 +13,7 @@ from jojo_olds_api.news_models import (
 )
 from jojo_olds_api.raw_archive_capture import (
     BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS,
+    CAPTURE_POLICY_VERSIONS,
     FT_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     ManifestItem,
     NYT_SYNDICATION_MINIMUM_BODY_CHARACTERS,
@@ -556,6 +557,97 @@ def test_manifest_refresh_retries_errors_when_candidates_change(
         candidate["provider"]
         for candidate in json.loads(row[3])
     ] == ["wayback", "live-origin"]
+
+
+def test_capture_policy_upgrade_retries_errors_once(tmp_path: Path):
+    canonical_url = "https://www.ft.com/content/policy-upgrade"
+    snapshot_url = (
+        "https://web.archive.org/web/20260102000000id_/"
+        + canonical_url
+    )
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "publisher": "ft",
+                "canonicalUrl": canonical_url,
+                "publishedAt": "2026-01-01T00:00:00Z",
+                "candidates": [
+                    {
+                        "provider": "wayback",
+                        "snapshotUrl": snapshot_url,
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="ft",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="ft",
+    )
+    connection.execute(
+        """
+        UPDATE archive_metadata
+        SET value='ft-capture/old'
+        WHERE key='capture_policy_version'
+        """
+    )
+    connection.execute(
+        """
+        UPDATE captures
+        SET status='error',
+            attempts=3,
+            last_error='old policy exhausted'
+        """
+    )
+    connection.commit()
+
+    initialize_capture_schema(
+        connection,
+        publisher="ft",
+        authorization_reference="authorization:test",
+    )
+    first = connection.execute(
+        "SELECT status, attempts, last_error FROM captures"
+    ).fetchone()
+    stored_version = connection.execute(
+        """
+        SELECT value
+        FROM archive_metadata
+        WHERE key='capture_policy_version'
+        """
+    ).fetchone()[0]
+    connection.execute(
+        """
+        UPDATE captures
+        SET status='error',
+            attempts=2,
+            last_error='current policy failure'
+        """
+    )
+    connection.commit()
+
+    initialize_capture_schema(
+        connection,
+        publisher="ft",
+        authorization_reference="authorization:test",
+    )
+    second = connection.execute(
+        "SELECT status, attempts, last_error FROM captures"
+    ).fetchone()
+
+    assert first == ("pending", 0, None)
+    assert stored_version == CAPTURE_POLICY_VERSIONS["ft"]
+    assert second == ("error", 2, "current policy failure")
 
 
 def test_capture_tries_fallback_and_stores_only_usable_raw_html(tmp_path: Path):
