@@ -477,11 +477,13 @@ def capture_item(
         # FT's publication-near guessed Wayback timestamps often spend most of
         # their time on missing captures. Ask the exact timemap only when
         # Common Crawl did not already produce a maximum-quality response.
+        timemap_candidates: tuple[CaptureCandidate, ...] = ()
         if best_response is None or best_response[5] < 100:
             try:
                 timemap_candidates = discover_wayback_timemap_candidates(
                     item,
                     archive_client=archive_client,
+                    maximum_candidates=3,
                 )
             except Exception as exc:
                 failures.append(f"wayback-timemap:{type(exc).__name__}")
@@ -498,8 +500,13 @@ def capture_item(
             candidates_considered.extend(timemap_candidates)
             consider_candidates(timemap_candidates)
 
-        # Retain manifest candidates as the final deterministic fallback.
-        if best_response is None or best_response[5] < 100:
+        # Guessed publication-near URLs are useful only when Timemap itself is
+        # unavailable or empty. If Timemap returned exact captures, retrying
+        # six guesses adds latency without another archived version.
+        if (
+            (best_response is None or best_response[5] < 100)
+            and not timemap_candidates
+        ):
             consider_candidates(item.candidates)
     else:
         consider_candidates(item.candidates)
@@ -804,7 +811,10 @@ def discover_wayback_timemap_candidates(
     item: ManifestItem,
     *,
     archive_client: ArchiveClient,
+    maximum_candidates: int = WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES,
 ) -> tuple[CaptureCandidate, ...]:
+    if maximum_candidates < 1:
+        raise ValueError("maximum_candidates must be positive")
     timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?" + urlencode(
         {"url": item.canonical_url}
     )
@@ -877,7 +887,7 @@ def discover_wayback_timemap_candidates(
             published_at=item.published_at,
         )
     )
-    return tuple(candidates[:WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES])
+    return tuple(candidates[:maximum_candidates])
 
 
 def reuters_syndication_search_url(item: ManifestItem) -> str:
