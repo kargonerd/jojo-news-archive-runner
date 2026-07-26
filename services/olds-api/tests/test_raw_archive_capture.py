@@ -481,6 +481,146 @@ def test_ft_infini_news_row_is_stored_as_validated_derived_html(
     assert "infini-news:ValueError" in rejected_warc["error"]
 
 
+def test_ft_title_index_falls_back_to_validated_infini_row(
+    tmp_path: Path,
+):
+    headline = (
+        "Russians rehearsed using tactical nuclear weapons "
+        "at early stage of conflict"
+    )
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "6544119e-a511-4cfa-9243-13b8cf855c13"
+    )
+    snapshot_url = (
+        "https://web.archive.org/web/20240229000000id_/"
+        + canonical_url
+    )
+    partner_url = (
+        "https://www.irishtimes.com/world/europe/2024/02/28/"
+        "russians-rehearsed-using-tactical-nuclear-weapons/"
+    )
+    row_url = (
+        "https://datasets-server.huggingface.co/rows?"
+        "dataset=ruggsea%2Finfini-news-corpus&config=year_2024&"
+        "split=train&offset=26225947&length=1"
+    )
+    warc_filename = "CC-NEWS-20240228173301-02619.warc.gz"
+    body = "\n".join(
+        [
+            (
+                "Licensed geopolitical reporting paragraph "
+                f"{index} contains detailed evidence, official analysis, "
+                "historical comparisons, strategic context and enough "
+                "substantive reporting for a complete article."
+            )
+            for index in range(1, 9)
+        ]
+        + ["Copyright The Financial Times Limited 2024"]
+    )
+    payload = json.dumps(
+        {
+            "rows": [
+                {
+                    "row_idx": 26225947,
+                    "row": {
+                        "url": partner_url,
+                        "year": 2024,
+                        "title": headline,
+                        "publish_date": "2024-02-28",
+                        "text": body,
+                        "warc_filename": warc_filename,
+                    },
+                }
+            ]
+        }
+    ).encode()
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2024-02-28T00:00:00+00:00",
+        section="world",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=snapshot_url,
+                expected_headline=headline,
+            ),
+        ),
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.ft.com%2Fcontent%2F"
+        "6544119e-a511-4cfa-9243-13b8cf855c13"
+    )
+    client = StubArchiveClient(
+        {
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                b'[["urlkey","timestamp","original","mimetype",'
+                b'"statuscode"]]',
+                timemap_url,
+            ),
+            snapshot_url: (
+                404,
+                {"content-type": "text/html"},
+                b"",
+                snapshot_url,
+            ),
+            partner_url: (
+                404,
+                {"content-type": "text/html"},
+                b"",
+                partner_url,
+            ),
+            row_url: (
+                200,
+                {"content-type": "application/json"},
+                payload,
+                row_url,
+            ),
+        }
+    )
+    lookups: list[tuple[str, str]] = []
+
+    def lookup(
+        indexed_item: ManifestItem,
+        indexed_headline: str,
+    ) -> tuple[CaptureCandidate, ...]:
+        lookups.append((indexed_item.canonical_url, indexed_headline))
+        return (
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=partner_url,
+                expected_headline=headline,
+            ),
+            CaptureCandidate(
+                provider=CaptureProvider.INFINI_NEWS,
+                snapshot_url=row_url,
+                source_url=partner_url,
+                expected_headline=headline,
+                warc_filename=warc_filename,
+            ),
+        )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        ft_syndication_lookup=lookup,
+    )
+
+    assert result["status"] == "complete"
+    assert lookups == [(canonical_url, headline)]
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.INFINI_NEWS
+    assert capture.representation == CaptureRepresentation.DERIVED_HTML
+    assert capture.quality_score == 100
+    assert capture.quality_signals["ftSyndicationValidated"] is True
+    assert capture.quality_signals["infiniNewsWarcFilename"] == warc_filename
+    assert client.requests[-2:] == [partner_url, row_url]
+
 def test_ft_manifest_partner_copy_rejects_missing_copyright(
     tmp_path: Path,
 ):

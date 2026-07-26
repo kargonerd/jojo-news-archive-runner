@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from email.utils import parsedate_to_datetime
 import hashlib
 import ipaddress
 import json
 import math
+from pathlib import Path
 import re
 import sqlite3
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
@@ -21,6 +23,7 @@ from .archive_sources import (
     normalize_article_url,
 )
 from .bloomberg_archive_download import GlobalRateLimiter
+from .news_models import CaptureCandidate, CaptureProvider
 from .wayback_manifest import (
     GOOGLE_NEWS_RSS_ENDPOINT,
     _decode_google_news_url,
@@ -106,6 +109,173 @@ def infini_news_row_url(year: int, document_index: int) -> str:
             "length": 1,
         }
     )
+
+
+@dataclass(frozen=True)
+class FtSyndicationTitleEntry:
+    partner_url: str
+    published_date: date
+    expected_headline: str
+    source_year: int
+    document_index: int
+    warc_filename: str
+
+
+class FtSyndicationTitleIndex:
+    def __init__(self, entries: list[FtSyndicationTitleEntry]) -> None:
+        by_year: dict[int, list[FtSyndicationTitleEntry]] = {}
+        for entry in entries:
+            by_year.setdefault(entry.published_date.year, []).append(entry)
+        self._by_year = {
+            year: tuple(
+                sorted(
+                    values,
+                    key=lambda entry: (
+                        entry.published_date,
+                        entry.partner_url,
+                    ),
+                )
+            )
+            for year, values in by_year.items()
+        }
+        self.size = len(entries)
+
+    def candidates_for(
+        self,
+        *,
+        published_at: str | None,
+        headline: str,
+        maximum_matches: int = 3,
+    ) -> tuple[CaptureCandidate, ...]:
+        published_date = _optional_date(published_at)
+        expected_tokens = _significant_tokens(headline)
+        if (
+            published_date is None
+            or len(expected_tokens) < 4
+            or maximum_matches < 1
+        ):
+            return ()
+        ranked: list[tuple[float, int, FtSyndicationTitleEntry]] = []
+        for entry in self._by_year.get(published_date.year, ()):
+            entry_tokens = _significant_tokens(entry.expected_headline)
+            matching_tokens = len(expected_tokens & entry_tokens)
+            overlap = (
+                matching_tokens / min(len(expected_tokens), len(entry_tokens))
+                if entry_tokens
+                else 0.0
+            )
+            date_delta = abs((entry.published_date - published_date).days)
+            if overlap >= 0.9 and matching_tokens >= 4 and date_delta <= 2:
+                ranked.append((overlap, -date_delta, entry))
+        ranked.sort(
+            key=lambda value: (
+                -value[0],
+                -value[1],
+                value[2].partner_url,
+            )
+        )
+        candidates: list[CaptureCandidate] = []
+        seen_sources: set[str] = set()
+        for _, _, entry in ranked:
+            if entry.partner_url in seen_sources:
+                continue
+            seen_sources.add(entry.partner_url)
+            candidates.extend(
+                (
+                    CaptureCandidate(
+                        provider=CaptureProvider.OTHER,
+                        snapshot_url=entry.partner_url,
+                        expected_headline=entry.expected_headline,
+                    ),
+                    CaptureCandidate(
+                        provider=CaptureProvider.INFINI_NEWS,
+                        snapshot_url=infini_news_row_url(
+                            entry.source_year,
+                            entry.document_index,
+                        ),
+                        source_url=entry.partner_url,
+                        expected_headline=entry.expected_headline,
+                        warc_filename=entry.warc_filename,
+                    ),
+                )
+            )
+            if len(seen_sources) >= maximum_matches:
+                break
+        return tuple(candidates)
+
+
+def load_ft_syndication_title_index(
+    path: str | Path,
+) -> FtSyndicationTitleIndex:
+    catalog_path = Path(path)
+    if not catalog_path.exists():
+        return FtSyndicationTitleIndex([])
+    connection = sqlite3.connect(
+        f"file:{catalog_path.resolve().as_posix()}?mode=ro",
+        uri=True,
+    )
+    try:
+        table = connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type='table' AND name='ft_syndication_unresolved'
+            """
+        ).fetchone()
+        if table is None:
+            return FtSyndicationTitleIndex([])
+        rows = connection.execute(
+            """
+            SELECT DISTINCT
+                partner_url,
+                published_at,
+                expected_headline,
+                source_year,
+                document_index,
+                warc_source
+            FROM ft_syndication_unresolved
+            WHERE document_index IS NOT NULL
+              AND warc_source LIKE 'CC-NEWS-%.warc.gz'
+            ORDER BY published_at, partner_url
+            """
+        ).fetchall()
+    finally:
+        connection.close()
+    entries: list[FtSyndicationTitleEntry] = []
+    for (
+        partner_url,
+        published_at,
+        expected_headline,
+        source_year,
+        document_index,
+        warc_filename,
+    ) in rows:
+        published_date = _optional_date(str(published_at))
+        if published_date is None:
+            continue
+        entries.append(
+            FtSyndicationTitleEntry(
+                partner_url=str(partner_url),
+                published_date=published_date,
+                expected_headline=str(expected_headline),
+                source_year=int(source_year),
+                document_index=int(document_index),
+                warc_filename=str(warc_filename),
+            )
+        )
+    return FtSyndicationTitleIndex(entries)
+
+
+def _optional_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
 
 
 def initialize_ft_syndication_schema(

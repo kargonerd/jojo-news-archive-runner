@@ -246,6 +246,16 @@ tries exact publisher archives and the live partner HTML. Partner HTML enters
 the archive only when its final host, headline, publication date, complete-body
 threshold, and visible FT copyright statement all pass.
 
+The discovery checkpoint also serves as a local headline-and-date provenance
+index for all accepted Infini-News partner rows, including rows whose canonical
+FT URL could not be found by a search engine. After an exact FT archive response
+reveals the original headline, capture can match it against that local index
+with a same-year, two-day and 90%-token-overlap gate. It tries the indexed raw
+partner URL first and the derived dataset row second. This reuses already
+verified discovery work and avoids scanning hundreds of gigabytes of Parquet
+files during each validator run; all downstream host, headline, date, body,
+copyright, row-index and WARC checks still apply.
+
 If those raw candidates fail, a mapped row can be fetched from Infini-News'
 official Hugging Face dataset by its exact year and document index. The adapter
 accepts only the expected dataset endpoint, one exact row, the mapped partner

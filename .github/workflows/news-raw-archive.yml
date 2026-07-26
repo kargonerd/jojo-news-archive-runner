@@ -566,6 +566,8 @@ jobs:
             args+=(
               --enable-arquivo-pt-fallback
               --enable-common-crawl-fallback
+              --ft-syndication-catalog \
+              "$LOCAL_ROOT/catalog/discovery.sqlite3"
             )
           fi
           set +e

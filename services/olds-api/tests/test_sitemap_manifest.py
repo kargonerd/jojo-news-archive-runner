@@ -14,6 +14,7 @@ from jojo_olds_api.ft_syndication_catalog import (
     _next_resolution_rows,
     ft_syndication_summary,
     initialize_ft_syndication_schema,
+    load_ft_syndication_title_index,
     process_ft_infini_documents,
     process_ft_infini_queries,
     process_ft_syndication_resolutions,
@@ -274,6 +275,68 @@ def test_ft_infini_catalog_resolves_and_exports_licensed_copy(
         "warcFilename": "CC-NEWS-20240328160318-02712.warc.gz",
     }
 
+
+def test_ft_title_index_recovers_provenance_without_canonical_search(
+    tmp_path: Path,
+):
+    catalog_path = tmp_path / "ft-discovery.sqlite3"
+    connection = sqlite3.connect(catalog_path)
+    initialize_ft_syndication_schema(
+        connection,
+        from_year=2024,
+        to_year=2024,
+    )
+    connection.execute(
+        """
+        INSERT INTO ft_syndication_unresolved(
+            partner_url,
+            published_at,
+            expected_headline,
+            source_year,
+            document_index,
+            warc_source,
+            updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "https://www.irishtimes.com/world/europe/2024/02/28/"
+            "russians-rehearsed-using-tactical-nuclear-weapons/",
+            "2024-02-28T00:00:00+00:00",
+            "Russians rehearsed using tactical nuclear weapons "
+            "at early stage of conflict",
+            2024,
+            26225947,
+            "CC-NEWS-20240228173301-02619.warc.gz",
+            "2024-03-01T00:00:00+00:00",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    index = load_ft_syndication_title_index(catalog_path)
+    candidates = index.candidates_for(
+        published_at="2024-02-28T12:00:00+00:00",
+        headline=(
+            "Russians rehearsed using tactical nuclear weapons "
+            "at early stage of conflict"
+        ),
+    )
+
+    assert index.size == 1
+    assert [candidate.provider.value for candidate in candidates] == [
+        "other",
+        "infini-news",
+    ]
+    assert candidates[1].snapshot_url.endswith(
+        "config=year_2024&split=train&offset=26225947&length=1"
+    )
+    assert candidates[1].warc_filename == (
+        "CC-NEWS-20240228173301-02619.warc.gz"
+    )
+    assert index.candidates_for(
+        published_at="2024-03-10T00:00:00+00:00",
+        headline=candidates[1].expected_headline or "",
+    ) == ()
 
 def test_ft_catalog_work_is_balanced_across_years():
     connection = sqlite3.connect(":memory:")

@@ -39,7 +39,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.10.1",
+    "ft": "ft-capture/0.11.0",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -504,6 +504,11 @@ def capture_item(
     maximum_html_bytes: int,
     enable_common_crawl_fallback: bool = False,
     enable_arquivo_pt_fallback: bool = False,
+    ft_syndication_lookup: Callable[
+        [ManifestItem, str],
+        tuple[CaptureCandidate, ...],
+    ]
+    | None = None,
 ) -> dict:
     failures: list[str] = []
     candidates_considered = list(item.candidates)
@@ -1054,6 +1059,31 @@ def capture_item(
                 best_response = response
             if response[5] == 100:
                 break
+
+    if (
+        best_response is None
+        and item.publisher == "ft"
+        and ft_syndication_lookup is not None
+        and ft_original_headline
+    ):
+        try:
+            indexed_candidates = ft_syndication_lookup(
+                item,
+                ft_original_headline,
+            )
+        except Exception as exc:
+            failures.append(f"ft-title-index:{type(exc).__name__}")
+            indexed_candidates = ()
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        indexed_candidates = tuple(
+            candidate
+            for candidate in indexed_candidates
+            if candidate.snapshot_url not in existing_urls
+        )
+        candidates_considered.extend(indexed_candidates)
+        consider_candidates(indexed_candidates)
 
     if best_response is None and item.publisher == "ft":
         try:

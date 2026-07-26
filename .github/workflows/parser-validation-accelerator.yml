@@ -198,6 +198,16 @@ jobs:
             echo "::warning::Using cached validation manifest because the source refresh failed."
           fi
 
+          if [ "$PUBLISHER" = "ft" ]; then
+            restore_if_present \
+              "${SOURCE_ROOT}/catalog/discovery.sqlite3.gz" \
+              "$RUNNER_TEMP/ft-discovery.sqlite3.gz"
+            if [ -f "$RUNNER_TEMP/ft-discovery.sqlite3.gz" ]; then
+              gzip -dc "$RUNNER_TEMP/ft-discovery.sqlite3.gz" \
+                > "$LOCAL_ROOT/catalog/source-discovery.sqlite3"
+            fi
+          fi
+
           restore_if_present \
             "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
             "$RUNNER_TEMP/capture.sqlite3.gz"
@@ -403,10 +413,15 @@ jobs:
           fi
           if [ "$PUBLISHER" = "ft" ]; then
             args+=(
-              --enable-ft-infini-direct-discovery
               --enable-arquivo-pt-fallback
               --enable-common-crawl-fallback
             )
+            if [ -f "$LOCAL_ROOT/catalog/source-discovery.sqlite3" ]; then
+              args+=(
+                --ft-syndication-catalog \
+                "$LOCAL_ROOT/catalog/source-discovery.sqlite3"
+              )
+            fi
           fi
           set +e
           python services/olds-api/tools/capture_archive_batch.py "${args[@]}" &

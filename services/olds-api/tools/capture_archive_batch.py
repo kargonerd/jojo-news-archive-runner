@@ -21,6 +21,9 @@ from jojo_olds_api.bloomberg_archive_download import ArchiveClient
 from jojo_olds_api.ft_infini_direct_catalog import (
     discover_ft_infini_direct_candidates,
 )
+from jojo_olds_api.ft_syndication_catalog import (
+    load_ft_syndication_title_index,
+)
 from jojo_olds_api.publisher_specs import publisher_spec
 from jojo_olds_api.parser_validation import (
     ensure_parser_validation_plan,
@@ -89,6 +92,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--ft-syndication-catalog",
+        type=Path,
+        help=(
+            "Read the FT discovery SQLite catalog as a local title-to-"
+            "Infini provenance index after raw archive candidates fail."
+        ),
+    )
+    parser.add_argument(
         "--enable-ft-infini-direct-discovery",
         action="store_true",
         help=(
@@ -141,6 +152,15 @@ def main() -> int:
         manifest_path=args.manifest,
         publisher=args.publisher,
     )
+    ft_title_index = None
+    if args.ft_syndication_catalog is not None:
+        if args.publisher != "ft":
+            raise SystemExit(
+                "--ft-syndication-catalog is only valid for FT"
+            )
+        ft_title_index = load_ft_syndication_title_index(
+            args.ft_syndication_catalog
+        )
     infini_direct_result = None
     if args.enable_ft_infini_direct_discovery:
         if args.publisher != "ft":
@@ -224,6 +244,9 @@ def main() -> int:
                 "freeGB": round(free_gb, 2),
                 "queued": len(items),
                 **manifest_result,
+                "ftSyndicationTitleIndexEntries": (
+                    ft_title_index.size if ft_title_index is not None else 0
+                ),
                 "ftInfiniDirectDiscovery": infini_direct_result,
                 "parserValidationPlan": validation_plan,
             },
@@ -279,6 +302,16 @@ def main() -> int:
             ),
             enable_arquivo_pt_fallback=(
                 args.enable_arquivo_pt_fallback
+            ),
+            ft_syndication_lookup=(
+                None
+                if ft_title_index is None
+                else lambda indexed_item, indexed_headline: (
+                    ft_title_index.candidates_for(
+                        published_at=indexed_item.published_at,
+                        headline=indexed_headline,
+                    )
+                )
             ),
         )
         in_flight[future] = item
