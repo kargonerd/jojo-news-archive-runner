@@ -28,6 +28,11 @@ on:
           - holdout-v3
           - holdout-v4
           - holdout-v5
+          - holdout-v6
+          - holdout-v7
+          - holdout-v8
+          - holdout-v9
+          - holdout-v10
       year:
         description: "Single publication year to sample."
         required: true
@@ -153,7 +158,7 @@ jobs:
             echo "source manifest publisher does not match." >&2
             exit 2
           fi
-          if [[ ! "$COHORT" =~ ^(validation|holdout-v[1-5])$ ]]; then
+          if [[ ! "$COHORT" =~ ^(validation|holdout-v([1-9]|10))$ ]]; then
             echo "unsupported cohort" >&2
             exit 2
           fi
@@ -245,7 +250,7 @@ jobs:
             gzip -dc "$RUNNER_TEMP/capture.sqlite3.gz" \
               > "$LOCAL_ROOT/raw/capture.sqlite3"
           fi
-          if [[ "$COHORT" =~ ^holdout-v([1-5])$ ]]; then
+          if [[ "$COHORT" =~ ^holdout-v([1-9]|10)$ ]]; then
             cohort_number="${BASH_REMATCH[1]}"
             restore_if_present \
               "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/validation/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
