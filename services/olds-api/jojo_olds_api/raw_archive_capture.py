@@ -46,7 +46,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.18.0",
+    "ft": "ft-capture/0.19.0",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -2117,6 +2117,17 @@ def discover_ft_syndication_candidates(
         or len(_significant_tokens(expected_headline)) < 4
     ):
         return ()
+    ftchinese_ranked: tuple[CaptureCandidate, ...] = ()
+    if not exhaustive:
+        try:
+            ftchinese_ranked = _discover_ftchinese_candidates(
+                archive_client=archive_client,
+                expected_headline=expected_headline,
+            )
+        except Exception:
+            ftchinese_ranked = ()
+        if ftchinese_ranked:
+            return ftchinese_ranked
     title_results: list[tuple[int, str, str]] = []
     if not skip_title_search:
         try:
@@ -2163,15 +2174,14 @@ def discover_ft_syndication_candidates(
     )
     if ranked and not exhaustive:
         return ranked
-    try:
-        ftchinese_ranked = _discover_ftchinese_candidates(
-            archive_client=archive_client,
-            expected_headline=expected_headline,
-        )
-    except Exception:
-        ftchinese_ranked = ()
-    if ftchinese_ranked and not exhaustive:
-        return ftchinese_ranked
+    if exhaustive:
+        try:
+            ftchinese_ranked = _discover_ftchinese_candidates(
+                archive_client=archive_client,
+                expected_headline=expected_headline,
+            )
+        except Exception:
+            ftchinese_ranked = ()
     try:
         google_news_ranked = (
             _discover_ft_partner_candidates_from_google_news(

@@ -2820,6 +2820,7 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
     ghost_search_url = ghostarchive_search_url(canonical_url)
     canonical_search_url = ft_syndication_search_url(item)
     google_headline_search_url = ft_google_news_headline_search_url(item)
+    ftchinese_search_url = ftchinese_title_search_url(expected_headline)
     title_search_url = ft_syndication_title_search_url(
         expected_headline
     )
@@ -2933,6 +2934,7 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
         ghost_search_url,
         timemap_url,
         snapshot_url,
+        ftchinese_search_url,
         title_search_url,
         partner_url,
     ]
@@ -2971,6 +2973,7 @@ def test_ft_syndication_recovers_missing_headline_from_google_news():
     broad_search_url = ft_syndication_broad_title_search_url(
         expected_headline
     )
+    ftchinese_search_url = ftchinese_title_search_url(expected_headline)
     google_news_xml = f"""
     <?xml version="1.0" encoding="UTF-8"?>
     <rss version="2.0"><channel>
@@ -3033,6 +3036,7 @@ def test_ft_syndication_recovers_missing_headline_from_google_news():
     assert client.requests == [
         canonical_search_url,
         google_news_url,
+        ftchinese_search_url,
         title_search_url,
         broad_search_url,
     ]
@@ -3147,9 +3151,9 @@ def test_ft_syndication_refines_google_news_partner_host_with_yahoo():
     )
 
     assert client.requests == [
+        ftchinese_search_url,
         title_search_url,
         broad_search_url,
-        ftchinese_search_url,
         google_news_url,
         partner_search_url,
     ]
@@ -3206,7 +3210,10 @@ def test_ft_syndication_normalizes_ftchinese_result_to_full_mobile_view():
         expected_headline=expected_headline,
     )
 
-    assert client.requests == [title_search_url]
+    assert client.requests == [
+        ftchinese_title_search_url(expected_headline),
+        title_search_url,
+    ]
     assert [candidate.snapshot_url for candidate in candidates] == [
         expected_url
     ]
@@ -3273,8 +3280,6 @@ def test_ft_syndication_uses_official_ftchinese_search_fallback():
     )
 
     assert client.requests == [
-        title_search_url,
-        broad_search_url,
         ftchinese_search_url,
     ]
     assert [candidate.snapshot_url for candidate in candidates] == [
