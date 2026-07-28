@@ -70,6 +70,12 @@ def parse_article(
     soup = BeautifulSoup(html_bytes, "html.parser")
     news_article = _find_news_article_json(soup)
     body = None
+    structured_image_gallery_selected = False
+    if spec.publisher == "ap":
+        gallery_body = _ap_carousel_gallery(soup)
+        if gallery_body is not None:
+            body = gallery_body
+            structured_image_gallery_selected = True
     if spec.publisher == "nyt":
         body = _nyt_story_body_companions(soup)
     if spec.publisher in {"reuters", "bloomberg"} and _is_yahoo_syndication(
@@ -108,7 +114,6 @@ def parse_article(
         body = _nyt_legacy_article_body(soup)
     if body is None:
         body = _select_body(soup, spec)
-    structured_image_gallery_selected = False
     if spec.publisher == "wsj":
         gallery_body = _structured_image_gallery(soup)
         if gallery_body is not None:
@@ -682,6 +687,50 @@ def _structured_image_gallery(soup: BeautifulSoup) -> Tag | None:
     return None
 
 
+def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:
+    for carousel in soup.select(
+        ".Page-main bsp-carousel.Carousel, "
+        ".Page-main .Carousel"
+    ):
+        slides = carousel.select(".Carousel-slide")
+        if len(slides) < 3:
+            continue
+        document = BeautifulSoup("<article></article>", "html.parser")
+        article = document.article
+        if not isinstance(article, Tag):
+            return None
+        for slide in slides:
+            source_image = slide.select_one("img")
+            if not isinstance(source_image, Tag):
+                continue
+            image = BeautifulSoup(
+                str(source_image),
+                "html.parser",
+            ).find("img")
+            if not isinstance(image, Tag):
+                continue
+            figure = document.new_tag("figure")
+            figure.append(image)
+            caption = _first_text(
+                _tag_text(
+                    slide.select_one(
+                        ".CarouselSlide-caption, "
+                        ".CarouselSlide-description, "
+                        "[class*='caption' i]"
+                    )
+                ),
+                _clean_text(source_image.get("alt", "")) or None,
+            )
+            if caption:
+                figcaption = document.new_tag("figcaption")
+                figcaption.string = caption
+                figure.append(figcaption)
+            article.append(figure)
+        if len(article.select("figure")) >= 3:
+            return article
+    return None
+
+
 def _nyt_preloaded_state(soup: BeautifulSoup) -> dict[str, Any]:
     marker = "window.__preloadedData = "
     for script in soup.find_all("script"):
@@ -1202,7 +1251,14 @@ def _image_from_tag(
     width = _integer_attribute(image_node, "width")
     height = _integer_attribute(image_node, "height")
     alt = _clean_text(image_node.get("alt", "")) or None
-    caption, credit = _caption_credit(container)
+    caption_container = container
+    if spec.publisher == "ap":
+        carousel_slide = image_node.find_parent(
+            class_=lambda value: value and "Carousel-slide" in value
+        )
+        if isinstance(carousel_slide, Tag):
+            caption_container = carousel_slide
+    caption, credit = _caption_credit(caption_container)
     context = " ".join(
         filter(
             None,
@@ -1334,11 +1390,21 @@ def _merge_candidate_urls(
 
 def _image_urls(image: Tag, *, base_url: str) -> list[str]:
     values: list[tuple[int, str]] = []
-    for attribute in ("src", "data-src", "data-original", "data-image"):
+    for attribute in (
+        "src",
+        "data-src",
+        "data-original",
+        "data-image",
+        "data-flickity-lazyload",
+    ):
         normalized = _normalized_url(image.get(attribute), base_url=base_url)
-        if normalized:
+        if normalized and urlsplit(normalized).scheme != "data":
             values.append((0, normalized))
-    for attribute in ("srcset", "data-srcset"):
+    for attribute in (
+        "srcset",
+        "data-srcset",
+        "data-flickity-lazyload-srcset",
+    ):
         raw = image.get(attribute)
         if not isinstance(raw, str):
             continue
@@ -1347,7 +1413,7 @@ def _image_urls(image: Tag, *, base_url: str) -> list[str]:
             if not parts:
                 continue
             normalized = _normalized_url(parts[0], base_url=base_url)
-            if not normalized:
+            if not normalized or urlsplit(normalized).scheme == "data":
                 continue
             score = 0
             if len(parts) > 1 and parts[1].endswith("w"):

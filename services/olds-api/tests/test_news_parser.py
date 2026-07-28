@@ -1161,7 +1161,50 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.5.0"
+    assert article.extraction.parser_version == "ap-parser/0.6.1"
+
+
+def test_ap_parser_extracts_lazy_loaded_carousel_gallery():
+    slides = "".join(
+        f"""
+        <div class="Carousel-slide">
+          <img
+            src="data:image/svg+xml;base64,placeholder"
+            data-flickity-lazyload="https://dims.apnews.com/photo-{index}.jpg"
+            data-flickity-lazyload-srcset="
+              https://dims.apnews.com/photo-{index}.jpg 1x,
+              https://dims.apnews.com/photo-{index}-2x.jpg 2x"
+            alt="Editorial caption for photograph {index}.">
+        </div>
+        """
+        for index in range(4)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="AP photos of the week">
+      <meta property="article:published_time"
+            content="2025-05-08T19:32:18Z">
+    </head><body>
+      <main class="Page-main">
+        <bsp-carousel class="Carousel">
+          <div class="Carousel-slides">{slides}</div>
+        </bsp-carousel>
+      </main>
+    </body></html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/article/photo-collection-example",
+    )
+
+    assert article.content_type.value == "gallery"
+    assert article.quality.status.value == "complete"
+    assert len(article.blocks) == 4
+    assert len(article.images) == 4
+    assert article.images[2].caption == "Editorial caption for photograph 2."
+    assert article.images[2].original_url.endswith("photo-2.jpg")
 
 
 def test_parser_includes_gallery_captions_in_plain_text():
