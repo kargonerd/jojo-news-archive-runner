@@ -47,7 +47,7 @@ CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.1",
     "bloomberg": "bloomberg-capture/0.10.1",
     "ft": "ft-capture/0.20.0",
-    "nyt": "nyt-capture/0.8.0",
+    "nyt": "nyt-capture/0.8.1",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
 }
@@ -155,6 +155,7 @@ _ACCESS_CHALLENGE_MARKERS = (
 _REDIRECT_SHELL_MARKERS = (
     b"window.location = fullurl",
     b"window.location=fullurl",
+    b"<title>ny times advertisement</title>",
 )
 _SUBSCRIPTION_SHELL_MARKERS = (
     b"<title>subscribe to read",
@@ -4986,6 +4987,7 @@ def score_raw_capture(
             or "/auth/login" in final_url_lower
             or "/auth/enter-email" in final_url_lower
             or "/account/login" in final_url_lower
+            or "/glogin" in final_url_lower
             or "/signin" in final_url_lower
             or "/sign-in" in final_url_lower
         )

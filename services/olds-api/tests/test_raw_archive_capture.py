@@ -4502,6 +4502,48 @@ def test_raw_quality_rejects_javascript_redirect_shell():
     assert signals["redirectShell"] is True
 
 
+def test_raw_quality_rejects_legacy_nyt_advertisement_redirect():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head>
+          <meta http-equiv="refresh"
+                content="15;url=/article.html?adxnnl=1">
+          <title>NY Times Advertisement</title>
+        </head><body>Please wait while the article loads.</body></html>
+        """,
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://web.archive.org/web/20120117030929id_/"
+            "http://www.nytimes.com/2010/05/06/fashion/06skin.html"
+        ),
+    )
+
+    assert score < 60
+    assert signals["redirectShell"] is True
+
+
+def test_raw_quality_rejects_legacy_nyt_glogin_page():
+    score, signals = score_raw_capture(
+        (
+            b"<html><head><title>Article - The New York Times</title>"
+            b"</head><body><main>Member Center login is required.</main>"
+            b"</body></html>"
+            + (b" " * 2_048)
+        ),
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://web.archive.org/web/20100720073349id_/"
+            "http://www.nytimes.com/glogin?URI=http://www.nytimes.com/"
+            "2010/06/04/us/politics/04pentagon.html"
+        ),
+    )
+
+    assert score < 60
+    assert signals["authenticationShell"] is True
+
+
 def test_stored_challenge_shell_is_requeued_by_current_policy(
     tmp_path: Path,
 ):
