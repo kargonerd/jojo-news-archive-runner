@@ -446,6 +446,47 @@ def test_date_inference_and_candidate_ranking_prefers_after_publication():
     after = candidate_rank("20200102010000", published_at=published)
     before = candidate_rank("20200101010000", published_at=published)
     assert after < before
+    assert infer_published_at(
+        "https://www.reuters.com/article/"
+        "01cyberaton-brief-idUSFWN0U201D20141218"
+    ) == "2014-12-18T00:00:00+00:00"
+
+
+def test_reuters_discovery_reclassifies_legacy_ids_by_publication_date():
+    spec = archive_source_spec("reuters")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+    )
+    url = (
+        "https://www.reuters.com/article/"
+        "example-idUSL1N0AB12320120607"
+    )
+    connection.execute(
+        """
+        INSERT INTO candidates(
+            canonical_url, published_at, timestamp, original_url,
+            digest, mimetype, status_code, byte_count, rank_score
+        ) VALUES (?, '2015-01-01T00:00:00+00:00', '20150102000000',
+                  ?, 'digest', 'text/html', 200, 10000, 1)
+        """,
+        (url, url),
+    )
+
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+    )
+
+    assert connection.execute(
+        "SELECT published_at FROM candidates WHERE canonical_url=?",
+        (url,),
+    ).fetchone() == ("2012-06-07T00:00:00+00:00",)
 
 
 def test_discovery_keeps_three_best_candidates_and_exports_generic_manifest(

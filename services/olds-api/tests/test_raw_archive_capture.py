@@ -1294,6 +1294,65 @@ def test_manifest_refresh_retries_errors_when_candidates_change(
     ] == ["wayback", "live-origin"]
 
 
+def test_manifest_refresh_corrects_completed_capture_publication_date(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.reuters.com/article/"
+        "example-idUSL1N0AB12320120607"
+    )
+    manifest = tmp_path / "manifest.jsonl"
+
+    def write_manifest(published_at: str) -> None:
+        manifest.write_text(
+            json.dumps(
+                {
+                    "publisher": "reuters",
+                    "canonicalUrl": canonical_url,
+                    "publishedAt": published_at,
+                    "candidates": [
+                        {
+                            "provider": "wayback",
+                            "snapshotUrl": (
+                                "https://web.archive.org/web/"
+                                "20150102000000id_/"
+                                + canonical_url
+                            ),
+                        }
+                    ],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="reuters",
+        authorization_reference="authorization:test",
+    )
+    write_manifest("2015-01-02T00:00:00+00:00")
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="reuters",
+    )
+    connection.execute("UPDATE captures SET status='complete'")
+    write_manifest("2012-06-07T00:00:00+00:00")
+
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="reuters",
+    )
+
+    assert connection.execute(
+        "SELECT status, published_at FROM captures WHERE canonical_url=?",
+        (canonical_url,),
+    ).fetchone() == ("complete", "2012-06-07T00:00:00+00:00")
+
+
 def test_manifest_refresh_preserves_preindexed_mirror_candidate(
     tmp_path: Path,
 ):

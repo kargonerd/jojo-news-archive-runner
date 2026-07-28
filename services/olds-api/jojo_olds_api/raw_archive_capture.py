@@ -5799,6 +5799,25 @@ def _insert_manifest_batch(
                 *row[6:],
             )
         )
+    connection.executemany(
+        """
+        UPDATE captures
+        SET published_at=?, updated_at=?
+        WHERE canonical_url=?
+          AND ? IS NOT NULL
+          AND published_at IS NOT ?
+        """,
+        (
+            (
+                row[3],
+                row[6],
+                row[0],
+                row[3],
+                row[3],
+            )
+            for row in merged_rows
+        ),
+    )
     before = connection.total_changes
     connection.executemany(
         """

@@ -11,6 +11,7 @@ import re
 import sqlite3
 import time
 from typing import Iterable
+from urllib.parse import urlsplit
 from xml.etree import ElementTree
 
 import httpx
@@ -289,6 +290,36 @@ def initialize_discovery_schema(
         """,
         [(pattern, _now_iso()) for pattern in patterns],
     )
+    if spec.publisher == "reuters":
+        corrected_rows: list[tuple[str, int, str, str, str]] = []
+        for canonical_url, timestamp, digest, published_at in connection.execute(
+            """
+            SELECT canonical_url, timestamp, digest, published_at
+            FROM candidates
+            """
+        ):
+            inferred = infer_published_at(str(canonical_url))
+            if inferred and inferred != published_at:
+                corrected_rows.append(
+                    (
+                        inferred,
+                        candidate_rank(
+                            str(timestamp),
+                            published_at=inferred,
+                        ),
+                        str(canonical_url),
+                        str(timestamp),
+                        str(digest),
+                    )
+                )
+        connection.executemany(
+            """
+            UPDATE candidates
+            SET published_at=?, rank_score=?
+            WHERE canonical_url=? AND timestamp=? AND digest=?
+            """,
+            corrected_rows,
+        )
     connection.execute(
         """
         DELETE FROM candidates
@@ -1709,11 +1740,21 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
 
 
 def infer_published_at(canonical_url: str) -> str | None:
-    patterns = (
+    parsed = urlsplit(canonical_url)
+    patterns = [
         r"/(20\d{2})/(\d{2})/(\d{2})(?:/|$)",
         r"/articles/(20\d{2})-(\d{2})-(\d{2})(?:/|$)",
         r"-(20\d{2})-(\d{2})-(\d{2})(?:/|$)",
-    )
+    ]
+    if (
+        (parsed.hostname or "").casefold().removeprefix("www.")
+        == "reuters.com"
+        and parsed.path.startswith("/article/")
+    ):
+        patterns.insert(
+            0,
+            r"((?:19|20)\d{2})(\d{2})(\d{2})(?:[^0-9]|$)",
+        )
     for pattern in patterns:
         match = re.search(pattern, canonical_url)
         if not match:
