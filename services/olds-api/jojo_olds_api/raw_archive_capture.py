@@ -39,6 +39,7 @@ from .news_models import (
     CaptureCandidate,
     CaptureProvider,
     CaptureRepresentation,
+    ContentType,
     RawCapture,
 )
 
@@ -46,7 +47,7 @@ from .news_models import (
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.2",
-    "bloomberg": "bloomberg-capture/0.10.2",
+    "bloomberg": "bloomberg-capture/0.10.3",
     "ft": "ft-capture/0.20.1",
     "nyt": "nyt-capture/0.8.1",
     "reuters": "reuters-capture/0.7.0",
@@ -1741,6 +1742,15 @@ def _fetch_usable_candidate(
         signals = signals | ap_evidence
         if ap_evidence["apThinLiveOrigin"]:
             quality_score = min(quality_score, 70)
+    bloomberg_parser_usable = True
+    if publisher == "bloomberg" and signals["looksLikeHtml"]:
+        bloomberg_parser_usable, bloomberg_evidence = (
+            _bloomberg_origin_parser_evidence(
+                content,
+                canonical_url=canonical_url,
+            )
+        )
+        signals = signals | bloomberg_evidence
     if response_observer is not None:
         response_observer(candidate, content, final_url)
     structured_subscription_article = bool(
@@ -1769,6 +1779,7 @@ def _fetch_usable_candidate(
         )
         or signals["ftTruncatedArticleShell"]
         or signals["redirectShell"]
+        or not bloomberg_parser_usable
     ):
         return (
             None,
@@ -5163,6 +5174,40 @@ def _decode_archived_html_content(
     }
 
 
+def _bloomberg_origin_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="bloomberg",
+            canonical_url=canonical_url,
+            allow_generic_syndication=True,
+        )
+    except Exception as exc:
+        return False, {
+            "bloombergOriginParserUsable": False,
+            "bloombergOriginParserError": type(exc).__name__,
+        }
+    nontext = article.content_type in {
+        ContentType.INTERACTIVE,
+        ContentType.VIDEO,
+        ContentType.AUDIO,
+        ContentType.GALLERY,
+    }
+    usable = article.quality.status == ArticleStatus.COMPLETE or nontext
+    return usable, {
+        "bloombergOriginParserUsable": usable,
+        "bloombergOriginExtractionStatus": article.quality.status.value,
+        "bloombergOriginContentType": article.content_type.value,
+        "bloombergOriginBodyCharacters": article.quality.body_characters,
+    }
+
+
 def score_raw_capture(
     content: bytes,
     *,
@@ -5573,6 +5618,13 @@ def completed_capture_rejection_reason(
     for reason, rejected in checks:
         if rejected:
             return reason
+    if capture.publisher == "bloomberg":
+        usable, _ = _bloomberg_origin_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "bloomberg-origin-parser-incomplete"
     if (
         capture.publisher == "bloomberg"
         and capture.selected_candidate.provider == CaptureProvider.OTHER

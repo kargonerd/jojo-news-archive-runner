@@ -74,7 +74,11 @@ ARTICLE = b"""
       {"@type":"NewsArticle","headline":"Captured headline"}
     </script>
   </head>
-  <body><article><p>Captured article body.</p></article></body>
+  <body><article>
+    <p>Captured article body contains substantive reporting and context.</p>
+    <p>A second paragraph preserves evidence, timing and source details.</p>
+    <p>A third paragraph completes the archived report for parser checks.</p>
+  </article></body>
 </html>
 """ + (b" " * 2_048)
 
