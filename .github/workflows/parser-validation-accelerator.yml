@@ -260,7 +260,7 @@ jobs:
             --publisher "$PUBLISHER" \
             --year "$SAMPLE_YEAR" \
             --target-per-year 500 \
-            --reserve-per-year 1500 \
+            --reserve-per-year 5000 \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
             --files-from "$files_from"
           if [ ! -s "$files_from" ]; then
@@ -294,7 +294,7 @@ jobs:
             --from-year "$SAMPLE_YEAR" \
             --to-year "$SAMPLE_YEAR" \
             --target-per-year 500 \
-            --reserve-per-year 1500 \
+            --reserve-per-year 5000 \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
             --max-replays 1000 \
             --files-from "$RUNNER_TEMP/parser-validation-files.txt" \
@@ -339,6 +339,17 @@ jobs:
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
             --github-output "$GITHUB_OUTPUT"
+
+      - name: Pre-index validated FT mirror candidates
+        if: ${{ inputs.publisher == 'ft' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python services/olds-api/tools/enrich_ft_validation_candidates.py \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --limit 1200 \
+            --workers "$DOWNLOAD_WORKERS"
 
       - name: Capture random year sample
         id: capture
@@ -408,7 +419,7 @@ jobs:
             --max-runtime-minutes "$MAX_RUNTIME_MINUTES"
             --max-record-attempts "$MAX_RECORD_ATTEMPTS"
             --validation-sample-per-year 500
-            --validation-reserve-per-year 1500
+            --validation-reserve-per-year 5000
             --validation-from-year "$SAMPLE_YEAR"
             --validation-to-year "$SAMPLE_YEAR"
             --stop-when-validation-ready
