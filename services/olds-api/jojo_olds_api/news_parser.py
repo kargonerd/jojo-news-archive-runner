@@ -69,6 +69,11 @@ def parse_article(
     spec = publisher_spec(publisher)
     soup = BeautifulSoup(html_bytes, "html.parser")
     news_article = _find_news_article_json(soup)
+    nyt_preloaded_metadata = (
+        _nyt_preloaded_article_metadata(soup, canonical_url=canonical_url)
+        if spec.publisher == "nyt"
+        else {}
+    )
     body = None
     structured_image_gallery_selected = False
     if spec.publisher == "ap":
@@ -112,6 +117,17 @@ def parse_article(
         body = _generic_syndication_body(soup)
     if body is None and spec.publisher == "nyt":
         body = _nyt_legacy_article_body(soup)
+    if spec.publisher == "nyt":
+        preloaded_body = _nyt_preloaded_article_body(
+            soup,
+            canonical_url=canonical_url,
+        )
+        if preloaded_body is not None and (
+            body is None
+            or len(body.get_text(" ", strip=True))
+            < len(preloaded_body.get_text(" ", strip=True))
+        ):
+            body = preloaded_body
     if body is None:
         body = _select_body(soup, spec)
     if spec.publisher == "wsj":
@@ -156,19 +172,29 @@ def parse_article(
     _remove_noise(clean_body, spec)
 
     headline = _first_text(
+        _string_or_none(nyt_preloaded_metadata.get("headline")),
         _string_or_none(news_article.get("headline")) if news_article else None,
         _meta_content(soup, "property", "og:title"),
         _meta_content(soup, "name", "twitter:title"),
         _tag_text(soup.select_one("article h1, main h1, h1")),
     )
     description = _first_text(
+        _string_or_none(nyt_preloaded_metadata.get("description")),
         _string_or_none(news_article.get("description")) if news_article else None,
         _meta_content(soup, "name", "description"),
         _meta_content(soup, "property", "og:description"),
     )
     authors = _extract_authors(news_article, soup)
+    metadata_authors = nyt_preloaded_metadata.get("authors")
+    if isinstance(metadata_authors, list) and metadata_authors:
+        authors = [
+            Author(name=value)
+            for value in metadata_authors
+            if isinstance(value, str) and value.strip()
+        ]
     published_at = _parse_datetime(
         _first_text(
+            _string_or_none(nyt_preloaded_metadata.get("published_at")),
             _string_or_none(news_article.get("datePublished"))
             if news_article
             else None,
@@ -195,6 +221,7 @@ def parse_article(
         published_at = raw_capture.published_at
     modified_at = _parse_datetime(
         _first_text(
+            _string_or_none(nyt_preloaded_metadata.get("modified_at")),
             _string_or_none(news_article.get("dateModified"))
             if news_article
             else None,
@@ -298,13 +325,25 @@ def parse_article(
         block.type == BlockType.IMAGE for block in blocks
     )
     image_led_gallery = (
-        content_type == ContentType.GALLERY and image_block_count >= 1
+        content_type == ContentType.GALLERY
+        and (
+            image_block_count >= 1
+            or (spec.publisher == "nyt" and len(images) >= 1)
+        )
+    )
+    publisher_notice = _is_publisher_notice(
+        headline=headline,
+        description=description,
+        plain_text=plain_text,
     )
     if (
         len(plain_text) < _MINIMUM_BODY_CHARACTERS
         and not image_led_gallery
+        and not publisher_notice
     ):
         warnings.append("body-too-short")
+    if publisher_notice:
+        warnings.append("publisher-notice")
     if not published_at:
         warnings.append("missing-published-at")
     if body is None:
@@ -785,19 +824,31 @@ def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:
 
 
 def _nyt_preloaded_state(soup: BeautifulSoup) -> dict[str, Any]:
+    payload = _nyt_preloaded_payload(soup)
+    state = payload.get("initialState")
+    return state if isinstance(state, dict) else {}
+
+
+def _nyt_preloaded_payload(soup: BeautifulSoup) -> dict[str, Any]:
     marker = "window.__preloadedData = "
     for script in soup.find_all("script"):
         value = script.string or script.get_text()
         if marker not in value:
             continue
         serialized = value.split(marker, 1)[1].strip().rstrip(";")
+        # Some NYT releases serialize JavaScript `undefined` in otherwise valid
+        # JSON. Those values are configuration-only and safely map to null.
+        serialized = re.sub(
+            r":\s*undefined(?=\s*[,}])",
+            ": null",
+            serialized,
+        )
         try:
             payload = json.loads(serialized)
         except (json.JSONDecodeError, TypeError):
             continue
-        state = payload.get("initialState")
-        if isinstance(state, dict):
-            return state
+        if isinstance(payload, dict):
+            return payload
     return {}
 
 
@@ -847,8 +898,6 @@ def _nyt_image_renditions(
 
 def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
     state = _nyt_preloaded_state(soup)
-    if not state:
-        return None
     image_blocks = [
         value
         for key, value in state.items()
@@ -896,6 +945,8 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
             )
         )
     if len(rows) < 3:
+        rows = _nyt_denormalized_gallery_rows(soup)
+    if len(rows) < 3:
         return None
     document = BeautifulSoup("<article></article>", "html.parser")
     article = document.article
@@ -916,6 +967,233 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
             figure.append(figcaption)
         article.append(figure)
     return article
+
+
+def _nyt_denormalized_gallery_rows(
+    soup: BeautifulSoup,
+) -> list[tuple[str, str | None, str | None]]:
+    payload = _nyt_preloaded_payload(soup)
+    initial_data = payload.get("initialData")
+    if not isinstance(initial_data, dict):
+        return []
+    data = initial_data.get("data")
+    article = data.get("article") if isinstance(data, dict) else None
+    body = article.get("sprinkledBody") if isinstance(article, dict) else None
+    if not isinstance(body, dict):
+        return []
+
+    rows: list[tuple[str, str | None, str | None]] = []
+    seen: set[str] = set()
+
+    def add_image(image: Any) -> None:
+        if not isinstance(image, dict):
+            return
+        renditions = [
+            value
+            for value in _walk_json_objects(image.get("crops", []))
+            if value.get("__typename") == "ImageRendition"
+            and isinstance(value.get("url"), str)
+        ]
+        if not renditions:
+            return
+        rendition = max(
+            renditions,
+            key=lambda item: (
+                int(item.get("width") or 0) * int(item.get("height") or 0),
+                int(item.get("width") or 0),
+            ),
+        )
+        url = str(rendition["url"])
+        identity = _image_identity(url)
+        if identity in seen:
+            return
+        seen.add(identity)
+        caption_value = image.get("caption")
+        caption = (
+            _first_text(
+                _string_or_none(caption_value.get("text")),
+                _string_or_none(caption_value.get("html")),
+            )
+            if isinstance(caption_value, dict)
+            else None
+        )
+        caption = _first_text(
+            caption,
+            _string_or_none(image.get("legacyHtmlCaption")),
+        )
+        rows.append(
+            (
+                url,
+                _clean_text(
+                    BeautifulSoup(caption, "html.parser").get_text(" ")
+                )
+                if caption
+                else None,
+                _string_or_none(image.get("credit")),
+            )
+        )
+
+    def visit(value: Any) -> None:
+        if isinstance(value, list):
+            for child in value:
+                visit(child)
+            return
+        if not isinstance(value, dict):
+            return
+        typename = value.get("__typename")
+        if typename == "ImageBlock":
+            add_image(value.get("media"))
+            return
+        if typename == "DiptychBlock":
+            add_image(value.get("imageOne"))
+            add_image(value.get("imageTwo"))
+            return
+        for child in value.values():
+            visit(child)
+
+    visit(body.get("content", []))
+    return rows
+
+
+def _nyt_preloaded_article_body(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
+    state = _nyt_preloaded_state(soup)
+    target = next(
+        (
+            value
+            for value in state.values()
+            if isinstance(value, dict)
+            and value.get("__typename") == "Article"
+            and value.get("url") == canonical_url
+        ),
+        None,
+    )
+    if not isinstance(target, dict):
+        return None
+    body = _nyt_state_reference(state, target.get("body"))
+    if body is None:
+        return None
+    references = next(
+        (
+            value
+            for key, value in body.items()
+            if key.startswith("content") and isinstance(value, list)
+        ),
+        [],
+    )
+    paragraphs: list[str] = []
+
+    def inline_text(value: Any, visited: set[str] | None = None) -> list[str]:
+        visited = visited or set()
+        if isinstance(value, list):
+            return [
+                text
+                for child in value
+                for text in inline_text(child, visited)
+            ]
+        if not isinstance(value, dict):
+            return []
+        reference = value.get("id")
+        if (
+            isinstance(reference, str)
+            and reference in state
+            and reference not in visited
+        ):
+            visited.add(reference)
+            return inline_text(state[reference], visited)
+        if (
+            value.get("__typename") == "TextInline"
+            and isinstance(value.get("text"), str)
+        ):
+            return [str(value["text"])]
+        return [
+            text
+            for child in value.values()
+            for text in inline_text(child, visited)
+        ]
+
+    for reference in references:
+        block = _nyt_state_reference(state, reference)
+        if block is None or block.get("__typename") not in {
+            "ParagraphBlock",
+            "Heading1Block",
+            "Heading2Block",
+            "Heading3Block",
+            "SummaryBlock",
+        }:
+            continue
+        text = " ".join(inline_text(block))
+        text = _clean_text(text)
+        if text:
+            paragraphs.append(text)
+    if len(paragraphs) < 2 or sum(map(len, paragraphs)) < 100:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for text in paragraphs:
+        paragraph = document.new_tag("p")
+        paragraph.string = text
+        article.append(paragraph)
+    return article
+
+
+def _nyt_preloaded_article_metadata(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> dict[str, Any]:
+    state = _nyt_preloaded_state(soup)
+    target = next(
+        (
+            value
+            for value in state.values()
+            if isinstance(value, dict)
+            and value.get("__typename") == "Article"
+            and value.get("url") == canonical_url
+        ),
+        None,
+    )
+    if not isinstance(target, dict):
+        return {}
+    headline = _nyt_state_reference(state, target.get("headline"))
+    authors: list[str] = []
+    bylines = target.get("bylines")
+    if isinstance(bylines, list):
+        for byline_reference in bylines:
+            byline = _nyt_state_reference(state, byline_reference)
+            if byline is None:
+                continue
+            rendered = _string_or_none(byline.get("renderedRepresentation"))
+            if rendered:
+                rendered = re.sub(
+                    r"^(?:By|Photographs? by|Reporting by)\s+",
+                    "",
+                    rendered,
+                    flags=re.IGNORECASE,
+                )
+                authors.append(rendered)
+    return {
+        "headline": _first_text(
+            _string_or_none(headline.get("default"))
+            if headline is not None
+            else None,
+            _string_or_none(headline.get("default@stripHtml"))
+            if headline is not None
+            else None,
+        ),
+        "description": _string_or_none(target.get("summary")),
+        "authors": authors,
+        "published_at": _string_or_none(target.get("firstPublished")),
+        "modified_at": _first_text(
+            _string_or_none(target.get("lastModified")),
+            _string_or_none(target.get("lastMajorModification")),
+        ),
+    }
 
 
 def _nyt_media_content_type(
@@ -959,7 +1237,31 @@ def _nyt_media_content_type(
         and soup.select_one("article img, .story-body img, #story-body img")
     ):
         return ContentType.GALLERY
+    page_text = soup.get_text(" ", strip=True).casefold()
+    if (
+        "editorial cartoonist" in page_text
+        and soup.select_one("article img, main img, .story-body img")
+    ):
+        return ContentType.GALLERY
     return default
+
+
+def _is_publisher_notice(
+    *,
+    headline: str | None,
+    description: str | None,
+    plain_text: str,
+) -> bool:
+    combined = " ".join(
+        value for value in (headline, description, plain_text) if value
+    ).casefold()
+    return bool(
+        re.search(
+            r"\barticle was published in error\b|"
+            r"\binadvertently published on this page\b",
+            combined,
+        )
+    )
 
 
 def _wsj_interactive_puzzle(

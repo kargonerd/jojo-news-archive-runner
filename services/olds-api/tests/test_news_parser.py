@@ -449,7 +449,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.4"
+    assert result.extraction.parser_version == "nyt-parser/0.8.5"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -608,7 +608,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.4"
+    assert result.extraction.parser_version == "nyt-parser/0.8.5"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -929,7 +929,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.4"
+    assert result.extraction.parser_version == "nyt-parser/0.8.5"
 
 
 def test_parser_falls_back_to_catalog_publication_time():
@@ -1399,7 +1399,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.4"
+    assert result.extraction.parser_version == "nyt-parser/0.8.5"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -1523,7 +1523,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.4"
+    assert result.extraction.parser_version == "nyt-parser/0.8.5"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
@@ -1596,3 +1596,189 @@ def test_nyt_parser_extracts_legacy_watching_app_post_body():
     assert result.quality.body_characters > 500
     assert "Documentary recommendation 7" in result.plain_text
     assert "Search and watchlist navigation" not in result.plain_text
+
+
+def test_nyt_parser_treats_editorial_cartoon_as_complete_gallery():
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="Opinion | Leaders Prepare to Meet">
+      <meta property="article:published_time"
+            content="2018-04-20T00:00:00Z">
+      <meta property="og:image"
+            content="https://static01.nyt.com/cartoon.jpg">
+    </head><body><article>
+      <p>How are the two leaders preparing for their meeting?</p>
+      <img src="https://static01.nyt.com/cartoon.jpg">
+      <p class="author-bio">The author is an editorial cartoonist.</p>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2018/04/20/opinion/"
+            "leaders-prepare-to-meet.html"
+        ),
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert "body-too-short" not in result.quality.warnings
+
+
+def test_nyt_parser_accepts_explicit_publisher_error_notice():
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="This article was published in error.">
+      <meta property="article:published_time"
+            content="2021-06-08T00:00:00Z">
+    </head><body><article><p>
+      A mock article intended for a testing system was inadvertently
+      published on this page earlier.
+    </p></article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2021/06/08/admin/"
+            "this-article-was-published-in-error.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["publisher-notice"]
+
+
+def test_nyt_parser_extracts_denormalized_product_gallery():
+    images = []
+    for index in range(3):
+        images.append(
+            {
+                "__typename": "ImageBlock",
+                "media": {
+                    "__typename": "Image",
+                    "credit": "Studio",
+                    "caption": {"text": f"Shoe {index}"},
+                    "crops": [
+                        {
+                            "renditions": [
+                                {
+                                    "__typename": "ImageRendition",
+                                    "url": (
+                                        "https://static01.nyt.com/"
+                                        f"shoe-{index}.jpg"
+                                    ),
+                                    "width": 1200,
+                                    "height": 1500,
+                                }
+                            ]
+                        }
+                    ],
+                },
+            }
+        )
+    payload = json.dumps(
+        {
+            "initialData": {
+                "data": {
+                    "article": {
+                        "sprinkledBody": {"content": images}
+                    }
+                }
+            },
+            "initialState": {},
+        }
+    ).replace('"initialState": {}', '"config": {"meter": undefined}, '
+              '"initialState": {}')
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Classic Pumps Stage a Comeback">
+      <meta property="article:published_time"
+            content="2022-08-10T00:00:00Z">
+    </head><body>
+      <script>window.__preloadedData = {payload};</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2022/08/10/t-magazine/"
+            "classic-pumps-heels-shoes.html"
+        ),
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert len(result.blocks) == 3
+
+
+def test_nyt_parser_extracts_exact_liveblog_post_from_preloaded_state():
+    canonical_url = (
+        "https://www.nytimes.com/live/2022/01/13/business/"
+        "markets/osha-vaccine-mandate-businesses"
+    )
+    article_id = "Article:target"
+    body_id = "$Article:target.body"
+    headline_id = "$Article:target.headline"
+    state = {
+        article_id: {
+            "__typename": "Article",
+            "url": canonical_url,
+            "headline": {"id": headline_id},
+            "summary": "Companies must decide how to proceed.",
+            "firstPublished": "2022-01-13T22:27:01Z",
+            "body": {"id": body_id},
+        },
+        headline_id: {
+            "__typename": "CreativeWorkHeadline",
+            "default": "Businesses react to the vaccine ruling.",
+        },
+        body_id: {
+            "__typename": "DocumentBlock",
+            "content@filterEmpty": [
+                {"id": f"$target.paragraph.{index}"}
+                for index in range(3)
+            ],
+        },
+    }
+    for index in range(3):
+        state[f"$target.paragraph.{index}"] = {
+            "__typename": "ParagraphBlock",
+            "content": [{"id": f"$target.text.{index}"}],
+        }
+        state[f"$target.text.{index}"] = {
+            "__typename": "TextInline",
+            "text": (
+                f"Paragraph {index} contains the complete archived update "
+                "and enough specific reporting detail for validation."
+            ),
+        }
+    payload = json.dumps({"initialState": state})
+    html = f"""
+    <html><head>
+      <meta property="og:title"
+            content="Stock Market and Business News: Live Updates">
+      <meta property="article:published_time"
+            content="2022-01-13T00:00:00Z">
+    </head><body><main><p>Market widget</p></main>
+      <script>window.__preloadedData = {payload};</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+    )
+
+    assert result.headline == "Businesses react to the vaccine ruling."
+    assert result.quality.status.value == "complete"
+    assert result.quality.block_count == 3
+    assert result.published_at.isoformat() == "2022-01-13T22:27:01+00:00"
