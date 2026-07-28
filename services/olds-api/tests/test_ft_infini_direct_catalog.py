@@ -278,3 +278,31 @@ def test_offsets_candidates_and_retry_state_are_persisted(tmp_path: Path):
     assert status == "pending"
     assert attempts == 0
     assert last_error is None
+
+    connection.execute(
+        """
+        UPDATE captures
+        SET status='error', attempts=3, last_error='direct route failed'
+        WHERE canonical_url=?
+        """,
+        (canonical_url,),
+    )
+    connection.commit()
+    load_capture_manifest(
+        connection,
+        manifest_path=tmp_path / "manifest.jsonl",
+        publisher="ft",
+    )
+    candidates_json, status, attempts, last_error = connection.execute(
+        """
+        SELECT candidates_json, status, attempts, last_error
+        FROM captures
+        WHERE canonical_url=?
+        """,
+        (canonical_url,),
+    ).fetchone()
+    candidates = json.loads(candidates_json)
+    assert candidates[0]["provider"] == "infini-news"
+    assert status == "error"
+    assert attempts == 3
+    assert last_error == "direct route failed"

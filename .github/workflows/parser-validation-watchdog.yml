@@ -147,6 +147,10 @@ jobs:
             year="$(jq -r '.year' <<<"$task")"
             shard="$(jq -r '.sourceManifestShard' <<<"$task")"
             runner="$(jq -r '.runnerOs' <<<"$task")"
+            enable_ft_infini_direct_discovery=false
+            if [ "$publisher" = "ft" ]; then
+              enable_ft_infini_direct_discovery=true
+            fi
             gh workflow run parser-validation-accelerator.yml \
               --ref "$DEFAULT_BRANCH" \
               -f publisher="$publisher" \
@@ -156,6 +160,7 @@ jobs:
               -f workers=8 \
               -f max_runtime_minutes=300 \
               -f auto_continue=true \
+              -f enable_ft_infini_direct_discovery="$enable_ft_infini_direct_discovery" \
               -f runner_os="$runner"
             echo "Dispatched $publisher/$year from $shard on $runner."
           done < <(jq -c '.[]' <<<"$TASKS")

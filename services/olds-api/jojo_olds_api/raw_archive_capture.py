@@ -4872,6 +4872,55 @@ def _insert_manifest_batch(
     connection: sqlite3.Connection,
     rows: list[tuple[object, ...]],
 ) -> int:
+    canonical_urls = [str(row[0]) for row in rows]
+    placeholders = ",".join("?" for _ in canonical_urls)
+    persisted_candidates = {
+        str(canonical_url): str(candidates_json)
+        for canonical_url, candidates_json in connection.execute(
+            f"""
+            SELECT canonical_url, candidates_json
+            FROM captures
+            WHERE canonical_url IN ({placeholders})
+            """,
+            canonical_urls,
+        ).fetchall()
+    }
+    merged_rows: list[tuple[object, ...]] = []
+    for row in rows:
+        manifest_candidates = json.loads(str(row[5]))
+        existing_json = persisted_candidates.get(str(row[0]))
+        if existing_json is not None:
+            existing_candidates = json.loads(existing_json)
+            manifest_snapshot_urls = {
+                str(candidate.get("snapshotUrl") or "")
+                for candidate in manifest_candidates
+                if isinstance(candidate, dict)
+            }
+            derived_candidates = [
+                candidate
+                for candidate in existing_candidates
+                if (
+                    isinstance(candidate, dict)
+                    and candidate.get("provider") == "infini-news"
+                    and str(candidate.get("snapshotUrl") or "")
+                    not in manifest_snapshot_urls
+                )
+            ]
+            manifest_candidates = [
+                *derived_candidates,
+                *manifest_candidates,
+            ]
+        merged_rows.append(
+            (
+                *row[:5],
+                json.dumps(
+                    manifest_candidates,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                *row[6:],
+            )
+        )
     before = connection.total_changes
     connection.executemany(
         """
@@ -4923,7 +4972,7 @@ def _insert_manifest_batch(
             OR captures.candidates_json != excluded.candidates_json
           )
         """,
-        rows,
+        merged_rows,
     )
     return connection.total_changes - before
 
