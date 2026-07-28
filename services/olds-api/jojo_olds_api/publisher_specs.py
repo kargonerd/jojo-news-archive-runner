@@ -54,7 +54,7 @@ PUBLISHER_SPECS = {
     ),
     "wsj": PublisherSpec(
         publisher="wsj",
-        parser_version="wsj-parser/0.8.2",
+        parser_version="wsj-parser/0.8.3",
         domains=("wsj.com", "www.wsj.com"),
         default_language="en",
         edition="us",

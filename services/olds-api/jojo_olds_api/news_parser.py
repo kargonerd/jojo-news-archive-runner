@@ -116,6 +116,8 @@ def parse_article(
         body = _select_body(soup, spec)
     if spec.publisher == "wsj":
         gallery_body = _structured_image_gallery(soup)
+        if gallery_body is None:
+            gallery_body = _wsj_amp_story_gallery(soup)
         if gallery_body is not None:
             body = gallery_body
             structured_image_gallery_selected = True
@@ -690,6 +692,52 @@ def _structured_image_gallery(soup: BeautifulSoup) -> Tag | None:
                 article.append(figure)
             return article
     return None
+
+
+def _wsj_amp_story_gallery(soup: BeautifulSoup) -> Tag | None:
+    pages = soup.select("amp-story > amp-story-page")
+    if len(pages) < 3:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for page in pages:
+        image = page.select_one(
+            "amp-img[media*='landscape' i], amp-img"
+        )
+        if not isinstance(image, Tag):
+            continue
+        source = _string_or_none(image.get("src"))
+        if not source:
+            continue
+        figure = document.new_tag("figure")
+        image_node = document.new_tag("img")
+        image_node["src"] = source
+        width = _string_or_none(image.get("width"))
+        height = _string_or_none(image.get("height"))
+        if width:
+            image_node["width"] = width
+        if height:
+            image_node["height"] = height
+        caption = _tag_text(page.select_one(".wsj--caption"))
+        credit = _tag_text(page.select_one(".wsj--credit"))
+        if caption:
+            image_node["alt"] = caption
+        figure.append(image_node)
+        if caption or credit:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = " ".join(
+                value
+                for value in (
+                    caption,
+                    f"Credit: {credit}" if credit else None,
+                )
+                if value
+            )
+            figure.append(figcaption)
+        article.append(figure)
+    return article if len(article.select("figure")) >= 3 else None
 
 
 def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:
@@ -1381,7 +1429,7 @@ def _image_identity(url: str) -> str:
     host = (parts.hostname or "").casefold()
     wsj_image = (
         re.fullmatch(
-            r"(/im-\d+)(?:/social)?/?",
+            r"(/im-\d+)(?:/(?:social|portrait))?/?",
             parts.path,
             re.IGNORECASE,
         )

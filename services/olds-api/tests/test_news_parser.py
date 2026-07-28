@@ -249,7 +249,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.2"
+    assert result.extraction.parser_version == "wsj-parser/0.8.3"
 
 
 def test_wsj_parser_classifies_embedded_acrostic_as_interactive():
@@ -294,6 +294,57 @@ def test_wsj_parser_classifies_embedded_acrostic_as_interactive():
         "https://example.com/puzzle/index.html?embed=1"
     )
     assert result.plain_text == ""
+
+
+def test_wsj_parser_extracts_amp_story_photo_gallery():
+    pages = "".join(
+        f"""
+        <amp-story-page id="image-{index}">
+          <amp-story-grid-layer template="fill">
+            <amp-img media="(orientation:portrait)"
+                     src="https://images.wsj.net/im-{700 + index}/portrait?pixel_ratio=2">
+            </amp-img>
+            <amp-img media="(orientation:landscape)"
+                     src="https://images.wsj.net/im-{700 + index}?width=1920">
+            </amp-img>
+          </amp-story-grid-layer>
+          <p class="wsj--caption">Historical photograph {index} caption.</p>
+          <p class="wsj--credit">Archive {index}</p>
+        </amp-story-page>
+        """
+        for index in range(3)
+    )
+    structured_images = ", ".join(
+        f'{{"@type":"ImageObject","url":"https://images.wsj.net/im-{700 + index}"}}'
+        for index in range(3)
+    )
+    html = f"""
+    <html><head>
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "A Life in Photos",
+        "datePublished": "2024-12-29T21:31:52Z",
+        "image": [{structured_images}]
+      }}
+      </script>
+    </head><body>
+      <amp-story>{pages}</amp-story>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/story/a-life-in-photos-example",
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert len(result.blocks) == 3
+    assert len(result.images) == 3
+    assert result.images[1].caption == "Historical photograph 1 caption."
+    assert result.images[1].credit == "Credit: Archive 1"
 
 
 def test_parser_classifies_non_editorial_images_without_archiving_them():
