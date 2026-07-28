@@ -121,7 +121,7 @@ PUBLISHER_SPECS = {
     ),
     "reuters": PublisherSpec(
         publisher="reuters",
-        parser_version="reuters-parser/0.7.1",
+        parser_version="reuters-parser/0.7.2",
         domains=("reuters.com", "www.reuters.com"),
         default_language="en",
         edition="global",

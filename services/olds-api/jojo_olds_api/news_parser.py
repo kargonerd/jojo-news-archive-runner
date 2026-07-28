@@ -1683,7 +1683,19 @@ def _is_structured_short_record(
     headline: str | None,
     plain_text: str,
 ) -> bool:
-    if spec.publisher != "ap" or not headline:
+    if not headline:
+        return False
+    if spec.publisher == "reuters":
+        combined = f"{headline}\n{plain_text}".casefold()
+        return bool(
+            len(plain_text) >= 40
+            and (
+                headline.casefold().startswith("brief-")
+                or re.match(r"(?i)^标题新闻[：:]", headline)
+                or "路透中文快讯将暂不做进一步报导" in combined
+            )
+        )
+    if spec.publisher != "ap":
         return False
     keywords = news_article.get("keywords")
     if isinstance(keywords, str):

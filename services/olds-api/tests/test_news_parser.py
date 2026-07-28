@@ -797,7 +797,54 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.1"
+    assert result.extraction.parser_version == "reuters-parser/0.7.2"
+
+
+@pytest.mark.parametrize(
+    ("headline", "body"),
+    [
+        (
+            "BRIEF-Allianz SE placed hybrid 30-year bond",
+            (
+                "FRANKFURT, Oct 10 (Reuters) - Allianz SE says it placed "
+                "a hybrid 30-year bond of 1.5 billion euros."
+            ),
+        ),
+        (
+            "标题新闻：俄经济部长称G20领导人或签署公报",
+            (
+                "俄罗斯经济发展部长表示领导人可能签署公报。"
+                "以上为即时重要消息提示,路透中文快讯将暂不做进一步报导."
+            ),
+        ),
+    ],
+)
+def test_reuters_parser_accepts_complete_short_news_records(headline, body):
+    html = f"""
+    <html><head>
+      <script type="application/ld+json">{{
+        "@type": "NewsArticle",
+        "headline": {json.dumps(headline)},
+        "datePublished": "2018-11-30T17:57:56Z"
+      }}</script>
+    </head><body>
+      <div class="StandardArticleBody_body"><p>{body}</p></div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=(
+            "https://www.reuters.com/article/"
+            "brief-example-idUSL4S1Y553G"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
+    assert result.plain_text == body
+    assert result.extraction.parser_version == "reuters-parser/0.7.2"
 
 
 @pytest.mark.parametrize(
@@ -877,7 +924,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.1"
+    assert result.extraction.parser_version == "reuters-parser/0.7.2"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():
