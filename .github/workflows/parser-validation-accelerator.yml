@@ -418,7 +418,7 @@ jobs:
               if [ "$discovered" -gt 0 ]; then
                 effective_max_captures="$discovered"
               else
-                effective_max_captures=1
+                effective_max_captures=0
               fi
             fi
           fi
