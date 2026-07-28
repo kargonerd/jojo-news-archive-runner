@@ -925,6 +925,13 @@ def _is_ap_data_bulletin(
                 for keyword in keywords
             )
         )
+        or (
+            not has_description
+            and any(
+                re.fullmatch(r"[a-z]{2}-winners", keyword.casefold())
+                for keyword in keywords
+            )
+        )
     )
 
 

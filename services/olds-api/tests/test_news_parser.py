@@ -1256,7 +1256,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.4"
+    assert article.extraction.parser_version == "ap-parser/0.6.5"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -1290,7 +1290,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.4"
+    assert result.extraction.parser_version == "ap-parser/0.6.5"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -1380,6 +1380,29 @@ def test_ap_parser_classifies_metadata_only_race_call():
         ),
     )
 
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "unsupported"
+
+
+def test_ap_parser_classifies_metadata_only_state_winners():
+    html = b"""
+    <html><head><script type="application/ld+json">{
+      "@type": "NewsArticle",
+      "headline": "HI-Winners",
+      "datePublished": "2018-08-12T14:48:46Z",
+      "keywords": ["HI-Winners"]
+    }</script></head><body><main></main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "https://apnews.com/hi-winners-example"
+        ),
+    )
+
+    assert result.headline == "HI-Winners"
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "unsupported"
 
