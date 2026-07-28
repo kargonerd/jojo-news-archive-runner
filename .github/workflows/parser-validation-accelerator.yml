@@ -291,6 +291,7 @@ jobs:
           python services/olds-api/tools/prepare_parser_validation_replay.py \
             --publisher "$PUBLISHER" \
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --output-dir "$LOCAL_ROOT/raw" \
             --from-year "$SAMPLE_YEAR" \
             --to-year "$SAMPLE_YEAR" \
             --target-per-year 500 \
@@ -415,11 +416,7 @@ jobs:
           if [ "$PUBLISHER" = "ft" ]; then
             discovered="${{ steps.ft_preindex.outputs.discovered }}"
             if [[ "$discovered" =~ ^[0-9]+$ ]]; then
-              if [ "$discovered" -gt 0 ]; then
-                effective_max_captures="$discovered"
-              else
-                effective_max_captures=0
-              fi
+              effective_max_captures=0
             fi
           fi
           args=(

@@ -26,8 +26,11 @@ from jojo_olds_api.raw_archive_capture import (
     _fetch_syndication_search_results,
     _same_article_url,
     _validate_ft_syndication_response,
+    capture_item,
     ft_syndication_search_url,
+    record_capture_result,
 )
+from jojo_olds_api.parser_validation import record_parser_validation
 
 
 @dataclass(frozen=True)
@@ -38,7 +41,41 @@ class Row:
     candidates_json: str
 
 
-def _discover(row: Row) -> tuple[str, CaptureCandidate | None]:
+class CachedResponseClient:
+    def __init__(
+        self,
+        *,
+        url: str,
+        status: int,
+        content: bytes,
+        final_url: str,
+        content_type: str,
+    ) -> None:
+        self.url = url
+        self.response = (
+            status,
+            {"content-type": content_type},
+            content,
+            final_url,
+        )
+
+    def fetch(
+        self,
+        url: str,
+        *,
+        maximum_bytes: int,
+    ) -> tuple[int, dict[str, str], bytes, str]:
+        if url != self.url:
+            raise ValueError("unexpected cached response URL")
+        status, headers, content, final_url = self.response
+        return status, headers, content[:maximum_bytes], final_url
+
+
+def _discover(
+    row: Row,
+    *,
+    output_dir: Path,
+) -> tuple[str, CaptureCandidate | None, dict[str, object] | None]:
     item = ManifestItem(
         publisher="ft",
         canonical_url=row.canonical_url,
@@ -82,7 +119,7 @@ def _discover(row: Row) -> tuple[str, CaptureCandidate | None]:
             except Exception:
                 pass
         if not headline:
-            return row.canonical_url, None
+            return row.canonical_url, None, None
         try:
             candidates = _discover_ftchinese_candidates(
                 archive_client=client,
@@ -95,7 +132,7 @@ def _discover(row: Row) -> tuple[str, CaptureCandidate | None]:
         if candidates:
             candidate = candidates[0]
             try:
-                status, _, content, final_url = client.fetch(
+                status, headers, content, final_url = client.fetch(
                     candidate.snapshot_url,
                     maximum_bytes=2_000_000,
                 )
@@ -110,9 +147,34 @@ def _discover(row: Row) -> tuple[str, CaptureCandidate | None]:
                     candidates = ()
             except Exception:
                 candidates = ()
+        capture_result = None
+        if candidates:
+            candidate = candidates[0]
+            capture_result = capture_item(
+                ManifestItem(
+                    publisher="ft",
+                    canonical_url=row.canonical_url,
+                    published_at=row.published_at,
+                    section=row.section,
+                    candidates=(candidate,),
+                ),
+                archive_client=CachedResponseClient(
+                    url=candidate.snapshot_url,
+                    status=status,
+                    content=content,
+                    final_url=final_url,
+                    content_type=headers.get(
+                        "content-type",
+                        "text/html; charset=utf-8",
+                    ),
+                ),
+                output_dir=output_dir,
+                maximum_html_bytes=2_000_000,
+            )
         return (
             row.canonical_url,
             candidates[0] if candidates else None,
+            capture_result,
         )
     finally:
         client.close()
@@ -123,6 +185,7 @@ def enrich(
     *,
     limit: int,
     workers: int,
+    output_dir: Path,
 ) -> dict[str, int]:
     connection = sqlite3.connect(state_path)
     try:
@@ -229,18 +292,25 @@ def enrich(
             )
         ]
         by_url = {row.canonical_url: row for row in rows}
-        discovered: list[tuple[str, CaptureCandidate]] = []
+        discovered: list[
+            tuple[str, CaptureCandidate, dict[str, object]]
+        ] = []
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=max(1, workers)
         ) as executor:
-            for canonical_url, candidate in executor.map(
-                _discover,
+            for canonical_url, candidate, capture_result in executor.map(
+                lambda row: _discover(row, output_dir=output_dir),
                 rows,
             ):
-                if candidate is not None:
-                    discovered.append((canonical_url, candidate))
+                if candidate is not None and capture_result is not None:
+                    discovered.append(
+                        (canonical_url, candidate, capture_result)
+                    )
         now = datetime.now(UTC).isoformat()
-        discovered_by_url = dict(discovered)
+        discovered_by_url = {
+            canonical_url: candidate
+            for canonical_url, candidate, _ in discovered
+        }
         for row in rows:
             candidate = discovered_by_url.get(row.canonical_url)
             connection.execute(
@@ -258,7 +328,7 @@ def enrich(
                     1 if candidate is not None else 0,
                 ),
             )
-        for canonical_url, candidate in discovered:
+        for canonical_url, candidate, capture_result in discovered:
             row = by_url[canonical_url]
             existing = json.loads(row.candidates_json)
             serialized = {
@@ -283,6 +353,14 @@ def enrich(
                     canonical_url,
                 ),
             )
+            record_capture_result(connection, capture_result)
+            capture = capture_result.get("capture")
+            if capture is not None:
+                record_parser_validation(
+                    connection,
+                    capture=capture,
+                    archive_root=output_dir,
+                )
         connection.commit()
         return {
             "scanned": len(rows),
@@ -295,6 +373,7 @@ def enrich(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--state", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--workers", type=int, default=32)
     parser.add_argument("--github-output", type=Path)
@@ -303,6 +382,7 @@ def main() -> int:
         args.state,
         limit=max(1, args.limit),
         workers=max(1, args.workers),
+        output_dir=args.output_dir,
     )
     print(json.dumps(result, sort_keys=True))
     if args.github_output is not None:
