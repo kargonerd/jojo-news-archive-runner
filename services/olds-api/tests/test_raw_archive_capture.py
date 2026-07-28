@@ -2818,6 +2818,8 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
         "d8f6d8af-8235-43ae-a946-6d51da973ca4"
     )
     ghost_search_url = ghostarchive_search_url(canonical_url)
+    canonical_search_url = ft_syndication_search_url(item)
+    google_headline_search_url = ft_google_news_headline_search_url(item)
     title_search_url = ft_syndication_title_search_url(
         expected_headline
     )
@@ -2926,6 +2928,8 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
 
     assert result["status"] == "complete"
     assert client.requests == [
+        canonical_search_url,
+        google_headline_search_url,
         ghost_search_url,
         timemap_url,
         snapshot_url,

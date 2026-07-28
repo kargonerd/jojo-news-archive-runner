@@ -46,7 +46,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.17.0",
+    "ft": "ft-capture/0.18.0",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -981,7 +981,6 @@ def capture_item(
         item.publisher == "ft"
         and expected_publication_date is not None
         and expected_publication_date.year >= 2024
-        and bool(ft_original_headline)
         and all(
             candidate.provider == CaptureProvider.WAYBACK
             for candidate in item.candidates
