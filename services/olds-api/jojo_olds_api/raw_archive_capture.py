@@ -46,7 +46,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.14.0",
+    "ft": "ft-capture/0.15.0",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -71,6 +71,7 @@ FT_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 FT_CAPTURE_MINIMUM_BODY_CHARACTERS = 100
 FT_IMAGE_LED_MINIMUM_IMAGES = 3
 FT_GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
+FTCHINESE_SEARCH_ENDPOINT = "https://m.ftchinese.com/search/"
 FT_GOOGLE_NEWS_MAXIMUM_PARTNER_SOURCES = 3
 FT_GOOGLE_NEWS_MAXIMUM_DATE_DELTA_DAYS = 2
 FT_SYNDICATION_MAXIMUM_DATE_DELTA_DAYS = 2
@@ -1831,6 +1832,15 @@ def ft_syndication_broad_title_search_url(
     )
 
 
+def ftchinese_title_search_url(expected_headline: str) -> str:
+    return FTCHINESE_SEARCH_ENDPOINT + "?" + urlencode(
+        {
+            "keys": expected_headline,
+            "type": "name",
+        }
+    )
+
+
 def ft_google_news_headline_search_url(item: ManifestItem) -> str:
     article_identifier = (
         urlsplit(item.canonical_url).path.rstrip("/").rsplit("/", 1)[-1]
@@ -2107,6 +2117,15 @@ def discover_ft_syndication_candidates(
     if ranked and not exhaustive:
         return ranked
     try:
+        ftchinese_ranked = _discover_ftchinese_candidates(
+            archive_client=archive_client,
+            expected_headline=expected_headline,
+        )
+    except Exception:
+        ftchinese_ranked = ()
+    if ftchinese_ranked and not exhaustive:
+        return ftchinese_ranked
+    try:
         google_news_ranked = (
             _discover_ft_partner_candidates_from_google_news(
                 item,
@@ -2131,6 +2150,7 @@ def discover_ft_syndication_candidates(
     for candidate in (
         *known_partner_ranked,
         *google_news_ranked,
+        *ftchinese_ranked,
         *ranked,
     ):
         if candidate.snapshot_url in seen_urls:
@@ -2138,6 +2158,63 @@ def discover_ft_syndication_candidates(
         seen_urls.add(candidate.snapshot_url)
         combined.append(candidate)
     return tuple(combined)
+
+
+def _discover_ftchinese_candidates(
+    *,
+    archive_client: ArchiveClient,
+    expected_headline: str,
+) -> tuple[CaptureCandidate, ...]:
+    search_url = ftchinese_title_search_url(expected_headline)
+    status_code, headers, content, final_url = _fetch_limited_archive(
+        archive_client,
+        search_url,
+        maximum_bytes=REUTERS_SYNDICATION_SEARCH_MAXIMUM_BYTES,
+        attempts=2,
+        timeout=30.0,
+    )
+    content_type = headers.get("content-type", "").casefold()
+    final_host = (urlsplit(final_url).hostname or "").casefold()
+    if (
+        status_code != 200
+        or final_host != "m.ftchinese.com"
+        or (
+            "html" not in content_type
+            and not content.lstrip().startswith(b"<")
+        )
+    ):
+        return ()
+    soup = BeautifulSoup(content, "html.parser")
+    candidates: list[CaptureCandidate] = []
+    seen_ids: set[str] = set()
+    for anchor in soup.select("a[href]"):
+        href = anchor.get("href")
+        if not isinstance(href, str):
+            continue
+        parsed = urlsplit(href)
+        if parsed.hostname not in {None, "m.ftchinese.com"}:
+            continue
+        match = re.fullmatch(
+            r"/interactive/(\d+)(?:/en)?/?",
+            parsed.path,
+            flags=re.IGNORECASE,
+        )
+        if match is None or match.group(1) in seen_ids:
+            continue
+        seen_ids.add(match.group(1))
+        candidates.append(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=(
+                    "https://m.ftchinese.com/interactive/"
+                    f"{match.group(1)}/en?full=y"
+                ),
+                expected_headline=expected_headline,
+            )
+        )
+        if len(candidates) >= 3:
+            break
+    return tuple(candidates)
 
 
 def _discover_ft_partner_candidates_from_google_news(

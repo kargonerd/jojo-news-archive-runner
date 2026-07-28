@@ -36,6 +36,7 @@ from jojo_olds_api.raw_archive_capture import (
     discover_reuters_syndication_candidates,
     ft_google_news_headline_search_url,
     ft_google_news_partner_search_url,
+    ftchinese_title_search_url,
     ft_syndication_broad_title_search_url,
     ft_syndication_partner_site_search_url,
     ft_syndication_search_url,
@@ -3025,6 +3026,9 @@ def test_ft_syndication_refines_google_news_partner_host_with_yahoo():
     google_news_url = ft_google_news_partner_search_url(
         expected_headline
     )
+    ftchinese_search_url = ftchinese_title_search_url(
+        expected_headline
+    )
     partner_search_url = ft_syndication_partner_site_search_url(
         expected_headline,
         "www.irishtimes.com",
@@ -3070,6 +3074,12 @@ def test_ft_syndication_refines_google_news_partner_host_with_yahoo():
                 empty_search,
                 broad_search_url,
             ),
+            ftchinese_search_url: (
+                200,
+                {"content-type": "text/html"},
+                empty_search,
+                ftchinese_search_url,
+            ),
             google_news_url: (
                 200,
                 {"content-type": "application/rss+xml"},
@@ -3094,6 +3104,7 @@ def test_ft_syndication_refines_google_news_partner_host_with_yahoo():
     assert client.requests == [
         title_search_url,
         broad_search_url,
+        ftchinese_search_url,
         google_news_url,
         partner_search_url,
     ]
@@ -3157,6 +3168,76 @@ def test_ft_syndication_normalizes_ftchinese_result_to_full_mobile_view():
     assert candidates[0].expected_headline == expected_headline
 
 
+def test_ft_syndication_uses_official_ftchinese_search_fallback():
+    expected_headline = "The great bond and equity conundrum"
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "4389caaa-b87a-4d4c-82a1-db161d3265d3"
+        ),
+        published_at="2026-06-12T04:00:22.942Z",
+        section="markets",
+        candidates=(),
+    )
+    title_search_url = ft_syndication_title_search_url(
+        expected_headline
+    )
+    broad_search_url = ft_syndication_broad_title_search_url(
+        expected_headline
+    )
+    ftchinese_search_url = ftchinese_title_search_url(
+        expected_headline
+    )
+    empty_search = b"<html><ol id='web'></ol></html>"
+    ftchinese_html = b"""
+    <html><body>
+      <a href="/interactive/283158">Chinese translation title</a>
+      <a href="https://untrusted.example/interactive/999999">
+        Untrusted result
+      </a>
+    </body></html>
+    """
+    client = StubArchiveClient(
+        {
+            title_search_url: (
+                200,
+                {"content-type": "text/html"},
+                empty_search,
+                title_search_url,
+            ),
+            broad_search_url: (
+                200,
+                {"content-type": "text/html"},
+                empty_search,
+                broad_search_url,
+            ),
+            ftchinese_search_url: (
+                200,
+                {"content-type": "text/html"},
+                ftchinese_html,
+                ftchinese_search_url,
+            ),
+        }
+    )
+
+    candidates = discover_ft_syndication_candidates(
+        item,
+        archive_client=client,
+        expected_headline=expected_headline,
+    )
+
+    assert client.requests == [
+        title_search_url,
+        broad_search_url,
+        ftchinese_search_url,
+    ]
+    assert [candidate.snapshot_url for candidate in candidates] == [
+        "https://m.ftchinese.com/interactive/283158/en?full=y"
+    ]
+    assert candidates[0].expected_headline == expected_headline
+
+
 def test_ft_syndication_uses_allowed_partner_sitemap(
     monkeypatch,
 ):
@@ -3175,6 +3256,9 @@ def test_ft_syndication_uses_allowed_partner_sitemap(
         expected_headline
     )
     google_news_url = ft_google_news_partner_search_url(
+        expected_headline
+    )
+    ftchinese_search_url = ftchinese_title_search_url(
         expected_headline
     )
     sitemap_url = "https://www.davidruler.com/sitemap.xml"
@@ -3202,6 +3286,12 @@ def test_ft_syndication_uses_allowed_partner_sitemap(
                 {"content-type": "text/html"},
                 empty_search,
                 broad_search_url,
+            ),
+            ftchinese_search_url: (
+                200,
+                {"content-type": "text/html"},
+                empty_search,
+                ftchinese_search_url,
             ),
             google_news_url: (
                 200,
@@ -3232,6 +3322,7 @@ def test_ft_syndication_uses_allowed_partner_sitemap(
 
     assert client.requests == [
         broad_search_url,
+        ftchinese_search_url,
         google_news_url,
         sitemap_url,
     ]
