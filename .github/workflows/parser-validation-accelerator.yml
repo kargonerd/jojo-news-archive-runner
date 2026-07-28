@@ -348,7 +348,7 @@ jobs:
         run: |
           python services/olds-api/tools/enrich_ft_validation_candidates.py \
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
-            --limit 1200 \
+            --limit 600 \
             --workers "$DOWNLOAD_WORKERS"
 
       - name: Capture random year sample
