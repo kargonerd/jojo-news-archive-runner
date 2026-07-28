@@ -24,6 +24,10 @@ on:
         options:
           - validation
           - holdout-v1
+          - holdout-v2
+          - holdout-v3
+          - holdout-v4
+          - holdout-v5
       year:
         description: "Single publication year to sample."
         required: true
@@ -90,9 +94,9 @@ env:
   DOWNLOAD_WORKERS: ${{ inputs.workers }}
   MAX_RUNTIME_MINUTES: ${{ inputs.max_runtime_minutes }}
   MAX_RECORD_ATTEMPTS: "3"
-  VALIDATION_TARGET: ${{ inputs.cohort == 'holdout-v1' && '300' || '500' }}
+  VALIDATION_TARGET: ${{ startsWith(inputs.cohort, 'holdout-v') && '300' || '500' }}
   VALIDATION_SEED: >-
-    ${{ inputs.cohort == 'holdout-v1' && 'jojo-parser-holdout-v1' || 'jojo-parser-validation-v1' }}
+    ${{ startsWith(inputs.cohort, 'holdout-v') && format('jojo-parser-{0}', inputs.cohort) || 'jojo-parser-validation-v1' }}
   ENABLE_FT_INFINI_DIRECT_DISCOVERY: >-
     ${{ inputs.enable_ft_infini_direct_discovery }}
 
@@ -149,7 +153,7 @@ jobs:
             echo "source manifest publisher does not match." >&2
             exit 2
           fi
-          if [[ ! "$COHORT" =~ ^(validation|holdout-v1)$ ]]; then
+          if [[ ! "$COHORT" =~ ^(validation|holdout-v[1-5])$ ]]; then
             echo "unsupported cohort" >&2
             exit 2
           fi
@@ -241,21 +245,37 @@ jobs:
             gzip -dc "$RUNNER_TEMP/capture.sqlite3.gz" \
               > "$LOCAL_ROOT/raw/capture.sqlite3"
           fi
-          if [ "$COHORT" = "holdout-v1" ]; then
+          if [[ "$COHORT" =~ ^holdout-v([1-5])$ ]]; then
+            cohort_number="${BASH_REMATCH[1]}"
             restore_if_present \
               "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/validation/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
-              "$RUNNER_TEMP/exclusion-state.sqlite3.gz"
-            if [ ! -f "$RUNNER_TEMP/exclusion-state.sqlite3.gz" ]; then
+              "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz"
+            if [ ! -f "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" ]; then
               restore_if_present \
                 "${SOURCE_ROOT}/state/capture.sqlite3.gz" \
-                "$RUNNER_TEMP/exclusion-state.sqlite3.gz"
+                "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz"
             fi
-            if [ -f "$RUNNER_TEMP/exclusion-state.sqlite3.gz" ]; then
-              gzip -dc "$RUNNER_TEMP/exclusion-state.sqlite3.gz" \
-                > "$RUNNER_TEMP/exclusion-state.sqlite3"
+            if [ -f "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" ]; then
+              gzip -dc "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" \
+                > "$RUNNER_TEMP/exclusion-validation-v1.sqlite3"
             elif [ "$SAMPLE_YEAR" -ge 2016 ]; then
               echo "Original validation state required for 2016+ disjoint holdout." >&2
               exit 1
+            fi
+            if [ "$cohort_number" -gt 1 ]; then
+              for previous_number in $(seq 1 $((cohort_number - 1))); do
+                previous_cohort="holdout-v${previous_number}"
+                previous_gzip="$RUNNER_TEMP/exclusion-${previous_cohort}.sqlite3.gz"
+                previous_state="$RUNNER_TEMP/exclusion-${previous_cohort}.sqlite3"
+                restore_if_present \
+                  "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${previous_cohort}/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
+                  "$previous_gzip"
+                if [ ! -f "$previous_gzip" ]; then
+                  echo "Missing required prior cohort: ${previous_cohort}." >&2
+                  exit 1
+                fi
+                gzip -dc "$previous_gzip" > "$previous_state"
+              done
             fi
           fi
           restore_if_present \
@@ -276,19 +296,25 @@ jobs:
           fi
 
       - name: Import original-cohort exclusions
-        if: ${{ inputs.cohort == 'holdout-v1' }}
+        if: ${{ startsWith(inputs.cohort, 'holdout-v') }}
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
-          if [ ! -f "$RUNNER_TEMP/exclusion-state.sqlite3" ]; then
+          shopt -s nullglob
+          exclusion_states=("$RUNNER_TEMP"/exclusion-*.sqlite3)
+          if [ "${#exclusion_states[@]}" -eq 0 ]; then
             echo "No earlier cohort exists for this pre-2016 cell."
             exit 0
           fi
-          python services/olds-api/tools/import_parser_validation_exclusions.py \
-            --source-state "$RUNNER_TEMP/exclusion-state.sqlite3" \
-            --target-state "$LOCAL_ROOT/raw/capture.sqlite3" \
-            --source-cohort validation-v1
+          for exclusion_state in "${exclusion_states[@]}"; do
+            source_cohort="$(basename "$exclusion_state" .sqlite3)"
+            source_cohort="${source_cohort#exclusion-}"
+            python services/olds-api/tools/import_parser_validation_exclusions.py \
+              --source-state "$exclusion_state" \
+              --target-state "$LOCAL_ROOT/raw/capture.sqlite3" \
+              --source-cohort "$source_cohort"
+          done
 
       - name: Seed validation from source archive
         shell: bash
