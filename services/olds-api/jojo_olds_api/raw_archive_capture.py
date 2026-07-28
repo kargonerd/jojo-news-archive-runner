@@ -46,7 +46,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.16.0",
+    "ft": "ft-capture/0.17.0",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -675,6 +675,12 @@ def capture_item(
                         candidate.snapshot_url
                     )
                 )
+                ftchinese_official = bool(
+                    candidate.provider == CaptureProvider.OTHER
+                    and _is_ftchinese_full_view_url(
+                        candidate.snapshot_url
+                    )
+                )
                 if ghostarchive_origin:
                     validated, validation_signals = (
                         _validate_ft_ghostarchive_response(
@@ -736,10 +742,20 @@ def capture_item(
                     response[4],
                     (
                         100
-                        if direct_infini_origin or ghostarchive_origin
+                        if (
+                            direct_infini_origin
+                            or ghostarchive_origin
+                            or ftchinese_official
+                        )
                         else response[5]
                     ),
-                    response[6] | validation_signals,
+                    response[6]
+                    | validation_signals
+                    | (
+                        {"ftChineseOfficialMirrorValidated": True}
+                        if ftchinese_official
+                        else {}
+                    ),
                 )
                 if direct_infini_origin or ghostarchive_origin:
                     ft_infini_origin_validated = True
@@ -849,6 +865,7 @@ def capture_item(
             or item.publisher != "ft"
         ):
             return
+        headline_was_known = bool(ft_original_headline)
         ft_dynamic_syndication_attempted = True
         try:
             fallback_candidates = discover_ft_syndication_candidates(
@@ -867,6 +884,8 @@ def capture_item(
             for candidate in fallback_candidates
             if candidate.snapshot_url not in existing_urls
         )
+        if not fallback_candidates and not headline_was_known:
+            ft_dynamic_syndication_attempted = False
         candidates_considered.extend(fallback_candidates)
         consider_candidates(fallback_candidates)
         if best_response is not None or not fallback_candidates:
@@ -957,6 +976,18 @@ def capture_item(
             "error": "; ".join(failures[-8:])
             or "FT Infini-News origin validation failed",
         }
+    expected_publication_date = _parse_iso_datetime(item.published_at)
+    if (
+        item.publisher == "ft"
+        and expected_publication_date is not None
+        and expected_publication_date.year >= 2024
+        and bool(ft_original_headline)
+        and all(
+            candidate.provider == CaptureProvider.WAYBACK
+            for candidate in item.candidates
+        )
+    ):
+        consider_ft_dynamic_syndication()
     consider_ft_ghostarchive()
 
     if item.publisher in COMMON_CRAWL_FALLBACK_PUBLISHERS:
@@ -965,7 +996,7 @@ def capture_item(
         # snapshots first and avoid three index plus Range lookups when one is
         # already a maximum-quality article.
         timemap_candidates: tuple[CaptureCandidate, ...] = ()
-        if not ft_infini_origin_validated:
+        if best_response is None or best_response[5] < 100:
             try:
                 timemap_candidates = discover_wayback_timemap_candidates(
                     item,
@@ -2961,6 +2992,21 @@ def _normalize_ft_syndication_candidate_url(value: str) -> str:
             urlencode(query, doseq=True),
             "",
         )
+    )
+
+
+def _is_ftchinese_full_view_url(value: str) -> bool:
+    parsed = urlsplit(value)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    return bool(
+        parsed.scheme == "https"
+        and (parsed.hostname or "").casefold() == "m.ftchinese.com"
+        and re.fullmatch(
+            r"/interactive/\d+/en/?",
+            parsed.path,
+            flags=re.IGNORECASE,
+        )
+        and query.get("full") == ["y"]
     )
 
 
