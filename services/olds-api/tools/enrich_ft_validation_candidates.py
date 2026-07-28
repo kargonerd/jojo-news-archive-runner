@@ -125,6 +125,22 @@ def enrich(
             )
             """
         )
+        # A pre-0.20 manifest refresh could remove a discovered candidate
+        # before the live checkpoint. Requeue only those inconsistent rows;
+        # successful post-0.20 candidates remain durable.
+        connection.execute(
+            """
+            DELETE FROM ft_validation_mirror_discovery
+            WHERE status='candidate'
+              AND canonical_url IN (
+                  SELECT d.canonical_url
+                  FROM ft_validation_mirror_discovery AS d
+                  JOIN captures AS c USING (canonical_url)
+                  WHERE d.candidate_url IS NULL
+                     OR instr(c.candidates_json, d.candidate_url)=0
+              )
+            """
+        )
         rows = [
             Row(*row)
             for row in connection.execute(
