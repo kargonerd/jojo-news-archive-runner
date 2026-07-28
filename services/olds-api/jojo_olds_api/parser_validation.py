@@ -10,7 +10,11 @@ from pathlib import Path
 import sqlite3
 from typing import Iterable
 
-from .archive_sources import archive_source_spec, normalize_article_url
+from .archive_sources import (
+    archive_source_spec,
+    article_url_publication_year,
+    normalize_article_url,
+)
 from .news_models import ArticleStatus, ContentType, RawCapture
 from .news_parser import parse_article
 from .publisher_specs import publisher_spec
@@ -143,13 +147,25 @@ def ensure_parser_validation_plan(
         str(row[0])
         for row in connection.execute(
             """
-            SELECT canonical_url
+            SELECT canonical_url, sample_year
             FROM parser_validation_samples
             WHERE sample_year >= ? AND sample_year <= ?
             """,
             (from_year, to_year),
         )
-        if normalize_article_url(source_spec, str(row[0])) is None
+        if (
+            normalize_article_url(source_spec, str(row[0])) is None
+            or (
+                (
+                    embedded_year := article_url_publication_year(
+                        source_spec,
+                        str(row[0]),
+                    )
+                )
+                is not None
+                and embedded_year != int(row[1])
+            )
+        )
     ]
     if invalid_urls:
         connection.executemany(

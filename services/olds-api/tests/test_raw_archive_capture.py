@@ -20,6 +20,7 @@ from jojo_olds_api.news_models import (
 from jojo_olds_api.news_parser import parse_article
 from jojo_olds_api.raw_archive_capture import (
     AP_SYNDICATION_MINIMUM_BODY_CHARACTERS,
+    AP_KNOWN_SYNDICATION_COPIES,
     BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     CAPTURE_POLICY_VERSIONS,
     FT_SYNDICATION_MINIMUM_BODY_CHARACTERS,
@@ -94,6 +95,15 @@ class StubArchiveClient:
         if len(response[2]) > maximum_bytes:
             raise ValueError("too large")
         return response
+
+
+def test_known_ap_pakistan_copy_uses_exact_canonical_id():
+    canonical_url = (
+        "https://apnews.com/united-states-government-"
+        "617290f5b8324b808390f3a7263b17"
+    )
+
+    assert canonical_url in AP_KNOWN_SYNDICATION_COPIES
 
 
 def test_decodes_brotli_html_preserved_by_wayback():

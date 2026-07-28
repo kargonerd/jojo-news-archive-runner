@@ -46,7 +46,7 @@ from .news_models import (
 
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
-    "ap": "ap-capture/0.6.2",
+    "ap": "ap-capture/0.6.3",
     "bloomberg": "bloomberg-capture/0.10.3",
     "ft": "ft-capture/0.20.1",
     "nyt": "nyt-capture/0.8.1",
@@ -79,7 +79,7 @@ AP_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 AP_KNOWN_SYNDICATION_COPIES = {
     (
         "https://apnews.com/united-states-government-"
-        "617290f5b8324b7b808390f3a7263b17"
+        "617290f5b8324b808390f3a7263b17"
     ): (
         "https://www.theguardian.com/world/2013/oct/19/"
         "usforeignpolicy-pakistan",

@@ -172,6 +172,12 @@ def normalize_article_url(
     if hostname not in allowed_hosts:
         return None
     path = re.sub(r"/+", "/", parsed.path or "/")
+    if spec.publisher == "reuters" and re.search(
+        r"[|<>(){}]|%(?:28|29|3c|3e|7b|7c|7d)",
+        path,
+        re.IGNORECASE,
+    ):
+        return None
     if _NON_ARTICLE_FILE_SUFFIX_RE.search(path):
         return None
     if any(pattern.search(path) for pattern in spec.rejected_path_patterns):
@@ -181,3 +187,20 @@ def normalize_article_url(
     if path != "/":
         path = path.rstrip("/")
     return urlunsplit(("https", spec.canonical_host, path, "", ""))
+
+
+def article_url_publication_year(
+    spec: ArchiveSourceSpec,
+    value: str,
+) -> int | None:
+    normalized = normalize_article_url(spec, value)
+    if normalized is None or spec.publisher != "reuters":
+        return None
+    path = urlsplit(normalized).path
+    if not path.startswith("/article/"):
+        return None
+    matches = re.findall(
+        r"((?:19|20)\d{2})(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])",
+        path,
+    )
+    return int(matches[-1]) if matches else None

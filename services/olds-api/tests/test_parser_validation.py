@@ -133,6 +133,12 @@ def test_plan_prunes_reuters_non_article_endpoints(tmp_path: Path):
     invalid_url = (
         "https://www.reuters.com/article/comments/idUS12320140101"
     )
+    malformed_url = (
+        "https://www.reuters.com/article/idUSN0927394120090709%7C"
+    )
+    wrong_year_url = (
+        "https://www.reuters.com/article/idUSTRES57D23Q20090816"
+    )
     valid_url = "https://www.reuters.com/article/idUS12320140101"
     manifest.write_text(
         "".join(
@@ -167,7 +173,12 @@ def test_plan_prunes_reuters_non_article_endpoints(tmp_path: Path):
             canonical_url, sample_year, sample_priority, selected_at
         ) VALUES (?, 2014, '0000', '2026-07-28T00:00:00Z')
         """,
-        ((invalid_url,), (valid_url,)),
+        (
+            (invalid_url,),
+            (malformed_url,),
+            (wrong_year_url,),
+            (valid_url,),
+        ),
     )
     connection.execute(
         """

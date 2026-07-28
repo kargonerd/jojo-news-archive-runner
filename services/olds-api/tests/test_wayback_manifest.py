@@ -9,6 +9,7 @@ import httpx
 
 from jojo_olds_api.archive_sources import (
     archive_source_spec,
+    article_url_publication_year,
     normalize_article_url,
 )
 from jojo_olds_api.raw_archive_capture import manifest_item_from_row
@@ -418,6 +419,14 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         reuters,
         "https://www.reuters.com/article/idUS123%3C/body%3E",
     ) is None
+    assert normalize_article_url(
+        reuters,
+        "https://www.reuters.com/article/idUS12320090101%7C",
+    ) is None
+    assert article_url_publication_year(
+        reuters,
+        "https://www.reuters.com/article/idUSTRES57D23Q20090816",
+    ) == 2009
 
     ft = archive_source_spec("ft")
     assert normalize_article_url(
