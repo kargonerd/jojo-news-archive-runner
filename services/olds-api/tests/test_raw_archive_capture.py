@@ -442,6 +442,60 @@ def test_ft_jina_reader_html_is_validated_as_derived_origin(
     assert capture.quality_signals["infiniOriginHeadlineOverlap"] == 1.0
 
 
+def test_ft_archive_today_html_is_validated_as_derived_origin(
+    tmp_path: Path,
+):
+    headline = (
+        "Amazon writes its largest venture cheque yet "
+        "for AI start-up Anthropic"
+    )
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    snapshot_url = "https://archive.ph/abc12"
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2024-03-28T00:00:00+00:00",
+        section="business",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=snapshot_url,
+                source_url=canonical_url,
+                expected_headline=headline,
+            ),
+        ),
+    )
+    client = StubArchiveClient(
+        {
+            snapshot_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                ft_syndication_html(
+                    headline=headline,
+                    include_copyright=False,
+                ),
+                canonical_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    capture = result["capture"]
+    assert capture.selected_candidate.snapshot_url == snapshot_url
+    assert capture.quality_signals["ftGhostarchiveOriginValidated"] is True
+    assert capture.quality_signals["ghostarchiveOriginHeadlineOverlap"] == 1.0
+
+
 def test_ft_infini_news_row_is_stored_as_validated_derived_html(
     tmp_path: Path,
 ):
