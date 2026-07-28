@@ -25,6 +25,7 @@ from jojo_olds_api.raw_archive_capture import (
     _discover_ftchinese_candidates,
     _fetch_syndication_search_results,
     _same_article_url,
+    _validate_ft_syndication_response,
     ft_syndication_search_url,
 )
 
@@ -91,6 +92,24 @@ def _discover(row: Row) -> tuple[str, CaptureCandidate | None]:
             )
         except Exception:
             candidates = ()
+        if candidates:
+            candidate = candidates[0]
+            try:
+                status, _, content, final_url = client.fetch(
+                    candidate.snapshot_url,
+                    maximum_bytes=2_000_000,
+                )
+                validated, _ = _validate_ft_syndication_response(
+                    item,
+                    expected_partner_url=candidate.snapshot_url,
+                    expected_headline=headline,
+                    content=content,
+                    final_url=final_url,
+                )
+                if status != 200 or not validated:
+                    candidates = ()
+            except Exception:
+                candidates = ()
         return (
             row.canonical_url,
             candidates[0] if candidates else None,
