@@ -32,6 +32,10 @@ from .wayback_manifest import (
 
 SITEMAP_DISCOVERY_VERSION = "jojo-sitemap-discovery/1"
 RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
+_BARE_XML_AMPERSAND = re.compile(
+    r"&(?!#\d+;|#x[0-9a-fA-F]+;|[A-Za-z_:][A-Za-z0-9_.:-]*;)"
+)
+_ILLEGAL_XML_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 @dataclass(frozen=True)
@@ -134,7 +138,7 @@ def parse_sitemap_index(
     from_year: int,
     to_year: int,
 ) -> list[tuple[str, int, int]]:
-    root = ET.fromstring(content)
+    root = _parse_sitemap_xml(content)
     result: list[tuple[str, int, int]] = []
     for node in root.iter():
         if _local_name(node.tag) != "loc" or not node.text:
@@ -151,7 +155,7 @@ def parse_sitemap_index(
 
 
 def parse_url_sitemap(content: bytes) -> list[tuple[str, str | None]]:
-    root = ET.fromstring(content)
+    root = _parse_sitemap_xml(content)
     result: list[tuple[str, str | None]] = []
     for entry in root:
         fields = {
@@ -162,6 +166,19 @@ def parse_url_sitemap(content: bytes) -> list[tuple[str, str | None]]:
         if url:
             result.append((url, fields.get("lastmod") or None))
     return result
+
+
+def _parse_sitemap_xml(content: bytes) -> ET.Element:
+    try:
+        return ET.fromstring(content)
+    except ET.ParseError:
+        # A few historical publisher sitemaps contain an unescaped ampersand
+        # in a URL or an XML-forbidden control byte. Repair only those two
+        # well-defined defects and reject every other malformed document.
+        text = content.decode("utf-8", errors="replace")
+        repaired = _ILLEGAL_XML_CONTROL.sub("", text)
+        repaired = _BARE_XML_AMPERSAND.sub("&amp;", repaired)
+        return ET.fromstring(repaired)
 
 
 def initialize_sitemap_schema(

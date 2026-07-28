@@ -669,6 +669,32 @@ def test_index_and_url_sitemap_parsing():
     assert parse_url_sitemap(URL_XML)[0][1] == "2020-01-14T10:00:00Z"
 
 
+def test_repairs_known_historical_sitemap_xml_defects():
+    content = b"""<?xml version="1.0" encoding="UTF-8"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url>
+        <loc>https://www.ft.com/content/12345678-1234-1234-1234-123456789abc?x=1&y=2</loc>
+        <lastmod>2015-03-02T10:00:00Z</lastmod>
+      </url>
+      <url>
+        <loc>https://www.ft.com/content/abcdefab-1234-1234-1234-abcdefabcdef</loc>
+        <lastmod>2015-03-03T10:00:00Z</lastmod>
+      </url>\x0b
+    </urlset>"""
+    assert parse_url_sitemap(content) == [
+        (
+            "https://www.ft.com/content/"
+            "12345678-1234-1234-1234-123456789abc?x=1&y=2",
+            "2015-03-02T10:00:00Z",
+        ),
+        (
+            "https://www.ft.com/content/"
+            "abcdefab-1234-1234-1234-abcdefabcdef",
+            "2015-03-03T10:00:00Z",
+        ),
+    ]
+
+
 def test_sitemap_state_exports_publication_near_wayback_candidates(
     tmp_path: Path,
 ):
