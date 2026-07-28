@@ -2221,14 +2221,16 @@ def _discover_ftchinese_candidates(
     *,
     archive_client: ArchiveClient,
     expected_headline: str,
+    attempts: int = 2,
+    timeout: float = 30.0,
 ) -> tuple[CaptureCandidate, ...]:
     search_url = ftchinese_title_search_url(expected_headline)
     status_code, headers, content, final_url = _fetch_limited_archive(
         archive_client,
         search_url,
         maximum_bytes=REUTERS_SYNDICATION_SEARCH_MAXIMUM_BYTES,
-        attempts=2,
-        timeout=30.0,
+        attempts=attempts,
+        timeout=timeout,
     )
     content_type = headers.get("content-type", "").casefold()
     final_host = (urlsplit(final_url).hostname or "").casefold()
