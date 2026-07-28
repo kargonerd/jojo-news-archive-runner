@@ -249,7 +249,51 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.1"
+    assert result.extraction.parser_version == "wsj-parser/0.8.2"
+
+
+def test_wsj_parser_classifies_embedded_acrostic_as_interactive():
+    html = b"""
+    <html><head>
+      <script type="application/ld+json">
+      {
+        "@type": "NewsArticle",
+        "headline": "The Journal Acrostic",
+        "articleSection": "WSJ Puzzles",
+        "datePublished": "2020-12-18T21:01:00Z"
+      }
+      </script>
+    </head><body>
+      <article>
+        <div data-type="article-body">
+          <div class="interactive-puzzle-template">
+            <iframe class="acrostic-puzzle-frame"
+                    src="https://example.com/puzzle/index.html?embed=1">
+            </iframe>
+          </div>
+          <p style="position:absolute;left:-15000px">
+            Copyright tracking marker
+          </p>
+        </div>
+      </article>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "the-journal-acrostic-saturday-example"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.blocks[0].type.value == "embed"
+    assert result.blocks[0].embed_url == (
+        "https://example.com/puzzle/index.html?embed=1"
+    )
+    assert result.plain_text == ""
 
 
 def test_parser_classifies_non_editorial_images_without_archiving_them():

@@ -221,6 +221,11 @@ def parse_article(
             structured_image_gallery_selected=structured_image_gallery_selected,
             canonical_url=canonical_url,
         )
+    if (
+        spec.publisher == "wsj"
+        and _wsj_interactive_puzzle(soup, news_article, canonical_url)
+    ):
+        content_type = ContentType.INTERACTIVE
 
     images_by_url: dict[str, ImageCandidate] = {}
     blocks: list[ContentBlock] = []
@@ -907,6 +912,26 @@ def _nyt_media_content_type(
     ):
         return ContentType.GALLERY
     return default
+
+
+def _wsj_interactive_puzzle(
+    soup: BeautifulSoup,
+    article: dict[str, Any],
+    canonical_url: str,
+) -> bool:
+    section = _string_or_none(article.get("articleSection")) if article else None
+    has_puzzle_embed = soup.select_one(
+        ".interactive-puzzle-template iframe, "
+        ".puzzle-template-article-sector iframe, "
+        "iframe[class*='puzzle' i]"
+    )
+    if not has_puzzle_embed:
+        return False
+    url = canonical_url.casefold()
+    return bool(
+        (section and "puzzle" in section.casefold())
+        or any(token in url for token in ("acrostic", "crossword", "/puzzles/"))
+    )
 
 
 def _prefer_structured_body_with_media(
