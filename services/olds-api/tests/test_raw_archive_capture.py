@@ -4480,6 +4480,7 @@ def test_raw_quality_rejects_ft_zephr_barrier_shell():
 
 def test_raw_quality_rejects_ft_legacy_subscription_landing_pages():
     for title in (
+        "Register to read | Financial Times",
         "Become an FT subscriber to read | Financial Times",
         "Subscribe to a slice of the FT | Financial Times",
         "Try FT for free | Financial Times",

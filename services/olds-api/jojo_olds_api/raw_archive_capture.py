@@ -46,7 +46,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.2",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.20.0",
+    "ft": "ft-capture/0.20.1",
     "nyt": "nyt-capture/0.8.1",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -168,6 +168,7 @@ _REDIRECT_SHELL_MARKERS = (
     b"<title>ny times advertisement</title>",
 )
 _SUBSCRIPTION_SHELL_MARKERS = (
+    b"<title>register to read",
     b"<title>subscribe to read",
     b"<title>become an ft subscriber to read",
     b"<title>subscribe to a slice of the ft",
@@ -193,6 +194,7 @@ _PARSED_PAYWALL_MAXIMUM_BODY_CHARACTERS = 1_000
 _ARTICLE_BODY_MARKERS = (
     b"article__content-body",
     b'id="article-body"',
+    b'id="storycontent"',
     b"data-trackable=\"article-body\"",
     b"data-testid=\"article-body\"",
     b"story-body",
@@ -5075,6 +5077,7 @@ def _ft_article_body_evidence(
     if not body_nodes:
         for selector in (
             "#article-body",
+            "#storyContent",
             "[data-trackable='article-body']",
             "[data-testid='article-body']",
         ):
