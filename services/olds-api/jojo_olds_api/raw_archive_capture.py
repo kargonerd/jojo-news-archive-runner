@@ -46,7 +46,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.19.0",
+    "ft": "ft-capture/0.20.0",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -5052,7 +5052,8 @@ def _insert_manifest_batch(
                 for candidate in existing_candidates
                 if (
                     isinstance(candidate, dict)
-                    and candidate.get("provider") == "infini-news"
+                    and candidate.get("provider")
+                    in {"infini-news", "other"}
                     and str(candidate.get("snapshotUrl") or "")
                     not in manifest_snapshot_urls
                 )

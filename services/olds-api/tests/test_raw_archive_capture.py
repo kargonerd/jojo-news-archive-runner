@@ -1149,6 +1149,86 @@ def test_manifest_refresh_retries_errors_when_candidates_change(
     ] == ["wayback", "live-origin"]
 
 
+def test_manifest_refresh_preserves_preindexed_mirror_candidate(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.ft.com/content/preindexed-mirror"
+    wayback_url = (
+        "https://web.archive.org/web/20260102000000id_/"
+        + canonical_url
+    )
+    mirror_url = (
+        "https://m.ftchinese.com/interactive/283158/en?full=y"
+    )
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "publisher": "ft",
+                "canonicalUrl": canonical_url,
+                "publishedAt": "2026-01-01T00:00:00Z",
+                "candidates": [
+                    {
+                        "provider": "wayback",
+                        "snapshotUrl": wayback_url,
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="ft",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="ft",
+    )
+    existing = json.loads(
+        connection.execute(
+            "SELECT candidates_json FROM captures"
+        ).fetchone()[0]
+    )
+    connection.execute(
+        "UPDATE captures SET candidates_json=?",
+        (
+            json.dumps(
+                [
+                    {
+                        "provider": "other",
+                        "snapshotUrl": mirror_url,
+                        "expectedHeadline": "A validated mirror headline",
+                    },
+                    *existing,
+                ]
+            ),
+        ),
+    )
+    connection.commit()
+
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="ft",
+    )
+    candidates = json.loads(
+        connection.execute(
+            "SELECT candidates_json FROM captures"
+        ).fetchone()[0]
+    )
+
+    assert [candidate["provider"] for candidate in candidates] == [
+        "other",
+        "wayback",
+    ]
+    assert candidates[0]["snapshotUrl"] == mirror_url
+
+
 def test_capture_policy_upgrade_retries_errors_once(tmp_path: Path):
     canonical_url = "https://www.ft.com/content/policy-upgrade"
     snapshot_url = (
