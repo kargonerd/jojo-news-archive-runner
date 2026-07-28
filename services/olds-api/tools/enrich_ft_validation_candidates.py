@@ -136,6 +136,60 @@ def enrich(
             )
             """
         )
+        discovery_columns = {
+            str(row[1])
+            for row in connection.execute(
+                "PRAGMA table_info(ft_validation_mirror_discovery)"
+            )
+        }
+        if "validated" not in discovery_columns:
+            connection.execute(
+                """
+                ALTER TABLE ft_validation_mirror_discovery
+                ADD COLUMN validated INTEGER NOT NULL DEFAULT 0
+                """
+            )
+        legacy_rows = connection.execute(
+            """
+            SELECT d.canonical_url, d.candidate_url, c.candidates_json
+            FROM ft_validation_mirror_discovery AS d
+            JOIN captures AS c USING (canonical_url)
+            WHERE d.status='candidate' AND d.validated=0
+            """
+        ).fetchall()
+        for canonical_url, candidate_url, candidates_json in legacy_rows:
+            candidates = json.loads(str(candidates_json))
+            filtered = [
+                candidate
+                for candidate in candidates
+                if (
+                    not isinstance(candidate, dict)
+                    or str(candidate.get("snapshotUrl") or "")
+                    != str(candidate_url or "")
+                )
+            ]
+            connection.execute(
+                """
+                UPDATE captures
+                SET candidates_json=?, status='pending', attempts=0,
+                    last_error=NULL
+                WHERE canonical_url=?
+                """,
+                (
+                    json.dumps(
+                        filtered,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                    canonical_url,
+                ),
+            )
+        connection.execute(
+            """
+            DELETE FROM ft_validation_mirror_discovery
+            WHERE status='candidate' AND validated=0
+            """
+        )
         # A pre-0.20 manifest refresh could remove a discovered candidate
         # before the live checkpoint. Requeue only those inconsistent rows;
         # successful post-0.20 candidates remain durable.
@@ -192,14 +246,16 @@ def enrich(
             connection.execute(
                 """
                 INSERT OR REPLACE INTO ft_validation_mirror_discovery (
-                    canonical_url, status, candidate_url, updated_at
-                ) VALUES (?, ?, ?, ?)
+                    canonical_url, status, candidate_url, updated_at,
+                    validated
+                ) VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     row.canonical_url,
                     "candidate" if candidate is not None else "not-found",
                     candidate.snapshot_url if candidate is not None else None,
                     now,
+                    1 if candidate is not None else 0,
                 ),
             )
         for canonical_url, candidate in discovered:
