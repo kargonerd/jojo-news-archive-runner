@@ -18,6 +18,7 @@ from .publisher_specs import publisher_spec
 
 SCHEMA_VERSION = "jojo-parser-validation/1"
 DEFAULT_SEED = "jojo-parser-validation-v1"
+HOLDOUT_SEED = "jojo-parser-holdout-v1"
 MINIMUM_COMPLETE_RATE = 0.95
 MINIMUM_QA_PASS_RATE = 0.95
 _PAYWALL_PHRASES = (
@@ -73,6 +74,12 @@ def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_parser_validation_results_year
             ON parser_validation_results(sample_year, qa_pass);
+
+        CREATE TABLE IF NOT EXISTS parser_validation_exclusions (
+            canonical_url TEXT PRIMARY KEY,
+            source_cohort TEXT NOT NULL,
+            excluded_at TEXT NOT NULL
+        );
         """
     )
     config_columns = {
@@ -914,6 +921,11 @@ def _select_additional_samples(
           {completed_filter}
           {direct_filter}
           AND sample.canonical_url IS NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM parser_validation_exclusions AS exclusion
+            WHERE exclusion.canonical_url=capture.canonical_url
+          )
         """,
         parameters,
     )

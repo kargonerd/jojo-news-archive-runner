@@ -78,6 +78,55 @@ def _state_with_years(tmp_path: Path) -> sqlite3.Connection:
     return connection
 
 
+def test_holdout_plan_excludes_every_prior_cohort_url(tmp_path: Path):
+    connection = _state_with_years(tmp_path)
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=4,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+        seed="first-cohort",
+    )
+    first_urls = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    }
+    connection.execute("DELETE FROM parser_validation_samples")
+    connection.execute("DELETE FROM parser_validation_config")
+    connection.executemany(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        )
+        VALUES (?, 'validation-v1', '2026-07-28T00:00:00Z')
+        """,
+        ((url,) for url in first_urls),
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=4,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+        seed="holdout-v1",
+    )
+    holdout_urls = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    }
+    assert len(holdout_urls) == 4
+    assert first_urls.isdisjoint(holdout_urls)
+
+
 def test_ft_infini_samples_are_added_even_when_random_plan_is_full(
     tmp_path: Path,
 ):

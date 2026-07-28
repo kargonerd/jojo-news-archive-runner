@@ -26,6 +26,7 @@ from jojo_olds_api.ft_syndication_catalog import (
 )
 from jojo_olds_api.publisher_specs import publisher_spec
 from jojo_olds_api.parser_validation import (
+    DEFAULT_SEED,
     ensure_parser_validation_plan,
     is_parser_validation_sample,
     parser_validation_summary,
@@ -83,6 +84,7 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Prioritize a reproducible random parser QA sample for every year.",
     )
+    parser.add_argument("--validation-seed", default=DEFAULT_SEED)
     parser.add_argument(
         "--validation-reserve-per-year",
         type=int,
@@ -211,6 +213,7 @@ def main() -> int:
             target_per_year=args.validation_sample_per_year,
             reserve_per_year=args.validation_reserve_per_year,
             maximum_record_attempts=args.max_record_attempts,
+            seed=args.validation_seed,
         )
     elif args.stop_when_validation_ready:
         raise SystemExit(

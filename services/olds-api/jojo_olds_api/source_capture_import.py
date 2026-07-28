@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 
-from .parser_validation import ensure_parser_validation_plan
+from .parser_validation import DEFAULT_SEED, ensure_parser_validation_plan
 from .raw_archive_capture import (
     initialize_capture_schema,
     load_capture_manifest,
@@ -124,6 +124,7 @@ def import_selected_source_captures(
     target_per_year: int = 500,
     reserve_per_year: int | None = None,
     maximum_record_attempts: int = 3,
+    seed: str = DEFAULT_SEED,
 ) -> dict[str, object]:
     initialize_capture_schema(
         target_connection,
@@ -143,6 +144,7 @@ def import_selected_source_captures(
         target_per_year=target_per_year,
         reserve_per_year=reserve_per_year,
         maximum_record_attempts=maximum_record_attempts,
+        seed=seed,
     )
     selected_urls = [
         str(row[0])

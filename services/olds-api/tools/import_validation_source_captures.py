@@ -14,6 +14,7 @@ if str(SERVICE_ROOT) not in sys.path:
 from jojo_olds_api.source_capture_import import (
     import_selected_source_captures,
 )
+from jojo_olds_api.parser_validation import DEFAULT_SEED
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-per-year", type=int, default=500)
     parser.add_argument("--reserve-per-year", type=int)
     parser.add_argument("--max-record-attempts", type=int, default=3)
+    parser.add_argument("--seed", default=DEFAULT_SEED)
     parser.add_argument("--files-from", type=Path, required=True)
     return parser.parse_args()
 
@@ -52,6 +54,7 @@ def main() -> int:
             target_per_year=args.target_per_year,
             reserve_per_year=args.reserve_per_year,
             maximum_record_attempts=args.max_record_attempts,
+            seed=args.seed,
         )
     finally:
         source.close()

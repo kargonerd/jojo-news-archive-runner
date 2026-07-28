@@ -1,6 +1,6 @@
 name: Parser validation accelerator
 
-run-name: parser-qa-${{ inputs.publisher }}-${{ inputs.year }}
+run-name: parser-${{ inputs.cohort }}-${{ inputs.publisher }}-${{ inputs.year }}
 
 on:
   workflow_dispatch:
@@ -16,6 +16,14 @@ on:
           - nyt
           - reuters
           - ft
+      cohort:
+        description: "Independent parser-QA cohort."
+        required: true
+        default: "validation"
+        type: choice
+        options:
+          - validation
+          - holdout-v1
       year:
         description: "Single publication year to sample."
         required: true
@@ -64,7 +72,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: parser-qa-${{ inputs.publisher }}-${{ inputs.year }}
+  group: parser-${{ inputs.cohort }}-${{ inputs.publisher }}-${{ inputs.year }}
   cancel-in-progress: false
 
 env:
@@ -75,12 +83,16 @@ env:
   B2_REMOTE: jojo-b2
   ARCHIVE_ROOT: ${{ github.workspace }}/.archive-work
   PUBLISHER: ${{ inputs.publisher }}
+  COHORT: ${{ inputs.cohort }}
   SAMPLE_YEAR: ${{ inputs.year }}
   SOURCE_MANIFEST_SHARD: ${{ inputs.source_manifest_shard }}
   MAX_CAPTURES: ${{ inputs.max_captures }}
   DOWNLOAD_WORKERS: ${{ inputs.workers }}
   MAX_RUNTIME_MINUTES: ${{ inputs.max_runtime_minutes }}
   MAX_RECORD_ATTEMPTS: "3"
+  VALIDATION_TARGET: ${{ inputs.cohort == 'holdout-v1' && '300' || '500' }}
+  VALIDATION_SEED: >-
+    ${{ inputs.cohort == 'holdout-v1' && 'jojo-parser-holdout-v1' || 'jojo-parser-validation-v1' }}
   ENABLE_FT_INFINI_DIRECT_DISCOVERY: >-
     ${{ inputs.enable_ft_infini_direct_discovery }}
 
@@ -125,8 +137,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$SAMPLE_YEAR" =~ ^20[0-9]{2}$ ]]; then
-            echo "year must be a four-digit 20xx value." >&2
+          if [[ ! "$SAMPLE_YEAR" =~ ^(19|20)[0-9]{2}$ ]]; then
+            echo "year must be a four-digit 19xx or 20xx value." >&2
             exit 2
           fi
           if [[ ! "$SOURCE_MANIFEST_SHARD" =~ ^[a-z0-9-]+/[0-9]{4}-[0-9]{4}/[a-z0-9-]+$ ]]; then
@@ -137,8 +149,12 @@ jobs:
             echo "source manifest publisher does not match." >&2
             exit 2
           fi
-          local_root="${ARCHIVE_ROOT}/validation/${PUBLISHER}/${SAMPLE_YEAR}"
-          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/validation/${PUBLISHER}/${SAMPLE_YEAR}"
+          if [[ ! "$COHORT" =~ ^(validation|holdout-v1)$ ]]; then
+            echo "unsupported cohort" >&2
+            exit 2
+          fi
+          local_root="${ARCHIVE_ROOT}/${COHORT}/${PUBLISHER}/${SAMPLE_YEAR}"
+          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${COHORT}/${PUBLISHER}/${SAMPLE_YEAR}"
           source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${SOURCE_MANIFEST_SHARD}"
           mkdir -p "$local_root/catalog" "$local_root/raw"
           {
@@ -225,6 +241,18 @@ jobs:
             gzip -dc "$RUNNER_TEMP/capture.sqlite3.gz" \
               > "$LOCAL_ROOT/raw/capture.sqlite3"
           fi
+          if [ "$COHORT" = "holdout-v1" ]; then
+            restore_if_present \
+              "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/validation/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
+              "$RUNNER_TEMP/exclusion-state.sqlite3.gz"
+            if [ -f "$RUNNER_TEMP/exclusion-state.sqlite3.gz" ]; then
+              gzip -dc "$RUNNER_TEMP/exclusion-state.sqlite3.gz" \
+                > "$RUNNER_TEMP/exclusion-state.sqlite3"
+            elif [ "$SAMPLE_YEAR" -ge 2016 ]; then
+              echo "Original validation state required for 2016+ disjoint holdout." >&2
+              exit 1
+            fi
+          fi
           restore_if_present \
             "${SOURCE_ROOT}/state/completed-captures.sqlite3.gz" \
             "$RUNNER_TEMP/source-capture.sqlite3.gz"
@@ -241,6 +269,21 @@ jobs:
                 > "$RUNNER_TEMP/source-capture.sqlite3"
             fi
           fi
+
+      - name: Import original-cohort exclusions
+        if: ${{ inputs.cohort == 'holdout-v1' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          if [ ! -f "$RUNNER_TEMP/exclusion-state.sqlite3" ]; then
+            echo "No earlier cohort exists for this pre-2016 cell."
+            exit 0
+          fi
+          python services/olds-api/tools/import_parser_validation_exclusions.py \
+            --source-state "$RUNNER_TEMP/exclusion-state.sqlite3" \
+            --target-state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --source-cohort validation-v1
 
       - name: Seed validation from source archive
         shell: bash
@@ -262,7 +305,8 @@ jobs:
             --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
             --publisher "$PUBLISHER" \
             --year "$SAMPLE_YEAR" \
-            --target-per-year 500 \
+            --target-per-year "$VALIDATION_TARGET" \
+            --seed "$VALIDATION_SEED" \
             --reserve-per-year 20000 \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
             --files-from "$files_from"
@@ -296,7 +340,8 @@ jobs:
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
             --from-year "$SAMPLE_YEAR" \
             --to-year "$SAMPLE_YEAR" \
-            --target-per-year 500 \
+            --target-per-year "$VALIDATION_TARGET" \
+            --seed "$VALIDATION_SEED" \
             --reserve-per-year 20000 \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
             --max-replays 1000 \
@@ -449,7 +494,8 @@ jobs:
             --max-captures "$effective_max_captures"
             --max-runtime-minutes "$MAX_RUNTIME_MINUTES"
             --max-record-attempts "$MAX_RECORD_ATTEMPTS"
-            --validation-sample-per-year 500
+            --validation-sample-per-year "$VALIDATION_TARGET"
+            --validation-seed "$VALIDATION_SEED"
             --validation-reserve-per-year 20000
             --validation-from-year "$SAMPLE_YEAR"
             --validation-to-year "$SAMPLE_YEAR"
@@ -583,6 +629,7 @@ jobs:
           gh workflow run parser-validation-accelerator.yml \
             --ref "$GITHUB_REF_NAME" \
             -f publisher="$PUBLISHER" \
+            -f cohort="$COHORT" \
             -f year="$SAMPLE_YEAR" \
             -f source_manifest_shard="$SOURCE_MANIFEST_SHARD" \
             -f max_captures="$MAX_CAPTURES" \

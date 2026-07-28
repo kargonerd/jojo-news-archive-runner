@@ -12,6 +12,7 @@ if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
 from jojo_olds_api.parser_validation import (
+    DEFAULT_SEED,
     ensure_parser_validation_plan,
     pending_completed_parser_validation_files,
 )
@@ -30,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--from-year", type=int, required=True)
     parser.add_argument("--to-year", type=int, required=True)
     parser.add_argument("--target-per-year", type=int, default=500)
+    parser.add_argument("--seed", default=DEFAULT_SEED)
     parser.add_argument("--reserve-per-year", type=int)
     parser.add_argument("--max-record-attempts", type=int, default=3)
     parser.add_argument("--max-replays", type=int, default=500)
@@ -57,6 +59,7 @@ def main() -> int:
         target_per_year=args.target_per_year,
         reserve_per_year=args.reserve_per_year,
         maximum_record_attempts=args.max_record_attempts,
+        seed=args.seed,
     )
     pending = pending_completed_parser_validation_files(
         connection,
