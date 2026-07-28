@@ -44,7 +44,7 @@ from .news_models import (
 
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
-    "ap": "ap-capture/0.6.0",
+    "ap": "ap-capture/0.6.1",
     "bloomberg": "bloomberg-capture/0.10.1",
     "ft": "ft-capture/0.20.0",
     "nyt": "nyt-capture/0.8.0",
@@ -2133,6 +2133,30 @@ def ap_syndication_search_url(source_description: str) -> str:
     )
 
 
+def _ap_syndication_search_urls(
+    source_description: str,
+    keywords: Iterable[str],
+) -> tuple[str, ...]:
+    queries: list[str] = []
+    words = re.findall(
+        r"[A-Za-z0-9][A-Za-z0-9'’-]*",
+        source_description.split(".", 1)[0],
+    )
+    if words:
+        queries.append(f'"{" ".join(words[:10])}"')
+    if len(words) > 6:
+        queries.append(f'"{" ".join(words[-8:])}"')
+    for keyword in keywords:
+        cleaned = keyword.replace("--", " ").strip()
+        if "--" in keyword and cleaned:
+            queries.append(f'"{cleaned}" "Associated Press"')
+            break
+    return tuple(
+        AP_SYNDICATION_SEARCH_ENDPOINT + "?" + urlencode({"q": query})
+        for query in dict.fromkeys(queries)
+    )
+
+
 def discover_ap_syndication_candidates(
     item: ManifestItem,
     *,
@@ -2148,6 +2172,7 @@ def discover_ap_syndication_candidates(
         )
         if value
     ]
+    keywords: list[str] = []
     for script in soup.select('script[type="application/ld+json"]'):
         value = script.string or script.get_text()
         if not value.strip():
@@ -2160,6 +2185,15 @@ def discover_ap_syndication_candidates(
             description = row.get("description")
             if isinstance(description, str) and description.strip():
                 descriptions.append(description.strip())
+            value = row.get("keywords")
+            if isinstance(value, str):
+                keywords.append(value)
+            elif isinstance(value, list):
+                keywords.extend(
+                    keyword
+                    for keyword in value
+                    if isinstance(keyword, str)
+                )
     source_description = max(descriptions, key=len) if descriptions else None
     if (
         not source_description
@@ -2169,46 +2203,60 @@ def discover_ap_syndication_candidates(
             source_description=source_description,
             candidates=(),
         )
-    search_url = ap_syndication_search_url(source_description)
-    status_code, headers, content, _ = archive_client.fetch(
-        search_url,
-        maximum_bytes=AP_SYNDICATION_SEARCH_MAXIMUM_BYTES,
-    )
-    content_type = headers.get("content-type", "").casefold()
-    if (
-        status_code != 200
-        or not content
-        or ("html" not in content_type and b"<html" not in content[:1_000].lower())
-    ):
-        raise ValueError("AP syndication search did not return HTML")
-    search_soup = BeautifulSoup(content, "html.parser")
     candidates: list[CaptureCandidate] = []
     seen: set[str] = set()
-    for result in search_soup.select(".result"):
-        anchor = result.select_one(".result__a")
-        if anchor is None:
+    search_urls = _ap_syndication_search_urls(
+        source_description,
+        keywords,
+    )
+    for search_url in search_urls:
+        try:
+            status_code, headers, content, _ = archive_client.fetch(
+                search_url,
+                maximum_bytes=AP_SYNDICATION_SEARCH_MAXIMUM_BYTES,
+            )
+        except Exception:
             continue
-        candidate_url = _decode_duckduckgo_search_result(anchor.get("href"))
+        content_type = headers.get("content-type", "").casefold()
         if (
-            candidate_url is None
-            or candidate_url in seen
-            or not _is_public_syndication_url(
-                candidate_url,
-                excluded_publisher="ap",
+            status_code != 200
+            or not content
+            or (
+                "html" not in content_type
+                and b"<html" not in content[:1_000].lower()
             )
         ):
             continue
-        title = _clean_ap_search_result_title(
-            anchor.get_text(" ", strip=True)
-        )
-        seen.add(candidate_url)
-        candidates.append(
-            CaptureCandidate(
-                provider=CaptureProvider.OTHER,
-                snapshot_url=candidate_url,
-                expected_headline=title or None,
+        search_soup = BeautifulSoup(content, "html.parser")
+        for result in search_soup.select(".result"):
+            anchor = result.select_one(".result__a")
+            if anchor is None:
+                continue
+            candidate_url = _decode_duckduckgo_search_result(
+                anchor.get("href")
             )
-        )
+            if (
+                candidate_url is None
+                or candidate_url in seen
+                or not _is_public_syndication_url(
+                    candidate_url,
+                    excluded_publisher="ap",
+                )
+            ):
+                continue
+            title = _clean_ap_search_result_title(
+                anchor.get_text(" ", strip=True)
+            )
+            seen.add(candidate_url)
+            candidates.append(
+                CaptureCandidate(
+                    provider=CaptureProvider.OTHER,
+                    snapshot_url=candidate_url,
+                    expected_headline=title or None,
+                )
+            )
+            if len(candidates) >= AP_SYNDICATION_MAXIMUM_CANDIDATES:
+                break
         if len(candidates) >= AP_SYNDICATION_MAXIMUM_CANDIDATES:
             break
     return ApSyndicationDiscovery(

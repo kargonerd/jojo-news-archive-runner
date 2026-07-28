@@ -1256,7 +1256,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.3"
+    assert article.extraction.parser_version == "ap-parser/0.6.4"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -1290,7 +1290,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.3"
+    assert result.extraction.parser_version == "ap-parser/0.6.4"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -1332,6 +1332,51 @@ def test_ap_parser_classifies_metadata_only_nomination_result():
         canonical_url=(
             "https://apnews.com/"
             "ny-house-6-nominated-a93b2abc2ae34d3382594f588f48af9f"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "unsupported"
+
+
+def test_ap_parser_classifies_metadata_only_lottery_result():
+    html = b"""
+    <html><head><script type="application/ld+json">{
+      "@type": "NewsArticle",
+      "name": "AP News",
+      "datePublished": "2019-07-18T03:10:00Z",
+      "keywords": ["Lotteries", "General news", "Classic Lotto"]
+    }</script></head><body><main></main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "https://apnews.com/lotteries-general-news-example"
+        ),
+    )
+
+    assert result.headline == "Classic Lotto"
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "unsupported"
+
+
+def test_ap_parser_classifies_metadata_only_race_call():
+    html = b"""
+    <html><head><script type="application/ld+json">{
+      "@type": "NewsArticle",
+      "headline": "AP Race Call: Republican Scott Perry wins reelection",
+      "datePublished": "2024-11-06T06:22:00Z",
+      "keywords": ["2024 Race Call", "Pennsylvania"]
+    }</script></head><body><main></main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "https://apnews.com/article/race-call-perry-wins-example"
         ),
     )
 

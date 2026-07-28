@@ -871,9 +871,20 @@ def _ap_data_bulletin_headline(
 ) -> str | None:
     if not news_article:
         return None
-    for keyword in _string_list(news_article.get("keywords")):
+    keywords = _string_list(news_article.get("keywords"))
+    for keyword in keywords:
         if re.search(r"(?i)(?:--.*\bbox\b|\bbox score\b)", keyword):
             return keyword
+    if any(keyword.casefold() == "lotteries" for keyword in keywords):
+        ignored = {"lotteries", "general news", "ap", "ap news"}
+        return next(
+            (
+                keyword
+                for keyword in keywords
+                if keyword.casefold() not in ignored
+            ),
+            "Lottery results",
+        )
     return None
 
 
@@ -888,6 +899,9 @@ def _is_ap_data_bulletin(
         _ap_data_bulletin_headline(news_article),
     )
     keywords = _string_list(news_article.get("keywords"))
+    has_description = bool(
+        _string_or_none(news_article.get("description"))
+    )
     combined = " ".join(
         [headline or "", canonical_url, *keywords]
     ).casefold()
@@ -896,6 +910,20 @@ def _is_ap_data_bulletin(
         or re.search(
             r"(?:^|[-/])(?:[a-z]{2}-)?house-\d+-nominated(?:-|$)",
             combined,
+        )
+        or (
+            not has_description
+            and any(
+                "race call" in keyword.casefold()
+                for keyword in keywords
+            )
+        )
+        or (
+            not has_description
+            and any(
+                keyword.casefold() == "lotteries"
+                for keyword in keywords
+            )
         )
     )
 
