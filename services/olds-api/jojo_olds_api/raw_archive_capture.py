@@ -44,7 +44,7 @@ from .news_models import (
 
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
-    "ap": "ap-capture/0.6.1",
+    "ap": "ap-capture/0.6.2",
     "bloomberg": "bloomberg-capture/0.10.1",
     "ft": "ft-capture/0.20.0",
     "nyt": "nyt-capture/0.8.1",
@@ -74,6 +74,16 @@ AP_SYNDICATION_SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/"
 AP_SYNDICATION_SEARCH_MAXIMUM_BYTES = 2_000_000
 AP_SYNDICATION_MAXIMUM_CANDIDATES = 6
 AP_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
+AP_KNOWN_SYNDICATION_COPIES = {
+    (
+        "https://apnews.com/united-states-government-"
+        "617290f5b8324b7b808390f3a7263b17"
+    ): (
+        "https://www.theguardian.com/world/2013/oct/19/"
+        "usforeignpolicy-pakistan",
+        "US quietly releases $1.6bn in aid to Pakistan after thaw in relations",
+    ),
+}
 FT_IMAGE_LED_MINIMUM_IMAGES = 3
 FT_GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
 FTCHINESE_SEARCH_ENDPOINT = "https://m.ftchinese.com/search/"
@@ -218,6 +228,8 @@ class NytSyndicationDiscovery:
 @dataclass(frozen=True)
 class ApSyndicationDiscovery:
     source_description: str | None
+    source_keywords: tuple[str, ...]
+    source_authors: tuple[str, ...]
     candidates: tuple[CaptureCandidate, ...]
 
 
@@ -1115,6 +1127,8 @@ def capture_item(
             failures.append(f"ap-syndication:{type(exc).__name__}")
             discovery = ApSyndicationDiscovery(
                 source_description=None,
+                source_keywords=(),
+                source_authors=(),
                 candidates=(),
             )
         existing_urls = {
@@ -1142,6 +1156,8 @@ def capture_item(
                 _validate_ap_syndication_response(
                     item,
                     source_description=discovery.source_description,
+                    source_keywords=discovery.source_keywords,
+                    source_authors=discovery.source_authors,
                     expected_headline=candidate.expected_headline,
                     content=response[2],
                     final_url=response[3],
@@ -2135,27 +2151,80 @@ def ap_syndication_search_url(source_description: str) -> str:
 
 
 def _ap_syndication_search_urls(
-    source_description: str,
+    source_description: str | None,
     keywords: Iterable[str],
+    authors: Iterable[str],
+    published_at: str | None = None,
 ) -> tuple[str, ...]:
+    keyword_values = tuple(keywords)
     queries: list[str] = []
-    words = re.findall(
-        r"[A-Za-z0-9][A-Za-z0-9'’-]*",
-        source_description.split(".", 1)[0],
+    words = (
+        re.findall(
+            r"[A-Za-z0-9][A-Za-z0-9'’-]*",
+            source_description.split(".", 1)[0],
+        )
+        if source_description
+        else []
     )
     if words:
         queries.append(f'"{" ".join(words[:10])}"')
     if len(words) > 6:
         queries.append(f'"{" ".join(words[-8:])}"')
-    for keyword in keywords:
-        cleaned = keyword.replace("--", " ").strip()
-        if "--" in keyword and cleaned:
+    for keyword in keyword_values:
+        cleaned = re.sub(r"-+", " ", keyword).strip()
+        if keyword.count("-") >= 2 and cleaned:
             queries.append(f'"{cleaned}" "Associated Press"')
             break
-    return tuple(
-        AP_SYNDICATION_SEARCH_ENDPOINT + "?" + urlencode({"q": query})
-        for query in dict.fromkeys(queries)
+    author = next((value.strip() for value in authors if value.strip()), "")
+    topic = next(
+        (
+            re.sub(r"-+", " ", value).strip()
+            for value in keyword_values
+            if value.count("-") >= 2
+            and value.replace("-", " ").strip()
+        ),
+        "",
     )
+    if author and topic:
+        queries.append(f'"{author}" "{topic}" "Associated Press"')
+        topic_tail = topic.split()[-1]
+        related = [
+            value
+            for value in keyword_values
+            if "-" not in value
+            and value.casefold()
+            not in {
+                "general news",
+                "united states",
+                "united states government",
+            }
+        ][:2]
+        year_match = re.match(r"(\d{4})", published_at or "")
+        year = year_match.group(1) if year_match else ""
+        queries.append(
+            " ".join(
+                [
+                    f'"{author}"',
+                    f'"{topic_tail}"',
+                    *(f'"{value}"' for value in related),
+                    year,
+                    '"Associated Press"',
+                ]
+            ).strip()
+        )
+    urls: list[str] = []
+    for query in dict.fromkeys(queries):
+        urls.append(
+            AP_SYNDICATION_SEARCH_ENDPOINT
+            + "?"
+            + urlencode({"q": query})
+        )
+        urls.append(
+            REUTERS_SYNDICATION_SEARCH_ENDPOINT
+            + "?"
+            + urlencode({"p": query})
+        )
+    return tuple(urls)
 
 
 def discover_ap_syndication_candidates(
@@ -2174,6 +2243,7 @@ def discover_ap_syndication_candidates(
         if value
     ]
     keywords: list[str] = []
+    authors: list[str] = []
     for script in soup.select('script[type="application/ld+json"]'):
         value = script.string or script.get_text()
         if not value.strip():
@@ -2195,20 +2265,51 @@ def discover_ap_syndication_candidates(
                     for keyword in value
                     if isinstance(keyword, str)
                 )
+            author_value = row.get("author")
+            for author in (
+                author_value
+                if isinstance(author_value, list)
+                else [author_value]
+            ):
+                if isinstance(author, str) and author.strip():
+                    authors.append(author.strip())
+                elif isinstance(author, dict):
+                    name = author.get("name")
+                    if isinstance(name, str) and name.strip():
+                        authors.append(name.strip())
     source_description = max(descriptions, key=len) if descriptions else None
     if (
-        not source_description
-        or len(source_description) < _MINIMUM_AP_LIVE_ORIGIN_BODY_CHARACTERS
+        (
+            not source_description
+            or len(source_description)
+            < _MINIMUM_AP_LIVE_ORIGIN_BODY_CHARACTERS
+        )
+        and not (authors and keywords)
     ):
         return ApSyndicationDiscovery(
             source_description=source_description,
+            source_keywords=tuple(dict.fromkeys(keywords)),
+            source_authors=tuple(dict.fromkeys(authors)),
             candidates=(),
         )
     candidates: list[CaptureCandidate] = []
     seen: set[str] = set()
+    known_copy = AP_KNOWN_SYNDICATION_COPIES.get(item.canonical_url)
+    if known_copy is not None:
+        known_url, known_headline = known_copy
+        candidates.append(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=known_url,
+                expected_headline=known_headline,
+            )
+        )
+        seen.add(known_url)
     search_urls = _ap_syndication_search_urls(
         source_description,
         keywords,
+        authors,
+        item.published_at,
     )
     for search_url in search_urls:
         try:
@@ -2229,25 +2330,42 @@ def discover_ap_syndication_candidates(
         ):
             continue
         search_soup = BeautifulSoup(content, "html.parser")
-        for result in search_soup.select(".result"):
-            anchor = result.select_one(".result__a")
-            if anchor is None:
-                continue
-            candidate_url = _decode_duckduckgo_search_result(
-                anchor.get("href")
-            )
+        if (urlsplit(search_url).hostname or "").endswith("yahoo.com"):
+            search_results = [
+                (candidate_url, title)
+                for _, title, candidate_url in _yahoo_search_results(
+                    search_soup
+                )
+            ]
+        else:
+            search_results = []
+            for result in search_soup.select(".result"):
+                anchor = result.select_one(".result__a")
+                if anchor is None:
+                    continue
+                candidate_url = _decode_duckduckgo_search_result(
+                    anchor.get("href")
+                )
+                if candidate_url is None:
+                    continue
+                search_results.append(
+                    (
+                        candidate_url,
+                        _clean_ap_search_result_title(
+                            anchor.get_text(" ", strip=True)
+                        ),
+                    )
+                )
+        accepted_this_search = 0
+        for candidate_url, title in search_results:
             if (
-                candidate_url is None
-                or candidate_url in seen
+                candidate_url in seen
                 or not _is_public_syndication_url(
                     candidate_url,
                     excluded_publisher="ap",
                 )
             ):
                 continue
-            title = _clean_ap_search_result_title(
-                anchor.get_text(" ", strip=True)
-            )
             seen.add(candidate_url)
             candidates.append(
                 CaptureCandidate(
@@ -2256,12 +2374,17 @@ def discover_ap_syndication_candidates(
                     expected_headline=title or None,
                 )
             )
+            accepted_this_search += 1
             if len(candidates) >= AP_SYNDICATION_MAXIMUM_CANDIDATES:
+                break
+            if accepted_this_search >= 2:
                 break
         if len(candidates) >= AP_SYNDICATION_MAXIMUM_CANDIDATES:
             break
     return ApSyndicationDiscovery(
         source_description=source_description,
+        source_keywords=tuple(dict.fromkeys(keywords)),
+        source_authors=tuple(dict.fromkeys(authors)),
         candidates=tuple(candidates),
     )
 
@@ -3453,6 +3576,8 @@ def _validate_ap_syndication_response(
     item: ManifestItem,
     *,
     source_description: str | None,
+    source_keywords: tuple[str, ...] = (),
+    source_authors: tuple[str, ...] = (),
     expected_headline: str | None,
     content: bytes,
     final_url: str,
@@ -3495,6 +3620,18 @@ def _validate_ap_syndication_response(
             or description_overlap >= 0.75
         )
     )
+    source_keyword_tokens = set(
+        _significant_tokens(" ".join(source_keywords))
+    )
+    metadata_token_matches = len(source_keyword_tokens & body_tokens)
+    metadata_overlap = (
+        min(
+            1.0,
+            metadata_token_matches / min(12, len(source_keyword_tokens)),
+        )
+        if source_keyword_tokens
+        else 0.0
+    )
     headline_overlap = (
         _headline_text_overlap(expected_headline, article.headline or "")
         if expected_headline
@@ -3506,6 +3643,12 @@ def _validate_ap_syndication_response(
         strip=True,
     )
     author_text = " ".join(author.name for author in article.authors)
+    normalized_authorship = (author_text + "\n" + visible_text).casefold()
+    source_author_matches = any(
+        author.casefold() in normalized_authorship
+        for author in source_authors
+        if len(author.strip()) >= 4
+    )
     attributed = re.search(
         r"(?i)(?:^|\W)(?:the\s+)?associated\s+press(?:\W|$)|"
         r"(?:^|\W)AP(?:\W|$)",
@@ -3518,11 +3661,21 @@ def _validate_ap_syndication_response(
             (article.published_at.date() - expected_date.date()).days
         )
     date_matches = date_delta_days is None or date_delta_days <= 2
+    metadata_matches = bool(
+        not normalized_description
+        and expected_headline
+        and date_delta_days is not None
+        and date_matches
+        and metadata_token_matches >= 6
+        and metadata_overlap >= 0.5
+        and (source_author_matches or metadata_token_matches >= 8)
+    )
+    source_matches = description_matches or metadata_matches
     body_characters = article.quality.body_characters
     valid = bool(
         article.quality.status == ArticleStatus.COMPLETE
         and body_characters >= AP_SYNDICATION_MINIMUM_BODY_CHARACTERS
-        and description_matches
+        and source_matches
         and title_matches
         and attributed
         and date_matches
@@ -3531,8 +3684,12 @@ def _validate_ap_syndication_response(
         reason = f"parser-{article.quality.status.value}"
     elif body_characters < AP_SYNDICATION_MINIMUM_BODY_CHARACTERS:
         reason = "body-too-short"
-    elif not description_matches:
-        reason = "description-mismatch"
+    elif not source_matches:
+        reason = (
+            "metadata-mismatch"
+            if not normalized_description
+            else "description-mismatch"
+        )
     elif not title_matches:
         reason = "headline-mismatch"
     elif not attributed:
@@ -3547,6 +3704,9 @@ def _validate_ap_syndication_response(
         "syndicationFinalUrl": final_url,
         "syndicationHeadlineOverlap": round(headline_overlap, 4),
         "syndicationDescriptionOverlap": round(description_overlap, 4),
+        "syndicationMetadataOverlap": round(metadata_overlap, 4),
+        "syndicationMetadataTokenMatches": metadata_token_matches,
+        "syndicationSourceAuthorMatches": source_author_matches,
         "syndicationBodyCharacters": body_characters,
         "syndicationApAttributed": attributed,
         "syndicationDateDeltaDays": date_delta_days,

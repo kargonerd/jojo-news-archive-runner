@@ -27,6 +27,7 @@ from jojo_olds_api.raw_archive_capture import (
     REUTERS_SYNDICATION_SEARCH_ENDPOINT,
     WAYBACK_TIMEMAP_ENDPOINT,
     WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS,
+    _ap_syndication_search_urls,
     arquivo_pt_cdx_url,
     ap_syndication_search_url,
     bloomberg_syndication_search_url,
@@ -1645,6 +1646,135 @@ def test_ap_thin_origin_recovers_validated_syndicated_copy(
         >= AP_SYNDICATION_MINIMUM_BODY_CHARACTERS
     )
     assert capture.quality_signals["syndicationApAttributed"] is True
+
+
+def test_ap_thin_origin_recovers_copy_from_structured_metadata(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://apnews.com/united-states-government-example"
+    )
+    keywords = [
+        "US-United-States-Pakistan",
+        "Barack Obama",
+        "Nawaz Sharif",
+        "Foreign aid",
+        "Drone surveillance and warfare",
+        "Military and defense",
+        "International relations",
+        "Afghanistan",
+        "Pakistan government",
+    ]
+    source_page = (
+        "<html><head><script type='application/ld+json'>"
+        + json.dumps(
+            {
+                "@type": "NewsArticle",
+                "datePublished": "2013-10-19T19:44:15Z",
+                "author": {"name": "Bradley Klapper"},
+                "keywords": keywords,
+            }
+        )
+        + "</script></head><body><main></main></body></html>"
+    ).encode() + (b" " * 2_048)
+    headline = "US quietly releases $1.6bn in aid to Pakistan"
+    partner_url = "https://partner.example/us-aid-pakistan"
+    paragraphs = "".join(
+        (
+            "<p>The United States quietly restored foreign aid to the "
+            "Pakistan government before Nawaz Sharif met Barack Obama. "
+            "The talks covered Afghanistan, military and defense policy, "
+            "drone surveillance and international relations. Associated "
+            f"Press reporting paragraph {index} provides further details."
+            "</p>"
+        )
+        for index in range(4)
+    )
+    partner_page = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type": "NewsArticle",
+      "headline": "{headline}",
+      "datePublished": "2013-10-19T14:30:00Z",
+      "author": {{"name": "The Associated Press"}}
+    }}</script></head><body><article>{paragraphs}</article></body></html>
+    """.encode() + (b" " * 2_048)
+    search_urls = _ap_syndication_search_urls(
+        None,
+        keywords,
+        ["Bradley Klapper"],
+    )
+    assert len(search_urls) == 6
+    empty_search = b"<html><body>No results</body></html>"
+    result_search = f"""
+    <html><body><div class="result">
+      <a class="result__a"
+         href="//duckduckgo.com/l/?uddg={partner_url}">
+        {headline} - Partner
+      </a>
+    </div></body></html>
+    """.encode()
+    client = StubArchiveClient(
+        {
+            canonical_url: (
+                200,
+                {"content-type": "text/html"},
+                source_page,
+                canonical_url,
+            ),
+            search_urls[0]: (
+                200,
+                {"content-type": "text/html"},
+                empty_search,
+                search_urls[0],
+            ),
+            search_urls[1]: (
+                200,
+                {"content-type": "text/html"},
+                empty_search,
+                search_urls[1],
+            ),
+            search_urls[2]: (
+                200,
+                {"content-type": "text/html"},
+                result_search,
+                search_urls[2],
+            ),
+            partner_url: (
+                200,
+                {"content-type": "text/html"},
+                partner_page,
+                partner_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="ap",
+        canonical_url=canonical_url,
+        published_at="2013-10-19T19:44:15Z",
+        section="politics",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.LIVE_ORIGIN,
+                snapshot_url=canonical_url,
+            ),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    capture = result["capture"]
+    assert capture.selected_candidate.snapshot_url == partner_url
+    assert capture.quality_score == 100
+    assert capture.quality_signals["apSyndicationValidated"] is True
+    assert (
+        capture.quality_signals["syndicationMetadataTokenMatches"]
+        >= 8
+    )
 
 
 def test_ap_live_origin_gallery_remains_full_quality(tmp_path: Path):
