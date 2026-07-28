@@ -245,6 +245,11 @@ jobs:
             restore_if_present \
               "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/validation/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
               "$RUNNER_TEMP/exclusion-state.sqlite3.gz"
+            if [ ! -f "$RUNNER_TEMP/exclusion-state.sqlite3.gz" ]; then
+              restore_if_present \
+                "${SOURCE_ROOT}/state/capture.sqlite3.gz" \
+                "$RUNNER_TEMP/exclusion-state.sqlite3.gz"
+            fi
             if [ -f "$RUNNER_TEMP/exclusion-state.sqlite3.gz" ]; then
               gzip -dc "$RUNNER_TEMP/exclusion-state.sqlite3.gz" \
                 > "$RUNNER_TEMP/exclusion-state.sqlite3"
