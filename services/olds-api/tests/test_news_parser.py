@@ -1256,7 +1256,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.5"
+    assert article.extraction.parser_version == "ap-parser/0.6.6"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -1290,7 +1290,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.5"
+    assert result.extraction.parser_version == "ap-parser/0.6.6"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -1314,6 +1314,38 @@ def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
     assert result.headline == "BKN--Heat-Magic Box"
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "unsupported"
+
+
+def test_ap_parser_accepts_short_spanish_news_alert():
+    description = (
+        "PARIS (AP) — Fiscal en París: Célula terrorista neutralizada "
+        "estaba lista para actuar."
+    )
+    payload = json.dumps(
+        {
+            "@type": "NewsArticle",
+            "headline": "Alerta Noticioso de AP",
+            "datePublished": "2015-11-18T18:28:23Z",
+            "description": description,
+            "keywords": ["General news", "APAlertaNoticioso"],
+        }
+    )
+    html = (
+        "<html><head><script type='application/ld+json'>"
+        f"{payload}</script></head><body>"
+        f"<div class='RichTextStoryBody'><p>{description}</p></div>"
+        "</body></html>"
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/general-news-example",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
+    assert result.plain_text == description
 
 
 def test_ap_parser_classifies_metadata_only_nomination_result():

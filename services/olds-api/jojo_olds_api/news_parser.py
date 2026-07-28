@@ -1472,10 +1472,27 @@ def _is_structured_short_record(
         r"(?:\s*\([^)]{1,12}\))?\s*:",
         plain_text,
     )
+    keyword_keys = {
+        re.sub(r"[^a-z0-9]+", "", value.casefold())
+        for value in keyword_values
+    }
+    ap_news_alert = bool(
+        len(plain_text) >= 40
+        and (
+            "apalertanoticioso" in keyword_keys
+            or "apnewsalert" in keyword_keys
+        )
+    )
     return bool(
-        re.match(r"^\s*#\d+\b", headline)
-        and any(value.casefold() == "archive" for value in keyword_values)
-        and len(metric_labels) >= 3
+        (
+            re.match(r"^\s*#\d+\b", headline)
+            and any(
+                value.casefold() == "archive"
+                for value in keyword_values
+            )
+            and len(metric_labels) >= 3
+        )
+        or ap_news_alert
     )
 
 
