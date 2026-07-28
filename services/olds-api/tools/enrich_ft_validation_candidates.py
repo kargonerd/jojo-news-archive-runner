@@ -241,6 +241,7 @@ def main() -> int:
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--workers", type=int, default=32)
+    parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
     result = enrich(
         args.state,
@@ -248,6 +249,10 @@ def main() -> int:
         workers=max(1, args.workers),
     )
     print(json.dumps(result, sort_keys=True))
+    if args.github_output is not None:
+        with args.github_output.open("a", encoding="utf-8") as handle:
+            handle.write(f"scanned={result['scanned']}\n")
+            handle.write(f"discovered={result['discovered']}\n")
     return 0
 
 

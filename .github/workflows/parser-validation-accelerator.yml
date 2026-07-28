@@ -341,6 +341,7 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
 
       - name: Pre-index validated FT mirror candidates
+        id: ft_preindex
         if: ${{ inputs.publisher == 'ft' }}
         shell: bash
         env:
@@ -349,7 +350,8 @@ jobs:
           python services/olds-api/tools/enrich_ft_validation_candidates.py \
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
             --limit 600 \
-            --workers "$DOWNLOAD_WORKERS"
+            --workers "$DOWNLOAD_WORKERS" \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Capture random year sample
         id: capture
@@ -409,13 +411,24 @@ jobs:
           if [ "$PUBLISHER" = "nyt" ]; then
             request_interval=1.5
           fi
+          effective_max_captures="$MAX_CAPTURES"
+          if [ "$PUBLISHER" = "ft" ]; then
+            discovered="${{ steps.ft_preindex.outputs.discovered }}"
+            if [[ "$discovered" =~ ^[0-9]+$ ]]; then
+              if [ "$discovered" -gt 0 ]; then
+                effective_max_captures="$discovered"
+              else
+                effective_max_captures=1
+              fi
+            fi
+          fi
           args=(
             --publisher "$PUBLISHER"
             --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
             --output-dir "$LOCAL_ROOT/raw"
             --workers "$DOWNLOAD_WORKERS"
             --min-request-interval "$request_interval"
-            --max-captures "$MAX_CAPTURES"
+            --max-captures "$effective_max_captures"
             --max-runtime-minutes "$MAX_RUNTIME_MINUTES"
             --max-record-attempts "$MAX_RECORD_ATTEMPTS"
             --validation-sample-per-year 500
