@@ -214,6 +214,7 @@ def parse_article(
             soup,
             default=content_type,
             structured_image_gallery_selected=structured_image_gallery_selected,
+            canonical_url=canonical_url,
         )
 
     images_by_url: dict[str, ImageCandidate] = {}
@@ -820,6 +821,7 @@ def _nyt_media_content_type(
     *,
     default: ContentType,
     structured_image_gallery_selected: bool,
+    canonical_url: str,
 ) -> ContentType:
     if structured_image_gallery_selected:
         return ContentType.GALLERY
@@ -838,6 +840,22 @@ def _nyt_media_content_type(
         _meta_content(soup, "property", "nyt-collection:tagline"),
     )
     if tagline and "cartoon" in tagline.casefold():
+        return ContentType.GALLERY
+    description = _first_text(
+        _meta_content(soup, "name", "description"),
+        _meta_content(soup, "property", "og:description"),
+    )
+    url = canonical_url.casefold()
+    if (
+        description
+        and "comic strip" in description.casefold()
+        and (
+            "/comics" in url
+            or "-comics." in url
+            or "/the-strip-" in url
+        )
+        and soup.select_one("article img, .story-body img, #story-body img")
+    ):
         return ContentType.GALLERY
     return default
 
