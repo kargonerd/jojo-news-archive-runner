@@ -291,7 +291,6 @@ jobs:
           python services/olds-api/tools/prepare_parser_validation_replay.py \
             --publisher "$PUBLISHER" \
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
-            --output-dir "$LOCAL_ROOT/raw" \
             --from-year "$SAMPLE_YEAR" \
             --to-year "$SAMPLE_YEAR" \
             --target-per-year 500 \
@@ -350,6 +349,7 @@ jobs:
         run: |
           python services/olds-api/tools/enrich_ft_validation_candidates.py \
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --output-dir "$LOCAL_ROOT/raw" \
             --limit 600 \
             --workers "$DOWNLOAD_WORKERS" \
             --github-output "$GITHUB_OUTPUT"
