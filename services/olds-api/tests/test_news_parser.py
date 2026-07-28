@@ -1256,7 +1256,41 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.1"
+    assert article.extraction.parser_version == "ap-parser/0.6.2"
+
+
+def test_ap_parser_accepts_complete_ranked_archive_record():
+    html = b"""
+    <html><head>
+      <script type="application/ld+json">{
+        "@type": "NewsArticle",
+        "headline": "#4. Grande Sausage Breakfast Burrito - Jack in the Box",
+        "datePublished": "2017-05-01T22:07:21Z",
+        "keywords": ["Archive"],
+        "image": [{
+          "url": "https://dims.apnews.com/resize/?url=https%3A%2F%2Fassets.apnews.com%2Fdefaultshareimage-copy.png"
+        }]
+      }</script>
+    </head><body>
+      <div class="RichTextStoryBody">
+        <p>Calories: 1,044 Fat (g): 90 Sodium (mg): 2,131 Sugar (g): 5</p>
+      </div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "https://apnews.com/article/"
+            "33ae8525434145048dfd4ed6823f7788"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
+    assert result.images == []
+    assert result.extraction.parser_version == "ap-parser/0.6.2"
 
 
 def test_ap_parser_extracts_lazy_loaded_carousel_gallery():

@@ -6,7 +6,7 @@ import html as html_module
 import json
 import re
 from typing import Any, Iterable
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Tag
 from dateutil.parser import isoparse
@@ -336,14 +336,23 @@ def parse_article(
         description=description,
         plain_text=plain_text,
     )
+    structured_short_record = _is_structured_short_record(
+        spec=spec,
+        news_article=news_article,
+        headline=headline,
+        plain_text=plain_text,
+    )
     if (
         len(plain_text) < _MINIMUM_BODY_CHARACTERS
         and not image_led_gallery
         and not publisher_notice
+        and not structured_short_record
     ):
         warnings.append("body-too-short")
     if publisher_notice:
         warnings.append("publisher-notice")
+    if structured_short_record:
+        warnings.append("structured-short-record")
     if not published_at:
         warnings.append("missing-published-at")
     if body is None:
@@ -1264,6 +1273,35 @@ def _is_publisher_notice(
     )
 
 
+def _is_structured_short_record(
+    *,
+    spec: PublisherSpec,
+    news_article: dict[str, Any],
+    headline: str | None,
+    plain_text: str,
+) -> bool:
+    if spec.publisher != "ap" or not headline:
+        return False
+    keywords = news_article.get("keywords")
+    if isinstance(keywords, str):
+        keyword_values = [keywords]
+    elif isinstance(keywords, list):
+        keyword_values = [value for value in keywords if isinstance(value, str)]
+    else:
+        keyword_values = []
+    metric_labels = re.findall(
+        r"(?i)(?:calories|fat|sodium|sugar|protein|"
+        r"carbohydrates?|price|rank(?:ing)?)"
+        r"(?:\s*\([^)]{1,12}\))?\s*:",
+        plain_text,
+    )
+    return bool(
+        re.match(r"^\s*#\d+\b", headline)
+        and any(value.casefold() == "archive" for value in keyword_values)
+        and len(metric_labels) >= 3
+    )
+
+
 def _wsj_interactive_puzzle(
     soup: BeautifulSoup,
     article: dict[str, Any],
@@ -1826,9 +1864,26 @@ def _lead_image_urls(
     result: list[str] = []
     for value in values:
         normalized = _normalized_url(value, base_url=base_url)
-        if normalized and normalized not in result:
+        if (
+            normalized
+            and not _is_placeholder_image_url(normalized)
+            and normalized not in result
+        ):
             result.append(normalized)
     return result
+
+
+def _is_placeholder_image_url(url: str) -> bool:
+    decoded = unquote(url).casefold()
+    return any(
+        marker in decoded
+        for marker in (
+            "/defaultshareimage",
+            "/default-share-image",
+            "/default_social",
+            "/default-social",
+        )
+    )
 
 
 def _flatten_image_values(value: Any) -> list[str]:
