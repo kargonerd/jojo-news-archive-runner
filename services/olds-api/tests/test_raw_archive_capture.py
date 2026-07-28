@@ -345,6 +345,47 @@ def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
     assert capture.quality_signals["subscriptionShell"] is False
     assert client.requests == [row_url]
 
+    mismatched_payload = json.loads(payload)
+    mismatched_payload["rows"][0]["row"]["publish_date"] = "2023-01-01"
+    wayback_url = (
+        "https://web.archive.org/web/20240329000000id_/"
+        + canonical_url
+    )
+    mismatched_item = replace(
+        item,
+        candidates=(
+            item.candidates[0],
+            candidate(wayback_url, "20240329000000"),
+        ),
+    )
+    mismatched_client = StubArchiveClient(
+        {
+            row_url: (
+                200,
+                {"content-type": "application/json"},
+                json.dumps(mismatched_payload).encode(),
+                row_url,
+            ),
+            wayback_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                wayback_url,
+            ),
+        }
+    )
+
+    mismatched_result = capture_item(
+        mismatched_item,
+        archive_client=mismatched_client,
+        output_dir=tmp_path / "date-mismatch",
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert mismatched_result["status"] == "error"
+    assert "publication-date-mismatch" in mismatched_result["error"]
+    assert mismatched_client.requests == [row_url]
+
 
 def test_ft_infini_news_row_is_stored_as_validated_derived_html(
     tmp_path: Path,
