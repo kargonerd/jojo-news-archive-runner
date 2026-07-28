@@ -1029,6 +1029,8 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
             )
         )
     if len(rows) < 3:
+        rows = _nyt_preloaded_slideshow_rows(state)
+    if len(rows) < 3:
         rows = _nyt_denormalized_gallery_rows(soup)
     if len(rows) < 3:
         return None
@@ -1051,6 +1053,70 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
             figure.append(figcaption)
         article.append(figure)
     return article
+
+
+def _nyt_preloaded_slideshow_rows(
+    state: dict[str, Any],
+) -> list[tuple[str, str | None, str | None]]:
+    slideshow_references = [
+        value.get("media")
+        for value in state.values()
+        if isinstance(value, dict)
+        and value.get("__typename") == "SlideshowBlock"
+    ]
+    rows: list[tuple[str, str | None, str | None]] = []
+    seen: set[str] = set()
+    for slideshow_reference in slideshow_references:
+        slideshow = _nyt_state_reference(state, slideshow_reference)
+        if slideshow is None:
+            continue
+        slides = slideshow.get("slides")
+        if not isinstance(slides, list):
+            continue
+        for slide_reference in slides:
+            slide = _nyt_state_reference(state, slide_reference)
+            if slide is None:
+                continue
+            image = _nyt_state_reference(state, slide.get("image"))
+            if image is None:
+                continue
+            renditions = _nyt_image_renditions(state, image)
+            if not renditions:
+                continue
+            rendition = max(
+                renditions,
+                key=lambda item: (
+                    int(item.get("width") or 0)
+                    * int(item.get("height") or 0),
+                    int(item.get("width") or 0),
+                ),
+            )
+            url = str(rendition["url"])
+            identity = _image_identity(url)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            legacy_caption = _string_or_none(
+                slide.get("legacyHtmlCaption")
+            )
+            caption = (
+                _clean_text(
+                    BeautifulSoup(
+                        legacy_caption,
+                        "html.parser",
+                    ).get_text(" ")
+                )
+                if legacy_caption
+                else None
+            )
+            rows.append(
+                (
+                    url,
+                    caption,
+                    _string_or_none(image.get("credit")),
+                )
+            )
+    return rows
 
 
 def _nyt_denormalized_gallery_rows(
@@ -1957,6 +2023,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/default-share-image",
             "/default_social",
             "/default-social",
+            "/defaultpromocrop.",
         )
     )
 
