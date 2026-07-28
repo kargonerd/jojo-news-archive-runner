@@ -17,6 +17,7 @@ from jojo_olds_api.news_models import (
 )
 from jojo_olds_api.news_parser import parse_article
 from jojo_olds_api.raw_archive_capture import (
+    AP_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     CAPTURE_POLICY_VERSIONS,
     FT_SYNDICATION_MINIMUM_BODY_CHARACTERS,
@@ -27,11 +28,13 @@ from jojo_olds_api.raw_archive_capture import (
     WAYBACK_TIMEMAP_ENDPOINT,
     WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     arquivo_pt_cdx_url,
+    ap_syndication_search_url,
     bloomberg_syndication_search_url,
     capture_item,
     capture_summary,
     completed_capture_rejection_reason,
     discover_arquivo_pt_candidates,
+    discover_ap_syndication_candidates,
     discover_ft_syndication_candidates,
     discover_reuters_syndication_candidates,
     ft_google_news_headline_search_url,
@@ -1537,6 +1540,111 @@ def test_ap_thin_live_origin_prefers_full_wayback_capture(tmp_path: Path):
     assert client.requests == [canonical_url, wayback_url]
     assert capture.selected_candidate.provider == CaptureProvider.WAYBACK
     assert capture.quality_score == 100
+
+
+def test_ap_thin_origin_recovers_validated_syndicated_copy(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://apnews.com/united-states-presidential-election-"
+        "general-news-events-example"
+    )
+    description = (
+        "A North Carolina police department has rescinded its offer to "
+        "send 50 police officers to the Republican National Convention, "
+        "citing concerns about insurance coverage and preparedness."
+    )
+    source_page = f"""
+    <html><head>
+      <meta property="og:description" content="{description}">
+      <script type="application/ld+json">{{
+        "@type": "NewsArticle",
+        "datePublished": "2016-05-27T20:51:05Z",
+        "description": "{description}",
+        "name": "AP News"
+      }}</script>
+    </head><body><main></main></body></html>
+    """.encode() + (b" " * 2_048)
+    partner_url = (
+        "https://partner.example/police-department-wont-send-officers"
+    )
+    paragraphs = "".join(
+        (
+            f"<p>{description} Associated Press reporting paragraph "
+            f"{index} adds verified details about the decision, local "
+            "officials, convention planning and public safety.</p>"
+        )
+        for index in range(5)
+    )
+    partner_page = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type": "NewsArticle",
+      "headline": "Police department won't send officers to RNC",
+      "datePublished": "2016-05-27T20:51:05Z",
+      "author": {{"name": "The Associated Press"}}
+    }}</script></head><body><article>{paragraphs}</article></body></html>
+    """.encode() + (b" " * 2_048)
+    search_url = ap_syndication_search_url(description)
+    search_page = f"""
+    <html><body><div class="result">
+      <a class="result__a"
+         href="//duckduckgo.com/l/?uddg={partner_url}">
+        Police department won't send officers to RNC - Partner
+      </a>
+    </div></body></html>
+    """.encode()
+    client = StubArchiveClient(
+        {
+            canonical_url: (
+                200,
+                {"content-type": "text/html"},
+                source_page,
+                canonical_url,
+            ),
+            search_url: (
+                200,
+                {"content-type": "text/html"},
+                search_page,
+                search_url,
+            ),
+            partner_url: (
+                200,
+                {"content-type": "text/html"},
+                partner_page,
+                partner_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="ap",
+        canonical_url=canonical_url,
+        published_at="2016-05-27T20:51:05Z",
+        section="politics",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.LIVE_ORIGIN,
+                snapshot_url=canonical_url,
+            ),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    capture = result["capture"]
+    assert capture.selected_candidate.snapshot_url == partner_url
+    assert capture.selected_candidate.provider == CaptureProvider.OTHER
+    assert capture.quality_score == 100
+    assert capture.quality_signals["apSyndicationValidated"] is True
+    assert (
+        capture.quality_signals["syndicationBodyCharacters"]
+        >= AP_SYNDICATION_MINIMUM_BODY_CHARACTERS
+    )
+    assert capture.quality_signals["syndicationApAttributed"] is True
 
 
 def test_ap_live_origin_gallery_remains_full_quality(tmp_path: Path):
