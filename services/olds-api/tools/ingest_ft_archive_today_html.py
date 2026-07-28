@@ -43,7 +43,7 @@ def ingest(
                 """
                 SELECT COUNT(*)
                 FROM parser_validation_results
-                WHERE parser_version = 'ft-parser/0.8.4'
+                WHERE parser_version = 'ft-parser/0.8.5'
                 """
             ).fetchone()[0]
             if current >= target_results:
@@ -127,7 +127,7 @@ def ingest(
                    SUM(extraction_status = 'complete'),
                    SUM(error IS NOT NULL)
             FROM parser_validation_results
-            WHERE parser_version = 'ft-parser/0.8.4'
+            WHERE parser_version = 'ft-parser/0.8.5'
             """
         ).fetchone()
         return {

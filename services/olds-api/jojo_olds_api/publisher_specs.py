@@ -138,13 +138,14 @@ PUBLISHER_SPECS = {
     ),
     "ft": PublisherSpec(
         publisher="ft",
-        parser_version="ft-parser/0.8.4",
+        parser_version="ft-parser/0.8.5",
         domains=("ft.com", "www.ft.com"),
         default_language="en",
         edition="global",
         body_selectors=(
             ".article__content-body",
             "#article-body",
+            "#storyContent",
             "[data-trackable='article-body']",
             "article",
         ),

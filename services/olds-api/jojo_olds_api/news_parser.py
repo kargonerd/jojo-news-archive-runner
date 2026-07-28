@@ -214,6 +214,7 @@ def parse_article(
             ),
             _meta_content(soup, "name", "sailthru.date"),
             _nyt_visible_published_at(soup),
+            _ft_legacy_published_at(soup) if spec.publisher == "ft" else None,
             _tag_attribute(
                 soup.select_one(
                     '[itemprop="datePublished"][datetime], '
@@ -2273,6 +2274,21 @@ def _nyt_visible_published_at(soup: BeautifulSoup) -> str | None:
     if not value:
         return None
     for format_string in ("%B %d, %Y", "%b. %d, %Y", "%b %d, %Y"):
+        try:
+            parsed = datetime.strptime(value, format_string)
+        except ValueError:
+            continue
+        return parsed.replace(tzinfo=timezone.utc).isoformat()
+    return None
+
+
+def _ft_legacy_published_at(soup: BeautifulSoup) -> str | None:
+    value = _tag_text(
+        soup.select_one(".fullstoryBody .time, .fullstory .time")
+    )
+    if not value:
+        return None
+    for format_string in ("%B %d, %Y %I:%M %p", "%b %d, %Y %I:%M %p"):
         try:
             parsed = datetime.strptime(value, format_string)
         except ValueError:

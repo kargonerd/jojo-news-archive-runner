@@ -1213,7 +1213,47 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.4"
+    assert article.extraction.parser_version == "ft-parser/0.8.5"
+
+
+def test_ft_parser_extracts_legacy_story_content():
+    paragraphs = "".join(
+        f"<p>Legacy Financial Times reporting paragraph {index} contains "
+        "substantive archived details and historical context.</p>"
+        for index in range(1, 7)
+    )
+    html = f"""
+    <html>
+      <head>
+        <title>Legacy FT report - FT.com</title>
+        <meta property="og:title" content="Legacy FT report - FT.com">
+        <meta name="description" content="An archived Financial Times report.">
+      </head>
+      <body>
+        <div class="fullstoryBody">
+          <span class="time">May 28, 2011 12:44 am</span>
+          <div id="storyContent">{paragraphs}</div>
+        </div>
+      </body>
+    </html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "3786ab78-8886-11e0-afe1-00144feabdc0"
+        ),
+    )
+
+    assert article.quality.status.value == "complete"
+    assert len(article.blocks) == 6
+    assert "Legacy Financial Times reporting paragraph 1" in article.plain_text
+    assert article.published_at == datetime(
+        2011, 5, 28, 0, 44, tzinfo=timezone.utc
+    )
+    assert article.extraction.parser_version == "ft-parser/0.8.5"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
