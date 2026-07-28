@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
+import brotli
 from .bloomberg_archive_download import ArchiveClient
 from .common_crawl import (
     discover_common_crawl_candidates,
@@ -45,7 +46,7 @@ from .news_models import (
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.2",
-    "bloomberg": "bloomberg-capture/0.10.1",
+    "bloomberg": "bloomberg-capture/0.10.2",
     "ft": "ft-capture/0.20.1",
     "nyt": "nyt-capture/0.8.1",
     "reuters": "reuters-capture/0.7.0",
@@ -1705,6 +1706,15 @@ def _fetch_usable_candidate(
             )
     except Exception as exc:
         return None, f"{candidate.provider.value}:{type(exc).__name__}"
+    try:
+        content, decoding_signals = _decode_archived_html_content(
+            content,
+            headers=headers,
+            maximum_bytes=maximum_html_bytes,
+        )
+    except ValueError:
+        return None, f"{candidate.provider.value}:decoded-response-too-large"
+    transport_signals = transport_signals | decoding_signals
     if (
         candidate.provider == CaptureProvider.COMMON_CRAWL
         and not _same_article_url(final_url, canonical_url)
@@ -5120,6 +5130,37 @@ def _ft_article_body_evidence(
         except (json.JSONDecodeError, TypeError):
             continue
     return body_characters, body_images
+
+
+def _decode_archived_html_content(
+    content: bytes,
+    *,
+    headers: dict[str, str],
+    maximum_bytes: int,
+) -> tuple[bytes, dict[str, object]]:
+    content_type = headers.get("content-type", "").casefold()
+    content_encoding = headers.get("content-encoding", "").casefold().strip()
+    looks_like_html = any(
+        marker in content[:4096].lower() for marker in _HTML_MARKERS
+    )
+    should_try_brotli = content_encoding == "br" or (
+        "html" in content_type and content and not looks_like_html
+    )
+    if not should_try_brotli:
+        return content, {}
+    try:
+        decoded = brotli.decompress(content)
+    except brotli.error:
+        return content, {}
+    if len(decoded) > maximum_bytes:
+        raise ValueError("decoded response exceeds maximum bytes")
+    if not any(marker in decoded[:4096].lower() for marker in _HTML_MARKERS):
+        return content, {}
+    return decoded, {
+        "archivedContentEncodingDecoded": "br",
+        "archivedEncodedBytes": len(content),
+        "archivedDecodedBytes": len(decoded),
+    }
 
 
 def score_raw_capture(

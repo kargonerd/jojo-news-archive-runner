@@ -449,7 +449,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.7"
+    assert result.extraction.parser_version == "nyt-parser/0.8.8"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -491,7 +491,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.1"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.2"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -533,7 +533,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.1"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.2"
 
 
 def test_bloomberg_parser_extracts_legacy_div_span_story_body():
@@ -565,7 +565,83 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.1"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.2"
+
+
+def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
+    content = [
+        {
+            "type": "paragraph",
+            "data": {},
+            "content": [
+                {
+                    "type": "text",
+                    "value": (
+                        f"Embedded Bloomberg podcast paragraph {index} "
+                        "contains substantive reporting and context."
+                    ),
+                }
+            ],
+        }
+        for index in range(1, 7)
+    ]
+    content.insert(
+        1,
+        {
+            "type": "paragraph",
+            "data": {},
+            "content": [
+                {
+                    "type": "embed",
+                    "href": "https://omny.fm/shows/example/episode",
+                }
+            ],
+        },
+    )
+    payload = {
+        "props": {
+            "pageProps": {
+                "story": {
+                    "body": {"type": "document", "content": content}
+                }
+            }
+        }
+    }
+    html = f"""
+    <html><head>
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "Embedded Bloomberg podcast",
+        "datePublished": "2023-12-19T22:15:36Z"
+      }}
+      </script>
+      <script type="application/json">{json.dumps(payload)}</script>
+    </head><body>
+      <article class="navigation-card"><p>Unrelated navigation card.</p></article>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2023-12-19/"
+            "podcast-embedded-story"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "audio"
+    assert result.quality.body_characters >= 500
+    embed_blocks = [
+        block for block in result.blocks if block.type.value == "embed"
+    ]
+    assert [block.embed_url for block in embed_blocks] == [
+        "https://omny.fm/shows/example/episode"
+    ]
+    assert "Unrelated navigation card" not in result.plain_text
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.2"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -608,7 +684,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.7"
+    assert result.extraction.parser_version == "nyt-parser/0.8.8"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -867,7 +943,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.1"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.2"
 
 
 def test_nyt_generic_syndication_extracts_local_newspaper_copy():
@@ -929,7 +1005,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.7"
+    assert result.extraction.parser_version == "nyt-parser/0.8.8"
 
 
 def test_parser_falls_back_to_catalog_publication_time():
@@ -1654,7 +1730,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.7"
+    assert result.extraction.parser_version == "nyt-parser/0.8.8"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -1847,7 +1923,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.7"
+    assert result.extraction.parser_version == "nyt-parser/0.8.8"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():

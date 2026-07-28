@@ -8,6 +8,8 @@ from pathlib import Path
 import sqlite3
 from urllib.parse import parse_qs, urlsplit
 
+import brotli
+
 from jojo_olds_api.ghostarchive import ghostarchive_search_url
 from jojo_olds_api.news_models import (
     CaptureCandidate,
@@ -28,6 +30,7 @@ from jojo_olds_api.raw_archive_capture import (
     WAYBACK_TIMEMAP_ENDPOINT,
     WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     _ap_syndication_search_urls,
+    _decode_archived_html_content,
     arquivo_pt_cdx_url,
     ap_syndication_search_url,
     bloomberg_syndication_search_url,
@@ -87,6 +90,21 @@ class StubArchiveClient:
         if len(response[2]) > maximum_bytes:
             raise ValueError("too large")
         return response
+
+
+def test_decodes_brotli_html_preserved_by_wayback():
+    encoded = brotli.compress(ARTICLE)
+
+    decoded, signals = _decode_archived_html_content(
+        encoded,
+        headers={"content-type": "text/html"},
+        maximum_bytes=1_000_000,
+    )
+
+    assert decoded == ARTICLE
+    assert signals["archivedContentEncodingDecoded"] == "br"
+    assert signals["archivedEncodedBytes"] == len(encoded)
+    assert signals["archivedDecodedBytes"] == len(ARTICLE)
 
 
 def candidate(url: str, timestamp: str) -> CaptureCandidate:

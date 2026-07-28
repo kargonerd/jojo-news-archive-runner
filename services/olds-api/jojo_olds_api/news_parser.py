@@ -119,6 +119,20 @@ def parse_article(
         body = _generic_syndication_body(soup)
     if body is None and spec.publisher == "nyt":
         body = _nyt_legacy_article_body(soup)
+    if (
+        body is None
+        and spec.publisher == "nyt"
+        and "/watching/" in canonical_url.casefold()
+    ):
+        body = _nyt_watching_body(soup)
+    if spec.publisher == "bloomberg":
+        embedded_bloomberg_body = _bloomberg_embedded_article_body(soup)
+        if embedded_bloomberg_body is not None and (
+            body is None
+            or len(body.get_text(" ", strip=True))
+            < len(embedded_bloomberg_body.get_text(" ", strip=True))
+        ):
+            body = embedded_bloomberg_body
     if spec.publisher == "nyt":
         preloaded_body = _nyt_preloaded_article_body(
             soup,
@@ -541,6 +555,117 @@ def _bloomberg_partner_body(soup: BeautifulSoup) -> Tag | None:
     return None
 
 
+def _bloomberg_embedded_article_body(soup: BeautifulSoup) -> Tag | None:
+    candidates: list[Tag] = []
+    for script in soup.select('script[type="application/json"]'):
+        value = script.string or script.get_text()
+        if not value.strip():
+            continue
+        try:
+            payload = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for item in _walk_json_objects(payload):
+            document = item.get("body")
+            if (
+                not isinstance(document, dict)
+                or document.get("type") != "document"
+            ):
+                continue
+            rendered = _render_bloomberg_document(document)
+            if rendered is not None:
+                candidates.append(rendered)
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda node: len(node.get_text(" ", strip=True)),
+    )
+
+
+def _render_bloomberg_document(document: dict[str, Any]) -> Tag | None:
+    parsed = BeautifulSoup(
+        "<div data-jojo-source='bloomberg-embedded-body'></div>",
+        "html.parser",
+    )
+    wrapper = parsed.select_one("div")
+    if wrapper is None:
+        return None
+
+    def text_content(value: object) -> str:
+        if isinstance(value, dict):
+            if value.get("type") == "text":
+                return _string_or_none(value.get("value")) or ""
+            children = value.get("content")
+            if not isinstance(children, list):
+                return ""
+            return "".join(
+                text_content(child) for child in children
+            )
+        if isinstance(value, list):
+            return "".join(text_content(child) for child in value)
+        return ""
+
+    for block in document.get("content", []):
+        if not isinstance(block, dict):
+            continue
+        block_type = _string_or_none(block.get("type")) or ""
+        text = _clean_text(text_content(block))
+        if block_type in {"paragraph", "blockquote"} and text:
+            tag = parsed.new_tag("blockquote" if block_type == "blockquote" else "p")
+            tag.string = text
+            wrapper.append(tag)
+        elif block_type == "heading" and text:
+            level = block.get("data", {}).get("level", 2)
+            level = level if isinstance(level, int) and 2 <= level <= 6 else 2
+            tag = parsed.new_tag(f"h{level}")
+            tag.string = text
+            wrapper.append(tag)
+        elif block_type in {"list", "unordered-list", "ordered-list"}:
+            items = [
+                _clean_text(text_content(child))
+                for child in block.get("content", [])
+                if isinstance(child, dict)
+            ]
+            items = [item for item in items if item]
+            if items:
+                list_tag = parsed.new_tag(
+                    "ol" if block_type == "ordered-list" else "ul"
+                )
+                for item in items:
+                    item_tag = parsed.new_tag("li")
+                    item_tag.string = item
+                    list_tag.append(item_tag)
+                wrapper.append(list_tag)
+
+        for child in _walk_json_objects(block):
+            if child.get("type") == "embed":
+                embed_url = _first_text(
+                    _string_or_none(child.get("href")),
+                    _string_or_none(
+                        (child.get("iframeData") or {}).get("url")
+                    )
+                    if isinstance(child.get("iframeData"), dict)
+                    else None,
+                )
+                if embed_url:
+                    iframe = parsed.new_tag("iframe", src=embed_url)
+                    wrapper.append(iframe)
+            if child.get("type") == "media":
+                data = child.get("data")
+                if not isinstance(data, dict):
+                    continue
+                video = data.get("video")
+                if isinstance(video, dict):
+                    source = _string_or_none(video.get("src"))
+                    if source:
+                        iframe = parsed.new_tag("iframe", src=source)
+                        wrapper.append(iframe)
+    if wrapper.select_one("p, h2, h3, h4, h5, h6, blockquote, ul, ol, iframe"):
+        return wrapper
+    return None
+
+
 def _capture_reference(
     *,
     raw_capture: RawCapture | None,
@@ -605,9 +730,9 @@ def _walk_json_objects(value: Any) -> Iterable[dict[str, Any]]:
 
 def _select_body(soup: BeautifulSoup, spec: PublisherSpec) -> Tag | None:
     for selector in spec.body_selectors:
-        node = soup.select_one(selector)
-        if isinstance(node, Tag):
-            return node
+        nodes = [node for node in soup.select(selector) if isinstance(node, Tag)]
+        if nodes:
+            return max(nodes, key=lambda node: len(node.get_text(" ", strip=True)))
     return None
 
 
@@ -665,6 +790,41 @@ def _nyt_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
         if copy is not None:
             wrapper.append(copy)
     return wrapper if wrapper.select_one('[itemprop="articleBody"], p') else None
+
+
+def _nyt_watching_body(soup: BeautifulSoup) -> Tag | None:
+    main = soup.select_one("main")
+    if not isinstance(main, Tag):
+        return None
+    document = BeautifulSoup(
+        "<div data-jojo-source='nyt-watching'></div>",
+        "html.parser",
+    )
+    wrapper = document.select_one("div")
+    if wrapper is None:
+        return None
+    lead = main.select_one(".WatchingHeader__header figure")
+    if isinstance(lead, Tag):
+        wrapper.append(BeautifulSoup(str(lead), "html.parser"))
+    seen: set[str] = set()
+    for node in main.select(
+        ".Interactive__figure > h2, "
+        ".interactive-graphic h1, "
+        ".interactive-graphic .summary, "
+        ".interactive-graphic .cards a, "
+        ".interactive-graphic .footer .title"
+    ):
+        text = _clean_text(node.get_text(" ", strip=True))
+        identity = text.casefold()
+        if not text or identity in seen:
+            continue
+        seen.add(identity)
+        name = node.name if node.name in {"h1", "h2", "h3"} else "p"
+        rendered = document.new_tag(name)
+        rendered.string = text
+        wrapper.append(rendered)
+    text = _clean_text(wrapper.get_text(" ", strip=True))
+    return wrapper if len(text) >= _MINIMUM_BODY_CHARACTERS else None
 
 
 def _structured_article_body(
@@ -2167,10 +2327,14 @@ def _content_type(article: dict[str, Any], canonical_url: str) -> ContentType:
         return ContentType.NEWSLETTER
     if "transcript" in url:
         return ContentType.TRANSCRIPT
+    if "podcast" in url:
+        return ContentType.AUDIO
     if "opinion" in url:
         return ContentType.OPINION
     if "video" in url:
         return ContentType.VIDEO
+    if "/watching/" in url:
+        return ContentType.INTERACTIVE
     if "interactive" in url or "/features/" in url:
         return ContentType.INTERACTIVE
     if isinstance(article_type, str) and article_type == "ReportageNewsArticle":
