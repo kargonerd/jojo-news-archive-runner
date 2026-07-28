@@ -93,7 +93,7 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "completeRate": 1.0,
         "qaPassRate": 1.0,
         "errors": 0,
-        "parserVersion": "ap-parser/0.6.6",
+        "parserVersion": "ap-parser/0.6.7",
         "ready": True,
         "active": False,
     }
@@ -172,7 +172,7 @@ def test_watchdog_prioritizes_nearly_complete_current_sample(
             "runnerOs": "ubuntu-latest",
             "currentEvaluated": 499,
             "replayableEvaluated": 499,
-            "parserVersion": "reuters-parser/0.7.0",
+            "parserVersion": "reuters-parser/0.7.1",
         }
     ]
 

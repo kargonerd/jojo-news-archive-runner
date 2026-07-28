@@ -46,12 +46,12 @@ from .news_models import (
 
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
-    "ap": "ap-capture/0.6.3",
+    "ap": "ap-capture/0.6.4",
     "bloomberg": "bloomberg-capture/0.10.3",
     "ft": "ft-capture/0.20.1",
     "nyt": "nyt-capture/0.8.1",
-    "reuters": "reuters-capture/0.7.0",
-    "wsj": "wsj-capture/0.8.2",
+    "reuters": "reuters-capture/0.7.1",
+    "wsj": "wsj-capture/0.8.3",
 }
 ACCEPTED_HTTP_STATUSES = {200, 206}
 WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"
@@ -163,6 +163,8 @@ _ACCESS_CHALLENGE_MARKERS = (
     b"javascript is disabled in your browser",
     b"a required part of this site couldn",
     b"terms of service violation",
+    b"distil_r_captcha",
+    b'id="distil_ident_block"',
 )
 _REDIRECT_SHELL_MARKERS = (
     b"window.location = fullurl",
@@ -1751,6 +1753,24 @@ def _fetch_usable_candidate(
             )
         )
         signals = signals | bloomberg_evidence
+    ap_parser_usable = True
+    if (
+        publisher == "ap"
+        and candidate.provider != CaptureProvider.LIVE_ORIGIN
+        and signals["looksLikeHtml"]
+    ):
+        ap_parser_usable, ap_parser_evidence = _ap_capture_parser_evidence(
+            content,
+            canonical_url=canonical_url,
+        )
+        signals = signals | ap_parser_evidence
+    wsj_parser_usable = True
+    if publisher == "wsj" and signals["looksLikeHtml"]:
+        wsj_parser_usable, wsj_evidence = _wsj_capture_parser_evidence(
+            content,
+            canonical_url=canonical_url,
+        )
+        signals = signals | wsj_evidence
     if response_observer is not None:
         response_observer(candidate, content, final_url)
     structured_subscription_article = bool(
@@ -1780,6 +1800,8 @@ def _fetch_usable_candidate(
         or signals["ftTruncatedArticleShell"]
         or signals["redirectShell"]
         or not bloomberg_parser_usable
+        or not ap_parser_usable
+        or not wsj_parser_usable
     ):
         return (
             None,
@@ -5205,6 +5227,74 @@ def _bloomberg_origin_parser_evidence(
         "bloombergOriginExtractionStatus": article.quality.status.value,
         "bloombergOriginContentType": article.content_type.value,
         "bloombergOriginBodyCharacters": article.quality.body_characters,
+    }
+
+
+def _wsj_capture_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="wsj",
+            canonical_url=canonical_url,
+            allow_generic_syndication=True,
+        )
+    except Exception as exc:
+        return False, {
+            "wsjCaptureParserUsable": False,
+            "wsjCaptureParserError": type(exc).__name__,
+        }
+    nontext = article.content_type in {
+        ContentType.INTERACTIVE,
+        ContentType.VIDEO,
+        ContentType.AUDIO,
+        ContentType.GALLERY,
+    }
+    usable = article.quality.status == ArticleStatus.COMPLETE or nontext
+    return usable, {
+        "wsjCaptureParserUsable": usable,
+        "wsjCaptureExtractionStatus": article.quality.status.value,
+        "wsjCaptureContentType": article.content_type.value,
+        "wsjCaptureBodyCharacters": article.quality.body_characters,
+    }
+
+
+def _ap_capture_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="ap",
+            canonical_url=canonical_url,
+            allow_generic_syndication=True,
+        )
+    except Exception as exc:
+        return False, {
+            "apCaptureParserUsable": False,
+            "apCaptureParserError": type(exc).__name__,
+        }
+    nontext = article.content_type in {
+        ContentType.INTERACTIVE,
+        ContentType.VIDEO,
+        ContentType.AUDIO,
+        ContentType.GALLERY,
+    }
+    usable = article.quality.status == ArticleStatus.COMPLETE or nontext
+    return usable, {
+        "apCaptureParserUsable": usable,
+        "apCaptureExtractionStatus": article.quality.status.value,
+        "apCaptureContentType": article.content_type.value,
+        "apCaptureBodyCharacters": article.quality.body_characters,
     }
 
 

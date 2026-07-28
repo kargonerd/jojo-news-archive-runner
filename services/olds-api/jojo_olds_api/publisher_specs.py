@@ -39,7 +39,7 @@ class PublisherSpec:
 PUBLISHER_SPECS = {
     "ap": PublisherSpec(
         publisher="ap",
-        parser_version="ap-parser/0.6.6",
+        parser_version="ap-parser/0.6.7",
         domains=("apnews.com",),
         default_language="en",
         edition="us",
@@ -54,7 +54,7 @@ PUBLISHER_SPECS = {
     ),
     "wsj": PublisherSpec(
         publisher="wsj",
-        parser_version="wsj-parser/0.8.3",
+        parser_version="wsj-parser/0.8.4",
         domains=("wsj.com", "www.wsj.com"),
         default_language="en",
         edition="us",
@@ -121,7 +121,7 @@ PUBLISHER_SPECS = {
     ),
     "reuters": PublisherSpec(
         publisher="reuters",
-        parser_version="reuters-parser/0.7.0",
+        parser_version="reuters-parser/0.7.1",
         domains=("reuters.com", "www.reuters.com"),
         default_language="en",
         edition="global",

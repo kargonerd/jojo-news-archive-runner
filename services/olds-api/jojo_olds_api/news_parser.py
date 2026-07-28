@@ -150,6 +150,8 @@ def parse_article(
         gallery_body = _structured_image_gallery(soup)
         if gallery_body is None:
             gallery_body = _wsj_amp_story_gallery(soup)
+        if gallery_body is None:
+            gallery_body = _wsj_legacy_slideshow(soup)
         if gallery_body is not None:
             body = gallery_body
             structured_image_gallery_selected = True
@@ -952,6 +954,59 @@ def _wsj_amp_story_gallery(soup: BeautifulSoup) -> Tag | None:
             image_node["height"] = height
         caption = _tag_text(page.select_one(".wsj--caption"))
         credit = _tag_text(page.select_one(".wsj--credit"))
+        if caption:
+            image_node["alt"] = caption
+        figure.append(image_node)
+        if caption or credit:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = " ".join(
+                value
+                for value in (
+                    caption,
+                    f"Credit: {credit}" if credit else None,
+                )
+                if value
+            )
+            figure.append(figcaption)
+        article.append(figure)
+    return article if len(article.select("figure")) >= 3 else None
+
+
+def _wsj_legacy_slideshow(soup: BeautifulSoup) -> Tag | None:
+    slides = soup.select(".dj-slideshow .slide-wrapper:not(.thumbgrid-wrapper)")
+    if len(slides) < 3:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for slide in slides:
+        image = slide.select_one("img[src], img[data-src]")
+        if not isinstance(image, Tag):
+            continue
+        source = _first_text(
+            _string_or_none(image.get("src")),
+            _string_or_none(image.get("data-src")),
+        )
+        if not source:
+            continue
+        credit = _first_text(
+            _string_or_none(slide.get("data-credit")),
+            _tag_text(slide.select_one(".caption-wrapper span")),
+        )
+        caption_node = slide.select_one(".caption-wrapper p")
+        caption = None
+        if isinstance(caption_node, Tag):
+            caption_copy = BeautifulSoup(
+                str(caption_node),
+                "html.parser",
+            )
+            for credit_node in caption_copy.select("span"):
+                credit_node.decompose()
+            caption = _tag_text(caption_copy)
+        figure = document.new_tag("figure")
+        image_node = document.new_tag("img")
+        image_node["src"] = source
         if caption:
             image_node["alt"] = caption
         figure.append(image_node)

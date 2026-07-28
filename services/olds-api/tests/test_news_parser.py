@@ -250,7 +250,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.3"
+    assert result.extraction.parser_version == "wsj-parser/0.8.4"
 
 
 def test_wsj_parser_classifies_embedded_acrostic_as_interactive():
@@ -346,6 +346,52 @@ def test_wsj_parser_extracts_amp_story_photo_gallery():
     assert len(result.images) == 3
     assert result.images[1].caption == "Historical photograph 1 caption."
     assert result.images[1].credit == "Credit: Archive 1"
+
+
+def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
+    slides = "".join(
+        f"""
+        <div class="slide-wrapper" data-credit="Archive Photographer {index}">
+          <img src="http://si.wsj.net/public/resources/images/photo-{index}.jpg"
+               alt="image">
+          <div class="caption-wrapper"><p>
+            Historical photograph {index} caption.
+            <span>Archive Photographer {index}</span>
+          </p></div>
+          <div class="slidesjs-log">{index + 1} of 4</div>
+        </div>
+        """
+        for index in range(4)
+    )
+    html = f"""
+    <html><head>
+      <title>A Backstage Look at the Production - WSJ</title>
+      <meta property="og:title"
+            content="A Backstage Look at the Production">
+      <meta property="article:published_time"
+            content="2014-12-23T18:11:07Z">
+    </head><body>
+      <div class="dj-slideshow">{slides}</div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "a-backstage-look-at-the-production-1419363067"
+        ),
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert len(result.blocks) == 4
+    assert len(result.images) == 4
+    assert result.images[0].caption == "Historical photograph 0 caption."
+    assert result.images[0].credit == "Credit: Archive Photographer 0"
+    assert result.plain_text.count("Archive Photographer 0") == 1
+    assert result.extraction.parser_version == "wsj-parser/0.8.4"
 
 
 def test_parser_classifies_non_editorial_images_without_archiving_them():
@@ -751,7 +797,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.0"
+    assert result.extraction.parser_version == "reuters-parser/0.7.1"
 
 
 @pytest.mark.parametrize(
@@ -831,7 +877,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.0"
+    assert result.extraction.parser_version == "reuters-parser/0.7.1"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():
@@ -1430,7 +1476,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.6"
+    assert article.extraction.parser_version == "ap-parser/0.6.7"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -1464,7 +1510,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.6"
+    assert result.extraction.parser_version == "ap-parser/0.6.7"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():

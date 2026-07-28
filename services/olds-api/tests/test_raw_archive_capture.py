@@ -31,7 +31,9 @@ from jojo_olds_api.raw_archive_capture import (
     WAYBACK_TIMEMAP_ENDPOINT,
     WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     _ap_syndication_search_urls,
+    _ap_capture_parser_evidence,
     _decode_archived_html_content,
+    _wsj_capture_parser_evidence,
     arquivo_pt_cdx_url,
     ap_syndication_search_url,
     bloomberg_syndication_search_url,
@@ -4980,6 +4982,71 @@ def test_raw_quality_rejects_wsj_empty_article_jsonld_shell():
     assert score < 85
     assert signals["subscriptionShell"] is True
     assert signals["wsjEmptyArticleShell"] is True
+
+
+def test_raw_quality_rejects_wsj_distil_captcha_redirect():
+    score, signals = score_raw_capture(
+        b"""
+        <!doctype html><html><head>
+        <meta name="robots" content="NOINDEX, NOFOLLOW">
+        <meta http-equiv="refresh"
+              content="10; url=/distil_r_captcha.html?Ref=/articles/example">
+        </head><body>
+          <div id="distil_ident_block">&nbsp;</div>
+        </body></html>
+        """,
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["accessChallengeShell"] is True
+
+
+def test_wsj_capture_parser_evidence_rejects_empty_legacy_article_shell():
+    usable, signals = _wsj_capture_parser_evidence(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Archived WSJ report">
+          <meta property="article:published_time"
+                content="2014-12-11T21:03:00Z">
+        </head><body>
+          <div class="articleHeader"></div>
+          <aside>Top Stories Subscriber Content Read Preview</aside>
+        </body></html>
+        """,
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "archived-wsj-report-1418347811"
+        ),
+    )
+
+    assert usable is False
+    assert signals["wsjCaptureExtractionStatus"] == "unsupported"
+
+
+def test_ap_capture_parser_evidence_rejects_unhydrated_score_table():
+    usable, signals = _ap_capture_parser_evidence(
+        b"""
+        <html><head>
+          <meta property="og:title"
+                content="Single-A Florida State League Glance">
+          <meta property="article:published_time"
+                content="2023-08-25T05:18:29Z">
+        </head><body>
+          <div class="RichTextStoryBody">
+            <p>All Times EDT</p><table><tr><th>East Division</th></tr></table>
+          </div>
+        </body></html>
+        """,
+        canonical_url=(
+            "https://apnews.com/"
+            "single-a-florida-state-league-glance-example"
+        ),
+    )
+
+    assert usable is False
+    assert signals["apCaptureExtractionStatus"] == "partial"
 
 
 def test_raw_quality_rejects_wsj_structured_snippet_view():
