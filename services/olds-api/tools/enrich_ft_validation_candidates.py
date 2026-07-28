@@ -76,12 +76,18 @@ def _discover(
     *,
     output_dir: Path,
 ) -> tuple[str, CaptureCandidate | None, dict[str, object] | None]:
+    stored_candidates = tuple(
+        CaptureCandidate.model_validate(candidate)
+        for candidate in json.loads(row.candidates_json)
+        if isinstance(candidate, dict)
+        and candidate.get("provider") == CaptureProvider.OTHER.value
+    )
     item = ManifestItem(
         publisher="ft",
         canonical_url=row.canonical_url,
         published_at=row.published_at,
         section=row.section,
-        candidates=(),
+        candidates=stored_candidates,
     )
     client = ArchiveClient(
         minimum_interval=0.0,
@@ -89,28 +95,55 @@ def _discover(
         attempts=1,
     )
     try:
-        headline: str | None = None
+        candidate_prevalidated = False
+        candidates = stored_candidates[:1]
+        headline = (
+            candidates[0].expected_headline if candidates else None
+        )
+        if candidates:
+            candidate = candidates[0]
+            try:
+                status, headers, content, final_url = client.fetch(
+                    candidate.snapshot_url,
+                    maximum_bytes=2_000_000,
+                )
+                validated, _ = _validate_ft_syndication_response(
+                    item,
+                    expected_partner_url=candidate.snapshot_url,
+                    expected_headline=headline,
+                    content=content,
+                    final_url=final_url,
+                )
+                if status != 200 or not validated:
+                    candidates = ()
+                else:
+                    candidate_prevalidated = True
+            except Exception:
+                candidates = ()
+        if not candidates:
+            headline = None
         try:
-            results = _fetch_syndication_search_results(
-                item,
-                archive_client=client,
-                search_url=ft_syndication_search_url(item),
-            )
-            headline = next(
-                (
-                    title
-                    for _, title, candidate_url in results
-                    if title
-                    and _same_article_url(
-                        candidate_url,
-                        item.canonical_url,
-                    )
-                ),
-                None,
-            )
+            if not candidates:
+                results = _fetch_syndication_search_results(
+                    item,
+                    archive_client=client,
+                    search_url=ft_syndication_search_url(item),
+                )
+                headline = next(
+                    (
+                        title
+                        for _, title, candidate_url in results
+                        if title
+                        and _same_article_url(
+                            candidate_url,
+                            item.canonical_url,
+                        )
+                    ),
+                    None,
+                )
         except Exception:
             pass
-        if not headline:
+        if not candidates and not headline:
             try:
                 headline = _discover_ft_headline_from_google_news(
                     item,
@@ -118,18 +151,19 @@ def _discover(
                 )
             except Exception:
                 pass
-        if not headline:
+        if not candidates and not headline:
             return row.canonical_url, None, None
-        try:
-            candidates = _discover_ftchinese_candidates(
-                archive_client=client,
-                expected_headline=headline,
-                attempts=1,
-                timeout=8.0,
-            )
-        except Exception:
-            candidates = ()
-        if candidates:
+        if not candidates:
+            try:
+                candidates = _discover_ftchinese_candidates(
+                    archive_client=client,
+                    expected_headline=headline,
+                    attempts=1,
+                    timeout=8.0,
+                )
+            except Exception:
+                candidates = ()
+        if candidates and not candidate_prevalidated:
             candidate = candidates[0]
             try:
                 status, headers, content, final_url = client.fetch(
@@ -212,47 +246,6 @@ def enrich(
                 ADD COLUMN validated INTEGER NOT NULL DEFAULT 0
                 """
             )
-        legacy_rows = connection.execute(
-            """
-            SELECT d.canonical_url, d.candidate_url, c.candidates_json
-            FROM ft_validation_mirror_discovery AS d
-            JOIN captures AS c USING (canonical_url)
-            WHERE d.status='candidate' AND d.validated=0
-            """
-        ).fetchall()
-        for canonical_url, candidate_url, candidates_json in legacy_rows:
-            candidates = json.loads(str(candidates_json))
-            filtered = [
-                candidate
-                for candidate in candidates
-                if (
-                    not isinstance(candidate, dict)
-                    or str(candidate.get("snapshotUrl") or "")
-                    != str(candidate_url or "")
-                )
-            ]
-            connection.execute(
-                """
-                UPDATE captures
-                SET candidates_json=?, status='pending', attempts=0,
-                    last_error=NULL
-                WHERE canonical_url=?
-                """,
-                (
-                    json.dumps(
-                        filtered,
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    ),
-                    canonical_url,
-                ),
-            )
-        connection.execute(
-            """
-            DELETE FROM ft_validation_mirror_discovery
-            WHERE status='candidate' AND validated=0
-            """
-        )
         # A pre-0.20 manifest refresh could remove a discovered candidate
         # before the live checkpoint. Requeue only those inconsistent rows;
         # successful post-0.20 candidates remain durable.
@@ -282,10 +275,21 @@ def enrich(
                 LEFT JOIN ft_validation_mirror_discovery AS d
                   USING (canonical_url)
                 WHERE r.canonical_url IS NULL
-                  AND d.canonical_url IS NULL
+                  AND (
+                    d.canonical_url IS NULL
+                    OR (d.status='candidate' AND d.validated=0)
+                  )
                   AND c.status IN ('pending', 'error', 'downloading')
-                  AND c.candidates_json NOT LIKE '%"provider":"other"%'
-                ORDER BY s.sample_priority
+                  AND (
+                    c.candidates_json NOT LIKE '%"provider":"other"%'
+                    OR (d.status='candidate' AND d.validated=0)
+                  )
+                ORDER BY
+                  CASE
+                    WHEN d.status='candidate' AND d.validated=0 THEN 0
+                    ELSE 1
+                  END,
+                  s.sample_priority
                 LIMIT ?
                 """,
                 (limit,),
