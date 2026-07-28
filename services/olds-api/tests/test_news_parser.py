@@ -354,7 +354,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.1"
+    assert result.extraction.parser_version == "nyt-parser/0.8.2"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -513,7 +513,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.1"
+    assert result.extraction.parser_version == "nyt-parser/0.8.2"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -834,7 +834,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.1"
+    assert result.extraction.parser_version == "nyt-parser/0.8.2"
 
 
 def test_parser_falls_back_to_catalog_publication_time():
@@ -1261,7 +1261,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.1"
+    assert result.extraction.parser_version == "nyt-parser/0.8.2"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -1306,3 +1306,83 @@ def test_nyt_parser_extracts_birdkit_attendee_sheet():
     assert result.quality.block_count == 30
     assert "Attendee 0 — Public role number 0" in result.plain_text
     assert "Attendee 29 — Public role number 29" in result.plain_text
+
+
+def test_nyt_parser_extracts_preloaded_graphql_image_gallery():
+    state = {}
+    for index in range(3):
+        media_id = f"Image:gallery-{index}"
+        crop_id = f"{media_id}.crop"
+        rendition_id = f"ImageRendition:gallery-{index}"
+        state[f"$Article.sprinkledBody.content.{index}"] = {
+            "__typename": "ImageBlock",
+            "media": {"id": media_id},
+        }
+        state[media_id] = {
+            "__typename": "Image",
+            "credit": f"Artist {index}",
+            "crops": [{"id": crop_id}],
+        }
+        state[crop_id] = {
+            "__typename": "ImageCrop",
+            "renditions": [{"id": rendition_id}],
+        }
+        state[rendition_id] = {
+            "__typename": "ImageRendition",
+            "url": f"https://static01.nyt.com/gallery-{index}.jpg",
+            "width": 1600,
+            "height": 1200,
+        }
+    payload = json.dumps({"initialState": state})
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A year in editorial cartoons">
+      <meta property="article:published_time" content="2018-12-06T11:00:00Z">
+    </head><body>
+      <script>window.__preloadedData = {payload};</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url="https://www.nytimes.com/2018/12/06/opinion/cartoons.html",
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert [image.original_url for image in result.images] == [
+        f"https://static01.nyt.com/gallery-{index}.jpg"
+        for index in range(3)
+    ]
+    assert len(result.blocks) == 3
+
+
+def test_nyt_parser_classifies_preloaded_video_page():
+    payload = json.dumps(
+        {
+            "initialState": {
+                "$Article.sprinkledBody.content.0": {
+                    "__typename": "VideoBlock"
+                }
+            }
+        }
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Ask the columnist">
+      <meta property="article:published_time" content="2018-11-02T11:00:00Z">
+      <meta property="og:image" content="https://static01.nyt.com/still.jpg">
+    </head><body>
+      <script>window.__preloadedData = {payload};</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url="https://www.nytimes.com/2018/11/02/opinion/questions.html",
+    )
+
+    assert result.content_type.value == "video"
+    assert result.extraction.parser_version == "nyt-parser/0.8.2"

@@ -114,6 +114,11 @@ def parse_article(
         if gallery_body is not None:
             body = gallery_body
             structured_image_gallery_selected = True
+    if spec.publisher == "nyt":
+        gallery_body = _nyt_preloaded_image_gallery(soup)
+        if gallery_body is not None:
+            body = gallery_body
+            structured_image_gallery_selected = True
     if spec.embedded_html_body_keys and (
         body is None
         or body.select_one(
@@ -204,6 +209,12 @@ def parse_article(
     )
     language = _document_language(soup, default=spec.default_language)
     content_type = _content_type(news_article, canonical_url)
+    if spec.publisher == "nyt":
+        content_type = _nyt_media_content_type(
+            soup,
+            default=content_type,
+            structured_image_gallery_selected=structured_image_gallery_selected,
+        )
 
     images_by_url: dict[str, ImageCandidate] = {}
     blocks: list[ContentBlock] = []
@@ -274,7 +285,7 @@ def parse_article(
         block.type == BlockType.IMAGE for block in blocks
     )
     image_led_gallery = (
-        content_type == ContentType.GALLERY and image_block_count >= 3
+        content_type == ContentType.GALLERY and image_block_count >= 1
     )
     if (
         len(plain_text) < _MINIMUM_BODY_CHARACTERS
@@ -668,6 +679,167 @@ def _structured_image_gallery(soup: BeautifulSoup) -> Tag | None:
                 article.append(figure)
             return article
     return None
+
+
+def _nyt_preloaded_state(soup: BeautifulSoup) -> dict[str, Any]:
+    marker = "window.__preloadedData = "
+    for script in soup.find_all("script"):
+        value = script.string or script.get_text()
+        if marker not in value:
+            continue
+        serialized = value.split(marker, 1)[1].strip().rstrip(";")
+        try:
+            payload = json.loads(serialized)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        state = payload.get("initialState")
+        if isinstance(state, dict):
+            return state
+    return {}
+
+
+def _nyt_state_reference(
+    state: dict[str, Any],
+    value: Any,
+) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    reference = value.get("id")
+    if isinstance(reference, str):
+        resolved = state.get(reference)
+        if isinstance(resolved, dict):
+            return resolved
+    return value
+
+
+def _nyt_image_renditions(
+    state: dict[str, Any],
+    image: dict[str, Any],
+) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    pending: list[Any] = [image]
+    visited: set[str] = set()
+    while pending:
+        value = pending.pop()
+        if isinstance(value, list):
+            pending.extend(value)
+            continue
+        if not isinstance(value, dict):
+            continue
+        reference = value.get("id")
+        if isinstance(reference, str) and reference in state:
+            if reference in visited:
+                continue
+            visited.add(reference)
+            pending.append(state[reference])
+            continue
+        if value.get("__typename") == "ImageRendition" and isinstance(
+            value.get("url"), str
+        ):
+            found.append(value)
+            continue
+        pending.extend(value.values())
+    return found
+
+
+def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
+    state = _nyt_preloaded_state(soup)
+    if not state:
+        return None
+    image_blocks = [
+        value
+        for key, value in state.items()
+        if ".sprinkledBody.content" in key
+        and isinstance(value, dict)
+        and value.get("__typename") == "ImageBlock"
+    ]
+    rows: list[tuple[str, str | None, str | None]] = []
+    seen_media: set[str] = set()
+    for block in image_blocks:
+        media_reference = block.get("media")
+        media_id = (
+            media_reference.get("id")
+            if isinstance(media_reference, dict)
+            else None
+        )
+        if not isinstance(media_id, str) or media_id in seen_media:
+            continue
+        seen_media.add(media_id)
+        media = _nyt_state_reference(state, media_reference)
+        if media is None:
+            continue
+        renditions = _nyt_image_renditions(state, media)
+        if not renditions:
+            continue
+        rendition = max(
+            renditions,
+            key=lambda item: (
+                int(item.get("width") or 0) * int(item.get("height") or 0),
+                int(item.get("width") or 0),
+            ),
+        )
+        caption_value = _nyt_state_reference(state, media.get("caption"))
+        caption = None
+        if caption_value is not None:
+            caption = _first_text(
+                _string_or_none(caption_value.get("text")),
+                _string_or_none(caption_value.get("html")),
+            )
+        rows.append(
+            (
+                str(rendition["url"]),
+                caption,
+                _string_or_none(media.get("credit")),
+            )
+        )
+    if len(rows) < 3:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for image_url, caption, credit in rows:
+        figure = document.new_tag("figure")
+        image = document.new_tag("img")
+        image["src"] = image_url
+        if caption:
+            image["alt"] = caption
+        figure.append(image)
+        if caption or credit:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = " ".join(
+                value for value in (caption, credit) if value
+            )
+            figure.append(figcaption)
+        article.append(figure)
+    return article
+
+
+def _nyt_media_content_type(
+    soup: BeautifulSoup,
+    *,
+    default: ContentType,
+    structured_image_gallery_selected: bool,
+) -> ContentType:
+    if structured_image_gallery_selected:
+        return ContentType.GALLERY
+    state = _nyt_preloaded_state(soup)
+    body_types = {
+        value.get("__typename")
+        for key, value in state.items()
+        if ".sprinkledBody.content" in key and isinstance(value, dict)
+    }
+    if "VideoBlock" in body_types:
+        return ContentType.VIDEO
+    if "InteractiveBlock" in body_types:
+        return ContentType.INTERACTIVE
+    tagline = _first_text(
+        _meta_content(soup, "name", "nyt-collection:tagline"),
+        _meta_content(soup, "property", "nyt-collection:tagline"),
+    )
+    if tagline and "cartoon" in tagline.casefold():
+        return ContentType.GALLERY
+    return default
 
 
 def _prefer_structured_body_with_media(
