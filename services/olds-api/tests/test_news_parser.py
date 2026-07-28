@@ -1256,7 +1256,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.2"
+    assert article.extraction.parser_version == "ap-parser/0.6.3"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -1290,7 +1290,88 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.2"
+    assert result.extraction.parser_version == "ap-parser/0.6.3"
+
+
+def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
+    html = b"""
+    <html><head><script type="application/ld+json">{
+      "@type": "NewsArticle",
+      "name": "AP News",
+      "datePublished": "2019-10-18T01:30:14Z",
+      "keywords": ["BKN--Heat-Magic Box", "Basketball"]
+    }</script></head><body><main></main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "https://apnews.com/5c0273821ea1fb1161129680fb7ebd5e"
+        ),
+    )
+
+    assert result.headline == "BKN--Heat-Magic Box"
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "unsupported"
+
+
+def test_ap_parser_classifies_metadata_only_nomination_result():
+    html = b"""
+    <html><head><script type="application/ld+json">{
+      "@type": "NewsArticle",
+      "headline": "NY-House-6-nominated",
+      "datePublished": "2020-06-24T03:04:19Z",
+      "keywords": ["NY-House-6-nominated"]
+    }</script></head><body><main></main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "https://apnews.com/"
+            "ny-house-6-nominated-a93b2abc2ae34d3382594f588f48af9f"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "unsupported"
+
+
+def test_ap_parser_restores_race_call_from_structured_description():
+    description = (
+        "Former President Donald Trump won Pennsylvania on Wednesday, "
+        "defeating his opponent in the critical battleground state. "
+        "The Associated Press declared Trump the winner after its analysis "
+        "determined there was no path for the trailing candidate."
+    )
+    payload = json.dumps(
+        {
+            "@type": "NewsArticle",
+            "headline": "AP Race Call: Donald Trump wins Pennsylvania",
+            "datePublished": "2024-11-06T07:24:56Z",
+            "description": description,
+            "keywords": ["2024 Race Call", "Pennsylvania"],
+        }
+    )
+    html = (
+        "<html><head><script type='application/ld+json'>"
+        f"{payload}</script></head><body><main></main></body></html>"
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "https://apnews.com/article/"
+            "race-call-trump-wins-pennsylvania-president"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.plain_text == description
+    assert result.images == []
 
 
 def test_ap_parser_extracts_lazy_loaded_carousel_gallery():

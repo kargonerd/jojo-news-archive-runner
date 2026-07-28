@@ -81,6 +81,8 @@ def parse_article(
         if gallery_body is not None:
             body = gallery_body
             structured_image_gallery_selected = True
+        else:
+            body = _ap_structured_race_call_body(news_article)
     if spec.publisher == "nyt":
         body = _nyt_story_body_companions(soup)
     if spec.publisher in {"reuters", "bloomberg"} and _is_yahoo_syndication(
@@ -174,6 +176,9 @@ def parse_article(
     headline = _first_text(
         _string_or_none(nyt_preloaded_metadata.get("headline")),
         _string_or_none(news_article.get("headline")) if news_article else None,
+        _ap_data_bulletin_headline(news_article)
+        if spec.publisher == "ap"
+        else None,
         _meta_content(soup, "property", "og:title"),
         _meta_content(soup, "name", "twitter:title"),
         _tag_text(soup.select_one("article h1, main h1, h1")),
@@ -253,6 +258,11 @@ def parse_article(
     if (
         spec.publisher == "wsj"
         and _wsj_interactive_puzzle(soup, news_article, canonical_url)
+    ):
+        content_type = ContentType.INTERACTIVE
+    if (
+        spec.publisher == "ap"
+        and _is_ap_data_bulletin(news_article, canonical_url)
     ):
         content_type = ContentType.INTERACTIVE
 
@@ -830,6 +840,71 @@ def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:
         if len(article.select("figure")) >= 3:
             return article
     return None
+
+
+def _ap_structured_race_call_body(
+    news_article: dict[str, Any],
+) -> Tag | None:
+    if not news_article:
+        return None
+    keywords = _string_list(news_article.get("keywords"))
+    description = _string_or_none(news_article.get("description"))
+    if (
+        not description
+        or len(description) < _MINIMUM_BODY_CHARACTERS
+        or not any("race call" in value.casefold() for value in keywords)
+    ):
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    paragraph = document.new_tag("p")
+    paragraph.string = description
+    article.append(paragraph)
+    return article
+
+
+def _ap_data_bulletin_headline(
+    news_article: dict[str, Any],
+) -> str | None:
+    if not news_article:
+        return None
+    for keyword in _string_list(news_article.get("keywords")):
+        if re.search(r"(?i)(?:--.*\bbox\b|\bbox score\b)", keyword):
+            return keyword
+    return None
+
+
+def _is_ap_data_bulletin(
+    news_article: dict[str, Any],
+    canonical_url: str,
+) -> bool:
+    if not news_article:
+        return False
+    headline = _first_text(
+        _string_or_none(news_article.get("headline")),
+        _ap_data_bulletin_headline(news_article),
+    )
+    keywords = _string_list(news_article.get("keywords"))
+    combined = " ".join(
+        [headline or "", canonical_url, *keywords]
+    ).casefold()
+    return bool(
+        re.search(r"--.*\bbox\b|\bbox score\b", combined)
+        or re.search(
+            r"(?:^|[-/])(?:[a-z]{2}-)?house-\d+-nominated(?:-|$)",
+            combined,
+        )
+    )
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    return []
 
 
 def _nyt_preloaded_state(soup: BeautifulSoup) -> dict[str, Any]:
