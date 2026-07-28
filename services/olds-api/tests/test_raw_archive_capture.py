@@ -1479,6 +1479,119 @@ def test_capture_tries_fallback_and_stores_only_usable_raw_html(tmp_path: Path):
     assert "bodyHtml" not in record
 
 
+def test_ap_thin_live_origin_prefers_full_wayback_capture(tmp_path: Path):
+    canonical_url = "https://apnews.com/article/historical-example"
+    wayback_url = (
+        "https://web.archive.org/web/20200102000000id_/"
+        + canonical_url
+    )
+    thin_live_page = b"""
+    <html><head>
+      <script type="application/ld+json">
+        {"@type":"NewsArticle","headline":"Historical AP headline"}
+      </script>
+    </head><body>
+      <article>
+        <div data-key="article"><p>Historical AP headline</p></div>
+      </article>
+    </body></html>
+    """ + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            canonical_url: (
+                200,
+                {"content-type": "text/html"},
+                thin_live_page,
+                canonical_url,
+            ),
+            wayback_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                wayback_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="ap",
+        canonical_url=canonical_url,
+        published_at="2020-01-01T00:00:00Z",
+        section="world",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.LIVE_ORIGIN,
+                snapshot_url=canonical_url,
+            ),
+            candidate(wayback_url, "20200102000000"),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    capture = result["capture"]
+    assert client.requests == [canonical_url, wayback_url]
+    assert capture.selected_candidate.provider == CaptureProvider.WAYBACK
+    assert capture.quality_score == 100
+
+
+def test_ap_live_origin_gallery_remains_full_quality(tmp_path: Path):
+    canonical_url = "https://apnews.com/article/photo-gallery-example"
+    slides = b"".join(
+        (
+            b'<div class="Carousel-slide">'
+            + f'<img src="https://dims.apnews.com/photo-{index}.jpg">'.encode()
+            + b"</div>"
+        )
+        for index in range(3)
+    )
+    gallery = (
+        b"<html><body><article><main class=\"Page-main\">"
+        b"<div class=\"Carousel\">"
+        + slides
+        + b"</div></main></article></body></html>"
+        + (b" " * 2_048)
+    )
+    client = StubArchiveClient(
+        {
+            canonical_url: (
+                200,
+                {"content-type": "text/html"},
+                gallery,
+                canonical_url,
+            )
+        }
+    )
+    item = ManifestItem(
+        publisher="ap",
+        canonical_url=canonical_url,
+        published_at="2025-01-01T00:00:00Z",
+        section="photos",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.LIVE_ORIGIN,
+                snapshot_url=canonical_url,
+            ),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.LIVE_ORIGIN
+    assert capture.quality_score == 100
+    assert capture.quality_signals["apThinLiveOrigin"] is False
+
+
 def test_capture_keeps_strong_article_instead_of_first_html_shell(
     tmp_path: Path,
 ):

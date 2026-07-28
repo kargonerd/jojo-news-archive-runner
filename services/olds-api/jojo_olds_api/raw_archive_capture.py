@@ -44,7 +44,7 @@ from .news_models import (
 
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
-    "ap": "ap-capture/0.5.0",
+    "ap": "ap-capture/0.5.1",
     "bloomberg": "bloomberg-capture/0.10.1",
     "ft": "ft-capture/0.20.0",
     "nyt": "nyt-capture/0.8.0",
@@ -69,6 +69,7 @@ BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 FT_SYNDICATION_MINIMUM_BODY_CHARACTERS = 400
 FT_CAPTURE_MINIMUM_BODY_CHARACTERS = 100
+_MINIMUM_AP_LIVE_ORIGIN_BODY_CHARACTERS = 100
 FT_IMAGE_LED_MINIMUM_IMAGES = 3
 FT_GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
 FTCHINESE_SEARCH_ENDPOINT = "https://m.ftchinese.com/search/"
@@ -1626,6 +1627,14 @@ def _fetch_usable_candidate(
         final_url=final_url,
     )
     signals = signals | transport_signals
+    if (
+        publisher == "ap"
+        and candidate.provider == CaptureProvider.LIVE_ORIGIN
+    ):
+        ap_evidence = _ap_live_origin_content_evidence(content)
+        signals = signals | ap_evidence
+        if ap_evidence["apThinLiveOrigin"]:
+            quality_score = min(quality_score, 70)
     if response_observer is not None:
         response_observer(candidate, content, final_url)
     structured_subscription_article = bool(
@@ -4708,6 +4717,42 @@ def score_raw_capture(
         "ftBodyImages": ft_body_images,
         "substantialResponse": substantial,
         "rawBytes": len(content),
+    }
+
+
+def _ap_live_origin_content_evidence(
+    content: bytes,
+) -> dict[str, object]:
+    soup = BeautifulSoup(content, "html.parser")
+    body_characters = 0
+    for selector in (
+        "[data-key='article']",
+        ".RichTextStoryBody",
+        "[data-testid='article-body']",
+    ):
+        for node in soup.select(selector):
+            normalized = re.sub(
+                r"\s+",
+                " ",
+                node.get_text(" ", strip=True),
+            ).strip()
+            body_characters = max(body_characters, len(normalized))
+    carousel_slides = len(
+        soup.select(
+            ".Page-main .Carousel .Carousel-slide, "
+            ".Page-main bsp-carousel .Carousel-slide"
+        )
+    )
+    embedded_story_html = b'"storyHTML"' in content
+    return {
+        "apLiveOriginBodyCharacters": body_characters,
+        "apLiveOriginCarouselSlides": carousel_slides,
+        "apLiveOriginEmbeddedStoryHtml": embedded_story_html,
+        "apThinLiveOrigin": bool(
+            body_characters < _MINIMUM_AP_LIVE_ORIGIN_BODY_CHARACTERS
+            and carousel_slides < 3
+            and not embedded_story_html
+        ),
     }
 
 
