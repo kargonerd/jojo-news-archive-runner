@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+from urllib.parse import quote
 
 import pytest
 
@@ -1289,7 +1290,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.5"
+    assert article.extraction.parser_version == "ft-parser/0.8.6"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -1329,7 +1330,64 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.5"
+    assert article.extraction.parser_version == "ft-parser/0.8.6"
+
+
+def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
+    raw_image = (
+        "https://d1e00ek4ebabms.cloudfront.net/production/"
+        "image-led-cartoon.jpg?source=next-article"
+    )
+    wrapped_once = (
+        "https://www.ft.com/__origami/service/image/v2/images/raw/"
+        + quote(raw_image, safe="")
+        + "?width=1200"
+    )
+    wrapped_twice = (
+        "https://www.ft.com/__origami/service/image/v2/images/raw/"
+        + quote(wrapped_once, safe="")
+        + "?width=700"
+    )
+    article_body = "A weekly cartoon about markets and working life."
+    structured = {
+        "@type": "NewsArticle",
+        "headline": "Imposter syndrome — a cartoon",
+        "datePublished": "2024-08-24T04:00:00Z",
+        "wordCount": 9,
+        "articleBody": article_body,
+        "image": {
+            "@type": "ImageObject",
+            "url": wrapped_once,
+            "width": 2048,
+            "height": 1152,
+        },
+    }
+    html = f"""
+    <html>
+      <head>
+        <script type="application/ld+json">{json.dumps(structured)}</script>
+        <meta property="og:image" content="{wrapped_twice}">
+      </head>
+      <body>
+        <article><div class="article__content-body">
+          <p>{article_body}</p>
+          <img src="{raw_image}">
+        </div></article>
+      </body>
+    </html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/image-led-cartoon",
+    )
+
+    assert article.quality.status.value == "complete"
+    assert article.content_type.value == "gallery"
+    assert article.quality.images_selected == 1
+    assert len(article.images) == 1
+    assert article.extraction.parser_version == "ft-parser/0.8.6"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():

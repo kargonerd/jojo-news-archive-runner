@@ -344,6 +344,16 @@ def parse_article(
     )
     body_html = _inner_html(clean_body)
     images = list(images_by_url.values())
+    if (
+        spec.publisher == "ft"
+        and content_type == ContentType.ARTICLE
+        and _ft_image_led_article(
+            news_article,
+            body_characters=len(plain_text),
+            images=images,
+        )
+    ):
+        content_type = ContentType.GALLERY
     warnings: list[str] = []
     if not headline:
         warnings.append("missing-headline")
@@ -354,7 +364,7 @@ def parse_article(
         content_type == ContentType.GALLERY
         and (
             image_block_count >= 1
-            or (spec.publisher == "nyt" and len(images) >= 1)
+            or (spec.publisher in {"nyt", "ft"} and len(images) >= 1)
         )
     )
     publisher_notice = _is_publisher_notice(
@@ -2122,6 +2132,36 @@ def _image_candidate(
 def _image_identity(url: str) -> str:
     parts = urlsplit(url)
     host = (parts.hostname or "").casefold()
+    if host in {"ft.com", "www.ft.com"} and "/images/raw/" in parts.path:
+        nested = unquote(parts.path.split("/images/raw/", 1)[1])
+        for _ in range(4):
+            if "/images/raw/" not in nested:
+                break
+            nested_parts = urlsplit(nested)
+            nested = unquote(
+                nested_parts.path.split("/images/raw/", 1)[1]
+            )
+        nested_parts = urlsplit(nested)
+        if nested_parts.scheme in {"http", "https"} and nested_parts.netloc:
+            return urlunsplit(
+                (
+                    nested_parts.scheme.casefold(),
+                    nested_parts.netloc.casefold(),
+                    nested_parts.path,
+                    "",
+                    "",
+                )
+            )
+    if host == "d1e00ek4ebabms.cloudfront.net":
+        return urlunsplit(
+            (
+                parts.scheme.casefold(),
+                parts.netloc.casefold(),
+                parts.path,
+                "",
+                "",
+            )
+        )
     wsj_image = (
         re.fullmatch(
             r"(/im-\d+)(?:/(?:social|portrait))?/?",
@@ -2142,6 +2182,33 @@ def _image_identity(url: str) -> str:
             )
         )
     return url
+
+
+def _ft_image_led_article(
+    article: dict[str, Any],
+    *,
+    body_characters: int,
+    images: list[ImageCandidate],
+) -> bool:
+    if not article or body_characters >= _MINIMUM_BODY_CHARACTERS or not images:
+        return False
+    word_count = article.get("wordCount")
+    article_body = _string_or_none(article.get("articleBody"))
+    structured_image = article.get("image")
+    if not isinstance(word_count, int) or word_count > 30:
+        return False
+    if not article_body or len(_clean_text(article_body)) >= 120:
+        return False
+    if not isinstance(structured_image, dict):
+        return False
+    width = structured_image.get("width")
+    height = structured_image.get("height")
+    return (
+        isinstance(width, int)
+        and isinstance(height, int)
+        and width >= 800
+        and height >= 600
+    )
 
 
 def _merge_candidate_urls(
