@@ -128,6 +128,86 @@ def test_holdout_plan_excludes_every_prior_cohort_url(tmp_path: Path):
     assert first_urls.isdisjoint(holdout_urls)
 
 
+def test_plan_prunes_reuters_non_article_endpoints(tmp_path: Path):
+    manifest = tmp_path / "reuters-manifest.jsonl"
+    invalid_url = (
+        "https://www.reuters.com/article/comments/idUS12320140101"
+    )
+    valid_url = "https://www.reuters.com/article/idUS12320140101"
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "publisher": "reuters",
+                    "canonical_url": url,
+                    "published_at": "2014-01-01T00:00:00Z",
+                    "candidates": [],
+                }
+            )
+            + "\n"
+            for url in (invalid_url, valid_url)
+        ),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="reuters",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="reuters",
+    )
+    initialize_parser_validation_schema(connection)
+    connection.executemany(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2014, '0000', '2026-07-28T00:00:00Z')
+        """,
+        ((invalid_url,), (valid_url,)),
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_results(
+            canonical_url, publisher, sample_year, parser_version,
+            extraction_status, content_type, qa_pass, warnings_json,
+            issues_json, parsed_at
+        ) VALUES (
+            ?, 'reuters', 2014, 'reuters-parser/0.7.0',
+            'unsupported', 'article', 0, '[]', '[]',
+            '2026-07-28T00:00:00Z'
+        )
+        """,
+        (invalid_url,),
+    )
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="reuters",
+        from_year=2014,
+        to_year=2014,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    assert connection.execute(
+        """
+        SELECT canonical_url FROM parser_validation_samples
+        """
+    ).fetchall() == [(valid_url,)]
+    assert connection.execute(
+        """
+        SELECT COUNT(*) FROM parser_validation_results
+        WHERE canonical_url=?
+        """,
+        (invalid_url,),
+    ).fetchone()[0] == 0
+
+
 def test_ft_infini_samples_are_added_even_when_random_plan_is_full(
     tmp_path: Path,
 ):

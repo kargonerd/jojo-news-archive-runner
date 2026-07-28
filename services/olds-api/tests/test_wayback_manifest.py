@@ -399,6 +399,26 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         ),
     ) is None
 
+    reuters = archive_source_spec("reuters")
+    assert normalize_article_url(
+        reuters,
+        "https://www.reuters.com/article/comments/idUS123",
+    ) is None
+    assert normalize_article_url(
+        reuters,
+        "https://www.reuters.com/article/slideshow/idUS123",
+    ) is None
+    assert normalize_article_url(
+        reuters,
+        "https://www.reuters.com/article/idUSKBN12345620150101",
+    ) == (
+        "https://www.reuters.com/article/idUSKBN12345620150101"
+    )
+    assert normalize_article_url(
+        reuters,
+        "https://www.reuters.com/article/idUS123%3C/body%3E",
+    ) is None
+
     ft = archive_source_spec("ft")
     assert normalize_article_url(
         ft,

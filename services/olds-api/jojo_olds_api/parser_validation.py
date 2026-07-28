@@ -138,6 +138,34 @@ def ensure_parser_validation_plan(
         raise ValueError("reserve_per_year must not be negative")
 
     initialize_parser_validation_schema(connection)
+    source_spec = archive_source_spec(publisher)
+    invalid_urls = [
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT canonical_url
+            FROM parser_validation_samples
+            WHERE sample_year >= ? AND sample_year <= ?
+            """,
+            (from_year, to_year),
+        )
+        if normalize_article_url(source_spec, str(row[0])) is None
+    ]
+    if invalid_urls:
+        connection.executemany(
+            """
+            DELETE FROM parser_validation_results
+            WHERE canonical_url=?
+            """,
+            ((url,) for url in invalid_urls),
+        )
+        connection.executemany(
+            """
+            DELETE FROM parser_validation_samples
+            WHERE canonical_url=?
+            """,
+            ((url,) for url in invalid_urls),
+        )
     now = _now_iso()
     current_parser_version = publisher_spec(publisher).parser_version
     previous_versions = {

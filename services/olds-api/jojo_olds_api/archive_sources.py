@@ -126,6 +126,8 @@ ARCHIVE_SOURCE_SPECS = {
         ),
         rejected_path_patterns=_patterns(
             r"/(?:video|pictures|graphics)(?:/|$)",
+            r"^/article/(?:comments|slideshow)(?:/|$)",
+            r"%3c|%3e",
         ),
     ),
     "ft": ArchiveSourceSpec(
