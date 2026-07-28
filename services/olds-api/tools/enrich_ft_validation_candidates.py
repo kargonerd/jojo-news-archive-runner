@@ -27,6 +27,7 @@ from jojo_olds_api.raw_archive_capture import (
     _same_article_url,
     _validate_ft_syndication_response,
     capture_item,
+    discover_ft_syndication_candidates,
     ft_syndication_search_url,
     record_capture_result,
 )
@@ -163,24 +164,46 @@ def _discover(
                 )
             except Exception:
                 candidates = ()
-        if candidates and not candidate_prevalidated:
-            candidate = candidates[0]
+        if (
+            not candidates
+            and row.published_at
+            and row.published_at.startswith("2024-")
+        ):
             try:
-                status, headers, content, final_url = client.fetch(
-                    candidate.snapshot_url,
-                    maximum_bytes=2_000_000,
-                )
-                validated, _ = _validate_ft_syndication_response(
+                candidates = discover_ft_syndication_candidates(
                     item,
-                    expected_partner_url=candidate.snapshot_url,
+                    archive_client=client,
                     expected_headline=headline,
-                    content=content,
-                    final_url=final_url,
+                    skip_title_search=False,
+                    exhaustive=True,
                 )
-                if status != 200 or not validated:
-                    candidates = ()
             except Exception:
                 candidates = ()
+        if candidates and not candidate_prevalidated:
+            validated_candidate = None
+            for candidate in candidates:
+                try:
+                    status, headers, content, final_url = client.fetch(
+                        candidate.snapshot_url,
+                        maximum_bytes=2_000_000,
+                    )
+                    validated, _ = _validate_ft_syndication_response(
+                        item,
+                        expected_partner_url=candidate.snapshot_url,
+                        expected_headline=headline,
+                        content=content,
+                        final_url=final_url,
+                    )
+                    if status == 200 and validated:
+                        validated_candidate = candidate
+                        break
+                except Exception:
+                    continue
+            candidates = (
+                (validated_candidate,)
+                if validated_candidate is not None
+                else ()
+            )
         capture_result = None
         if candidates:
             candidate = candidates[0]

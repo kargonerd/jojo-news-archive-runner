@@ -345,6 +345,7 @@ def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
     assert capture.quality_signals["subscriptionShell"] is False
     assert client.requests == [row_url]
 
+
     mismatched_payload = json.loads(payload)
     mismatched_payload["rows"][0]["row"]["publish_date"] = "2023-01-01"
     wayback_url = (
@@ -385,6 +386,60 @@ def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
     assert mismatched_result["status"] == "error"
     assert "publication-date-mismatch" in mismatched_result["error"]
     assert mismatched_client.requests == [row_url]
+
+
+def test_ft_jina_reader_html_is_validated_as_derived_origin(
+    tmp_path: Path,
+):
+    headline = (
+        "Amazon writes its largest venture cheque yet "
+        "for AI start-up Anthropic"
+    )
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    reader_url = "https://r.jina.ai/" + canonical_url
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2024-03-28T00:00:00+00:00",
+        section="business",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=reader_url,
+                source_url=canonical_url,
+                expected_headline=headline,
+            ),
+        ),
+    )
+    client = StubArchiveClient(
+        {
+            reader_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                ft_syndication_html(
+                    headline=headline,
+                    include_copyright=False,
+                ),
+                canonical_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    capture = result["capture"]
+    assert capture.selected_candidate.snapshot_url == reader_url
+    assert capture.quality_signals["ftInfiniOriginValidated"] is True
+    assert capture.quality_signals["infiniOriginHeadlineOverlap"] == 1.0
 
 
 def test_ft_infini_news_row_is_stored_as_validated_derived_html(

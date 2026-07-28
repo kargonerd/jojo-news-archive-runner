@@ -681,6 +681,11 @@ def capture_item(
                         candidate.snapshot_url
                     )
                 )
+                jina_ft_origin = bool(
+                    candidate.provider == CaptureProvider.OTHER
+                    and _is_jina_ft_reader_url(candidate.snapshot_url)
+                    and _is_ft_origin_url(candidate.source_url)
+                )
                 if ghostarchive_origin:
                     validated, validation_signals = (
                         _validate_ft_ghostarchive_response(
@@ -690,7 +695,7 @@ def capture_item(
                             final_url=response[3],
                         )
                     )
-                elif direct_infini_origin:
+                elif direct_infini_origin or jina_ft_origin:
                     validated, validation_signals = (
                         _validate_ft_infini_origin_response(
                             item,
@@ -699,7 +704,11 @@ def capture_item(
                             ),
                             expected_headline=candidate.expected_headline,
                             content=response[2],
-                            final_url=response[3],
+                            final_url=(
+                                candidate.source_url or ""
+                                if jina_ft_origin
+                                else response[3]
+                            ),
                         )
                     )
                 else:
@@ -744,6 +753,7 @@ def capture_item(
                         100
                         if (
                             direct_infini_origin
+                            or jina_ft_origin
                             or ghostarchive_origin
                             or ftchinese_official
                         )
@@ -757,7 +767,7 @@ def capture_item(
                         else {}
                     ),
                 )
-                if direct_infini_origin or ghostarchive_origin:
+                if direct_infini_origin or jina_ft_origin or ghostarchive_origin:
                     ft_infini_origin_validated = True
                 elif candidate.provider == CaptureProvider.OTHER:
                     ft_raw_partner_validated = True
@@ -3018,6 +3028,20 @@ def _is_ftchinese_full_view_url(value: str) -> bool:
             flags=re.IGNORECASE,
         )
         and query.get("full") == ["y"]
+    )
+
+
+def _is_jina_ft_reader_url(value: str) -> bool:
+    parsed = urlsplit(value)
+    return bool(
+        parsed.scheme == "https"
+        and (parsed.hostname or "").casefold() == "r.jina.ai"
+        and re.fullmatch(
+            r"/https://(?:www\.)?ft\.com/content/"
+            r"[0-9a-f-]+/?",
+            parsed.path,
+            flags=re.IGNORECASE,
+        )
     )
 
 
