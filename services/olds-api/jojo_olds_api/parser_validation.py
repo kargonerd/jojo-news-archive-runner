@@ -11,7 +11,7 @@ import sqlite3
 from typing import Iterable
 
 from .archive_sources import archive_source_spec, normalize_article_url
-from .news_models import ArticleStatus, RawCapture
+from .news_models import ArticleStatus, ContentType, RawCapture
 from .news_parser import parse_article
 from .publisher_specs import publisher_spec
 
@@ -57,6 +57,7 @@ def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
             sample_year INTEGER NOT NULL,
             parser_version TEXT,
             extraction_status TEXT NOT NULL,
+            content_type TEXT NOT NULL DEFAULT 'article',
             qa_pass INTEGER NOT NULL,
             body_characters INTEGER NOT NULL DEFAULT 0,
             block_count INTEGER NOT NULL DEFAULT 0,
@@ -93,6 +94,19 @@ def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
             """
             ALTER TABLE parser_validation_config
             ADD COLUMN parser_version TEXT NOT NULL DEFAULT ''
+            """
+        )
+    result_columns = {
+        str(row[1])
+        for row in connection.execute(
+            "PRAGMA table_info(parser_validation_results)"
+        ).fetchall()
+    }
+    if "content_type" not in result_columns:
+        connection.execute(
+            """
+            ALTER TABLE parser_validation_results
+            ADD COLUMN content_type TEXT NOT NULL DEFAULT 'article'
             """
         )
     connection.commit()
@@ -570,6 +584,7 @@ def record_parser_validation(
         "sample_year": sample_year,
         "parser_version": None,
         "extraction_status": ArticleStatus.ERROR.value,
+        "content_type": ContentType.ARTICLE.value,
         "qa_pass": 0,
         "body_characters": 0,
         "block_count": 0,
@@ -612,7 +627,16 @@ def record_parser_validation(
         ]
         duplicate_blocks = len(text_blocks) - len(set(text_blocks))
         issues: list[str] = []
-        if article.quality.status != ArticleStatus.COMPLETE:
+        nontext_content = article.content_type in {
+            ContentType.INTERACTIVE,
+            ContentType.VIDEO,
+            ContentType.AUDIO,
+            ContentType.GALLERY,
+        }
+        if (
+            article.quality.status != ArticleStatus.COMPLETE
+            and not nontext_content
+        ):
             issues.append(f"extraction-{article.quality.status.value}")
         if not article.headline:
             issues.append("missing-headline")
@@ -632,6 +656,7 @@ def record_parser_validation(
             {
                 "parser_version": article.extraction.parser_version,
                 "extraction_status": article.quality.status.value,
+                "content_type": article.content_type.value,
                 "qa_pass": int(not issues),
                 "body_characters": article.quality.body_characters,
                 "block_count": article.quality.block_count,
@@ -667,6 +692,7 @@ def record_parser_validation(
                 sample_year,
                 parser_version,
                 extraction_status,
+                content_type,
                 qa_pass,
                 body_characters,
                 block_count,
@@ -687,6 +713,7 @@ def record_parser_validation(
                 :sample_year,
                 :parser_version,
                 :extraction_status,
+                :content_type,
                 :qa_pass,
                 :body_characters,
                 :block_count,
@@ -704,6 +731,7 @@ def record_parser_validation(
             ON CONFLICT(canonical_url) DO UPDATE SET
                 parser_version=excluded.parser_version,
                 extraction_status=excluded.extraction_status,
+                content_type=excluded.content_type,
                 qa_pass=excluded.qa_pass,
                 body_characters=excluded.body_characters,
                 block_count=excluded.block_count,
@@ -772,6 +800,18 @@ def parser_validation_summary(
                 COALESCE(SUM(images_selected), 0),
                 COALESCE(SUM(images_referenced > 0), 0),
                 COALESCE(SUM(images_selected > 0), 0)
+                ,
+                COALESCE(
+                    SUM(
+                        content_type IN (
+                            'interactive',
+                            'video',
+                            'audio',
+                            'gallery'
+                        )
+                    ),
+                    0
+                )
             FROM parser_validation_results
             WHERE sample_year=? AND parser_version=?
             """,
@@ -864,6 +904,7 @@ def parser_validation_summary(
                 int(row[11]) / int(row[10]) if int(row[10]) else 0.0,
                 4,
             ),
+            "nonTextContent": int(row[14]),
             "issueCounts": dict(sorted(issue_counts.items())),
             "failureExamples": failure_examples,
         }

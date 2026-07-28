@@ -12,6 +12,7 @@ from jojo_olds_api.news_models import (
 )
 from jojo_olds_api.parser_validation import (
     ensure_parser_validation_plan,
+    initialize_parser_validation_schema,
     parser_validation_summary,
     pending_completed_parser_validation_files,
     pending_parser_validation_urls,
@@ -851,6 +852,78 @@ def test_completed_validation_sample_records_parser_quality(tmp_path: Path):
     assert summary["years"]["2020"]["imageSelectionRate"] == 1.0
     assert summary["years"]["2020"]["issueCounts"] == {}
     assert summary["years"]["2020"]["failureExamples"] == []
+
+
+def test_nontext_interactive_is_not_a_false_article_body_failure(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.nytimes.com/interactive/2020/10/25/"
+        "us/politics/example.html"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, updated_at
+        )
+        VALUES (2020, 1, 'test', 'nyt-parser/0.8.1', 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        )
+        VALUES (?, 2020, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html>
+      <head>
+        <meta property="og:title" content="Interactive election result">
+        <meta property="article:published_time"
+              content="2020-10-25T00:00:00Z">
+      </head>
+      <body><main data-interactive-root="result"></main></body>
+    </html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="nyt:" + ("a" * 64),
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at=datetime(2020, 10, 25, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20201026000000id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "unsupported"
+    assert result["qaPass"] is True
+    assert result["issues"] == []
+    assert summary["years"]["2020"]["nonTextContent"] == 1
+    assert summary["years"]["2020"]["qaPassed"] == 1
+    assert summary["years"]["2020"]["unsupported"] == 1
 
 
 def test_validation_uses_parsed_publication_year_not_capture_year(
