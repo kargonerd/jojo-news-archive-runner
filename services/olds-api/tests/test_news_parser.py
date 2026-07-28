@@ -320,6 +320,43 @@ def test_parser_supports_legacy_nyt_story_body_and_pdate():
     assert result.quality.body_characters >= 200
 
 
+def test_parser_combines_split_2012_nyt_article_body_containers():
+    canonical_url = (
+        "https://www.nytimes.com/2012/01/21/technology/example.html"
+    )
+    continuation = " ".join(["Continuation reporting sentence."] * 30)
+    html = f"""
+    <html>
+      <head>
+        <meta name="pdate" content="20120121">
+        <meta property="og:title" content="Historical NYT headline">
+      </head>
+      <body>
+        <div class="articleBody">
+          <p itemprop="articleBody">Opening paragraph with the central news.</p>
+        </div>
+        <aside><p>Related-story navigation must not be included.</p></aside>
+        <div class="articleBody">
+          <p itemprop="articleBody">{continuation}</p>
+        </div>
+      </body>
+    </html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("nyt", canonical_url),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Opening paragraph" in result.plain_text
+    assert "Continuation reporting" in result.plain_text
+    assert "Related-story navigation" not in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.1"
+
+
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
     canonical_url = (
         "https://www.bloomberg.com/opinion/articles/2025-06-04/"
@@ -476,7 +513,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.0"
+    assert result.extraction.parser_version == "nyt-parser/0.8.1"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -797,7 +834,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.0"
+    assert result.extraction.parser_version == "nyt-parser/0.8.1"
 
 
 def test_parser_falls_back_to_catalog_publication_time():
@@ -1224,7 +1261,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.0"
+    assert result.extraction.parser_version == "nyt-parser/0.8.1"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():

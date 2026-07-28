@@ -104,6 +104,8 @@ def parse_article(
         generic_syndication_allowed
     ):
         body = _generic_syndication_body(soup)
+    if body is None and spec.publisher == "nyt":
+        body = _nyt_legacy_article_body(soup)
     if body is None:
         body = _select_body(soup, spec)
     structured_image_gallery_selected = False
@@ -551,6 +553,34 @@ def _nyt_story_body_companions(soup: BeautifulSoup) -> Tag | None:
         if copy is not None:
             wrapper.append(copy)
     return wrapper if wrapper.get_text(" ", strip=True) else None
+
+
+def _nyt_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
+    nodes = [
+        node
+        for node in soup.select(".articleBody")
+        if not any(
+            isinstance(parent, Tag)
+            and "articleBody" in (parent.get("class") or [])
+            for parent in node.parents
+        )
+    ]
+    if not nodes:
+        return None
+    document = BeautifulSoup(
+        "<div data-jojo-source='nyt-legacy-article-body'></div>",
+        "html.parser",
+    )
+    wrapper = document.select_one("div")
+    if wrapper is None:
+        return None
+    for node in nodes:
+        copy = BeautifulSoup(str(node), "html.parser").select_one(
+            ".articleBody"
+        )
+        if copy is not None:
+            wrapper.append(copy)
+    return wrapper if wrapper.select_one('[itemprop="articleBody"], p') else None
 
 
 def _structured_article_body(
