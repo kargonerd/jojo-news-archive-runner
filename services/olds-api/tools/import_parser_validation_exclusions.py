@@ -34,18 +34,29 @@ def main() -> int:
     target = sqlite3.connect(args.target_state, timeout=60)
     try:
         initialize_parser_validation_schema(target)
-        source_table = source.execute(
+        results_table = source.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type='table' AND name='parser_validation_results'
+            """
+        ).fetchone()
+        samples_table = source.execute(
             """
             SELECT 1 FROM sqlite_master
             WHERE type='table' AND name='parser_validation_samples'
             """
         ).fetchone()
-        if source_table is None:
-            raise SystemExit("source state has no parser_validation_samples table")
+        if results_table is not None:
+            source_table = "parser_validation_results"
+        elif samples_table is not None:
+            # Compatibility fallback for a plan-only legacy checkpoint.
+            source_table = "parser_validation_samples"
+        else:
+            raise SystemExit("source state has no parser validation URL table")
         urls = [
             str(row[0])
             for row in source.execute(
-                "SELECT canonical_url FROM parser_validation_samples"
+                f"SELECT DISTINCT canonical_url FROM {source_table}"
             )
         ]
         now = datetime.now(timezone.utc).isoformat()
@@ -74,6 +85,7 @@ def main() -> int:
         result = {
             "formatVersion": "jojo-parser-validation-exclusions/1",
             "sourceCohort": args.source_cohort,
+            "sourceTable": source_table,
             "sourceSamples": len(urls),
             "excluded": int(
                 target.execute(
