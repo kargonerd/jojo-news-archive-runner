@@ -46,7 +46,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.5.0",
     "bloomberg": "bloomberg-capture/0.10.1",
-    "ft": "ft-capture/0.13.0",
+    "ft": "ft-capture/0.14.0",
     "nyt": "nyt-capture/0.8.0",
     "reuters": "reuters-capture/0.7.0",
     "wsj": "wsj-capture/0.8.2",
@@ -1447,7 +1447,9 @@ def _infini_news_derived_html(
         f"<script type=\"application/ld+json\">{structured_json}</script>"
         "</head><body>"
         f"<article data-jojo-representation=\"derived-infini-news\">"
-        f"<h1>{escape(headline)}</h1>{body_html}</article>"
+        f"<h1>{escape(headline)}</h1>"
+        f"<div data-trackable=\"article-body\">{body_html}</div>"
+        "</article>"
         "</body></html>"
     )
     return html.encode("utf-8")

@@ -264,13 +264,19 @@ def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
         "split=train&offset=54321&length=1"
     )
     body = "\n".join(
-        (
-            "Direct Financial Times reporting paragraph "
-            f"{index} contains detailed market evidence, executive "
-            "interviews, financial disclosures, historical comparisons "
-            "and enough substantive analysis for a complete article."
-        )
-        for index in range(1, 12)
+        [
+            (
+                "Direct Financial Times reporting paragraph "
+                f"{index} contains detailed market evidence, executive "
+                "interviews, financial disclosures, historical comparisons "
+                "and enough substantive analysis for a complete article."
+            )
+            for index in range(1, 12)
+        ]
+        + [
+            "To read the full story, subscribe or sign in for related "
+            "coverage and newsletters."
+        ]
     )
     payload = json.dumps(
         {
@@ -334,6 +340,8 @@ def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
     assert capture.quality_signals["ftInfiniOriginValidated"] is True
     assert capture.quality_signals["infiniOriginUrlValidated"] is True
     assert capture.quality_signals["infiniOriginBodyCharacters"] >= 1_000
+    assert capture.quality_signals["hasStrongBodyMarker"] is True
+    assert capture.quality_signals["subscriptionShell"] is False
     assert client.requests == [row_url]
 
 
