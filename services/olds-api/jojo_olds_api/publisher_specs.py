@@ -98,7 +98,7 @@ PUBLISHER_SPECS = {
     ),
     "nyt": PublisherSpec(
         publisher="nyt",
-        parser_version="nyt-parser/0.8.6",
+        parser_version="nyt-parser/0.8.7",
         domains=("nytimes.com", "www.nytimes.com"),
         default_language="en",
         edition="us",
@@ -107,6 +107,7 @@ PUBLISHER_SPECS = {
             "[data-testid='article-body']",
             ".StoryBodyCompanionColumn",
             ".story-body",
+            ".PostV2__postBody",
             ".Post__body",
             ".interactive-body",
             "article",

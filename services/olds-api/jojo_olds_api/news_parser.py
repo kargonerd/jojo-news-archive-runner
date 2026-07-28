@@ -213,6 +213,7 @@ def parse_article(
                 "analyticsAttributes.articleDate",
             ),
             _meta_content(soup, "name", "sailthru.date"),
+            _nyt_visible_published_at(soup),
             _tag_attribute(
                 soup.select_one(
                     '[itemprop="datePublished"][datetime], '
@@ -2213,6 +2214,19 @@ def _tag_attribute(node: Tag | None, attribute: str) -> str | None:
     if not isinstance(node, Tag):
         return None
     return _string_or_none(node.get(attribute))
+
+
+def _nyt_visible_published_at(soup: BeautifulSoup) -> str | None:
+    value = _tag_text(soup.select_one(".PostV2__datePublished"))
+    if not value:
+        return None
+    for format_string in ("%B %d, %Y", "%b. %d, %Y", "%b %d, %Y"):
+        try:
+            parsed = datetime.strptime(value, format_string)
+        except ValueError:
+            continue
+        return parsed.replace(tzinfo=timezone.utc).isoformat()
+    return None
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
