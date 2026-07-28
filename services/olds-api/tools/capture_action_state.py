@@ -13,6 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--max-record-attempts", type=int, default=3)
     parser.add_argument("--github-output", type=Path)
+    parser.add_argument("--stop-at-validation-target", action="store_true")
     return parser.parse_args()
 
 
@@ -20,6 +21,7 @@ def action_state(
     state_path: Path,
     *,
     maximum_record_attempts: int,
+    stop_at_validation_target: bool = False,
 ) -> dict[str, object]:
     if maximum_record_attempts < 1:
         raise ValueError("maximum_record_attempts must be positive")
@@ -54,6 +56,7 @@ def action_state(
         ).fetchone()[0]
         validation_replays = 0
         validation_ready = False
+        validation_target_reached = False
         validation_tables = {
             str(row[0])
             for row in connection.execute(
@@ -124,6 +127,17 @@ def action_state(
                         parser_errors,
                     ) in readiness_rows
                 )
+                validation_target_reached = bool(readiness_rows) and all(
+                    int(evaluated) >= int(target_size)
+                    for (
+                        _sample_year,
+                        target_size,
+                        evaluated,
+                        _qa_passed,
+                        _complete,
+                        _parser_errors,
+                    ) in readiness_rows
+                )
             validation_replays = int(
                 connection.execute(
                     """
@@ -171,8 +185,16 @@ def action_state(
         "actionable": actionable,
         "validationReplays": validation_replays,
         "validationReady": validation_ready,
+        "validationTargetReached": validation_target_reached,
         "terminalUnresolved": max(0, unresolved - recoverable),
-        "shouldContinue": actionable > 0 and not validation_ready,
+        "shouldContinue": (
+            actionable > 0
+            and not validation_ready
+            and not (
+                stop_at_validation_target
+                and validation_target_reached
+            )
+        ),
     }
 
 
@@ -186,6 +208,9 @@ def write_github_output(path: Path, result: dict[str, object]) -> None:
         "validation_ready": str(
             bool(result.get("validationReady", False))
         ).lower(),
+        "validation_target_reached": str(
+            bool(result.get("validationTargetReached", False))
+        ).lower(),
     }
     with path.open("a", encoding="utf-8") as handle:
         for key, value in values.items():
@@ -197,6 +222,7 @@ def main() -> int:
     result = action_state(
         args.state,
         maximum_record_attempts=args.max_record_attempts,
+        stop_at_validation_target=args.stop_at_validation_target,
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     if args.github_output:

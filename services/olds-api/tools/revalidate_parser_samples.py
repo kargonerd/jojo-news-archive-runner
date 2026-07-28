@@ -13,6 +13,7 @@ if str(SERVICE_ROOT) not in sys.path:
 
 from jojo_olds_api.parser_validation import (
     parser_validation_summary,
+    parser_validation_target_reached,
     pending_completed_parser_validation_files,
     record_parser_validation,
 )
@@ -54,6 +55,8 @@ def main() -> int:
     requeued = 0
     missing: list[str] = []
     for canonical_url, raw_path in pending:
+        if parser_validation_target_reached(connection):
+            break
         if not (args.archive_root / raw_path).is_file():
             missing.append(raw_path)
             continue

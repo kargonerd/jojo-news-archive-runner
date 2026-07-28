@@ -30,6 +30,7 @@ from jojo_olds_api.parser_validation import (
     ensure_parser_validation_plan,
     is_parser_validation_sample,
     parser_validation_summary,
+    parser_validation_target_reached,
     record_parser_validation,
 )
 from jojo_olds_api.raw_archive_capture import (
@@ -117,6 +118,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Stop submitting new captures as soon as every configured parser "
             "validation year passes its target and QA gates."
+        ),
+    )
+    parser.add_argument(
+        "--stop-when-validation-target-reached",
+        action="store_true",
+        help=(
+            "Stop evaluating new parser samples at the configured sample "
+            "count even when QA gates fail."
         ),
     )
     parser.add_argument(
@@ -215,18 +224,25 @@ def main() -> int:
             maximum_record_attempts=args.max_record_attempts,
             seed=args.validation_seed,
         )
-    elif args.stop_when_validation_ready:
+    elif (
+        args.stop_when_validation_ready
+        or args.stop_when_validation_target_reached
+    ):
         raise SystemExit(
-            "--stop-when-validation-ready requires "
+            "validation stop options require "
             "--validation-sample-per-year"
         )
+    validation_target_reached = bool(
+        args.stop_when_validation_target_reached
+        and parser_validation_target_reached(connection)
+    )
     validation_ready = bool(
         args.stop_when_validation_ready
         and parser_validation_summary(connection)["ready"]
     )
     items = (
         []
-        if validation_ready
+        if validation_ready or validation_target_reached
         else pending_captures(
             connection,
             retry_errors=args.retry_errors,
@@ -284,7 +300,7 @@ def main() -> int:
 
     def submit_one(executor: ThreadPoolExecutor) -> bool:
         nonlocal runtime_limit_reached
-        if validation_ready:
+        if validation_ready or validation_target_reached:
             return False
         if deadline is not None and time.monotonic() >= deadline:
             runtime_limit_reached = True
@@ -348,6 +364,7 @@ def main() -> int:
                             connection,
                             item.canonical_url,
                         )
+                        and not validation_target_reached
                     ):
                         validation_result = record_parser_validation(
                             connection,
@@ -359,6 +376,10 @@ def main() -> int:
                     if args.stop_when_validation_ready:
                         validation_ready = bool(
                             parser_validation_summary(connection)["ready"]
+                        )
+                    if args.stop_when_validation_target_reached:
+                        validation_target_reached = (
+                            parser_validation_target_reached(connection)
                         )
                     submit_one(executor)
                     if (
@@ -407,6 +428,7 @@ def main() -> int:
             "errorsThisRun": failures,
             "stoppedForRuntimeLimit": runtime_limit_reached,
             "stoppedForValidationReady": validation_ready,
+            "stoppedForValidationTarget": validation_target_reached,
             "finishedAt": datetime.now(timezone.utc).isoformat(),
         }
     )

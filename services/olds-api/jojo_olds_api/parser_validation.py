@@ -873,6 +873,31 @@ def parser_validation_summary(
     return result
 
 
+def parser_validation_target_reached(
+    connection: sqlite3.Connection,
+) -> bool:
+    initialize_parser_validation_schema(connection)
+    rows = connection.execute(
+        """
+        SELECT
+            config.target_size,
+            COUNT(result.canonical_url)
+        FROM parser_validation_config AS config
+        LEFT JOIN parser_validation_results AS result
+          ON result.sample_year=config.sample_year
+         AND result.parser_version=config.parser_version
+        GROUP BY
+            config.sample_year,
+            config.target_size,
+            config.parser_version
+        """
+    ).fetchall()
+    return bool(rows) and all(
+        int(evaluated) >= int(target_size)
+        for target_size, evaluated in rows
+    )
+
+
 def _select_additional_samples(
     connection: sqlite3.Connection,
     *,

@@ -182,3 +182,60 @@ def test_ready_parser_validation_stops_pending_capture_chain(
     assert result["actionable"] == 2
     assert result["validationReady"] is True
     assert result["shouldContinue"] is False
+
+
+def test_failed_qa_stops_at_exact_validation_target_when_requested(
+    tmp_path: Path,
+):
+    state = tmp_path / "capture.sqlite3"
+    connection = sqlite3.connect(state)
+    connection.executescript(
+        """
+        CREATE TABLE captures (
+            canonical_url TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            raw_path TEXT
+        );
+        CREATE TABLE parser_validation_config (
+            sample_year INTEGER PRIMARY KEY,
+            target_size INTEGER NOT NULL,
+            parser_version TEXT NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL,
+            parser_version TEXT NOT NULL,
+            extraction_status TEXT NOT NULL,
+            qa_pass INTEGER NOT NULL
+        );
+        INSERT INTO captures VALUES
+            ('https://example.com/pending', 'pending', 0, NULL);
+        INSERT INTO parser_validation_config
+            VALUES (2024, 2, 'parser/2');
+        INSERT INTO parser_validation_results VALUES
+            ('https://example.com/pass', 2024, 'parser/2', 'complete', 1),
+            ('https://example.com/fail', 2024, 'parser/2', 'partial', 0);
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    normal = MODULE.action_state(
+        state,
+        maximum_record_attempts=3,
+    )
+    exact = MODULE.action_state(
+        state,
+        maximum_record_attempts=3,
+        stop_at_validation_target=True,
+    )
+
+    assert exact["validationTargetReached"] is True
+    assert exact["validationReady"] is False
+    assert normal["shouldContinue"] is True
+    assert exact["shouldContinue"] is False

@@ -417,6 +417,7 @@ jobs:
           python services/olds-api/tools/capture_action_state.py \
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+            --stop-at-validation-target \
             --github-output "$GITHUB_OUTPUT"
 
       - name: Pre-index validated FT mirror candidates
@@ -531,6 +532,7 @@ jobs:
             --validation-from-year "$SAMPLE_YEAR"
             --validation-to-year "$SAMPLE_YEAR"
             --stop-when-validation-ready
+            --stop-when-validation-target-reached
             --progress-every 25
             --minimum-free-gb 2
           )
@@ -645,6 +647,7 @@ jobs:
           python services/olds-api/tools/capture_action_state.py \
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+            --stop-at-validation-target \
             --github-output "$GITHUB_OUTPUT"
 
       - name: Dispatch next validation batch
