@@ -213,6 +213,9 @@ jobs:
               gzip -dc "$RUNNER_TEMP/ft-discovery.sqlite3.gz" \
                 > "$LOCAL_ROOT/catalog/source-discovery.sqlite3"
             fi
+            restore_if_present \
+              "${REMOTE_ROOT}/state/folo-access-links.json" \
+              "$LOCAL_ROOT/catalog/folo-access-links.json"
           fi
 
           restore_if_present \
@@ -353,6 +356,24 @@ jobs:
             --limit 600 \
             --workers "$DOWNLOAD_WORKERS" \
             --github-output "$GITHUB_OUTPUT"
+
+      - name: Capture FT links preserved by Folo
+        if: >-
+          ${{
+            inputs.publisher == 'ft' &&
+            hashFiles('.archive-work/**/catalog/folo-access-links.json') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          set -euo pipefail
+          python services/olds-api/tools/capture_ft_folo_access_links.py \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --output-dir "$LOCAL_ROOT/raw" \
+            --year "$SAMPLE_YEAR" \
+            --links-file "$LOCAL_ROOT/catalog/folo-access-links.json" \
+            --workers 2
 
       - name: Capture random year sample
         id: capture

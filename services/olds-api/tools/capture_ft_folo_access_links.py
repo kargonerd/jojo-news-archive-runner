@@ -253,11 +253,23 @@ def capture(
     year: int,
     maximum_episodes: int,
     workers: int,
+    links_file: Path | None = None,
 ) -> dict[str, int]:
-    links = collect_access_links(
-        year=year,
-        maximum_episodes=maximum_episodes,
-    )
+    if links_file is not None:
+        links = {
+            link.canonical_url: link
+            for link in (
+                AccessLink(**item)
+                for item in json.loads(
+                    links_file.read_text(encoding="utf-8")
+                )
+            )
+        }
+    else:
+        links = collect_access_links(
+            year=year,
+            maximum_episodes=maximum_episodes,
+        )
     connection = sqlite3.connect(state_path)
     try:
         targets = [
@@ -327,6 +339,7 @@ def main() -> int:
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--max-episodes", type=int, default=60)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--links-file", type=Path)
     args = parser.parse_args()
     result = capture(
         args.state,
@@ -334,6 +347,7 @@ def main() -> int:
         year=args.year,
         maximum_episodes=max(1, args.max_episodes),
         workers=max(1, args.workers),
+        links_file=args.links_file,
     )
     print(json.dumps(result, sort_keys=True))
     return 0
