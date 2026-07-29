@@ -290,7 +290,7 @@ def initialize_discovery_schema(
         """,
         [(pattern, _now_iso()) for pattern in patterns],
     )
-    if spec.publisher == "reuters":
+    if spec.publisher in {"reuters", "wsj"}:
         corrected_rows: list[tuple[str, int, str, str, str]] = []
         for canonical_url, timestamp, digest, published_at in connection.execute(
             """
@@ -1752,6 +1752,8 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
 def infer_published_at(canonical_url: str) -> str | None:
     parsed = urlsplit(canonical_url)
     patterns = [
+        r"/article/(?:0(?:%2C|,){2})?BT-CO-"
+        r"(20\d{2})(\d{2})(\d{2})-",
         r"/(20\d{2})/(\d{2})/(\d{2})(?:/|$)",
         r"/articles/(20\d{2})-(\d{2})-(\d{2})(?:/|$)",
         r"-(20\d{2})-(\d{2})-(\d{2})(?:/|$)",
@@ -1779,6 +1781,26 @@ def infer_published_at(canonical_url: str) -> str | None:
         except ValueError:
             return None
         return value.isoformat()
+    if (
+        (parsed.hostname or "").casefold().removeprefix("www.")
+        == "wsj.com"
+    ):
+        epoch_match = re.search(
+            r"/articles/[^/?#]+-((?:1[2-9]|2[0-1])\d{8})(?:$|[/?#])",
+            canonical_url,
+        )
+        if epoch_match:
+            value = datetime.fromtimestamp(
+                int(epoch_match.group(1)),
+                tz=timezone.utc,
+            )
+            if 2008 <= value.year <= 2038:
+                return value.replace(
+                    hour=0,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
+                ).isoformat()
     return None
 
 

@@ -450,6 +450,14 @@ def test_date_inference_and_candidate_ranking_prefers_after_publication():
         "https://www.reuters.com/article/"
         "01cyberaton-brief-idUSFWN0U201D20141218"
     ) == "2014-12-18T00:00:00+00:00"
+    assert infer_published_at(
+        "https://www.wsj.com/article/"
+        "0,,BT-CO-20130516-704945,00.html"
+    ) == "2013-05-16T00:00:00+00:00"
+    assert infer_published_at(
+        "https://www.wsj.com/articles/"
+        "a-19th-century-island-home-in-south-carolina-1472740999"
+    ) == "2016-09-01T00:00:00+00:00"
 
 
 def test_reuters_discovery_reclassifies_legacy_ids_by_publication_date():
