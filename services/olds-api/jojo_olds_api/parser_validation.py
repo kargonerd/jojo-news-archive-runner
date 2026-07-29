@@ -584,6 +584,37 @@ def pending_completed_parser_validation_files(
     ]
 
 
+def failed_completed_parser_validation_files(
+    connection: sqlite3.Connection,
+    *,
+    maximum: int | None,
+) -> list[tuple[str, str]]:
+    initialize_parser_validation_schema(connection)
+    query = """
+        SELECT
+            result.canonical_url,
+            capture.raw_path
+        FROM parser_validation_results AS result
+        JOIN parser_validation_config AS config
+          ON config.sample_year=result.sample_year
+         AND config.parser_version=result.parser_version
+        JOIN captures AS capture
+          ON capture.canonical_url=result.canonical_url
+        WHERE result.qa_pass=0
+          AND capture.status='complete'
+          AND capture.raw_path IS NOT NULL
+        ORDER BY result.sample_year, result.canonical_url
+    """
+    parameters: list[object] = []
+    if maximum is not None:
+        query += " LIMIT ?"
+        parameters.append(maximum)
+    return [
+        (str(row[0]), str(row[1]))
+        for row in connection.execute(query, parameters).fetchall()
+    ]
+
+
 def is_parser_validation_sample(
     connection: sqlite3.Connection,
     canonical_url: str,

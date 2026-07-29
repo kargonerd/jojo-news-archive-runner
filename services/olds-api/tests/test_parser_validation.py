@@ -12,6 +12,7 @@ from jojo_olds_api.news_models import (
 )
 from jojo_olds_api.parser_validation import (
     ensure_parser_validation_plan,
+    failed_completed_parser_validation_files,
     initialize_parser_validation_schema,
     parser_validation_summary,
     pending_completed_parser_validation_files,
@@ -1167,3 +1168,15 @@ def test_completed_sample_can_be_replayed_from_capture_state(tmp_path: Path):
         connection,
         maximum=10,
     ) == []
+    connection.execute(
+        """
+        UPDATE parser_validation_results
+        SET qa_pass=0
+        WHERE canonical_url=?
+        """,
+        (selected.canonical_url,),
+    )
+    assert failed_completed_parser_validation_files(
+        connection,
+        maximum=10,
+    ) == [(selected.canonical_url, blob.path)]

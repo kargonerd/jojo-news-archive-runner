@@ -12,8 +12,8 @@ if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
 from jojo_olds_api.parser_validation import (
+    failed_completed_parser_validation_files,
     parser_validation_summary,
-    parser_validation_target_reached,
     pending_completed_parser_validation_files,
     record_parser_validation,
 )
@@ -50,13 +50,18 @@ def main() -> int:
         connection,
         maximum=args.max_replays,
     )
+    failed = failed_completed_parser_validation_files(
+        connection,
+        maximum=max(0, args.max_replays - len(pending)),
+    )
+    pending.extend(
+        row for row in failed if row[0] not in {item[0] for item in pending}
+    )
     processed = 0
     parser_errors = 0
     requeued = 0
     missing: list[str] = []
     for canonical_url, raw_path in pending:
-        if parser_validation_target_reached(connection):
-            break
         if not (args.archive_root / raw_path).is_file():
             missing.append(raw_path)
             continue

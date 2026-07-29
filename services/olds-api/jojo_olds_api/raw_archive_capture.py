@@ -50,7 +50,7 @@ CAPTURE_POLICY_VERSIONS = {
     "bloomberg": "bloomberg-capture/0.10.3",
     "ft": "ft-capture/0.20.1",
     "nyt": "nyt-capture/0.8.1",
-    "reuters": "reuters-capture/0.7.1",
+    "reuters": "reuters-capture/0.7.2",
     "wsj": "wsj-capture/0.8.3",
 }
 ACCEPTED_HTTP_STATUSES = {200, 206}
@@ -1771,6 +1771,15 @@ def _fetch_usable_candidate(
             canonical_url=canonical_url,
         )
         signals = signals | wsj_evidence
+    reuters_parser_usable = True
+    if publisher == "reuters" and signals["looksLikeHtml"]:
+        reuters_parser_usable, reuters_evidence = (
+            _reuters_capture_parser_evidence(
+                content,
+                canonical_url=canonical_url,
+            )
+        )
+        signals = signals | reuters_evidence
     if response_observer is not None:
         response_observer(candidate, content, final_url)
     structured_subscription_article = bool(
@@ -1802,6 +1811,7 @@ def _fetch_usable_candidate(
         or not bloomberg_parser_usable
         or not ap_parser_usable
         or not wsj_parser_usable
+        or not reuters_parser_usable
     ):
         return (
             None,
@@ -5298,6 +5308,40 @@ def _ap_capture_parser_evidence(
     }
 
 
+def _reuters_capture_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="reuters",
+            canonical_url=canonical_url,
+            allow_generic_syndication=True,
+        )
+    except Exception as exc:
+        return False, {
+            "reutersCaptureParserUsable": False,
+            "reutersCaptureParserError": type(exc).__name__,
+        }
+    nontext = article.content_type in {
+        ContentType.INTERACTIVE,
+        ContentType.VIDEO,
+        ContentType.AUDIO,
+        ContentType.GALLERY,
+    }
+    usable = article.quality.status == ArticleStatus.COMPLETE or nontext
+    return usable, {
+        "reutersCaptureParserUsable": usable,
+        "reutersCaptureExtractionStatus": article.quality.status.value,
+        "reutersCaptureContentType": article.content_type.value,
+        "reutersCaptureBodyCharacters": article.quality.body_characters,
+    }
+
+
 def score_raw_capture(
     content: bytes,
     *,
@@ -5715,6 +5759,27 @@ def completed_capture_rejection_reason(
         )
         if not usable:
             return "bloomberg-origin-parser-incomplete"
+    if capture.publisher == "wsj":
+        usable, _ = _wsj_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "wsj-capture-parser-incomplete"
+    if capture.publisher == "ap":
+        usable, _ = _ap_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "ap-capture-parser-incomplete"
+    if capture.publisher == "reuters":
+        usable, _ = _reuters_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "reuters-capture-parser-incomplete"
     if (
         capture.publisher == "bloomberg"
         and capture.selected_candidate.provider == CaptureProvider.OTHER

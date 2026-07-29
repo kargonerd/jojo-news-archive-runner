@@ -9,6 +9,7 @@ import sqlite3
 from urllib.parse import parse_qs, urlsplit
 
 import brotli
+import pytest
 
 from jojo_olds_api.ghostarchive import ghostarchive_search_url
 from jojo_olds_api.news_models import (
@@ -5174,6 +5175,68 @@ def test_stored_wsj_subscription_shell_still_rejects_short_preview(
     )
 
     assert reason == "subscription-shell"
+
+
+@pytest.mark.parametrize(
+    ("publisher", "canonical_url", "expected_reason"),
+    [
+        (
+            "ap",
+            "https://apnews.com/article/incomplete-example",
+            "ap-capture-parser-incomplete",
+        ),
+        (
+            "reuters",
+            "https://www.reuters.com/article/incomplete-idUSL1N123",
+            "reuters-capture-parser-incomplete",
+        ),
+        (
+            "wsj",
+            "https://www.wsj.com/articles/incomplete-example-123",
+            "wsj-capture-parser-incomplete",
+        ),
+    ],
+)
+def test_stored_incomplete_capture_is_requeued_by_parser_evidence(
+    tmp_path: Path,
+    publisher: str,
+    canonical_url: str,
+    expected_reason: str,
+):
+    shell = b"""
+    <html><head>
+      <meta property="og:title" content="Archived report">
+      <meta property="article:published_time"
+            content="2020-01-01T00:00:00Z">
+    </head><body><article><p>Only a truncated preview.</p></article></body>
+    </html>
+    """ + (b" " * 2_048)
+    blob = store_raw_html(tmp_path, shell)
+    capture = RawCapture(
+        article_id=f"{publisher}:" + ("e" * 64),
+        publisher=publisher,
+        canonical_url=canonical_url,
+        published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20200102000000id_/"
+                + canonical_url
+            ),
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=85,
+        raw_html=blob,
+    )
+
+    assert completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    ) == expected_reason
 
 
 def test_raw_quality_rejects_bloomberg_login_to_keep_reading_shell():
