@@ -210,6 +210,16 @@ def parse_article(
                 # must not replace an anthology's complete article text.
                 for child in list(inline_interactive.children):
                     body.append(child)
+        ballot_interactive = _nyt_balloteer_body(
+            soup,
+            canonical_url=canonical_url,
+        )
+        if ballot_interactive is not None:
+            if body is None:
+                body = ballot_interactive
+            else:
+                for child in list(ballot_interactive.children):
+                    body.append(child)
         if "/interactive/" in canonical_url.casefold():
             redirect_interactive = _nyt_interactive_redirect_body(soup)
             if redirect_interactive is not None:
@@ -1243,6 +1253,43 @@ def _nyt_interactive_quiz_body(candidate: Tag) -> Tag | None:
                 answer_list.append(item)
             article.append(answer_list)
     return article if len(article.select("h2")) >= 2 else None
+
+
+def _nyt_balloteer_body(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
+    """Preserve the data endpoint for NYT quizzes rendered by Balloteer."""
+    if "/interactive/" not in canonical_url.casefold():
+        return None
+    ballot_slug: str | None = None
+    for script in soup.select("script"):
+        value = script.string or script.get_text()
+        if "ballot_slug" not in value or "embed_init" not in value:
+            continue
+        match = re.search(
+            r"""["']ballot_slug["']\s*:\s*["']([^"'\\]+)["']""",
+            value,
+        )
+        if match:
+            ballot_slug = match.group(1).strip()
+            break
+    if not ballot_slug or not re.fullmatch(r"[A-Za-z0-9._-]+", ballot_slug):
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    iframe = document.new_tag("iframe")
+    iframe["src"] = (
+        "https://www.nytimes.com/svc/int/balloteer/ballot/"
+        f"{ballot_slug}"
+    )
+    iframe["title"] = f"Interactive quiz data: {ballot_slug}"
+    iframe["data-interactive-provider"] = "nyt-balloteer"
+    article.append(iframe)
+    return article
 
 
 def _structured_image_gallery(soup: BeautifulSoup) -> Tag | None:
