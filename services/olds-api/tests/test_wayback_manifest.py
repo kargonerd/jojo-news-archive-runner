@@ -723,6 +723,22 @@ def test_urlkey_discovery_round_robins_patterns():
     assert next_pattern == "www.wsj.com/articles/b*"
 
 
+def test_pre_2014_wsj_discovery_prioritizes_legacy_article_urls():
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+
+    pattern, _ = next_discovery_query(connection)
+
+    assert pattern == "online.wsj.com/article/*"
+
+
 class StubBlueskyResponse:
     def raise_for_status(self):
         return None

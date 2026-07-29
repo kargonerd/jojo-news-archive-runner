@@ -1216,6 +1216,16 @@ def next_discovery_query(
         WHERE status != 'complete'
         ORDER BY
             CASE
+                WHEN pattern='online.wsj.com/article/*'
+                     AND CAST((
+                         SELECT value
+                         FROM discovery_metadata
+                         WHERE key='from_year'
+                     ) AS INTEGER) <= 2013
+                THEN 0
+                ELSE 1
+            END,
+            CASE
                 WHEN (
                     SELECT value
                     FROM discovery_metadata
