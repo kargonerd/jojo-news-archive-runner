@@ -1511,6 +1511,8 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
     if len(rows) < 3:
         rows = _nyt_preloaded_slideshow_rows(state)
     if len(rows) < 3:
+        rows = _nyt_preloaded_visual_story_rows(state)
+    if len(rows) < 3:
         rows = _nyt_denormalized_gallery_rows(soup)
     if len(rows) < 3:
         rows = _nyt_itemprop_gallery_rows(soup)
@@ -1535,6 +1537,89 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
             figure.append(figcaption)
         article.append(figure)
     return article
+
+
+def _nyt_preloaded_visual_story_rows(
+    state: dict[str, Any],
+) -> list[tuple[str, str | None, str | None]]:
+    """Recover ordered NYT visual stories composed from image/diptych blocks."""
+    body = next(
+        (
+            value
+            for key, value in state.items()
+            if key.endswith(".sprinkledBody")
+            and isinstance(value, dict)
+            and value.get("__typename") == "DocumentBlock"
+        ),
+        None,
+    )
+    if body is None:
+        return []
+    content = body.get("content@filterEmpty")
+    if not isinstance(content, list):
+        return []
+
+    image_references: list[Any] = []
+    for block_reference in content:
+        block = _nyt_state_reference(state, block_reference)
+        if block is None:
+            continue
+        block_type = block.get("__typename")
+        if block_type == "ImageBlock":
+            image_references.append(block.get("media"))
+        elif block_type in {"DiptychBlock", "TriptychBlock"}:
+            image_references.extend(
+                block.get(key)
+                for key in ("imageOne", "imageTwo", "imageThree")
+            )
+        elif isinstance(block_type, str) and block_type.startswith("Header"):
+            lede_block = _nyt_state_reference(state, block.get("ledeMedia"))
+            if lede_block is not None:
+                image_references.append(lede_block.get("media"))
+
+    rows: list[tuple[str, str | None, str | None]] = []
+    seen: set[str] = set()
+    for image_reference in image_references:
+        image = _nyt_state_reference(state, image_reference)
+        if image is None:
+            continue
+        renditions = _nyt_image_renditions(state, image)
+        if not renditions:
+            continue
+        rendition = max(
+            renditions,
+            key=lambda item: (
+                int(item.get("width") or 0) * int(item.get("height") or 0),
+                int(item.get("width") or 0),
+            ),
+        )
+        url = str(rendition["url"])
+        identity = _image_identity(url)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        legacy_caption = _string_or_none(image.get("legacyHtmlCaption"))
+        caption_value = _nyt_state_reference(state, image.get("caption"))
+        caption = (
+            _clean_text(
+                BeautifulSoup(legacy_caption, "html.parser").get_text(" ")
+            )
+            if legacy_caption
+            else None
+        )
+        if caption is None and caption_value is not None:
+            caption = _first_text(
+                _string_or_none(caption_value.get("text")),
+                _string_or_none(caption_value.get("html")),
+            )
+        rows.append(
+            (
+                url,
+                caption,
+                _string_or_none(image.get("credit")),
+            )
+        )
+    return rows if len(rows) >= 3 else []
 
 
 def _nyt_itemprop_gallery_rows(

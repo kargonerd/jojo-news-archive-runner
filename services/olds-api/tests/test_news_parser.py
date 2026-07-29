@@ -532,7 +532,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.10"
+    assert result.extraction.parser_version == "nyt-parser/0.8.11"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -767,7 +767,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.10"
+    assert result.extraction.parser_version == "nyt-parser/0.8.11"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1135,7 +1135,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.10"
+    assert result.extraction.parser_version == "nyt-parser/0.8.11"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -1184,7 +1184,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.10"
+    assert result.extraction.parser_version == "nyt-parser/0.8.11"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -1224,7 +1224,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.10"
+    assert result.extraction.parser_version == "nyt-parser/0.8.11"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -2293,7 +2293,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.10"
+    assert result.extraction.parser_version == "nyt-parser/0.8.11"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -2388,6 +2388,82 @@ def test_nyt_parser_extracts_preloaded_graphql_image_gallery():
         for index in range(3)
     ]
     assert len(result.blocks) == 3
+
+
+def test_nyt_parser_extracts_ordered_diptych_visual_story():
+    body_id = "$Article:round-bags.sprinkledBody"
+    header_id = f"{body_id}.content@filterEmpty.0"
+    diptych_id = f"{body_id}.content@filterEmpty.1"
+    state = {
+        body_id: {
+            "__typename": "DocumentBlock",
+            "content@filterEmpty": [
+                {"id": header_id},
+                {"id": diptych_id},
+            ],
+        },
+        header_id: {
+            "__typename": "HeaderFullBleedVerticalBlock",
+            "ledeMedia": {"id": f"{header_id}.ledeMedia"},
+        },
+        f"{header_id}.ledeMedia": {
+            "__typename": "ImageBlock",
+            "media": {"id": "Image:bag-0"},
+        },
+        diptych_id: {
+            "__typename": "DiptychBlock",
+            "imageOne": {"id": "Image:bag-1"},
+            "imageTwo": {"id": "Image:bag-2"},
+        },
+    }
+    for index in range(3):
+        image_id = f"Image:bag-{index}"
+        crop_id = f"{image_id}.crop"
+        rendition_id = f"ImageRendition:bag-{index}"
+        state[image_id] = {
+            "__typename": "Image",
+            "legacyHtmlCaption": f"<strong>Bag {index}</strong>, $100.",
+            "credit": "Studio Photographer",
+            "crops": [{"id": crop_id}],
+        }
+        state[crop_id] = {
+            "__typename": "ImageCrop",
+            "renditions": [{"id": rendition_id}],
+        }
+        state[rendition_id] = {
+            "__typename": "ImageRendition",
+            "url": f"https://static01.nyt.com/bag-{index}.jpg",
+            "width": 1200,
+            "height": 1500,
+        }
+    payload = json.dumps({"initialState": state})
+    html = f"""
+    <html><head>
+      <meta property="og:title"
+            content="Cylindrical, Oval and Bucket Bags">
+      <meta property="article:published_time"
+            content="2022-03-03T13:00:00Z">
+    </head><body>
+      <script>window.__preloadedData = {payload};</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2022/03/03/t-magazine/"
+            "round-bags-spring-fashion.html"
+        ),
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert len(result.blocks) == 3
+    assert [image.caption for image in result.images] == [
+        f"Bag {index} , $100. Studio Photographer"
+        for index in range(3)
+    ]
 
 
 def test_nyt_parser_extracts_preloaded_legacy_slideshow():
@@ -2486,7 +2562,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.10"
+    assert result.extraction.parser_version == "nyt-parser/0.8.11"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
