@@ -33,6 +33,16 @@ on:
           - holdout-v8
           - holdout-v9
           - holdout-v10
+          - holdout-v11
+          - holdout-v12
+          - holdout-v13
+          - holdout-v14
+          - holdout-v15
+          - holdout-v16
+          - holdout-v17
+          - holdout-v18
+          - holdout-v19
+          - holdout-v20
       year:
         description: "Single publication year to sample."
         required: true
