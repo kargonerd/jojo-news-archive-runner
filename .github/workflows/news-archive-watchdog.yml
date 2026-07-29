@@ -39,6 +39,12 @@ jobs:
             discovery_units: "1"
             runner_os: ubuntu-latest
           - publisher: wsj
+            from_year: "2010"
+            to_year: "2015"
+            manifest_mode: wayback-urlkey
+            discovery_units: "30"
+            runner_os: ubuntu-latest
+          - publisher: wsj
             from_year: "2016"
             to_year: "2026"
             manifest_mode: wayback-urlkey
