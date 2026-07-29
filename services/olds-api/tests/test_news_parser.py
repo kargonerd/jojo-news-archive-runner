@@ -868,7 +868,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.23"
+    assert result.extraction.parser_version == "nyt-parser/0.8.25"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -1135,7 +1135,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.23"
+    assert result.extraction.parser_version == "nyt-parser/0.8.25"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1575,7 +1575,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.23"
+    assert result.extraction.parser_version == "nyt-parser/0.8.25"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -1624,7 +1624,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.23"
+    assert result.extraction.parser_version == "nyt-parser/0.8.25"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -1664,7 +1664,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.23"
+    assert result.extraction.parser_version == "nyt-parser/0.8.25"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -2910,7 +2910,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.23"
+    assert result.extraction.parser_version == "nyt-parser/0.8.25"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -3664,7 +3664,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.23"
+    assert result.extraction.parser_version == "nyt-parser/0.8.25"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -3818,7 +3818,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.23"
+    assert result.extraction.parser_version == "nyt-parser/0.8.25"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
@@ -4075,6 +4075,143 @@ def test_nyt_parser_extracts_denormalized_product_gallery():
     assert result.content_type.value == "gallery"
     assert result.quality.status.value == "complete"
     assert len(result.blocks) == 3
+
+
+def test_nyt_parser_does_not_replace_substantive_article_with_gallery():
+    images = [
+        {
+            "__typename": "ImageBlock",
+            "media": {
+                "__typename": "Image",
+                "caption": {"text": f"Scene {index}"},
+                "crops": [{
+                    "renditions": [{
+                        "__typename": "ImageRendition",
+                        "url": f"https://static01.nyt.com/scene-{index}.jpg",
+                        "width": 1200,
+                        "height": 800,
+                    }]
+                }],
+            },
+        }
+        for index in range(3)
+    ]
+    payload = json.dumps({
+        "initialData": {
+            "data": {
+                "article": {"sprinkledBody": {"content": images}}
+            }
+        },
+        "initialState": {},
+    })
+    paragraphs = "".join(
+        "<p>This is substantive reporting paragraph "
+        f"{index}, with enough original context and detail to prove that "
+        "the prose article must remain the selected body even when its "
+        "preloaded data contains several photographs.</p>"
+        for index in range(4)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Report With Several Photos">
+      <meta property="article:published_time"
+            content="2019-06-23T00:00:00Z">
+    </head><body>
+      <article><section name="articleBody">{paragraphs}</section></article>
+      <script>window.__preloadedData = {payload};</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2019/06/23/nyregion/"
+            "a-report-with-several-photos.html"
+        ),
+    )
+
+    assert result.content_type.value == "article"
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters > 500
+    assert "substantive reporting paragraph 3" in result.plain_text
+
+
+def test_nyt_parser_preserves_all_stories_in_interactive_anthology():
+    stories = "".join(
+        f"""
+        <div class="rad-article" id="story-{index}">
+          <p class="rad-summary">Summary for contributor {index}.</p>
+          <div class="rad-story-body">
+            <p class="paragraph">Contributor {index} explains the history
+            of this online campaign with independently reported evidence,
+            concrete examples and enough detail to form a complete essay.</p>
+            <p class="paragraph">A second paragraph records the lasting
+            consequences for institutions, communities and public debate.</p>
+          </div>
+        </div>
+        """
+        for index in range(3)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Multi-Author Interactive">
+      <meta property="article:published_time"
+            content="2019-08-15T00:00:00Z">
+    </head><body><main>
+      <article class="story theme-interactive theme-minimal">
+        <div class="interactive-graphic">{stories}</div>
+      </article>
+    </main></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2019/08/15/opinion/"
+            "multi-author-interactive.html"
+        ),
+    )
+
+    assert result.content_type.value == "opinion"
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters > 600
+    for index in range(3):
+        assert f"Contributor {index} explains" in result.plain_text
+
+
+def test_nyt_parser_preserves_image_led_legacy_interactive():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Evening Hours">
+      <meta property="article:published_time"
+            content="2016-06-03T00:00:00Z">
+    </head><body><main>
+      <article class="story theme-interactive theme-main">
+        <div class="interactive-graphic">
+          <h2>Fashion &amp; Style | Evening Hours</h2>
+          <p>By BILL CUNNINGHAM JUNE 3, 2016</p>
+          <p><img src="https://static01.nyt.com/images/party-popup.jpg"
+                  width="970" height="1103"></p>
+        </div>
+      </article>
+    </main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2016/04/24/fashion/"
+            "bill-cunningham-evening-hours.html"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected == 1
+    assert any(block.type.value == "image" for block in result.blocks)
 
 
 def test_nyt_parser_extracts_exact_liveblog_post_from_preloaded_state():

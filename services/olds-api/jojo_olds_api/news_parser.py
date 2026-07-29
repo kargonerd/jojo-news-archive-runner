@@ -195,7 +195,18 @@ def parse_article(
             canonical_url=canonical_url,
         )
         if inline_interactive is not None:
-            body = inline_interactive
+            body_text = (
+                _clean_text(body.get_text(" ", strip=True))
+                if body is not None
+                else ""
+            )
+            if body is None or len(body_text) < _MINIMUM_BODY_CHARACTERS:
+                body = inline_interactive
+            else:
+                # Media-only wrappers supplement a prose interactive; they
+                # must not replace an anthology's complete article text.
+                for child in list(inline_interactive.children):
+                    body.append(child)
         if "/interactive/" in canonical_url.casefold():
             redirect_interactive = _nyt_interactive_redirect_body(soup)
             if redirect_interactive is not None:
@@ -221,6 +232,7 @@ def parse_article(
                 is None
                 or (
                     len(body_text) < 2 * _MINIMUM_BODY_CHARACTERS
+                    and body.select_one("img[src], figure, iframe") is None
                     and len(metadata_text) > len(body_text)
                     and metadata_text.casefold()
                     not in body_text.casefold()
@@ -248,7 +260,11 @@ def parse_article(
         gallery_body = _nyt_preloaded_image_gallery(soup)
         if gallery_body is None:
             gallery_body = _nyt_legacy_op_art_gallery(soup)
-        if gallery_body is not None and not nyt_interactive_body_selected:
+        if (
+            gallery_body is not None
+            and not nyt_interactive_body_selected
+            and _nyt_should_select_gallery_body(soup, body=body)
+        ):
             body = gallery_body
             structured_image_gallery_selected = True
         legacy_video_body = _nyt_legacy_lede_video_body(soup, body=body)
@@ -1048,6 +1064,15 @@ def _structured_article_body(
 
 
 def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
+    # Some legacy packages are anthologies made from several independently
+    # authored interactive articles.  Selecting the first graphic silently
+    # drops all sibling stories, as on the 2019 Gamergate opinion package.
+    story = soup.select_one("article.story.theme-interactive")
+    if isinstance(story, Tag):
+        story_sections = story.select(".rad-article")
+        story_text = _clean_text(story.get_text(" ", strip=True))
+        if len(story_sections) >= 2 and len(story_text) >= 400:
+            return story
     for selector in (
         ".g-story.g-freebird",
         ".interactive-graphic",
@@ -1055,7 +1080,19 @@ def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
         "section.interactive-content",
     ):
         for candidate in soup.select(selector):
-            if len(_clean_text(candidate.get_text(" ", strip=True))) >= 200:
+            candidate_text = _clean_text(
+                candidate.get_text(" ", strip=True)
+            )
+            if (
+                len(candidate_text) >= 200
+                or (
+                    candidate.select_one("img[src], figure, iframe")
+                    and (
+                        selector == ".interactive-graphic"
+                        or len(candidate_text) >= 30
+                    )
+                )
+            ):
                 quiz_body = _nyt_interactive_quiz_body(candidate)
                 if quiz_body is not None:
                     return quiz_body
@@ -1893,6 +1930,49 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
             figure.append(figcaption)
         article.append(figure)
     return article
+
+
+def _nyt_should_select_gallery_body(
+    soup: BeautifulSoup,
+    *,
+    body: Tag | None,
+) -> bool:
+    """Do not replace substantive NYT prose merely because it has 3+ images."""
+    state = _nyt_preloaded_state(soup)
+    if any(
+        isinstance(value, dict)
+        and value.get("__typename") == "SlideshowBlock"
+        for value in state.values()
+    ):
+        return True
+    if any(
+        '"imageslideshow"' in (script.string or script.get_text())
+        for script in soup.select('script[type="application/json"]')
+    ):
+        return True
+    page_type = _first_text(
+        _meta_content(soup, "name", "PT"),
+        _meta_content(soup, "name", "page.content.type"),
+        _meta_content(soup, "name", "article.type"),
+    )
+    if page_type and page_type.casefold() in {
+        "gallery",
+        "photo gallery",
+        "slideshow",
+    }:
+        return True
+    if body is None:
+        return True
+    paragraphs = [
+        _clean_text(paragraph.get_text(" ", strip=True))
+        for paragraph in body.select("p")
+        if paragraph.find_parent("figcaption") is None
+    ]
+    substantive = [text for text in paragraphs if text]
+    return (
+        len(substantive) < 2
+        or sum(len(text) for text in substantive) < 300
+    )
 
 
 def _nyt_legacy_slideshow_json_rows(
@@ -3533,6 +3613,13 @@ def _has_selected_ancestor(node: Tag, body: BeautifulSoup) -> bool:
     }
     parent = node.parent
     while isinstance(parent, Tag) and parent is not body:
+        if (
+            node.name == "img"
+            and parent.name == "p"
+            and not _clean_text(parent.get_text(" ", strip=True))
+        ):
+            parent = parent.parent
+            continue
         if parent.name and parent.name.lower() in selected_names:
             return True
         parent = parent.parent
