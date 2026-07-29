@@ -250,7 +250,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.9"
+    assert result.extraction.parser_version == "wsj-parser/0.8.10"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -405,7 +405,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.9"
+    assert result.extraction.parser_version == "wsj-parser/0.8.10"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -502,7 +502,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.9"
+    assert result.extraction.parser_version == "wsj-parser/0.8.10"
 
 
 def test_wsj_parser_classifies_legacy_slideshow_metadata_as_gallery():
@@ -580,6 +580,54 @@ def test_wsj_parser_removes_legacy_article_tools_and_trending_modules():
     assert "Save Article" not in result.plain_text
     assert "Most Popular" not in result.plain_text
     assert "Unrelated" not in result.plain_text
+
+
+def test_wsj_parser_marks_subscription_snippet_as_partial():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A Closer Look">
+      <meta property="article:published_time"
+            content="2026-02-11T14:02:00Z">
+    </head><body>
+      <article>
+        <div class="snippet">
+          <p>
+            Selections from Rumpelstiltskin by Mac Barnett,
+            illustrated by Carson Ellis
+          </p>
+          <div class="snippet-promotion">
+            <div id="cx-snippet-overlay">
+              <h3 class="snippet-subheadline">
+                Subscribe to WSJ to read the rest of this article
+              </h3>
+              <p>Already a subscriber? Sign In</p>
+              <p>Resume Subscription</p>
+              <p>Please click confirm to resume now.</p>
+            </div>
+          </div>
+        </div>
+        <div class="resume-subscription-scrim-overlay hide">
+          <h2>Resume Subscription</h2>
+          <p>We are delighted that you'd like to resume your subscription.</p>
+          <p>Please click confirm to resume now.</p>
+        </div>
+      </article>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/a-closer-look-76125dc1"
+        ),
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "body-too-short" in result.quality.warnings
+    assert "Subscribe to WSJ" not in result.plain_text
+    assert "Resume Subscription" not in result.plain_text
+    assert result.extraction.parser_version == "wsj-parser/0.8.10"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
