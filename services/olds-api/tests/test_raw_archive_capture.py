@@ -213,6 +213,53 @@ def test_archives_wayback_nyt_adventure_script_as_dependent_resource(
     assert restored.dependent_resources == resources
 
 
+def test_completed_capture_loads_legacy_state_without_resource_column():
+    connection = sqlite3.connect(":memory:")
+    connection.execute(
+        """
+        CREATE TABLE captures (
+            canonical_url TEXT PRIMARY KEY,
+            article_id TEXT, publisher TEXT, published_at TEXT, section TEXT,
+            selected_candidate_json TEXT, candidates_json TEXT,
+            retrieved_at TEXT, final_url TEXT, http_status INTEGER,
+            content_type TEXT, quality_score INTEGER,
+            quality_signals_json TEXT, raw_path TEXT, raw_sha256 TEXT,
+            raw_bytes INTEGER, stored_bytes INTEGER, status TEXT
+        )
+        """
+    )
+    canonical_url = "https://www.ft.com/content/legacy-state"
+    candidate = CaptureCandidate(
+        provider=CaptureProvider.WAYBACK,
+        snapshot_url="https://web.archive.org/web/20200101000000id_/"
+        + canonical_url,
+    )
+    connection.execute(
+        """
+        INSERT INTO captures VALUES (
+            ?, ?, 'ft', '2020-01-01T00:00:00Z', NULL, ?, '[]',
+            '2020-01-02T00:00:00Z', ?, 200, 'text/html', 100, '{}',
+            'objects/html/aa/example.html.gz', ?, 1000, 500, 'complete'
+        )
+        """,
+        (
+            canonical_url,
+            "ft:" + ("a" * 64),
+            candidate.model_dump_json(by_alias=True),
+            canonical_url,
+            "b" * 64,
+        ),
+    )
+
+    restored = completed_raw_capture(
+        connection,
+        canonical_url=canonical_url,
+    )
+
+    assert restored.raw_html.path == "objects/html/aa/example.html.gz"
+    assert restored.dependent_resources == []
+
+
 def test_known_ap_pakistan_copy_uses_exact_canonical_id():
     canonical_url = (
         "https://apnews.com/united-states-government-"

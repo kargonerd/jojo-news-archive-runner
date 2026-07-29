@@ -5854,8 +5854,17 @@ def completed_raw_capture(
     *,
     canonical_url: str,
 ) -> RawCapture:
+    capture_columns = {
+        str(column[1])
+        for column in connection.execute("PRAGMA table_info(captures)")
+    }
+    dependent_resources_expression = (
+        "dependent_resources_json"
+        if "dependent_resources_json" in capture_columns
+        else "NULL AS dependent_resources_json"
+    )
     row = connection.execute(
-        """
+        f"""
         SELECT
             article_id,
             publisher,
@@ -5870,7 +5879,7 @@ def completed_raw_capture(
             content_type,
             quality_score,
             quality_signals_json,
-            dependent_resources_json,
+            {dependent_resources_expression},
             raw_path,
             raw_sha256,
             raw_bytes,
