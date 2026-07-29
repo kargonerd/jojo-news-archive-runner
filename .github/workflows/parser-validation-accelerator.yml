@@ -146,6 +146,15 @@ jobs:
             echo "source manifest publisher does not match." >&2
             exit 2
           fi
+          expected_source_shard="$(
+            python services/olds-api/tools/resolve_parser_source_shard.py \
+              --publisher "$PUBLISHER" \
+              --year "$SAMPLE_YEAR"
+          )"
+          if [ "$SOURCE_MANIFEST_SHARD" != "$expected_source_shard" ]; then
+            echo "source_manifest_shard must be ${expected_source_shard}." >&2
+            exit 2
+          fi
           if [[ ! "$COHORT" =~ ^(validation|holdout-v[1-9][0-9]*)$ ]]; then
             echo "unsupported cohort" >&2
             exit 2
