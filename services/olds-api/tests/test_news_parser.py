@@ -507,6 +507,139 @@ def test_wsj_parser_removes_legacy_article_tools_and_trending_modules():
     assert "Unrelated" not in result.plain_text
 
 
+def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
+    slides = []
+    for index in range(3):
+        slides.append(
+            {
+                "slide_url": f"historical-slide-{index}",
+                "caption": {
+                    "full": (
+                        f"<p>Historical photograph {index} caption.</p>"
+                    )
+                },
+                "credit": f"Archive Photographer {index}",
+                "image_crops": {
+                    "thumb": {
+                        "width": 190,
+                        "height": 126,
+                        "url": (
+                            "https://static01.nyt.com/images/"
+                            f"historical-{index}/"
+                            f"historical-{index}-thumb.jpg"
+                        ),
+                    },
+                    "jumbo": {
+                        "width": 1024,
+                        "height": 683,
+                        "url": (
+                            "https://static01.nyt.com/images/"
+                            f"historical-{index}/"
+                            f"historical-{index}-jumbo.jpg"
+                        ),
+                    },
+                },
+            }
+        )
+    payload = json.dumps(
+        {
+            "headline": "Street Style: London",
+            "summary": "Fashion week on the streets of London.",
+            "imageslideshow": {"slides": slides},
+        }
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Street Style: London">
+      <meta property="og:image"
+            content="https://static01.nyt.com/images/historical-0/historical-0-facebookJumbo.jpg">
+      <meta property="article:published_time"
+            content="2015-09-21T00:00:00Z">
+    </head><body>
+      <script type="application/json">{payload}</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2015/09/21/fashion/"
+            "street-style-london.html"
+        ),
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected == 3
+    assert [image.original_url for image in result.images] == [
+        (
+            "https://static01.nyt.com/images/historical-0/"
+            "historical-0-facebookJumbo.jpg"
+        ),
+        (
+            "https://static01.nyt.com/images/historical-1/"
+            "historical-1-jumbo.jpg"
+        ),
+        (
+            "https://static01.nyt.com/images/historical-2/"
+            "historical-2-jumbo.jpg"
+        ),
+    ]
+    assert result.images[0].caption == "Historical photograph 0 caption."
+    assert result.images[0].credit == "Credit: Archive Photographer 0"
+
+
+def test_nyt_parser_preserves_legacy_lede_video_destination():
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="The Enduring Appeal of the Flamboyant Early '70s">
+      <meta property="article:published_time"
+            content="2015-12-02T00:00:00Z">
+    </head><body>
+      <article class="story theme-main">
+        <div class="story-body">
+          <figure class="promo media video lede" data-videoid="100000004">
+            <figcaption>
+              <h4 class="headline">In The Air | Glam Rock</h4>
+              <a class="video-link"
+                 href="https://www.nytimes.com/video/t-magazine/100000004/in-the-air-glam-rock.html">
+                Watch in Times Video
+              </a>
+            </figcaption>
+          </figure>
+          <p class="story-body-text story-content">
+            Fashion designers embrace the underground gender-bending
+            aesthetic made famous by David Bowie and New York drag queens.
+          </p>
+        </div>
+      </article>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2015/12/02/t-magazine/fashion/"
+            "glam-rock-fashion.html"
+        ),
+    )
+
+    assert result.content_type.value == "video"
+    assert result.quality.status.value == "complete"
+    assert "Fashion designers embrace" in result.plain_text
+    assert [
+        block.embed_url for block in result.blocks if block.embed_url
+    ] == [
+        (
+            "https://www.nytimes.com/video/t-magazine/100000004/"
+            "in-the-air-glam-rock.html"
+        )
+    ]
+
+
 def test_parser_classifies_non_editorial_images_without_archiving_them():
     canonical_url = "https://apnews.com/article/example"
     html = b"""
@@ -609,7 +742,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.22"
+    assert result.extraction.parser_version == "nyt-parser/0.8.23"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -876,7 +1009,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.22"
+    assert result.extraction.parser_version == "nyt-parser/0.8.23"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1316,7 +1449,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.22"
+    assert result.extraction.parser_version == "nyt-parser/0.8.23"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -1365,7 +1498,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.22"
+    assert result.extraction.parser_version == "nyt-parser/0.8.23"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -1405,7 +1538,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.22"
+    assert result.extraction.parser_version == "nyt-parser/0.8.23"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -2606,7 +2739,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.22"
+    assert result.extraction.parser_version == "nyt-parser/0.8.23"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -2774,8 +2907,12 @@ def test_nyt_parser_extracts_ordered_diptych_visual_story():
     assert result.quality.status.value == "complete"
     assert len(result.blocks) == 3
     assert [image.caption for image in result.images] == [
-        f"Bag {index} , $100. Studio Photographer"
+        f"Bag {index} , $100."
         for index in range(3)
+    ]
+    assert [image.credit for image in result.images] == [
+        "Credit: Studio Photographer"
+        for _ in range(3)
     ]
 
 
@@ -3356,7 +3493,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.22"
+    assert result.extraction.parser_version == "nyt-parser/0.8.23"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -3510,7 +3647,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.22"
+    assert result.extraction.parser_version == "nyt-parser/0.8.23"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():

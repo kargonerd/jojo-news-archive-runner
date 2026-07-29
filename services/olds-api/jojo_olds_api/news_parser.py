@@ -250,6 +250,13 @@ def parse_article(
         if gallery_body is not None and not nyt_interactive_body_selected:
             body = gallery_body
             structured_image_gallery_selected = True
+        legacy_video_body = _nyt_legacy_lede_video_body(soup, body=body)
+        if (
+            legacy_video_body is not None
+            and not structured_image_gallery_selected
+            and not nyt_interactive_body_selected
+        ):
+            body = legacy_video_body
     if spec.embedded_html_body_keys and (
         body is None
         or body.select_one(
@@ -1849,6 +1856,8 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
     if len(rows) < 3:
         rows = _nyt_denormalized_gallery_rows(soup)
     if len(rows) < 3:
+        rows = _nyt_legacy_slideshow_json_rows(soup)
+    if len(rows) < 3:
         rows = _nyt_itemprop_gallery_rows(soup)
     if len(rows) < 3:
         return None
@@ -1866,10 +1875,133 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
         if caption or credit:
             figcaption = document.new_tag("figcaption")
             figcaption.string = " ".join(
-                value for value in (caption, credit) if value
+                value
+                for value in (
+                    caption,
+                    f"Credit: {credit}" if credit else None,
+                )
+                if value
             )
             figure.append(figcaption)
         article.append(figure)
+    return article
+
+
+def _nyt_legacy_slideshow_json_rows(
+    soup: BeautifulSoup,
+) -> list[tuple[str, str | None, str | None]]:
+    """Recover ordered images from NYT's pre-React slideshow JSON."""
+    for script in soup.select('script[type="application/json"]'):
+        raw = script.string or script.get_text()
+        if not raw or '"imageslideshow"' not in raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        slideshow = payload.get("imageslideshow")
+        slides = (
+            slideshow.get("slides")
+            if isinstance(slideshow, dict)
+            else None
+        )
+        if not isinstance(slides, list):
+            continue
+        rows: list[tuple[str, str | None, str | None]] = []
+        seen: set[str] = set()
+        for slide in slides:
+            if not isinstance(slide, dict):
+                continue
+            crops = slide.get("image_crops")
+            if not isinstance(crops, dict):
+                continue
+            renditions = [
+                value
+                for value in crops.values()
+                if isinstance(value, dict)
+                and isinstance(value.get("url"), str)
+            ]
+            if not renditions:
+                continue
+            rendition = max(
+                renditions,
+                key=lambda item: (
+                    int(item.get("width") or 0)
+                    * int(item.get("height") or 0),
+                    int(item.get("width") or 0),
+                ),
+            )
+            url = str(rendition["url"])
+            identity = _image_identity(url)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            caption_value = slide.get("caption")
+            caption_html = (
+                _first_text(
+                    _string_or_none(caption_value.get("full")),
+                    _string_or_none(caption_value.get("short")),
+                )
+                if isinstance(caption_value, dict)
+                else None
+            )
+            rows.append(
+                (
+                    url,
+                    _clean_text(
+                        BeautifulSoup(
+                            caption_html,
+                            "html.parser",
+                        ).get_text(" ")
+                    )
+                    if caption_html
+                    else None,
+                    _string_or_none(slide.get("credit")),
+                )
+            )
+        if len(rows) >= 3:
+            return rows
+    return []
+
+
+def _nyt_legacy_lede_video_body(
+    soup: BeautifulSoup,
+    *,
+    body: Tag | None,
+) -> Tag | None:
+    """Preserve the destination of old NYT video-led short articles."""
+    lead = soup.select_one(
+        "figure.video.lede[data-videoid], "
+        "figure.media.video.lede"
+    )
+    if not isinstance(lead, Tag):
+        return None
+    link = lead.select_one(
+        "a.video-link[href], a[href*='/video/'][href]"
+    )
+    if not isinstance(link, Tag):
+        return None
+    destination = _string_or_none(link.get("href"))
+    if not destination:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    if body is not None:
+        body_copy = BeautifulSoup(str(body), "html.parser")
+        copied_root = body_copy.find(body.name)
+        if isinstance(copied_root, Tag):
+            article.append(copied_root)
+    iframe = document.new_tag("iframe")
+    iframe["src"] = destination
+    iframe["title"] = (
+        _tag_text(lead.select_one(".headline"))
+        or "Related New York Times video"
+    )
+    article.append(iframe)
     return article
 
 
@@ -2776,6 +2908,11 @@ def _nyt_media_content_type(
         return ContentType.VIDEO
     if "InteractiveBlock" in body_types:
         return ContentType.INTERACTIVE
+    if soup.select_one(
+        "figure.video.lede[data-videoid], "
+        "figure.media.video.lede .video-link[href*='/video/']"
+    ):
+        return ContentType.VIDEO
     tagline = _first_text(
         _meta_content(soup, "name", "nyt-collection:tagline"),
         _meta_content(soup, "property", "nyt-collection:tagline"),
@@ -3533,6 +3670,15 @@ def _image_identity(url: str) -> str:
                 "",
             )
         )
+    if host == "static01.nyt.com" and "/images/" in parts.path:
+        directory, separator, filename = parts.path.rpartition("/")
+        asset_name = directory.rsplit("/", 1)[-1]
+        if (
+            separator
+            and asset_name
+            and filename.casefold().startswith(asset_name.casefold())
+        ):
+            return f"nyt-image:{directory.casefold()}"
     wsj_image = (
         re.fullmatch(
             r"(/im-\d+)(?:/(?:social|portrait))?/?",
