@@ -1106,7 +1106,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.27"
+    assert result.extraction.parser_version == "nyt-parser/0.8.28"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -1573,7 +1573,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.27"
+    assert result.extraction.parser_version == "nyt-parser/0.8.28"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -2265,7 +2265,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.27"
+    assert result.extraction.parser_version == "nyt-parser/0.8.28"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -2314,7 +2314,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.27"
+    assert result.extraction.parser_version == "nyt-parser/0.8.28"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -2354,7 +2354,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.27"
+    assert result.extraction.parser_version == "nyt-parser/0.8.28"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -3787,7 +3787,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.27"
+    assert result.extraction.parser_version == "nyt-parser/0.8.28"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -4005,6 +4005,113 @@ def test_nyt_parser_recovers_legacy_interactive_graphic():
     )
     assert len(result.images) == 1
     assert result.quality.images_selected == 1
+
+
+def test_nyt_parser_recovers_embedded_interactive_lede_tables():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A Dual Review of What's New">
+      <meta property="article:published_time"
+            content="2014-09-19T00:00:00Z">
+    </head><body>
+      <div id="story-body" class="story-body">
+        <div class="lede-container">
+          <figure class="interactive interactive-embedded lede">
+            <div class="interactive-graphic">
+              <p class="summary">Two critics assess a group of new products.</p>
+              <table><tr>
+                <td><span class="summary">The first critic explains why
+                the rotating tray is useful and thoughtfully designed.</span></td>
+                <td><img src="https://static01.nyt.com/tray.jpg">
+                    <span class="caption">A rotating tray, $525.</span></td>
+                <td><span class="summary">The second critic explains why
+                reaching across the table is easier.</span></td>
+              </tr></table>
+            </div>
+          </figure>
+        </div>
+        <p>A short fallback description.</p>
+      </div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2014/09/19/t-magazine/"
+            "a-dual-review.html"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+    assert "first critic explains" in result.plain_text
+    assert "second critic explains" in result.plain_text
+    assert result.quality.images_selected == 1
+
+
+def test_nyt_parser_treats_interpreted_by_cartoon_as_complete_gallery():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="North Korea's Rocket Launch">
+      <meta name="description" content="As interpreted by Heng.">
+      <meta property="article:published_time"
+            content="2012-12-16T00:00:00Z">
+      <meta property="og:image"
+            content="https://static01.nyt.com/cartoon-superJumbo.jpg">
+    </head><body>
+      <div id="story-body" class="story-body">
+        <p>As interpreted by Heng.</p>
+        <img src="https://static01.nyt.com/cartoon-large.jpg">
+      </div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2012/12/16/opinion/global/"
+            "north-koreas-rocket-launch.html"
+        ),
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected >= 1
+
+
+def test_nyt_parser_treats_short_transcript_with_document_embed_as_complete():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="F.B.I. Transcript">
+      <meta property="article:published_time"
+            content="2018-02-23T00:00:00Z">
+    </head><body>
+      <article class="story">
+        <p>From the F.B.I. tip line.</p>
+        <script>
+          DV.flexLoad(
+            "//www.documentcloud.org/documents/4386532-document022318.js"
+          );
+        </script>
+      </article>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2018/02/23/us/"
+            "fbi-transcript.html"
+        ),
+    )
+
+    assert result.content_type.value == "transcript"
+    assert result.quality.status.value == "complete"
+    assert any(block.type.value == "embed" for block in result.blocks)
 
 
 def test_nyt_parser_preserves_legacy_interactive_documents():
@@ -4541,7 +4648,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.27"
+    assert result.extraction.parser_version == "nyt-parser/0.8.28"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -4695,7 +4802,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.27"
+    assert result.extraction.parser_version == "nyt-parser/0.8.28"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():

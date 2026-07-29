@@ -181,6 +181,9 @@ def parse_article(
         legacy_interactive = _nyt_legacy_interactive_graphic(soup)
         if legacy_interactive is not None:
             body = legacy_interactive
+        embedded_interactive = _nyt_embedded_interactive_lede(soup)
+        if embedded_interactive is not None:
+            body = embedded_interactive
         legacy_newsgraphic = _nyt_legacy_newsgraphic_body(soup)
         if legacy_newsgraphic is not None:
             body = legacy_newsgraphic
@@ -575,6 +578,7 @@ def parse_article(
             ContentType.INTERACTIVE,
             ContentType.VIDEO,
             ContentType.AUDIO,
+            ContentType.TRANSCRIPT,
         }
         and any(
             block.type in {BlockType.EMBED, BlockType.IMAGE}
@@ -2628,6 +2632,46 @@ def _nyt_legacy_interactive_graphic(soup: BeautifulSoup) -> Tag | None:
     return article if article.select_one("p, figure, iframe") else None
 
 
+def _nyt_embedded_interactive_lede(soup: BeautifulSoup) -> Tag | None:
+    """Recover legacy NYT interactive ledes whose full story lives in a figure."""
+    graphic = soup.select_one(
+        "figure.interactive-embedded .interactive-graphic"
+    )
+    if not isinstance(graphic, Tag):
+        return None
+    if graphic.select_one("p, table, img[src]") is None:
+        return None
+    document = BeautifulSoup(str(graphic), "html.parser")
+    recovered = document.select_one(".interactive-graphic")
+    if not isinstance(recovered, Tag):
+        return None
+    # Table extraction preserves the comparison text as one structured block,
+    # but images nested inside legacy table cells need explicit media blocks.
+    for table in recovered.select("table"):
+        insertion_point: Tag = table
+        for source_image in table.select("img[src]"):
+            figure = document.new_tag("figure")
+            image = document.new_tag("img")
+            for attribute in ("src", "data-src", "alt", "width", "height"):
+                value = source_image.get(attribute)
+                if value is not None:
+                    image[attribute] = value
+            figure.append(image)
+            cell = source_image.find_parent(["td", "th"])
+            caption = (
+                _tag_text(cell.select_one(".caption"))
+                if isinstance(cell, Tag)
+                else None
+            )
+            if caption:
+                figcaption = document.new_tag("figcaption")
+                figcaption.string = caption
+                figure.append(figcaption)
+            insertion_point.insert_after(figure)
+            insertion_point = figure
+    return recovered
+
+
 def _nyt_inline_interactive_media(
     soup: BeautifulSoup,
     *,
@@ -3317,6 +3361,18 @@ def _nyt_media_content_type(
         )
     ):
         return ContentType.INTERACTIVE
+    if soup.select_one(
+        "figure.interactive-embedded .interactive-graphic"
+    ):
+        return ContentType.INTERACTIVE
+    if (
+        description
+        and description.casefold().startswith("as interpreted by ")
+        and soup.select_one(
+            "#story-body img[src], .story-body img[src], #article img[src]"
+        )
+    ):
+        return ContentType.GALLERY
     legacy_story_body = soup.select_one(
         "article.story.theme-main .story-body"
     )
