@@ -135,9 +135,14 @@ def test_six_publishers_emit_jojo_article_v1(
             <img src="https://ads.example.test/banner.jpg" width="300" height="250">
           </div>
           <h2>Context</h2>
-          <p>Second paragraph adds more reporting, context, and detail so the
-          quality evaluator marks this article as a complete extraction rather
-          than a short or unsupported page.</p>
+              <p>Second paragraph adds more reporting, context, and detail so the
+              quality evaluator marks this article as a complete extraction rather
+              than a short or unsupported page.</p>
+              <p>Third paragraph preserves additional evidence from named sources,
+              explains the chronology, records the response from the people
+              involved, and supplies enough independent context to distinguish a
+              complete report from a metered preview containing only its opening
+              lines.</p>
           <figure>
             <img src="{image_url}" width="1200" height="800" alt="Editorial photo">
             <figcaption>
@@ -250,7 +255,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.13"
+    assert result.extraction.parser_version == "wsj-parser/0.8.14"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -312,7 +317,13 @@ def test_wsj_parser_deduplicates_legacy_renditions_and_branding():
             content="http://si.wsj.net/public/resources/images/BN-GC782_YATES_D_20141221165350.jpg">
     </head><body><article>
       <p>This complete legacy report contains enough substantive text to
-      validate image rendition deduplication without relying on a shell.</p>
+      validate image rendition deduplication without relying on a shell. It
+      preserves several paragraphs of reporting, named-source responses,
+      chronology, supporting evidence and historical context so that it cannot
+      be mistaken for a metered preview. The report also explains the outcome,
+      records the relevant figures and describes why the development matters
+      to readers. Further verified details complete the archived account and
+      keep the body comfortably above the conservative WSJ preview boundary.</p>
       <img src="http://si.wsj.net/img/WSJ_Logo_black_social.gif">
     </article></body></html>
     """
@@ -405,7 +416,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.13"
+    assert result.extraction.parser_version == "wsj-parser/0.8.14"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -502,7 +513,150 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.13"
+    assert result.extraction.parser_version == "wsj-parser/0.8.14"
+
+
+def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="The Trouble With Crowdfunding Campaigns">
+      <meta property="article:published_time"
+            content="2025-01-19T11:36:44Z">
+    </head><body><article>
+      <p class="css-1to03ck">Listen</p>
+      <p class="css-mb1725">(1 min)</p>
+      <p data-type="paragraph">Touched by personal stories of anguish and
+      loss, donors sent millions of dollars directly to families.</p>
+      <p data-type="paragraph">These competing pleas for generosity have
+      uneven results.</p>
+      <p class="css-16aepit">Copyright \xc2\xa9 2025 Dow Jones &amp;
+      Company, Inc. All Rights Reserved. archive-token</p>
+      <h2 class="css-1imb987-SectionLabel">Videos</h2>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/personal-finance/"
+            "crowdfunding-example"
+        ),
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "truncated-body" in result.quality.warnings
+    assert "Copyright" not in result.plain_text
+    assert "Videos" not in result.plain_text
+    assert "Listen" not in result.plain_text
+
+
+def test_wsj_parser_rejects_legacy_sign_in_snippet():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A Brownstone Changes Hands">
+      <meta property="article:published_time"
+            content="2022-09-07T21:13:00Z">
+    </head><body><article>
+      <p>The buyer acquired a Brooklyn townhouse for $18.3 million,
+      according to property records.</p>
+      <p class="SnippetSignInText">Already a member?
+        <a>Sign In</a>
+      </p>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/example-brownstone",
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "truncated-body" in result.quality.warnings
+    assert "Already a member" not in result.plain_text
+
+
+def test_wsj_parser_keeps_substantial_body_and_strips_copyright_footer():
+    reporting = " ".join(
+        ["Substantive reporting with named sources and verified context."]
+        * 30
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Complete Modern Report">
+      <meta property="article:published_time"
+            content="2025-02-12T17:36:28Z">
+    </head><body><article>
+      <p data-type="paragraph">{reporting}</p>
+      <p class="css-16aepit">Copyright \u00a9 2025 Dow Jones &amp;
+      Company, Inc. All Rights Reserved. archive-token</p>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/tech/complete-modern-report",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Substantive reporting" in result.plain_text
+    assert "Copyright" not in result.plain_text
+
+
+def test_wsj_parser_accepts_short_dow_jones_newswire_record():
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="Investment Manager Reports New Stake">
+      <meta property="article:published_time"
+            content="2022-08-12T20:22:00Z">
+      <meta name="article.type.display" content="Dow Jones Newswires">
+      <script type="application/ld+json">
+        {"@type":"NewsArticle","headline":"Investment Manager Reports New Stake",
+        "articleSection":"T Wire",
+        "datePublished":"2022-08-12T20:22:00Z"}
+      </script>
+    </head><body><article>
+      <p>By Example Reporter</p>
+      <p>The investment manager on Friday reported a 21.8% stake in the
+      manufacturer, according to a regulatory filing.</p>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/new-stake-example",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "structured-short-record" in result.quality.warnings
+
+
+def test_wsj_parser_rejects_unmarked_short_standard_article_preview():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A Historic Home Goes on Sale">
+      <meta property="article:published_time"
+            content="2022-07-20T19:18:19Z">
+    </head><body><article>
+      <p>Selling an old family home can be hard.</p>
+      <p>Try selling a historically significant house that has been in the
+      family for over 300 years and comes with preservation restrictions.</p>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/historic-home-example",
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "body-too-short" in result.quality.warnings
 
 
 def test_wsj_parser_classifies_legacy_slideshow_metadata_as_gallery():
@@ -742,7 +896,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.13"
+    assert result.extraction.parser_version == "wsj-parser/0.8.14"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():

@@ -85,6 +85,12 @@ ARTICLE = b"""
     <p>Captured article body contains substantive reporting and context.</p>
     <p>A second paragraph preserves evidence, timing and source details.</p>
     <p>A third paragraph completes the archived report for parser checks.</p>
+    <p>Additional verified reporting records the response from named sources,
+    explains the chronology and provides the figures needed to understand the
+    development.</p>
+    <p>The final section supplies historical context, describes the outcome and
+    keeps this shared capture fixture clearly above the conservative boundary
+    used to reject short metered Wall Street Journal previews.</p>
   </article></body>
 </html>
 """ + (b" " * 2_048)
@@ -5515,8 +5521,14 @@ def test_stored_wsj_subscription_shell_keeps_complete_article(
       <article data-testid="article-body">
         <p>The archived page contains the complete first paragraph with
         enough reporting detail to establish that this is article text.</p>
-        <p>A second substantive paragraph continues the report and provides
-        additional facts, context and quotations from the original story.</p>
+          <p>A second substantive paragraph continues the report and provides
+          additional facts, context and quotations from the original story.</p>
+          <p>A third paragraph records the chronology, response from named
+          sources, supporting figures and the consequences of the development
+          for readers.</p>
+          <p>The final section supplies additional verified context so this
+          complete article is clearly distinct from a short metered preview
+          containing only its opening lines.</p>
       </article>
       <div>Continue reading your article with a WSJ subscription.</div>
       <div>Already a subscriber?</div>
