@@ -5315,6 +5315,40 @@ def test_wsj_capture_parser_evidence_rejects_empty_legacy_article_shell():
     assert signals["wsjCaptureExtractionStatus"] == "unsupported"
 
 
+def test_wsj_capture_parser_evidence_rejects_one_image_gallery_shell():
+    usable, signals = _wsj_capture_parser_evidence(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A Charleston Home">
+          <meta property="article:published_time"
+                content="2018-01-17T00:00:00Z">
+          <meta name="article.type" content="Infogrfx Slide Show">
+          <meta name="page.content.type" content="slideshow">
+          <meta property="og:image"
+                content="https://si.wsj.net/public/resources/lead.jpg">
+          <meta name="description" content="A photographic home tour.">
+          <script type="application/ld+json">
+            {"@type":"NewsArticle","image":[
+              "https://si.wsj.net/public/resources/lead.jpg",
+              "https://si.wsj.net/public/resources/alternate.jpg"
+            ]}
+          </script>
+        </head><body><article>
+          <p>Article Not Supported</p>
+          <p>This article contains media that is not currently supported.</p>
+        </article></body></html>
+        """,
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "a-charleston-home-for-a-family-1516204648"
+        ),
+    )
+
+    assert usable is False
+    assert signals["wsjCaptureContentType"] == "gallery"
+    assert signals["wsjCaptureImagesSelected"] < 3
+
+
 def test_ap_capture_parser_evidence_rejects_unhydrated_score_table():
     usable, signals = _ap_capture_parser_evidence(
         b"""

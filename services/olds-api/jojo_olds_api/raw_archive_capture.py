@@ -59,7 +59,7 @@ CAPTURE_POLICY_VERSIONS = {
     "ft": "ft-capture/0.20.2",
     "nyt": "nyt-capture/0.9.0",
     "reuters": "reuters-capture/0.7.2",
-    "wsj": "wsj-capture/0.8.3",
+    "wsj": "wsj-capture/0.8.4",
 }
 ACCEPTED_HTTP_STATUSES = {200, 206}
 WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"
@@ -5313,14 +5313,22 @@ def _wsj_capture_parser_evidence(
         ContentType.INTERACTIVE,
         ContentType.VIDEO,
         ContentType.AUDIO,
-        ContentType.GALLERY,
     }
-    usable = article.quality.status == ArticleStatus.COMPLETE or nontext
+    gallery_usable = (
+        article.content_type == ContentType.GALLERY
+        and article.quality.images_selected >= 3
+    )
+    usable = (
+        article.quality.status == ArticleStatus.COMPLETE
+        or nontext
+        or gallery_usable
+    )
     return usable, {
         "wsjCaptureParserUsable": usable,
         "wsjCaptureExtractionStatus": article.quality.status.value,
         "wsjCaptureContentType": article.content_type.value,
         "wsjCaptureBodyCharacters": article.quality.body_characters,
+        "wsjCaptureImagesSelected": article.quality.images_selected,
     }
 
 

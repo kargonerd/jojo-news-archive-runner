@@ -292,6 +292,8 @@ def parse_article(
         if gallery_body is None:
             gallery_body = _wsj_amp_story_gallery(soup)
         if gallery_body is None:
+            gallery_body = _wsj_webui_slideshow(soup)
+        if gallery_body is None:
             gallery_body = _wsj_legacy_slideshow(soup)
         if gallery_body is None:
             gallery_body = _wsj_unsupported_media_gallery(soup)
@@ -1600,6 +1602,74 @@ def _wsj_legacy_slideshow(soup: BeautifulSoup) -> Tag | None:
             figure.append(figcaption)
         article.append(figure)
     return article if len(article.select("figure")) >= 2 else None
+
+
+def _wsj_webui_slideshow(soup: BeautifulSoup) -> Tag | None:
+    rows: list[tuple[str, str | None, str | None]] = []
+    seen: set[str] = set()
+    decoder = json.JSONDecoder()
+    for script in soup.find_all("script"):
+        value = script.string or script.get_text()
+        if "WEBUI_SLIDESHOWS" not in value:
+            continue
+        for match in re.finditer(r"\bstate\s*:\s*(?=\{)", value):
+            try:
+                state, _ = decoder.raw_decode(value, match.end())
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(state, dict):
+                continue
+            context = state.get("context")
+            slides = (
+                context.get("slides")
+                if isinstance(context, dict)
+                else None
+            )
+            if not isinstance(slides, list):
+                continue
+            for slide in slides:
+                if not isinstance(slide, dict):
+                    continue
+                source = _string_or_none(slide.get("imageSrc"))
+                if not source:
+                    continue
+                identity = _image_identity(source)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                rows.append(
+                    (
+                        source,
+                        _string_or_none(slide.get("caption")),
+                        _string_or_none(slide.get("credit")),
+                    )
+                )
+    if len(rows) < 3:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for source, caption, credit in rows:
+        figure = document.new_tag("figure")
+        image = document.new_tag("img")
+        image["src"] = source
+        if caption:
+            image["alt"] = caption
+        figure.append(image)
+        if caption or credit:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = " ".join(
+                value
+                for value in (
+                    caption,
+                    f"Credit: {credit}" if credit else None,
+                )
+                if value
+            )
+            figure.append(figcaption)
+        article.append(figure)
+    return article
 
 
 def _wsj_legacy_ellipsis_truncation(plain_text: str) -> bool:

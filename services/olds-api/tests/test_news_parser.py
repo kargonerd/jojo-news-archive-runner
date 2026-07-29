@@ -250,7 +250,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.11"
+    assert result.extraction.parser_version == "wsj-parser/0.8.12"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -405,7 +405,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.11"
+    assert result.extraction.parser_version == "wsj-parser/0.8.12"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -502,7 +502,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.11"
+    assert result.extraction.parser_version == "wsj-parser/0.8.12"
 
 
 def test_wsj_parser_classifies_legacy_slideshow_metadata_as_gallery():
@@ -742,7 +742,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.11"
+    assert result.extraction.parser_version == "wsj-parser/0.8.12"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
@@ -5920,3 +5920,57 @@ def test_reuters_parser_extracts_numbered_div_paragraphs():
     assert "Paragraph 0 contains" in result.plain_text
     assert "Paragraph 5 contains" in result.plain_text
     assert "Sign up here" not in result.plain_text
+
+
+def test_wsj_parser_recovers_webui_slideshow_state():
+    slides = [
+        {
+            "caption": f"Photograph {index} documents the complete trip.",
+            "credit": "Example Photographer for The Wall Street Journal",
+            "imageSrc": (
+                "https://si.wsj.net/public/resources/images/"
+                f"BN-SLIDE-{index}_M.jpg"
+            ),
+        }
+        for index in range(4)
+    ]
+    state = json.dumps(
+        {
+            "data": {},
+            "id": "webuislideshow",
+            "context": {"slides": slides},
+        },
+        separators=(",", ":"),
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Long Weekend in Kauai">
+      <meta property="article:published_time"
+            content="2018-03-21T12:05:00Z">
+      <meta name="article.type" content="Infogrfx Slide Show">
+    </head><body><article>
+      <p>Where to soak up the scene and scenery.</p>
+      <script>
+        window.WEBUI_SLIDESHOWS = window.WEBUI_SLIDESHOWS || [];
+        window.WEBUI_SLIDESHOWS.push({{
+          id: 'example',
+          state: {state},
+          layout: "full"
+        }});
+      </script>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "a-long-weekend-in-kauai-packed-with-nature-1521648328"
+        ),
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected == 4
+    assert "Photograph 3 documents" in result.plain_text
