@@ -576,12 +576,6 @@ jobs:
             request_interval=1.5
           fi
           effective_max_captures="$MAX_CAPTURES"
-          if [ "$PUBLISHER" = "ft" ]; then
-            discovered="${{ steps.ft_preindex.outputs.discovered }}"
-            if [[ "$discovered" =~ ^[0-9]+$ ]]; then
-              effective_max_captures=0
-            fi
-          fi
           args=(
             --publisher "$PUBLISHER"
             --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
