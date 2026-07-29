@@ -1764,7 +1764,74 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.11"
+    assert result.extraction.parser_version == "reuters-parser/0.7.12"
+
+
+def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
+    canonical_url = (
+        "https://www.reuters.com/markets/asia/"
+        "indian-shares-rise-after-rates-steady-2021-04-07"
+    )
+    partner_url = "https://financialpost.com/pmn/business-pmn/example"
+    capture = raw_capture("reuters", canonical_url).model_copy(
+        update={
+            "selected_candidate": CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=partner_url,
+            ),
+            "final_url": partner_url,
+        }
+    )
+    paragraph = (
+        "Reuters reporting supplies substantive market facts, named "
+        "sources, prices and policy context for readers. "
+    )
+    sections = "".join(
+        f"""
+        <section class="story-v2-content-element
+                        article-content__content-group">
+          <div class="story-v2-content-element-inline">
+            <p>{paragraph * 2} Paragraph {index}.</p>
+          </div>
+        </section>
+        """
+        for index in range(3)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Indian shares rise">
+      <meta property="article:published_time"
+            content="2021-04-07T06:13:00Z">
+    </head><body>
+      <article class="story-v2-article-content-story">
+        {sections}
+        <div class="article-content__sign-in-group">
+          <h2>Sign In or Create an Account</h2>
+        </div>
+        <ol class="list-widget__content">
+          <li>Recommended headline Advertisement Story continues below</li>
+        </ol>
+        <div class="story-v2-footer-container">
+          <p>Postmedia is committed to maintaining a lively forum.</p>
+        </div>
+      </article>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+        raw_capture=capture,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Paragraph 0" in result.plain_text
+    assert "Paragraph 2" in result.plain_text
+    assert "Sign In or Create" not in result.plain_text
+    assert "Advertisement" not in result.plain_text
+    assert "Postmedia is committed" not in result.plain_text
+    assert result.extraction.parser_version == "reuters-parser/0.7.12"
 
 
 def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
@@ -1850,7 +1917,7 @@ def test_reuters_parser_promotes_and_deduplicates_legacy_lazy_image():
     assert result.images[0].original_url == lead
     assert lazy in result.images[0].candidate_urls
     assert result.images[0].alt == "A detainee holds a fence."
-    assert result.extraction.parser_version == "reuters-parser/0.7.11"
+    assert result.extraction.parser_version == "reuters-parser/0.7.12"
 
 
 def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
@@ -1896,7 +1963,7 @@ def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
     assert "Unrelated recommendation" not in result.plain_text
     assert "Capital Calls" not in result.plain_text
     assert "Another unrelated" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.11"
+    assert result.extraction.parser_version == "reuters-parser/0.7.12"
 
 
 def test_reuters_parser_trims_read_next_and_author_profile_tail():
@@ -2031,7 +2098,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.11"
+    assert result.extraction.parser_version == "reuters-parser/0.7.12"
 
 
 @pytest.mark.parametrize(
@@ -2124,7 +2191,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.11"
+    assert result.extraction.parser_version == "reuters-parser/0.7.12"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():

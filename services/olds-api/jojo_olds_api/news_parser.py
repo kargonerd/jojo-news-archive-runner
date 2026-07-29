@@ -131,6 +131,8 @@ def parse_article(
         and generic_syndication_allowed
     ):
         body = _bloomberg_partner_body(soup)
+    if body is None and generic_syndication_allowed:
+        body = _postmedia_syndication_body(soup)
     if body is None and (
         generic_syndication_allowed
     ):
@@ -814,6 +816,36 @@ def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
             ):
                 return copy
     return None
+
+
+def _postmedia_syndication_body(soup: BeautifulSoup) -> Tag | None:
+    """Join Postmedia's paragraph-per-section body without page widgets."""
+    paragraphs = soup.select(
+        "article.story-v2-article-content-story "
+        ".story-v2-content-element-inline > p"
+    )
+    substantive = [
+        paragraph
+        for paragraph in paragraphs
+        if _clean_text(paragraph.get_text(" ", strip=True))
+    ]
+    if len(substantive) < 2 or sum(
+        len(_clean_text(paragraph.get_text(" ", strip=True)))
+        for paragraph in substantive
+    ) < _MINIMUM_SYNDICATED_BODY_CHARACTERS:
+        return None
+    document = BeautifulSoup(
+        "<div data-jojo-source='postmedia-syndication'></div>",
+        "html.parser",
+    )
+    wrapper = document.select_one("div")
+    if not isinstance(wrapper, Tag):
+        return None
+    for paragraph in substantive:
+        copy = BeautifulSoup(str(paragraph), "html.parser").select_one("p")
+        if isinstance(copy, Tag):
+            wrapper.append(copy)
+    return wrapper
 
 
 def _wsj_tovima_body(soup: BeautifulSoup) -> Tag | None:
