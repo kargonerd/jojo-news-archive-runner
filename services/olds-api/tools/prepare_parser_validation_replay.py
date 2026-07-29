@@ -37,6 +37,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-record-attempts", type=int, default=3)
     parser.add_argument("--max-replays", type=int, default=500)
     parser.add_argument("--files-from", type=Path, required=True)
+    parser.add_argument(
+        "--all-result-files-from",
+        type=Path,
+        help=(
+            "Also list every raw object backing an existing validation "
+            "result. Restoring these files enables a complete forced replay."
+        ),
+    )
     parser.add_argument("--github-output", type=Path)
     return parser.parse_args()
 
@@ -73,6 +81,22 @@ def main() -> int:
     pending.extend(
         row for row in failed if row[0] not in {item[0] for item in pending}
     )
+    existing_result_files = [
+        str(raw_path)
+        for (raw_path,) in connection.execute(
+            """
+            SELECT DISTINCT capture.raw_path
+            FROM parser_validation_results AS result
+            JOIN parser_validation_samples AS sample
+              ON sample.canonical_url=result.canonical_url
+            JOIN captures AS capture
+              ON capture.canonical_url=result.canonical_url
+             AND capture.status='complete'
+            WHERE capture.raw_path IS NOT NULL
+            ORDER BY sample.sample_priority, result.canonical_url
+            """
+        )
+    ]
     connection.close()
 
     args.files_from.parent.mkdir(parents=True, exist_ok=True)
@@ -80,10 +104,20 @@ def main() -> int:
         "".join(f"{raw_path}\n" for _, raw_path in pending),
         encoding="utf-8",
     )
+    if args.all_result_files_from:
+        args.all_result_files_from.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        args.all_result_files_from.write_text(
+            "".join(f"{raw_path}\n" for raw_path in existing_result_files),
+            encoding="utf-8",
+        )
     result = {
         "publisher": args.publisher,
         "parserVersion": plan["parserVersion"],
         "replays": len(pending),
+        "existingResultFiles": len(existing_result_files),
         "filesFrom": str(args.files_from),
     }
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

@@ -443,6 +443,8 @@ jobs:
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
             --max-replays 1000 \
             --files-from "$RUNNER_TEMP/parser-validation-files.txt" \
+            --all-result-files-from \
+              "$RUNNER_TEMP/parser-validation-all-files.txt" \
             --github-output "$GITHUB_OUTPUT"
 
       - name: Restore previous parser sample HTML
@@ -644,7 +646,18 @@ jobs:
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
         run: |
+          if [ -s "$RUNNER_TEMP/parser-validation-all-files.txt" ]; then
+            rclone copy \
+              "${REMOTE_ROOT}/raw" \
+              "$LOCAL_ROOT/raw" \
+              --files-from \
+                "$RUNNER_TEMP/parser-validation-all-files.txt" \
+              --transfers 16 --checkers 32 \
+              --retries 8 --low-level-retries 20 \
+              --stats 30s
+          fi
           python services/olds-api/tools/revalidate_parser_samples.py \
             --publisher "$PUBLISHER" \
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
