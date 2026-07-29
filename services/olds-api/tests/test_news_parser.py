@@ -1106,7 +1106,53 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.33"
+    assert result.extraction.parser_version == "nyt-parser/0.8.34"
+
+
+def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
+    canonical_url = "https://www.nytimes.com/2017/06/02/example.html"
+    reporting = " ".join(["Substantive NYT reporting sentence."] * 20)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Legacy visual story">
+      <meta property="article:published_time"
+            content="2017-06-02T12:00:00Z">
+    </head><body><article class="Story-story--2QyGh">
+      <p>{reporting}</p>
+      <figure>
+        <img src="https://static01.nyt.com/images/editorial.jpg">
+        <figcaption class="ResponsiveMedia-caption--1dUVu">
+          <span class="ResponsiveMedia-credit--3F-q_"
+                itemprop="copyrightHolder">
+            <span class="accessibility-visuallyHidden--OUeHR">Credit</span>
+            <span>Hiroyuki Ito</span>
+          </span>
+        </figcaption>
+      </figure>
+      <div class="Recirculation-moreInRecirculation--2skgO">
+        <p>Recommended story text must not enter the article.</p>
+        <figure><img
+          src="https://static01.nyt.com/images/recommended.jpg">
+          <figcaption>Recommended photograph</figcaption>
+        </figure>
+      </div>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("nyt", canonical_url),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Recommended story" not in result.plain_text
+    assert len(result.images) == 1
+    assert result.images[0].caption is None
+    assert result.images[0].credit == "Hiroyuki Ito"
+    assert "recommended.jpg" not in result.body_html
+    assert result.extraction.parser_version == "nyt-parser/0.8.34"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -1652,7 +1698,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.33"
+    assert result.extraction.parser_version == "nyt-parser/0.8.34"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -2386,7 +2432,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.33"
+    assert result.extraction.parser_version == "nyt-parser/0.8.34"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -2435,7 +2481,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.33"
+    assert result.extraction.parser_version == "nyt-parser/0.8.34"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -2475,7 +2521,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.33"
+    assert result.extraction.parser_version == "nyt-parser/0.8.34"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -4026,7 +4072,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.33"
+    assert result.extraction.parser_version == "nyt-parser/0.8.34"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -5076,7 +5122,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.33"
+    assert result.extraction.parser_version == "nyt-parser/0.8.34"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -5230,7 +5276,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.33"
+    assert result.extraction.parser_version == "nyt-parser/0.8.34"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():

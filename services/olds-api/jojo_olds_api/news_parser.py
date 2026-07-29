@@ -4799,7 +4799,10 @@ def _image_from_tag(
         )
         if isinstance(carousel_slide, Tag):
             caption_container = carousel_slide
-    caption, credit = _caption_credit(caption_container)
+    if spec.publisher == "nyt":
+        caption, credit = _nyt_caption_credit(caption_container)
+    else:
+        caption, credit = _caption_credit(caption_container)
     context = " ".join(
         filter(
             None,
@@ -5222,6 +5225,34 @@ def _caption_credit(container: Tag) -> tuple[str | None, str | None]:
     credit = _clean_text(raw[match.start() :]) or None
     if caption and credit and caption.casefold() == credit.casefold():
         caption = None
+    return caption, credit
+
+
+def _nyt_caption_credit(container: Tag) -> tuple[str | None, str | None]:
+    """Separate legacy NYT credit spans from the visible image caption."""
+    caption_node = container.select_one("figcaption, [class*='caption' i]")
+    if not isinstance(caption_node, Tag):
+        return None, None
+    copy = BeautifulSoup(str(caption_node), "html.parser").find()
+    if not isinstance(copy, Tag):
+        return None, None
+    for hidden in copy.select(
+        "[class*='visuallyHidden' i], .visually-hidden, .sr-only"
+    ):
+        hidden.decompose()
+    credit_parts: list[str] = []
+    credit_nodes = list(
+        copy.select("[itemprop='copyrightHolder'], [class*='credit' i]")
+    )
+    if not credit_nodes:
+        return _caption_credit(container)
+    for credit_node in credit_nodes:
+        credit_text = _clean_text(credit_node.get_text(" ", strip=True))
+        if credit_text and credit_text.casefold() != "credit":
+            credit_parts.append(credit_text)
+        credit_node.decompose()
+    caption = _clean_text(copy.get_text(" ", strip=True)) or None
+    credit = _dedupe_lines("\n".join(credit_parts)) or None
     return caption, credit
 
 

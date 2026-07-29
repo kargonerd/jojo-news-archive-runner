@@ -123,7 +123,7 @@ PUBLISHER_SPECS = {
     ),
     "nyt": PublisherSpec(
         publisher="nyt",
-        parser_version="nyt-parser/0.8.33",
+        parser_version="nyt-parser/0.8.34",
         domains=("nytimes.com", "www.nytimes.com"),
         default_language="en",
         edition="us",
@@ -142,6 +142,7 @@ PUBLISHER_SPECS = {
             ".story-footer-links",
             "[data-testid='optimistic-truncator-message']",
             "[class*='relatedcoverage' i]",
+            "[class*='Recirculation-' i]",
             ".rad-series-box",
             "#newsletter-module",
             "[class*='Newsletter-wrap']",
