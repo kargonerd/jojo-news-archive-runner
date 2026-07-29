@@ -3805,6 +3805,9 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
                     "want to receive this post in your inbox",
                     "sign up for next china",
                     "sign up here to receive the davos diary",
+                    "sign up for the new economy daily newsletter",
+                    "sign up for our middle east newsletter",
+                    "sign up for our coming middle east newsletter",
                 )
             )
         ):

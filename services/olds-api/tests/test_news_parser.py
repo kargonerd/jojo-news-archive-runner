@@ -1148,7 +1148,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.8"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.9"
 
 
 def test_bloomberg_parser_keeps_listen_to_article_as_article():
@@ -1193,6 +1193,40 @@ def test_bloomberg_parser_keeps_listen_to_article_as_article():
     assert "Want to receive this post" not in result.plain_text
     assert "Related stories" not in result.plain_text
     assert any(block.type.value == "embed" for block in result.blocks)
+
+
+def test_bloomberg_parser_removes_regional_and_economics_newsletter_promos():
+    reporting = " ".join(["Bloomberg reporting sentence."] * 30)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Bloomberg Economy Article">
+      <meta property="article:published_time"
+            content="2021-11-25T12:00:00Z">
+    </head><body><article>
+      <div class="body-copy-v2">
+        <p>Sign up for the New Economy Daily newsletter, follow us
+        @economics and subscribe to our podcast.</p>
+        <p>Sign up for our Middle East newsletter and follow us
+        @middleeast for news on the region.</p>
+        <p>{reporting}</p>
+        <p>Customers can sign up for a free subscription to the service.</p>
+      </div>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2021-11-25/"
+            "a-bloomberg-economy-article"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "New Economy Daily newsletter" not in result.plain_text
+    assert "Middle East newsletter" not in result.plain_text
+    assert "sign up for a free subscription" in result.plain_text
 
 
 def test_bloomberg_parser_merges_caption_matched_low_resolution_lead():
@@ -1319,7 +1353,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.8"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.9"
 
 
 def test_bloomberg_parser_rejects_explicit_teaser_body():
@@ -1351,7 +1385,7 @@ def test_bloomberg_parser_rejects_explicit_teaser_body():
 
     assert result.quality.status.value == "partial"
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.8"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.9"
 
 
 def test_bloomberg_parser_extracts_legacy_div_span_story_body():
@@ -1383,7 +1417,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.8"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.9"
 
 
 def test_bloomberg_parser_scopes_legacy_body_without_right_rail():
@@ -1454,7 +1488,7 @@ def test_bloomberg_parser_removes_share_article_control_from_body():
     assert result.quality.status.value == "complete"
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "SHARE THIS ARTICLE" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.8"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.9"
 
 
 def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
@@ -1530,7 +1564,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
         "https://omny.fm/shows/example/episode"
     ]
     assert "Unrelated navigation card" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.8"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.9"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -2171,7 +2205,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.8"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.9"
 
 
 def test_nyt_parser_trims_access_shell_after_complete_article():
