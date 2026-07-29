@@ -375,6 +375,22 @@ def parse_article(
     if spec.publisher == "nyt":
         _trim_nyt_access_shell_tail(clean_body)
     _remove_noise(clean_body, spec)
+    if spec.publisher == "wsj":
+        inset_tables = _wsj_inset_table_body(soup)
+        if inset_tables is not None:
+            existing_text = _clean_text(
+                clean_body.get_text(" ", strip=True)
+            ).casefold()
+            for child in list(inset_tables.children):
+                if (
+                    isinstance(child, Tag)
+                    and child.name in {"h2", "h3"}
+                    and _clean_text(child.get_text(" ", strip=True))
+                    .casefold()
+                    in existing_text
+                ):
+                    continue
+                clean_body.append(child)
 
     headline = _first_text(
         (
@@ -4734,6 +4750,96 @@ def _embedded_html_body(
                     if isinstance(article, Tag):
                         return article
     return None
+
+
+def _wsj_inset_table_body(soup: BeautifulSoup) -> Tag | None:
+    """Render archived WSJ graphics data-table JSON into semantic tables."""
+    decoder = json.JSONDecoder()
+    payloads: list[dict[str, Any]] = []
+    marker = re.compile(
+        r"\bvar\s+insetData_[A-Za-z0-9_]+\s*=\s*"
+        r"function\s*\(\s*\)\s*\{\s*return\s*",
+    )
+    for script in soup.find_all("script"):
+        value = script.string or script.get_text()
+        if not value or "insetData_" not in value:
+            continue
+        for match in marker.finditer(value):
+            try:
+                payload, _ = decoder.raw_decode(value[match.end() :])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if (
+                isinstance(payload, dict)
+                and isinstance(payload.get("data"), list)
+                and payload["data"]
+            ):
+                payloads.append(payload)
+    if not payloads:
+        return None
+    document = BeautifulSoup(
+        "<article data-jojo-source='wsj-inset-tables'></article>",
+        "html.parser",
+    )
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for payload in payloads:
+        rows = [row for row in payload["data"] if isinstance(row, dict)]
+        if not rows:
+            continue
+        configured_columns = payload.get("settings", {}).get("columns", [])
+        columns = [
+            str(column["name"])
+            for column in configured_columns
+            if isinstance(column, dict)
+            and isinstance(column.get("name"), str)
+            and column["name"] in rows[0]
+        ]
+        if not columns:
+            columns = [str(key) for key in rows[0]]
+        headline = _string_or_none(payload.get("headline"))
+        if headline:
+            heading = document.new_tag("h2")
+            heading.string = headline
+            article.append(heading)
+        description = _string_or_none(payload.get("description"))
+        if description and (
+            not headline or description.casefold() != headline.casefold()
+        ):
+            paragraph = document.new_tag("p")
+            paragraph.string = description
+            article.append(paragraph)
+        table = document.new_tag("table")
+        header = document.new_tag("thead")
+        header_row = document.new_tag("tr")
+        for column in columns:
+            cell = document.new_tag("th")
+            cell.string = column
+            header_row.append(cell)
+        header.append(header_row)
+        table.append(header)
+        table_body = document.new_tag("tbody")
+        for row in rows:
+            table_row = document.new_tag("tr")
+            for column in columns:
+                cell = document.new_tag("td")
+                cell.string = _clean_text(
+                    BeautifulSoup(
+                        f"<span>{row.get(column, '')}</span>",
+                        "html.parser",
+                    ).get_text(" ", strip=True)
+                )
+                table_row.append(cell)
+            table_body.append(table_row)
+        table.append(table_body)
+        article.append(table)
+        source = _string_or_none(payload.get("source"))
+        if source:
+            source_paragraph = document.new_tag("p")
+            source_paragraph.string = f"Source: {source}"
+            article.append(source_paragraph)
+    return article if article.select_one("table") is not None else None
 
 
 def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:

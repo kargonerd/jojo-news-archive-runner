@@ -255,7 +255,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.14"
+    assert result.extraction.parser_version == "wsj-parser/0.8.15"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -416,7 +416,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.14"
+    assert result.extraction.parser_version == "wsj-parser/0.8.15"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -513,7 +513,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.14"
+    assert result.extraction.parser_version == "wsj-parser/0.8.15"
 
 
 def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
@@ -851,6 +851,69 @@ def test_wsj_parser_marks_short_ellipsis_capture_as_partial():
     assert "truncated-body" in result.quality.warnings
 
 
+def test_wsj_parser_recovers_embedded_inset_data_tables():
+    rows = [
+        {
+            "Title": f"<b>Book Title {number}</b>",
+            "Author/Publisher": f"Author {number}/Publisher",
+            "This Week": f"<b>{number}</b>",
+            "Last Week": "New",
+        }
+        for number in range(1, 11)
+    ]
+    payload = json.dumps(
+        {
+            "headline": "Hardcover Nonfiction",
+            "description": "Bestselling Books Week Ended November 21",
+            "source": "NPD BookScan",
+            "data": rows,
+            "settings": {
+                "columns": [
+                    {"name": "Title"},
+                    {"name": "Author/Publisher"},
+                    {"name": "This Week"},
+                    {"name": "Last Week"},
+                ]
+            },
+        },
+        separators=(",", ":"),
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title"
+            content="Bestselling Books Week Ended November 21">
+      <meta property="article:published_time"
+            content="2020-11-26T14:09:00Z">
+    </head><body><article>
+      <h2>Hardcover Nonfiction</h2>
+      <p>NPD BookScan gathers point-of-sale data from thousands of
+      booksellers and major online retailers across the United States.</p>
+    </article>
+    <script>
+      var insetData_218577 = function() {{return {payload};}}
+    </script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "bestselling-books-week-ended-november-21-11606399776"
+        ),
+    )
+
+    table_blocks = [
+        block for block in result.blocks
+        if block.type.value == "table"
+    ]
+    assert len(table_blocks) == 1
+    assert "Book Title 10" in table_blocks[0].text
+    assert result.plain_text.count("Hardcover Nonfiction") == 1
+    assert "Source: NPD BookScan" in result.plain_text
+
+
 def test_wsj_parser_marks_subscription_snippet_as_partial():
     html = b"""
     <html><head>
@@ -896,7 +959,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.14"
+    assert result.extraction.parser_version == "wsj-parser/0.8.15"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
