@@ -200,12 +200,30 @@ def parse_article(
             if redirect_interactive is not None:
                 body = redirect_interactive
             metadata_interactive = _nyt_interactive_metadata_body(soup)
+            body_text = (
+                _clean_text(body.get_text(" ", strip=True))
+                if body is not None
+                else ""
+            )
+            metadata_text = (
+                _clean_text(
+                    metadata_interactive.get_text(" ", strip=True)
+                )
+                if metadata_interactive is not None
+                else ""
+            )
             if metadata_interactive is not None and (
                 body is None
                 or body.select_one(
                     "p, h1, h2, h3, h4, li, table, figure, iframe"
                 )
                 is None
+                or (
+                    len(body_text) < 2 * _MINIMUM_BODY_CHARACTERS
+                    and len(metadata_text) > len(body_text)
+                    and metadata_text.casefold()
+                    not in body_text.casefold()
+                )
             ):
                 body = metadata_interactive
     if spec.publisher == "reuters":
