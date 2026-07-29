@@ -3520,6 +3520,11 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         if text in _EXACT_NOISE_TEXT:
             node.decompose()
         elif (
+            spec.publisher == "bloomberg"
+            and text == "share this article"
+        ):
+            node.decompose()
+        elif (
             spec.publisher == "ft"
             and node.name == "p"
             and text.startswith(
