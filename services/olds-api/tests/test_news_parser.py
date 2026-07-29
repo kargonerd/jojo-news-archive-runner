@@ -3142,6 +3142,34 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.extraction.parser_version == "ft-parser/0.8.12"
 
 
+def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
+    reporting = " ".join(["AP reporting sentence."] * 30)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="AP regional report">
+      <meta property="article:published_time"
+            content="2018-04-12T12:00:00Z">
+    </head><body><article>
+      <p>{reporting}</p>
+      <p>___</p>
+      <p>Sign up for the AP’s weekly newsletter showcasing our best
+      reporting from the Midwest and Texas: http://apne.ws/example</p>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/article/example",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "AP reporting sentence." in result.plain_text
+    assert "weekly newsletter" not in result.plain_text
+    assert "___" not in result.plain_text
+    assert result.extraction.parser_version == "ap-parser/0.6.11"
+
+
 def test_ap_parser_extracts_story_html_from_embedded_state():
     story_html = "".join(
         f"<p>Embedded AP reporting paragraph {index} provides substantive "
@@ -3182,7 +3210,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.10"
+    assert article.extraction.parser_version == "ap-parser/0.6.11"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -3216,7 +3244,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.10"
+    assert result.extraction.parser_version == "ap-parser/0.6.11"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():

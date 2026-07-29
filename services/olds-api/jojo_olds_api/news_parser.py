@@ -326,6 +326,8 @@ def parse_article(
         if birdkit_body is not None:
             body = birdkit_body
     clean_body = BeautifulSoup(str(body), "html.parser") if body else BeautifulSoup("", "html.parser")
+    if spec.publisher == "ap":
+        _remove_ap_newsletter_promos(clean_body)
     if spec.publisher == "reuters":
         _trim_reuters_recirculation_tail(clean_body)
     if spec.publisher == "nyt":
@@ -3700,6 +3702,26 @@ def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
             text_node.replace_with(cleaned)
         else:
             text_node.extract()
+
+
+def _remove_ap_newsletter_promos(soup: BeautifulSoup) -> None:
+    """Remove AP newsletter calls-to-action embedded as legacy body paragraphs."""
+    pattern = re.compile(
+        r"(?i)^sign up for (?:the )?ap(?:'s|’s) .*newsletter\b"
+    )
+    for node in list(soup.select("p, div")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if not pattern.match(text):
+            continue
+        previous = node.find_previous_sibling()
+        for _ in range(4):
+            if not isinstance(previous, Tag):
+                break
+            earlier = previous.find_previous_sibling()
+            if _clean_text(previous.get_text(" ", strip=True)) == "___":
+                previous.decompose()
+            previous = earlier
+        node.decompose()
 
 
 def _trim_reuters_recirculation_tail(soup: BeautifulSoup) -> None:
