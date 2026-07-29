@@ -4769,6 +4769,8 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
     if spec.publisher == "ft":
         _remove_ft_newsletter_promos(soup)
         _strip_ft_copyright_suffixes(soup)
+    if spec.publisher == "bloomberg":
+        _remove_bloomberg_promos(soup)
     if spec.publisher == "nyt":
         _remove_nyt_promos(soup)
     if spec.publisher == "reuters":
@@ -4776,6 +4778,28 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         _normalize_reuters_legacy_press_release_media(soup)
     if spec.publisher == "wsj":
         _remove_wsj_promos(soup)
+
+
+def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    """Remove legacy inline recirculation videos embedded after the story."""
+    for heading in soup.select("h1, h2, h3, h4"):
+        text = _clean_text(heading.get_text(" ", strip=True))
+        if not re.match(r"(?i)^watch this next\s*:", text):
+            continue
+        sibling = heading.find_next_sibling()
+        if (
+            isinstance(sibling, Tag)
+            and sibling.name == "figure"
+            and any(
+                marker in {
+                    str(value).casefold()
+                    for value in sibling.get("class", [])
+                }
+                for marker in ("inline-video", "video")
+            )
+        ):
+            sibling.decompose()
+        heading.decompose()
 
 
 def _remove_nyt_promos(soup: BeautifulSoup) -> None:
