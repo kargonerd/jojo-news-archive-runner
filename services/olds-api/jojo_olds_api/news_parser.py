@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 import hashlib
 import html as html_module
 import json
@@ -1494,13 +1495,56 @@ _FT_STRUCTURED_BODY_BOUNDARY_RE = re.compile(
 )
 
 
-def _ft_structured_credit_and_body(value: str) -> tuple[str | None, str]:
+def _ft_structured_credit_and_body(
+    value: str,
+    *,
+    credit_hint: str | None = None,
+) -> tuple[str | None, str]:
     """Split FT's flattened ``© creditBody`` representation."""
     clean = value.strip()
     folded = clean.casefold()
     for credit in _FT_STRUCTURED_CREDIT_PREFIXES:
         if folded.startswith(credit.casefold()):
             return clean[: len(credit)], clean[len(credit) :].strip()
+    if credit_hint:
+        normalized_hint = re.sub(
+            r"[^a-z0-9]+",
+            "",
+            credit_hint.casefold(),
+        )
+        candidates: list[tuple[float, int]] = []
+        for match in re.finditer(
+            r"(?<=[a-z0-9)])(?=[A-Z])|(?<=\S)\s+(?=[A-Z“])",
+            clean[:240],
+        ):
+            boundary = match.start()
+            body = clean[match.end() :].strip()
+            if len(body) < 50:
+                continue
+            normalized_credit = re.sub(
+                r"[^a-z0-9]+",
+                "",
+                clean[:boundary].casefold(),
+            )
+            similarity = SequenceMatcher(
+                None,
+                normalized_credit,
+                normalized_hint,
+            ).ratio()
+            candidates.append((similarity, boundary))
+        if candidates:
+            similarity, boundary = max(candidates)
+            if similarity >= 0.72:
+                return (
+                    clean[:boundary].strip() or None,
+                    clean[boundary:].strip(),
+                )
+    inferred_boundary = _ft_infer_structured_credit_boundary(clean)
+    if inferred_boundary is not None:
+        return (
+            clean[:inferred_boundary].strip() or None,
+            clean[inferred_boundary:].strip(),
+        )
     boundary = _FT_STRUCTURED_BODY_BOUNDARY_RE.search(clean)
     if boundary is None:
         return clean or None, ""
@@ -1510,8 +1554,66 @@ def _ft_structured_credit_and_body(value: str) -> tuple[str | None, str]:
     )
 
 
+def _ft_infer_structured_credit_boundary(value: str) -> int | None:
+    """Find prose glued to an unknown photo credit without a delimiter."""
+    candidates: list[tuple[float, int]] = []
+    agency_suffix = re.compile(
+        r"(?i)(?:reuters|getty(?:\s+images)?|afp|ap|epa(?:-efe)?|"
+        r"shutterstock|alamy|pa\s+wire|financial\s+times|"
+        r"magnum\s+photos|eyevine|avalon\.red)$"
+    )
+    finite_verb = re.compile(
+        r"(?i)\b(?:is|are|was|were|has|have|had|will|would|"
+        r"can|could|may|might|must|agreed|filed|became|become|"
+        r"comes|come|takes|took|began|starts|started|read|cannot)\b"
+    )
+    for match in re.finditer(
+        r"(?<=[a-z0-9)])(?=[A-Z])|(?<=\S)\s+(?=[A-Z“])",
+        value[:180],
+    ):
+        boundary = match.start()
+        prefix = value[:boundary].strip()
+        body = value[match.end() :].strip()
+        if not 3 <= len(prefix) <= 130 or len(body) < 80:
+            continue
+        opening_words = " ".join(body.split()[:25])
+        if finite_verb.search(opening_words) is None:
+            continue
+        joined = match.start() == match.end()
+        score = 4.0 if joined else 0.0
+        if agency_suffix.search(prefix):
+            score += 8.0
+        if "/" in prefix:
+            score += 2.0
+        if len(prefix.split()) <= 6:
+            score += 1.0
+        if all(
+            re.match(r"^[A-Z][^\s]*$", word)
+            for word in prefix.replace("/", " ").split()
+        ):
+            score += 2.0
+        score += min(len(prefix), 80) / 80
+        if re.search(r"[!?;]", prefix):
+            score -= 6.0
+        if re.search(r"[a-z]{3,}\.\s+[A-Z]", prefix):
+            score -= 5.0
+        if re.search(
+            r"(?i)\b(?:is|was|were|has|have|had|to|in|"
+            r"for|with|from)\b",
+            prefix,
+        ):
+            score -= 3.0
+        candidates.append((score, boundary))
+    if not candidates:
+        return None
+    score, boundary = max(candidates)
+    return boundary if score >= 2.5 else None
+
+
 def _ft_structured_caption_and_body(
     value: str,
+    *,
+    credit_hint: str | None = None,
 ) -> tuple[str | None, str | None, str]:
     """Recover caption, credit and following prose from a flattened image."""
     clean = value.strip()
@@ -1519,7 +1621,10 @@ def _ft_structured_caption_and_body(
         return None, None, ""
     if "©" in clean:
         caption, credit_tail = clean.rsplit("©", 1)
-        credit, body = _ft_structured_credit_and_body(credit_tail)
+        credit, body = _ft_structured_credit_and_body(
+            credit_tail,
+            credit_hint=credit_hint,
+        )
         return _clean_text(caption) or None, credit, _clean_text(body)
     boundary = _FT_STRUCTURED_BODY_BOUNDARY_RE.search(clean)
     if boundary is None:
@@ -1544,7 +1649,25 @@ def _ft_structured_media_nodes(
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else None
         tail = raw_paragraph[match.end() : end]
-        caption, credit, body = _ft_structured_caption_and_body(tail)
+        description_start = (
+            matches[index - 1].end() if index > 0 else 0
+        )
+        description = raw_paragraph[description_start : match.start()]
+        credit_match = re.search(
+            r"\((?:photo(?:graph)?|image)\s+(?:by|:)\s*"
+            r"(?P<credit>[^()]+)\)\s*$",
+            description,
+            flags=re.IGNORECASE,
+        )
+        credit_hint = (
+            _clean_text(credit_match.group("credit"))
+            if credit_match is not None
+            else None
+        )
+        caption, credit, body = _ft_structured_caption_and_body(
+            tail,
+            credit_hint=credit_hint,
+        )
         figure = document.new_tag("figure")
         image = document.new_tag("img")
         image["src"] = match.group("url")
@@ -4759,6 +4882,16 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
 
 def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
     """Remove newsletter cards flattened into FT syndication body paragraphs."""
+    for heading in list(soup.select("h2, h3, h4, h5, h6")):
+        if (
+            _clean_text(heading.get_text(" ", strip=True)).casefold()
+            != "related stories"
+        ):
+            continue
+        sibling = heading.find_next_sibling()
+        if isinstance(sibling, Tag) and sibling.name in {"ul", "ol"}:
+            sibling.decompose()
+        heading.decompose()
     for heading in list(soup.select("h2, h3, h4")):
         heading_text = _clean_text(
             heading.get_text(" ", strip=True)
@@ -4808,6 +4941,15 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
             r"(?i)^the ft is free to read today\.\s*"
             r"you can share this article\b"
         ),
+        re.compile(
+            r"(?i)^the financial times is making key coronavirus "
+            r"coverage free to read\b"
+        ),
+        re.compile(
+            r"(?i)^if you are a subscriber and would like to receive "
+            r"alerts when lex articles are published\b"
+        ),
+        re.compile(r"(?i)^follow .+ with\s*myft and on\s*twitter\b"),
     )
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
