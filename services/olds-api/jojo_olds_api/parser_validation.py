@@ -75,7 +75,8 @@ def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
             issues_json TEXT NOT NULL,
             error TEXT,
             parsed_at TEXT NOT NULL,
-            source_raw_sha256 TEXT
+            source_raw_sha256 TEXT,
+            source_capture_sha256 TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_parser_validation_results_year
@@ -119,6 +120,13 @@ def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
             """
             ALTER TABLE parser_validation_results
             ADD COLUMN source_raw_sha256 TEXT
+            """
+        )
+    if "source_capture_sha256" not in result_columns:
+        connection.execute(
+            """
+            ALTER TABLE parser_validation_results
+            ADD COLUMN source_capture_sha256 TEXT
             """
         )
     captures_exist = connection.execute(
@@ -690,6 +698,14 @@ def record_parser_validation(
     sample_year = int(sample_row[0])
     planned_year = sample_year
     parsed_at = datetime.now(timezone.utc)
+    capture_fingerprint = hashlib.sha256(
+        json.dumps(
+            capture.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
     values: dict[str, object] = {
         "canonical_url": capture.canonical_url,
         "publisher": capture.publisher,
@@ -711,6 +727,7 @@ def record_parser_validation(
         "error": None,
         "parsed_at": parsed_at.isoformat(),
         "source_raw_sha256": capture.raw_html.sha256,
+        "source_capture_sha256": capture_fingerprint,
     }
     try:
         html_bytes = _read_capture_html(capture, archive_root)
@@ -819,7 +836,8 @@ def record_parser_validation(
                 issues_json,
                 error,
                 parsed_at,
-                source_raw_sha256
+                source_raw_sha256,
+                source_capture_sha256
             )
             VALUES (
                 :canonical_url,
@@ -841,7 +859,8 @@ def record_parser_validation(
                 :issues_json,
                 :error,
                 :parsed_at,
-                :source_raw_sha256
+                :source_raw_sha256,
+                :source_capture_sha256
             )
             ON CONFLICT(canonical_url) DO UPDATE SET
                 parser_version=excluded.parser_version,
@@ -860,7 +879,8 @@ def record_parser_validation(
                 issues_json=excluded.issues_json,
                 error=excluded.error,
                 parsed_at=excluded.parsed_at,
-                source_raw_sha256=excluded.source_raw_sha256
+                source_raw_sha256=excluded.source_raw_sha256,
+                source_capture_sha256=excluded.source_capture_sha256
             """,
             values,
         )

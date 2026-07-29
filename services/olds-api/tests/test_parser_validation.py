@@ -933,14 +933,16 @@ def test_completed_validation_sample_records_parser_quality(tmp_path: Path):
     assert result["sample"] is True
     assert result["status"] == "complete"
     assert result["qaPass"] is True
-    assert connection.execute(
+    result_hashes = connection.execute(
         """
-        SELECT source_raw_sha256
+        SELECT source_raw_sha256, source_capture_sha256
         FROM parser_validation_results
         WHERE canonical_url=?
         """,
         (selected.canonical_url,),
-    ).fetchone()[0] == blob.sha256
+    ).fetchone()
+    assert result_hashes[0] == blob.sha256
+    assert len(result_hashes[1]) == 64
     assert summary["years"]["2020"]["evaluated"] == 1
     assert summary["years"]["2020"]["complete"] == 1
     assert summary["years"]["2020"]["qaPassed"] == 1
