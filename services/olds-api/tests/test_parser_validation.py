@@ -943,6 +943,29 @@ def test_completed_validation_sample_records_parser_quality(tmp_path: Path):
     ).fetchone()
     assert result_hashes[0] == blob.sha256
     assert len(result_hashes[1]) == 64
+    changed_capture = capture.model_copy(
+        update={
+            "selected_candidate": CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=capture.selected_candidate.snapshot_url,
+            )
+        }
+    )
+    record_parser_validation(
+        connection,
+        capture=changed_capture,
+        archive_root=tmp_path,
+    )
+    changed_hashes = connection.execute(
+        """
+        SELECT source_raw_sha256, source_capture_sha256
+        FROM parser_validation_results
+        WHERE canonical_url=?
+        """,
+        (selected.canonical_url,),
+    ).fetchone()
+    assert changed_hashes[0] == result_hashes[0]
+    assert changed_hashes[1] != result_hashes[1]
     assert summary["years"]["2020"]["evaluated"] == 1
     assert summary["years"]["2020"]["complete"] == 1
     assert summary["years"]["2020"]["qaPassed"] == 1
