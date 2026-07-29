@@ -120,6 +120,10 @@ def parse_article(
         body = _generic_syndication_body(soup)
     if body is None and spec.publisher == "nyt":
         body = _nyt_legacy_article_body(soup)
+    if spec.publisher == "wsj":
+        puzzle_body = _wsj_puzzle_body(soup, canonical_url=canonical_url)
+        if puzzle_body is not None:
+            body = puzzle_body
     if (
         body is None
         and spec.publisher == "nyt"
@@ -380,6 +384,15 @@ def parse_article(
             or (spec.publisher in {"nyt", "ft"} and len(images) >= 1)
         )
     )
+    embedded_nontext_content = bool(
+        content_type
+        in {
+            ContentType.INTERACTIVE,
+            ContentType.VIDEO,
+            ContentType.AUDIO,
+        }
+        and any(block.type == BlockType.EMBED for block in blocks)
+    )
     publisher_notice = _is_publisher_notice(
         headline=headline,
         description=description,
@@ -395,6 +408,7 @@ def parse_article(
     if (
         len(plain_text) < _MINIMUM_BODY_CHARACTERS
         and not image_led_gallery
+        and not embedded_nontext_content
         and not publisher_notice
         and not structured_short_record
     ):
@@ -1948,15 +1962,67 @@ def _wsj_interactive_puzzle(
     has_puzzle_embed = soup.select_one(
         ".interactive-puzzle-template iframe, "
         ".puzzle-template-article-sector iframe, "
-        "iframe[class*='puzzle' i]"
+        "iframe[class*='puzzle' i], "
+        "a[href*='/documents/'][href$='.pdf' i]"
     )
     if not has_puzzle_embed:
         return False
     url = canonical_url.casefold()
     return bool(
         (section and "puzzle" in section.casefold())
-        or any(token in url for token in ("acrostic", "crossword", "/puzzles/"))
+        or any(
+            token in url
+            for token in (
+                "acrostic",
+                "crossword",
+                "cryptic-puzzle",
+                "variety-puzzle",
+                "number-puzzles",
+                "/puzzles/",
+            )
+        )
     )
+
+
+def _wsj_puzzle_body(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
+    links = [
+        link
+        for link in soup.select("a[href]")
+        if (
+            (href := _string_or_none(link.get("href")))
+            and "/documents/" in href.casefold()
+            and href.casefold().split("?", 1)[0].endswith(".pdf")
+        )
+    ]
+    if not links:
+        return None
+    page_text = _clean_text(soup.get_text(" ", strip=True)).casefold()
+    url = canonical_url.casefold()
+    if "puzzle" not in page_text and "puzzle" not in url:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    seen: set[str] = set()
+    for link in links:
+        href = str(link.get("href"))
+        if href in seen:
+            continue
+        seen.add(href)
+        label = _tag_text(link) or "Download puzzle PDF"
+        paragraph = document.new_tag("p")
+        paragraph.string = label
+        article.append(paragraph)
+        iframe = document.new_tag("iframe")
+        iframe["src"] = href
+        iframe["title"] = label
+        article.append(iframe)
+    return article if seen else None
 
 
 def _prefer_structured_body_with_media(

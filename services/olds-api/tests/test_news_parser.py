@@ -250,7 +250,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.4"
+    assert result.extraction.parser_version == "wsj-parser/0.8.5"
 
 
 def test_wsj_parser_classifies_embedded_acrostic_as_interactive():
@@ -295,6 +295,42 @@ def test_wsj_parser_classifies_embedded_acrostic_as_interactive():
         "https://example.com/puzzle/index.html?embed=1"
     )
     assert result.plain_text == ""
+
+
+def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="Labyrinth (Saturday Variety Puzzle, August 6)">
+      <meta property="article:published_time"
+            content="2022-08-06T09:00:00Z">
+    </head><body><article>
+      <nav>WSJ Puzzles Variety Puzzle</nav>
+      <a href="https://s.wsj.net/public/resources/documents/SatPuz.pdf">
+        Download PDF
+      </a>
+      <a href="https://s.wsj.net/public/resources/documents/Answer.pdf">
+        Solutions
+      </a>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "labyrinth-saturday-variety-puzzle-11659568300"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "interactive"
+    assert [block.embed_url for block in result.blocks if block.embed_url] == [
+        "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
+        "https://s.wsj.net/public/resources/documents/Answer.pdf",
+    ]
+    assert result.extraction.parser_version == "wsj-parser/0.8.5"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -391,7 +427,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.4"
+    assert result.extraction.parser_version == "wsj-parser/0.8.5"
 
 
 def test_parser_classifies_non_editorial_images_without_archiving_them():
