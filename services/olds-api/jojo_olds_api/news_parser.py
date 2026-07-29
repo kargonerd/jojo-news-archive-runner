@@ -2663,6 +2663,18 @@ def _nyt_legacy_interactive_graphic(soup: BeautifulSoup) -> Tag | None:
     freeform = soup.select_one("#interactiveFreeFormMain")
     if not isinstance(shell, Tag) or not isinstance(freeform, Tag):
         return None
+    freeform_text = _clean_text(freeform.get_text(" ", strip=True))
+    if (
+        len(freeform_text) >= _MINIMUM_BODY_CHARACTERS
+        and freeform.select_one("p, table, ul, ol, h2, h3") is not None
+    ):
+        # Some pre-React interactives put the complete, already-rendered
+        # article (including comparison tables) in this container.  Rebuilding
+        # it from only the deck and media silently discarded that prose.
+        recovered_document = BeautifulSoup(str(freeform), "html.parser")
+        recovered = recovered_document.select_one("#interactiveFreeFormMain")
+        if isinstance(recovered, Tag):
+            return recovered
     summary = _tag_text(shell.select_one(".storySummary .summary, .storySummary"))
     document = BeautifulSoup("<article></article>", "html.parser")
     article = document.article

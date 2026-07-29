@@ -1106,7 +1106,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.31"
+    assert result.extraction.parser_version == "nyt-parser/0.8.32"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -1652,7 +1652,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.31"
+    assert result.extraction.parser_version == "nyt-parser/0.8.32"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -2386,7 +2386,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.31"
+    assert result.extraction.parser_version == "nyt-parser/0.8.32"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -2435,7 +2435,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.31"
+    assert result.extraction.parser_version == "nyt-parser/0.8.32"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -2475,7 +2475,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.31"
+    assert result.extraction.parser_version == "nyt-parser/0.8.32"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -4023,7 +4023,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.31"
+    assert result.extraction.parser_version == "nyt-parser/0.8.32"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -5073,7 +5073,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.31"
+    assert result.extraction.parser_version == "nyt-parser/0.8.32"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -5227,7 +5227,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.31"
+    assert result.extraction.parser_version == "nyt-parser/0.8.32"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
@@ -5621,6 +5621,44 @@ def test_nyt_parser_preserves_image_led_legacy_interactive():
     assert result.quality.status.value == "complete"
     assert result.quality.images_selected == 1
     assert any(block.type.value == "image" for block in result.blocks)
+
+
+def test_nyt_parser_preserves_rendered_legacy_interactive_tables():
+    rows = "".join(
+        f"<tr><th>Critic {index}</th><td>Film choice {index} with a "
+        "detailed explanation of the performance and direction.</td></tr>"
+        for index in range(6)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="The Critics Make Their Oscar Choices">
+      <meta property="article:published_time" content="2012-12-30T00:00:00Z">
+    </head><body>
+      <div id="interactiveShell">
+        <div class="storySummary">The critics make their Oscar choices.</div>
+        <div id="interactiveFreeFormMain">
+          <h2>Best Picture</h2>
+          <p>Each critic explains the films most deserving of recognition
+          after a year of unusually ambitious American cinema.</p>
+          <table><tbody>{rows}</tbody></table>
+        </div>
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2012/12/30/movies/"
+            "awardsseason/20121230-oscar-picks-feature.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters > 300
+    assert "Critic 5" in result.plain_text
+    assert "Film choice 5" in result.plain_text
 
 
 def test_nyt_parser_preserves_balloteer_quiz_data_endpoint():
