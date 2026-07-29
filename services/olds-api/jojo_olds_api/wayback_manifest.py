@@ -64,6 +64,7 @@ WSJ_RSS_ENDPOINTS = (
     "https://feeds.content.dowjones.io/public/rss/rsssportsfeed",
 )
 PARSER_VALIDATION_CATALOG_MINIMUM_PER_YEAR = 750
+WSJ_LEGACY_DATE_HYDRATIONS_PER_RUN = 100
 
 
 @dataclass(frozen=True)
@@ -335,6 +336,215 @@ def initialize_discovery_schema(
         ),
     )
     connection.commit()
+
+
+def initialize_wsj_legacy_date_schema(
+    connection: sqlite3.Connection,
+) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS wsj_legacy_date_hydration (
+            canonical_url TEXT PRIMARY KEY,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            published_at TEXT,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_wsj_legacy_date_status
+            ON wsj_legacy_date_hydration(status, attempts, updated_at);
+        """
+    )
+    undated_urls = [
+        (str(row[0]), _now_iso())
+        for row in connection.execute(
+            "SELECT DISTINCT canonical_url FROM candidates"
+        )
+        if infer_published_at(str(row[0])) is None
+    ]
+    connection.executemany(
+        """
+        INSERT OR IGNORE INTO wsj_legacy_date_hydration(
+            canonical_url, updated_at
+        ) VALUES (?, ?)
+        """,
+        undated_urls,
+    )
+    connection.commit()
+
+
+def process_wsj_legacy_dates(
+    connection: sqlite3.Connection,
+    *,
+    http_client: httpx.Client,
+    maximum: int = WSJ_LEGACY_DATE_HYDRATIONS_PER_RUN,
+    minimum_request_interval: float = 0.0,
+) -> dict[str, object]:
+    """Replace capture-time guesses with dates embedded in legacy WSJ pages."""
+    if maximum < 1:
+        raise ValueError("maximum must be positive")
+    initialize_wsj_legacy_date_schema(connection)
+    rows = connection.execute(
+        """
+        SELECT hydration.canonical_url, candidate.timestamp,
+               candidate.original_url
+        FROM wsj_legacy_date_hydration AS hydration
+        JOIN candidates AS candidate
+          ON candidate.canonical_url=hydration.canonical_url
+        WHERE hydration.status IN ('pending', 'retry')
+          AND hydration.attempts < 3
+          AND candidate.rowid=(
+              SELECT selected.rowid
+              FROM candidates AS selected
+              WHERE selected.canonical_url=hydration.canonical_url
+              ORDER BY selected.rank_score, selected.timestamp
+              LIMIT 1
+          )
+        ORDER BY hydration.attempts, hydration.updated_at,
+                 hydration.canonical_url
+        LIMIT ?
+        """,
+        (maximum,),
+    ).fetchall()
+    limiter = GlobalRateLimiter(minimum_request_interval)
+    found = 0
+    rejected = 0
+    errors: list[str] = []
+    window = dict(
+        connection.execute(
+            """
+            SELECT key, value FROM discovery_metadata
+            WHERE key IN ('from_year', 'to_year')
+            """
+        )
+    )
+    for canonical_url, timestamp, original_url in rows:
+        snapshot_url = (
+            f"https://web.archive.org/web/{timestamp}id_/{original_url}"
+        )
+        status = "retry"
+        published_at = None
+        error = None
+        try:
+            limiter.wait()
+            response = http_client.get(snapshot_url)
+            response.raise_for_status()
+            published_at = extract_wsj_legacy_published_at(response.text)
+            if published_at is None:
+                status = "no-date"
+                rejected += 1
+            else:
+                status = "complete"
+                found += 1
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            errors.append(f"{canonical_url}: {error}")
+        with connection:
+            connection.execute(
+                """
+                UPDATE wsj_legacy_date_hydration
+                SET status=?, attempts=attempts+1, published_at=?,
+                    last_error=?, updated_at=?
+                WHERE canonical_url=?
+                """,
+                (
+                    status,
+                    published_at,
+                    error,
+                    _now_iso(),
+                    canonical_url,
+                ),
+            )
+            if published_at is not None:
+                candidate_rows = connection.execute(
+                    """
+                    SELECT timestamp, digest FROM candidates
+                    WHERE canonical_url=?
+                    """,
+                    (canonical_url,),
+                ).fetchall()
+                connection.executemany(
+                    """
+                    UPDATE candidates SET published_at=?, rank_score=?
+                    WHERE canonical_url=? AND timestamp=? AND digest=?
+                    """,
+                    [
+                        (
+                            published_at,
+                            candidate_rank(
+                                str(candidate_timestamp),
+                                published_at=published_at,
+                            ),
+                            canonical_url,
+                            candidate_timestamp,
+                            digest,
+                        )
+                        for candidate_timestamp, digest in candidate_rows
+                    ],
+                )
+                if not (
+                    f"{int(window['from_year']):04d}-01-01"
+                    <= published_at
+                    < f"{int(window['to_year']) + 1:04d}-01-01"
+                ):
+                    connection.execute(
+                        "DELETE FROM candidates WHERE canonical_url=?",
+                        (canonical_url,),
+                    )
+    remaining = connection.execute(
+        """
+        SELECT COUNT(*) FROM wsj_legacy_date_hydration
+        WHERE status IN ('pending', 'retry') AND attempts < 3
+        """
+    ).fetchone()[0]
+    return {
+        "attempted": len(rows),
+        "found": found,
+        "noDate": rejected,
+        "remaining": int(remaining),
+        "errors": errors,
+    }
+
+
+def wsj_legacy_date_summary(
+    connection: sqlite3.Connection,
+) -> dict[str, int] | None:
+    if not _table_exists(connection, "wsj_legacy_date_hydration"):
+        return None
+    row = connection.execute(
+        """
+        SELECT
+            COUNT(*),
+            SUM(status='complete'),
+            SUM(status='no-date'),
+            SUM(status IN ('pending', 'retry') AND attempts < 3)
+        FROM wsj_legacy_date_hydration
+        """
+    ).fetchone()
+    return {
+        "total": int(row[0] or 0),
+        "complete": int(row[1] or 0),
+        "noDate": int(row[2] or 0),
+        "remaining": int(row[3] or 0),
+    }
+
+
+def extract_wsj_legacy_published_at(html: str) -> str | None:
+    patterns = (
+        r"""publicationDate\s*[:=]\s*['"]([^'"]+)""",
+        r"""property=['"]article:published_time['"][^>]*content=['"]([^'"]+)""",
+        r"""name=['"]article\.published['"][^>]*content=['"]([^'"]+)""",
+        r"""["']datePublished["']\s*:\s*["']([^"']+)""",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, html, flags=re.IGNORECASE)
+        if match is None:
+            continue
+        value = _parse_iso_datetime(match.group(1))
+        if value is not None and 1900 <= value.year <= 2100:
+            return value.isoformat()
+    return None
 
 
 def initialize_wsj_bluesky_schema(
@@ -1746,6 +1956,12 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
         result["shouldContinue"] = bool(
             result["shouldContinue"]
         ) or wsj_infini_should_continue(connection)
+    legacy_dates = wsj_legacy_date_summary(connection)
+    if legacy_dates is not None:
+        result["wsjLegacyDates"] = legacy_dates
+        result["shouldContinue"] = bool(
+            result["shouldContinue"]
+        ) or legacy_dates["remaining"] > 0
     return result
 
 

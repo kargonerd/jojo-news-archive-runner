@@ -26,6 +26,7 @@ from jojo_olds_api.wayback_manifest import (
     candidate_rank,
     discovery_summary,
     export_capture_manifest,
+    extract_wsj_legacy_published_at,
     infer_published_at,
     initialize_discovery_schema,
     initialize_wsj_bluesky_schema,
@@ -42,6 +43,18 @@ from jojo_olds_api.wayback_manifest import (
     wsj_google_news_is_only_catalog_gap,
     wsj_google_news_should_continue,
 )
+
+
+def test_extract_wsj_legacy_published_at_from_at_vars():
+    assert extract_wsj_legacy_published_at(
+        """<script>AT_VARS = {publicationDate:'2003-01-27'};</script>"""
+    ) == "2003-01-27T00:00:00+00:00"
+
+
+def test_extract_wsj_legacy_published_at_from_json_ld():
+    assert extract_wsj_legacy_published_at(
+        """<script>{"datePublished":"2014-06-03T12:34:56Z"}</script>"""
+    ) == "2014-06-03T12:34:56+00:00"
 
 
 class StubWsjSyndicationResponse:

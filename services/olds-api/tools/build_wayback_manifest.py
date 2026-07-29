@@ -22,10 +22,12 @@ from jojo_olds_api.wayback_manifest import (
     initialize_discovery_schema,
     initialize_wsj_bluesky_schema,
     initialize_wsj_google_news_schema,
+    initialize_wsj_legacy_date_schema,
     initialize_wsj_rss_schema,
     next_discovery_query,
     process_wsj_bluesky_page,
     process_wsj_google_news_feed,
+    process_wsj_legacy_dates,
     process_wsj_rss_feeds,
     record_discovery_page,
     wsj_bluesky_should_continue,
@@ -98,6 +100,7 @@ def main() -> int:
     if args.publisher == "wsj" and args.collapse == "urlkey":
         initialize_wsj_bluesky_schema(connection)
         initialize_wsj_google_news_schema(connection)
+        initialize_wsj_legacy_date_schema(connection)
         initialize_wsj_rss_schema(connection)
         initialize_wsj_syndication_schema(connection)
         initialize_wsj_infini_schema(
@@ -343,6 +346,34 @@ def main() -> int:
                 )
                 if args.min_request_interval:
                     time.sleep(args.min_request_interval)
+            try:
+                legacy_dates = process_wsj_legacy_dates(
+                    connection,
+                    http_client=http_client,
+                    maximum=max(1, args.max_pages or 5) * 20,
+                    minimum_request_interval=args.min_request_interval,
+                )
+                legacy_date_errors = legacy_dates.pop("errors")
+                deferred_errors.extend(
+                    f"WSJ legacy date: {error}"
+                    for error in legacy_date_errors
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "wsj-legacy-date-hydration",
+                            **legacy_dates,
+                            "errors": len(legacy_date_errors),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+            except Exception as exc:
+                deferred_errors.append(
+                    "WSJ legacy date hydration: "
+                    f"{type(exc).__name__}: {exc}"
+                )
         if wsj_catalog_ready_for_capture(
             connection,
             from_year=args.from_year,
