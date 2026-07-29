@@ -93,7 +93,7 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "completeRate": 1.0,
         "qaPassRate": 1.0,
         "errors": 0,
-        "parserVersion": "ap-parser/0.6.11",
+        "parserVersion": "ap-parser/0.6.12",
         "ready": True,
         "active": False,
     }

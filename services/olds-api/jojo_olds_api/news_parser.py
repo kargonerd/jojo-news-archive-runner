@@ -3707,11 +3707,11 @@ def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
 def _remove_ap_newsletter_promos(soup: BeautifulSoup) -> None:
     """Remove AP newsletter calls-to-action embedded as legacy body paragraphs."""
     pattern = re.compile(
-        r"(?i)^sign up for (?:the )?ap(?:'s|’s) .*newsletter\b"
+        r"(?i)\bsign up for (?:the )?ap(?:'s|’s) .*newsletter\b"
     )
-    for node in list(soup.select("p, div")):
+    for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
-        if not pattern.match(text):
+        if not pattern.search(text):
             continue
         previous = node.find_previous_sibling()
         for _ in range(4):
