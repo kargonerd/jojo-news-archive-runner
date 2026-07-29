@@ -2082,6 +2082,51 @@ def test_ft_parser_merges_structured_copy_with_dom_media():
     ) == 3
 
 
+def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="FT Weekend Magazine Crossword Number 449">
+      <meta property="article:published_time"
+            content="2019-08-09T09:00:28Z">
+      <meta property="og:image"
+            content="http://im.ft-static.com/m/img/social/og-ft-logo-large.png">
+    </head><body>
+      <div class="article__content-body">
+        <p>
+          <a href="http://prod-upp-image-read.ft.com/crossword-asset">
+            Download crossword PDF
+          </a>
+        </p>
+        <p>FT.com also brings you the crossword from Monday to Saturday.</p>
+        <p>Copyright The Financial Times Limited. All rights reserved.
+          Please don't cut articles from FT.com and redistribute by email
+          or post to the web.</p>
+      </div>
+    </body></html>
+    """
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "36cdff7a-a8ed-11e9-b6ee-3cdf3174eb89"
+        ),
+    )
+
+    assert article.content_type.value == "interactive"
+    assert article.quality.status.value == "complete"
+    assert article.quality.images_selected == 0
+    assert "Copyright The Financial Times" not in article.plain_text
+    assert [
+        block.embed_url for block in article.blocks if block.embed_url
+    ] == [
+        "http://prod-upp-image-read.ft.com/crossword-asset"
+    ]
+    assert article.extraction.parser_version == "ft-parser/0.8.8"
+
+
 def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     article_body = "\n\n".join(
         [
@@ -2118,7 +2163,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.7"
+    assert article.extraction.parser_version == "ft-parser/0.8.8"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -2149,7 +2194,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.7"
+    assert article.extraction.parser_version == "ft-parser/0.8.8"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -2189,7 +2234,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.7"
+    assert article.extraction.parser_version == "ft-parser/0.8.8"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -2246,7 +2291,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.7"
+    assert article.extraction.parser_version == "ft-parser/0.8.8"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():

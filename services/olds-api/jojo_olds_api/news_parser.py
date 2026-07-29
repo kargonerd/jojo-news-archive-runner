@@ -77,6 +77,7 @@ def parse_article(
     body = None
     structured_image_gallery_selected = False
     nyt_interactive_body_selected = False
+    ft_crossword_selected = False
     if spec.publisher == "ap":
         gallery_body = _ap_carousel_gallery(soup)
         if gallery_body is not None:
@@ -257,6 +258,11 @@ def parse_article(
             and not nyt_interactive_body_selected
         ):
             body = legacy_video_body
+    if spec.publisher == "ft":
+        crossword_body = _ft_crossword_body(soup, body=body)
+        if crossword_body is not None:
+            body = crossword_body
+            ft_crossword_selected = True
     if spec.embedded_html_body_keys and (
         body is None
         or body.select_one(
@@ -399,6 +405,8 @@ def parse_article(
         spec.publisher == "ap"
         and _is_ap_data_bulletin(news_article, canonical_url)
     ):
+        content_type = ContentType.INTERACTIVE
+    if spec.publisher == "ft" and ft_crossword_selected:
         content_type = ContentType.INTERACTIVE
 
     images_by_url: dict[str, ImageCandidate] = {}
@@ -2005,6 +2013,48 @@ def _nyt_legacy_lede_video_body(
     return article
 
 
+def _ft_crossword_body(
+    soup: BeautifulSoup,
+    *,
+    body: Tag | None,
+) -> Tag | None:
+    """Preserve the downloadable puzzle asset on FT crossword pages."""
+    headline = _first_text(
+        _meta_content(soup, "property", "og:title"),
+        _tag_text(soup.select_one("h1")),
+    )
+    if not headline or "crossword" not in headline.casefold():
+        return None
+    link = next(
+        (
+            candidate
+            for candidate in soup.select("a[href]")
+            if "crossword pdf"
+            in _clean_text(candidate.get_text(" ", strip=True)).casefold()
+        ),
+        None,
+    )
+    if not isinstance(link, Tag):
+        return None
+    destination = _string_or_none(link.get("href"))
+    if not destination:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    if body is not None:
+        body_copy = BeautifulSoup(str(body), "html.parser")
+        copied_root = body_copy.find(body.name)
+        if isinstance(copied_root, Tag):
+            article.append(copied_root)
+    iframe = document.new_tag("iframe")
+    iframe["src"] = destination
+    iframe["title"] = "Download crossword PDF"
+    article.append(iframe)
+    return article
+
+
 def _nyt_preloaded_visual_story_rows(
     state: dict[str, Any],
 ) -> list[tuple[str, str | None, str | None]]:
@@ -3293,7 +3343,18 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         for node in soup.select(selector):
             node.decompose()
     for node in soup.select("p, div, span"):
-        if _clean_text(node.get_text(" ", strip=True)).casefold() in _EXACT_NOISE_TEXT:
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        if text in _EXACT_NOISE_TEXT:
+            node.decompose()
+        elif (
+            spec.publisher == "ft"
+            and node.name == "p"
+            and text.startswith(
+                "copyright the financial times limited"
+            )
+            and "please don't " in text
+            and "articles from ft.com" in text
+        ):
             node.decompose()
 
 
@@ -3872,6 +3933,8 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/lightsaber/_next/static/media/social-",
             "yahoo_default_logo",
             "yahoo-finance-default-logo",
+            "/m/img/social/og-ft-logo",
+            "/__assets/creatives/open-graph/ft-v1.jpg",
         )
     )
 
