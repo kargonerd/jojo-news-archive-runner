@@ -48,7 +48,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.4",
     "bloomberg": "bloomberg-capture/0.10.3",
-    "ft": "ft-capture/0.20.1",
+    "ft": "ft-capture/0.20.2",
     "nyt": "nyt-capture/0.8.1",
     "reuters": "reuters-capture/0.7.2",
     "wsj": "wsj-capture/0.8.3",
@@ -1780,6 +1780,13 @@ def _fetch_usable_candidate(
             )
         )
         signals = signals | reuters_evidence
+    ft_parser_usable = True
+    if publisher == "ft" and signals["looksLikeHtml"]:
+        ft_parser_usable, ft_evidence = _ft_capture_parser_evidence(
+            content,
+            canonical_url=canonical_url,
+        )
+        signals = signals | ft_evidence
     if response_observer is not None:
         response_observer(candidate, content, final_url)
     structured_subscription_article = bool(
@@ -1812,6 +1819,7 @@ def _fetch_usable_candidate(
         or not ap_parser_usable
         or not wsj_parser_usable
         or not reuters_parser_usable
+        or not ft_parser_usable
     ):
         return (
             None,
@@ -5342,6 +5350,40 @@ def _reuters_capture_parser_evidence(
     }
 
 
+def _ft_capture_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="ft",
+            canonical_url=canonical_url,
+            allow_generic_syndication=True,
+        )
+    except Exception as exc:
+        return False, {
+            "ftCaptureParserUsable": False,
+            "ftCaptureParserError": type(exc).__name__,
+        }
+    nontext = article.content_type in {
+        ContentType.INTERACTIVE,
+        ContentType.VIDEO,
+        ContentType.AUDIO,
+        ContentType.GALLERY,
+    }
+    usable = article.quality.status == ArticleStatus.COMPLETE or nontext
+    return usable, {
+        "ftCaptureParserUsable": usable,
+        "ftCaptureExtractionStatus": article.quality.status.value,
+        "ftCaptureContentType": article.content_type.value,
+        "ftCaptureBodyCharacters": article.quality.body_characters,
+    }
+
+
 def score_raw_capture(
     content: bytes,
     *,
@@ -5780,6 +5822,13 @@ def completed_capture_rejection_reason(
         )
         if not usable:
             return "reuters-capture-parser-incomplete"
+    if capture.publisher == "ft":
+        usable, _ = _ft_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "ft-capture-parser-incomplete"
     if (
         capture.publisher == "bloomberg"
         and capture.selected_candidate.provider == CaptureProvider.OTHER

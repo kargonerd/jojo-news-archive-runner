@@ -34,6 +34,7 @@ from jojo_olds_api.raw_archive_capture import (
     _ap_syndication_search_urls,
     _ap_capture_parser_evidence,
     _decode_archived_html_content,
+    _ft_capture_parser_evidence,
     _wsj_capture_parser_evidence,
     arquivo_pt_cdx_url,
     ap_syndication_search_url,
@@ -5050,6 +5051,27 @@ def test_ap_capture_parser_evidence_rejects_unhydrated_score_table():
     assert signals["apCaptureExtractionStatus"] == "partial"
 
 
+def test_ft_capture_parser_evidence_rejects_registration_shell():
+    usable, signals = _ft_capture_parser_evidence(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Register to read this article">
+          <meta property="article:published_time"
+                content="2023-10-18T17:00:00Z">
+        </head><body>
+          <main><h1>Register to read this article</h1></main>
+        </body></html>
+        """,
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "68e8a9e3-c5f0-46be-a517-30d2f14d7df2"
+        ),
+    )
+
+    assert usable is False
+    assert signals["ftCaptureExtractionStatus"] == "unsupported"
+
+
 def test_raw_quality_rejects_wsj_structured_snippet_view():
     score, signals = score_raw_capture(
         b"""
@@ -5189,6 +5211,11 @@ def test_stored_wsj_subscription_shell_still_rejects_short_preview(
             "reuters",
             "https://www.reuters.com/article/incomplete-idUSL1N123",
             "reuters-capture-parser-incomplete",
+        ),
+        (
+            "ft",
+            "https://www.ft.com/content/incomplete-example",
+            "ft-capture-parser-incomplete",
         ),
         (
             "wsj",
