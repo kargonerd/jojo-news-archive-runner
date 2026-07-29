@@ -250,7 +250,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.7"
+    assert result.extraction.parser_version == "wsj-parser/0.8.8"
 
 
 def test_wsj_parser_classifies_embedded_acrostic_as_interactive():
@@ -330,7 +330,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.7"
+    assert result.extraction.parser_version == "wsj-parser/0.8.8"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -427,7 +427,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.7"
+    assert result.extraction.parser_version == "wsj-parser/0.8.8"
 
 
 def test_wsj_parser_classifies_legacy_slideshow_metadata_as_gallery():
@@ -459,6 +459,52 @@ def test_wsj_parser_classifies_legacy_slideshow_metadata_as_gallery():
 
     assert result.content_type.value == "gallery"
     assert result.quality.status.value == "complete"
+
+
+def test_wsj_parser_removes_legacy_article_tools_and_trending_modules():
+    reporting = " ".join(["Historical reporting sentence."] * 30)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Health-Care Defeat">
+      <meta property="article:published_time"
+            content="2017-04-02T00:00:00Z">
+    </head><body>
+      <article>
+        <div class="wsj-article-headline-wrap">
+          <span class="article-breadCrumb-wrapper">
+            <ul><li>Opinion</li><li>Commentary</li></ul>
+          </span>
+        </div>
+        <div class="article-content">
+          <p>{reporting}</p>
+        </div>
+        <div id="article_tools">
+          <ul><li>Save Article</li><li>Subscribe to WSJ</li></ul>
+        </div>
+        <div id="trending_now">
+          <h2>Most Popular Videos</h2>
+          <ul><li>Unrelated video promotion</li></ul>
+          <h2>Most Popular Articles</h2>
+          <ul><li>Unrelated article promotion</li></ul>
+        </div>
+      </article>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/a-health-care-defeat-1491149327"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Historical reporting sentence." in result.plain_text
+    assert "Opinion Commentary" not in result.plain_text
+    assert "Save Article" not in result.plain_text
+    assert "Most Popular" not in result.plain_text
+    assert "Unrelated" not in result.plain_text
 
 
 def test_parser_classifies_non_editorial_images_without_archiving_them():
