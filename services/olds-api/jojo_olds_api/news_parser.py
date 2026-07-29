@@ -2884,7 +2884,9 @@ def _nyt_legacy_newsgraphic_body(soup: BeautifulSoup) -> Tag | None:
 def _nyt_legacy_flex_body(soup: BeautifulSoup) -> Tag | None:
     """Recover text, statistics and media from NYT's legacy LOOK template."""
     payload: dict[str, Any] | None = None
-    for script in soup.select("#interactiveFreeFormMain script"):
+    for script in soup.select(
+        "#interactiveFreeFormMain script, .interactive-graphic script"
+    ):
         value = script.string or script.get_text()
         match = re.search(
             r"""(?s)function\s+getFlexData\s*\(\s*\)\s*\{\s*"""
@@ -2907,6 +2909,80 @@ def _nyt_legacy_flex_body(soup: BeautifulSoup) -> Tag | None:
     article = document.article
     if not isinstance(article, Tag):
         return None
+    lede = data.get("lede")
+    if isinstance(lede, dict):
+        description = _string_or_none(lede.get("description"))
+        if description:
+            paragraph = document.new_tag("p")
+            paragraph.string = description
+            article.append(paragraph)
+    tracks = data.get("tracks")
+    if isinstance(tracks, dict):
+        track_rows = tracks.get("track")
+        if isinstance(track_rows, dict):
+            track_rows = [track_rows]
+        if isinstance(track_rows, list):
+            for track in track_rows:
+                if not isinstance(track, dict):
+                    continue
+                source = _string_or_none(track.get("source"))
+                if not source:
+                    continue
+                audio = document.new_tag("audio")
+                audio["src"] = source
+                title = _string_or_none(track.get("title"))
+                if title:
+                    audio["title"] = title
+                article.append(audio)
+    item_columns = data.get("items")
+    if isinstance(item_columns, list):
+        for column in item_columns:
+            stories = (
+                column.get("story")
+                if isinstance(column, dict)
+                else None
+            )
+            if not isinstance(stories, list):
+                continue
+            for story in stories:
+                if not isinstance(story, dict):
+                    continue
+                headline = _string_or_none(story.get("headline"))
+                if headline:
+                    heading = document.new_tag("h2")
+                    heading.string = headline
+                    article.append(heading)
+                byline = _string_or_none(story.get("byline"))
+                if byline:
+                    paragraph = document.new_tag("p")
+                    paragraph.string = _clean_text(
+                        BeautifulSoup(
+                            byline,
+                            "html.parser",
+                        ).get_text(" ")
+                    )
+                    article.append(paragraph)
+                story_html = _string_or_none(story.get("text"))
+                if story_html:
+                    fragment = BeautifulSoup(story_html, "html.parser")
+                    for child in list(fragment.contents):
+                        article.append(child)
+                for field in ("photo", "thumb", "bottom"):
+                    source = _string_or_none(story.get(field))
+                    if not source:
+                        continue
+                    figure = document.new_tag("figure")
+                    image = document.new_tag("img")
+                    image["src"] = source
+                    if headline:
+                        image["alt"] = headline
+                    figure.append(image)
+                    credit = _string_or_none(story.get("pcred"))
+                    if credit:
+                        figcaption = document.new_tag("figcaption")
+                        figcaption.string = credit
+                        figure.append(figcaption)
+                    article.append(figure)
     column_two = data.get("col2")
     if isinstance(column_two, dict):
         text = _string_or_none(column_two.get("text"))
@@ -3382,6 +3458,16 @@ def _nyt_media_content_type(
 ) -> ContentType:
     if structured_image_gallery_selected:
         return ContentType.GALLERY
+    if any(
+        re.search(
+            r"""(?i)["']source["']\s*:\s*["'][^"']+\.mp3(?:[?"']|$)""",
+            (script.string or script.get_text()).replace("\\/", "/"),
+        )
+        for script in soup.select(
+            "#interactiveFreeFormMain script, .interactive-graphic script"
+        )
+    ):
+        return ContentType.AUDIO
     state = _nyt_preloaded_state(soup)
     body_types = {
         value.get("__typename")

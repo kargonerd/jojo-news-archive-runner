@@ -123,7 +123,7 @@ PUBLISHER_SPECS = {
     ),
     "nyt": PublisherSpec(
         publisher="nyt",
-        parser_version="nyt-parser/0.8.29",
+        parser_version="nyt-parser/0.8.30",
         domains=("nytimes.com", "www.nytimes.com"),
         default_language="en",
         edition="us",
