@@ -496,7 +496,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.9"
+    assert result.extraction.parser_version == "nyt-parser/0.8.10"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -731,7 +731,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.9"
+    assert result.extraction.parser_version == "nyt-parser/0.8.10"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1099,7 +1099,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.9"
+    assert result.extraction.parser_version == "nyt-parser/0.8.10"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -1148,7 +1148,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.9"
+    assert result.extraction.parser_version == "nyt-parser/0.8.10"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -1188,7 +1188,177 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.9"
+    assert result.extraction.parser_version == "nyt-parser/0.8.10"
+
+
+def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
+    image_blocks = [
+        {
+            "__typename": "ImageBlock",
+            "media": {
+                "__typename": "Image",
+                "caption": {"text": f"Illustration panel {index}"},
+                "crops": [
+                    {
+                        "renditions": [
+                            {
+                                "__typename": "ImageRendition",
+                                "url": (
+                                    "https://static01.nyt.com/images/"
+                                    f"panel-{index}-superJumbo.jpg"
+                                ),
+                                "width": 2048,
+                                "height": 1536,
+                            }
+                        ]
+                    }
+                ],
+            },
+        }
+        for index in range(3)
+    ]
+    initial_data = {
+        "data": {
+            "article": {
+                "sprinkledBody": {
+                    "__typename": "DocumentBlock",
+                    "content": image_blocks,
+                }
+            }
+        }
+    }
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="An Illustrated Television Essay">
+      <meta property="article:published_time"
+            content="2025-08-23T09:00:00Z">
+    </head><body><article></article>
+      <script>
+        window.__preloadedData = {{
+          "initialData": {json.dumps(initial_data)},
+          "config": {{"gate": function(value) {{ return value; }}}}
+        }};
+      </script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2025/08/23/arts/"
+            "television/illustrated-essay.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "gallery"
+    assert len(result.images) == 3
+    assert "Illustration panel 2" in result.plain_text
+
+
+def test_nyt_parser_recovers_lazy_itemprop_visual_essay():
+    figures = "".join(
+        f"""
+        <figure itemprop="associatedMedia"
+                itemtype="http://schema.org/ImageObject"
+                itemid="https://static01.nyt.com/images/drawing-{index}.jpg">
+          <figcaption>Drawing panel {index}</figcaption>
+        </figure>
+        """
+        for index in range(4)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="An Actor's Face in Drawings">
+      <meta property="article:published_time"
+            content="2020-01-02T15:00:29Z">
+    </head><body><main><article>
+      <header><p>An illustrated examination of an actor's career.</p></header>
+      {figures}
+    </article></main></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2020/01/02/"
+            "movies/actor-face.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "gallery"
+    assert len(result.images) == 4
+    assert "Drawing panel 3" in result.plain_text
+
+
+def test_nyt_parser_recovers_legacy_single_image_op_art():
+    html = b"""
+    <html><head>
+      <title>Judge This Book by Its Cover - Op-Art - NYTimes.com</title>
+      <meta property="og:title" content="Judge This Book by Its Cover">
+      <meta property="article:published_time"
+            content="2012-08-18T09:00:00Z">
+    </head><body>
+      <div class="ledeStory">
+        <div class="storyHeader">Op-Art | Chip Kidd</div>
+        <div class="storySummary">
+          A graphic artist redesigns a novel for the election season.
+        </div>
+        <img src="http://graphics8.nytimes.com/images/op-art-custom.jpg">
+      </div>
+      <div class="interactiveFooter"><div class="module">
+        Illustration by Chip Kidd.
+      </div></div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2012/08/19/"
+            "opinion/sunday/opart.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "gallery"
+    assert len(result.images) == 1
+    assert "graphic artist redesigns" in result.plain_text
+
+
+def test_nyt_parser_accepts_complete_associated_press_sports_brief():
+    body = (
+        "Kohei Uchimura of Japan breezed to his record sixth world "
+        "gymnastics championship title in Glasgow."
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Japanese Sets Title Record">
+      <meta property="article:published_time"
+            content="2015-10-31T09:00:00Z">
+    </head><body><main>
+      <div>Sports | Sports Briefing | Gymnastics</div>
+      <div>By THE ASSOCIATED PRESS</div>
+      <div class="story-body"><p>{body}</p></div>
+    </main></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2015/10/31/"
+            "sports/japanese-sets-title-record.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
+    assert result.plain_text == body
 
 
 def test_parser_falls_back_to_catalog_publication_time():
@@ -1970,7 +2140,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.9"
+    assert result.extraction.parser_version == "nyt-parser/0.8.10"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -2163,7 +2333,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.9"
+    assert result.extraction.parser_version == "nyt-parser/0.8.10"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():

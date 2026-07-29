@@ -166,6 +166,8 @@ def parse_article(
             structured_image_gallery_selected = True
     if spec.publisher == "nyt":
         gallery_body = _nyt_preloaded_image_gallery(soup)
+        if gallery_body is None:
+            gallery_body = _nyt_legacy_op_art_gallery(soup)
         if gallery_body is not None and not nyt_interactive_body_selected:
             body = gallery_body
             structured_image_gallery_selected = True
@@ -385,6 +387,7 @@ def parse_article(
     )
     structured_short_record = _is_structured_short_record(
         spec=spec,
+        soup=soup,
         news_article=news_article,
         headline=headline,
         plain_text=plain_text,
@@ -1253,10 +1256,56 @@ def _nyt_preloaded_payload(soup: BeautifulSoup) -> dict[str, Any]:
         try:
             payload = json.loads(serialized)
         except (json.JSONDecodeError, TypeError):
-            continue
+            payload = {}
+            for key in ("initialData", "initialState"):
+                recovered = _json_object_after_key(
+                    serialized,
+                    key=key,
+                )
+                if recovered is not None:
+                    payload[key] = recovered
         if isinstance(payload, dict):
             return payload
     return {}
+
+
+def _json_object_after_key(
+    serialized: str,
+    *,
+    key: str,
+) -> dict[str, Any] | None:
+    match = re.search(rf'"{re.escape(key)}"\s*:\s*', serialized)
+    if match is None:
+        return None
+    start = serialized.find("{", match.end())
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(serialized)):
+        character = serialized[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    value = json.loads(serialized[start:index + 1])
+                except (json.JSONDecodeError, TypeError):
+                    return None
+                return value if isinstance(value, dict) else None
+    return None
 
 
 def _nyt_state_reference(
@@ -1356,6 +1405,8 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
     if len(rows) < 3:
         rows = _nyt_denormalized_gallery_rows(soup)
     if len(rows) < 3:
+        rows = _nyt_itemprop_gallery_rows(soup)
+    if len(rows) < 3:
         return None
     document = BeautifulSoup("<article></article>", "html.parser")
     article = document.article
@@ -1375,6 +1426,88 @@ def _nyt_preloaded_image_gallery(soup: BeautifulSoup) -> Tag | None:
             )
             figure.append(figcaption)
         article.append(figure)
+    return article
+
+
+def _nyt_itemprop_gallery_rows(
+    soup: BeautifulSoup,
+) -> list[tuple[str, str | None, str | None]]:
+    article = soup.select_one("article")
+    if not isinstance(article, Tag):
+        return []
+    paragraph_characters = sum(
+        len(text)
+        for paragraph in article.select("p")
+        if (
+            (text := _clean_text(paragraph.get_text(" ", strip=True)))
+            and paragraph.find_parent("header") is None
+            and text.casefold() not in {"advertisement", "supported by"}
+            and not text.casefold().startswith("by ")
+        )
+    )
+    if paragraph_characters >= _MINIMUM_BODY_CHARACTERS:
+        return []
+    rows: list[tuple[str, str | None, str | None]] = []
+    seen: set[str] = set()
+    for figure in article.select(
+        "figure[itemid][itemtype*='ImageObject' i]"
+    ):
+        url = _string_or_none(figure.get("itemid"))
+        if not url:
+            continue
+        identity = _image_identity(url)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        caption = _tag_text(
+            figure.select_one(
+                "figcaption [itemprop='caption description'], "
+                "figcaption"
+            )
+        )
+        credit = _tag_text(
+            figure.select_one(
+                "[itemprop='copyrightHolder'], "
+                "[itemprop='creditText']"
+            )
+        )
+        rows.append((url, caption, credit))
+    return rows if len(rows) >= 3 else []
+
+
+def _nyt_legacy_op_art_gallery(soup: BeautifulSoup) -> Tag | None:
+    lead_story = soup.select_one(".ledeStory")
+    if not isinstance(lead_story, Tag):
+        return None
+    kicker = _tag_text(
+        lead_story.select_one(".kicker, .storyHeader")
+    )
+    if not kicker or "op-art" not in kicker.casefold():
+        return None
+    source = _tag_attribute(lead_story.select_one("img[src]"), "src")
+    if not source:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    figure = document.new_tag("figure")
+    image = document.new_tag("img")
+    image["src"] = source
+    description = _tag_text(lead_story.select_one(".storySummary"))
+    if description:
+        image["alt"] = description
+    figure.append(image)
+    credit = _tag_text(
+        soup.select_one(".interactiveFooter .module, .interactiveFooter")
+    )
+    if description or credit:
+        figcaption = document.new_tag("figcaption")
+        figcaption.string = " ".join(
+            value for value in (description, credit) if value
+        )
+        figure.append(figcaption)
+    article.append(figure)
     return article
 
 
@@ -1740,6 +1873,7 @@ def _is_publisher_notice(
 def _is_structured_short_record(
     *,
     spec: PublisherSpec,
+    soup: BeautifulSoup,
     news_article: dict[str, Any],
     headline: str | None,
     plain_text: str,
@@ -1754,6 +1888,16 @@ def _is_structured_short_record(
                 headline.casefold().startswith("brief-")
                 or re.match(r"(?i)^标题新闻[：:]", headline)
                 or "路透中文快讯将暂不做进一步报导" in combined
+            )
+        )
+    if spec.publisher == "nyt":
+        page_text = _clean_text(soup.get_text(" ", strip=True)).casefold()
+        return bool(
+            len(plain_text) >= 50
+            and "sports briefing" in page_text
+            and (
+                "by the associated press" in page_text
+                or "by associated press" in page_text
             )
         )
     if spec.publisher != "ap":
