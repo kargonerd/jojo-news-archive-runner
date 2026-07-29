@@ -1563,13 +1563,35 @@ def _bloomberg_article_narration(soup: BeautifulSoup) -> bool:
 
 
 def _bloomberg_low_resolution_image(image: ImageCandidate) -> bool:
-    return bool(
-        re.search(
-            r"/(?:60x-1|60x60)\.(?:avif|gif|jpe?g|png|webp)(?:[?#]|$)",
-            image.original_url,
-            flags=re.IGNORECASE,
+    return any(
+        bool(
+            re.search(
+                r"/(?:60x-1|60x60)\.(?:avif|gif|jpe?g|png|webp)(?:[?#]|$)",
+                url,
+                flags=re.IGNORECASE,
+            )
         )
+        for url in image.candidate_urls
     )
+
+
+def _promote_bloomberg_image_candidates(candidates: list[str]) -> list[str]:
+    """Prefer Bloomberg's lossless-aspect 1200px rendition over a 60px lazy image."""
+    promoted: list[str] = []
+    for url in candidates:
+        parsed = urlsplit(url)
+        if parsed.hostname in {"assets.bwbx.io", "assets.bwbx.com"}:
+            high_resolution = re.sub(
+                r"/60x-1(?=\.(?:avif|gif|jpe?g|png|webp)(?:[?#]|$))",
+                "/1200x-1",
+                url,
+                flags=re.IGNORECASE,
+            )
+            if high_resolution != url and high_resolution not in promoted:
+                promoted.append(high_resolution)
+        if url not in promoted:
+            promoted.append(url)
+    return promoted
 
 
 def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:
@@ -4015,6 +4037,8 @@ def _image_from_tag(
     candidates = _image_urls(image_node, base_url=base_url)
     if not candidates:
         return None
+    if spec.publisher == "bloomberg":
+        candidates = _promote_bloomberg_image_candidates(candidates)
     original_url = candidates[0]
     width = _integer_attribute(image_node, "width")
     height = _integer_attribute(image_node, "height")
