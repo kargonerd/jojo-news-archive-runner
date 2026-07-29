@@ -78,13 +78,15 @@ PUBLISHER_SPECS = {
     ),
     "bloomberg": PublisherSpec(
         publisher="bloomberg",
-        parser_version="bloomberg-parser/0.10.4",
+        parser_version="bloomberg-parser/0.10.5",
         domains=("bloomberg.com", "www.bloomberg.com"),
         default_language="en",
         edition="global",
         body_selectors=(
             ".body-copy-v2",
+            ".body-copy",
             "[data-component='article-body']",
+            ".article-body__content",
             "article .body-content",
             "article [itemprop='articleBody']",
             "main article[data-story-id]",
@@ -95,6 +97,8 @@ PUBLISHER_SPECS = {
         remove_selectors=(
             "[data-position='in-article']",
             "[data-position='mobile-box']",
+            ".right-rail",
+            ".recirc",
         ),
         text_block_selectors=(
             ".body-copy-v2 > div:not([class])",
