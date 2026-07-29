@@ -3593,6 +3593,12 @@ def _nyt_media_content_type(
         )
     ):
         return ContentType.GALLERY
+    if (
+        "/opinion/" in url
+        and re.search(r"(?:^|[-_/])heng(?:[-_.]|$)", url)
+        and soup.select_one("img[src*='hengart' i]")
+    ):
+        return ContentType.GALLERY
     legacy_story_body = soup.select_one(
         "article.story.theme-main .story-body"
     )
