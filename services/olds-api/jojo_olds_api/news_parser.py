@@ -164,6 +164,13 @@ def parse_article(
             < len(embedded_bloomberg_body.get_text(" ", strip=True))
         ):
             body = embedded_bloomberg_body
+        bloomberg_feature_body = _bloomberg_feature_landing_body(soup)
+        if bloomberg_feature_body is not None and (
+            body is None
+            or len(body.get_text(" ", strip=True))
+            < len(bloomberg_feature_body.get_text(" ", strip=True))
+        ):
+            body = bloomberg_feature_body
     if spec.publisher == "nyt":
         preloaded_body = _nyt_preloaded_article_body(
             soup,
@@ -841,6 +848,56 @@ def _bloomberg_embedded_article_body(soup: BeautifulSoup) -> Tag | None:
         candidates,
         key=lambda node: len(node.get_text(" ", strip=True)),
     )
+
+
+def _bloomberg_feature_landing_body(soup: BeautifulSoup) -> Tag | None:
+    """Recover editorial indexes from Bloomberg's legacy feature template."""
+    container = soup.select_one(".dvz-content2")
+    if not isinstance(container, Tag):
+        return None
+    intro = container.select_one(".intro, .introWrap")
+    index = container.select_one(".index, .grid")
+    if (
+        not isinstance(intro, Tag)
+        or len(_clean_text(intro.get_text(" ", strip=True))) < 300
+        or not isinstance(index, Tag)
+        or len(index.select("a[href]")) < 3
+    ):
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    paragraph = document.new_tag("p")
+    paragraph.string = _clean_text(intro.get_text(" ", strip=True))
+    article.append(paragraph)
+    seen_headings: set[str] = set()
+    for anchor in index.select("a[href]"):
+        text = _tag_text(anchor)
+        if not text or text.casefold() in seen_headings:
+            continue
+        seen_headings.add(text.casefold())
+        heading = document.new_tag("h2")
+        heading.string = text
+        article.append(heading)
+    seen_images: set[str] = set()
+    for source_image in container.select("img[src]"):
+        source = _tag_attribute(source_image, "src")
+        if not source:
+            continue
+        identity = _image_identity(source)
+        if identity in seen_images:
+            continue
+        seen_images.add(identity)
+        figure = document.new_tag("figure")
+        image = document.new_tag("img")
+        image["src"] = source
+        alt = _tag_attribute(source_image, "alt")
+        if alt:
+            image["alt"] = alt
+        figure.append(image)
+        article.append(figure)
+    return article
 
 
 def _render_bloomberg_document(document: dict[str, Any]) -> Tag | None:

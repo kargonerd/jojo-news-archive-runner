@@ -1233,6 +1233,47 @@ def test_bloomberg_parser_removes_regional_and_economics_newsletter_promos():
     assert "sign up for a free subscription" in result.plain_text
 
 
+def test_bloomberg_parser_recovers_legacy_feature_landing_page():
+    intro = " ".join(
+        [
+            "The entertainment business rewards unusual partnerships, "
+            "ambitious productions and creative risks across the industry."
+        ]
+        * 8
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="The Showbiz Issue 2017">
+      <meta property="article:published_time"
+            content="2017-04-24T00:00:00Z">
+    </head><body>
+      <div class="dvz-content2">
+        <div class="introWrap"><div class="intro">{intro}</div></div>
+        <div class="index">
+          <a href="/features/story-one">This Is Spinal Tap’s Lawsuit</a>
+          <a href="/features/story-two">The Celebrity Techsplainer</a>
+          <a href="/features/story-three">A Theme Park Empire</a>
+        </div>
+        <div class="cover">
+          <img src="https://www.bloomberg.com/features/showbiz/cover.gif">
+          <p>Featured in Bloomberg Businessweek.</p>
+        </div>
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url="https://www.bloomberg.com/features/2017-showbiz-issue",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "entertainment business rewards" in result.plain_text
+    assert "Celebrity Techsplainer" in result.plain_text
+    assert result.quality.images_selected == 1
+
+
 def test_bloomberg_parser_merges_caption_matched_low_resolution_lead():
     caption = "Demonstrators stand near railway tracks during a protest."
     reporting = " ".join(["Bloomberg reporting sentence."] * 30)
