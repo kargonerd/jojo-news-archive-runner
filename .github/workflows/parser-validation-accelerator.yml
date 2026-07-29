@@ -583,6 +583,8 @@ jobs:
             --output-dir "$LOCAL_ROOT/raw"
             --workers "$DOWNLOAD_WORKERS"
             --min-request-interval "$request_interval"
+            --timeout 30
+            --attempts 2
             --max-captures "$effective_max_captures"
             --max-runtime-minutes "$MAX_RUNTIME_MINUTES"
             --max-record-attempts "$MAX_RECORD_ATTEMPTS"
