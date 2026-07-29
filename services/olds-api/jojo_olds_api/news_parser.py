@@ -2796,6 +2796,14 @@ def _nyt_media_content_type(
         and soup.select_one("article img, main img, .story-body img")
     ):
         return ContentType.GALLERY
+    if (
+        soup.select_one(".interactive-headline")
+        and soup.select_one(
+            "img[src*='int.nyt.com/newsgraphics/'], "
+            "img[data-src*='int.nyt.com/newsgraphics/']"
+        )
+    ):
+        return ContentType.INTERACTIVE
     legacy_story_body = soup.select_one(
         "article.story.theme-main .story-body"
     )
@@ -3441,8 +3449,13 @@ def _image_candidate(
     width: int | None = None,
     height: int | None = None,
 ) -> ImageCandidate:
-    del spec  # retained in the signature for publisher-specific policy hooks
-    asset_id = f"urlsha256:{hashlib.sha256(url.encode('utf-8')).hexdigest()}"
+    if spec.publisher == "nyt" and _nyt_generic_branding_image(url):
+        role = ImageRole.LOGO
+        reasons = [*reasons, "generic-publisher-branding"]
+    identity = _image_identity(url)
+    asset_id = (
+        f"urlsha256:{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
+    )
     return ImageCandidate(
         asset_id=asset_id,
         role=role,
@@ -3491,6 +3504,22 @@ def _image_identity(url: str) -> str:
                 "",
             )
         )
+    if host == "int.nyt.com" and "/newsgraphics/" in parts.path:
+        responsive_path = re.sub(
+            r"_(?:300|480|720|800|945)_v(?=\d+\.[a-z0-9]+$)",
+            "_responsive_v",
+            parts.path,
+            flags=re.IGNORECASE,
+        )
+        return urlunsplit(
+            (
+                parts.scheme.casefold(),
+                parts.netloc.casefold(),
+                responsive_path,
+                "",
+                "",
+            )
+        )
     wsj_image = (
         re.fullmatch(
             r"(/im-\d+)(?:/(?:social|portrait))?/?",
@@ -3511,6 +3540,20 @@ def _image_identity(url: str) -> str:
             )
         )
     return url
+
+
+def _nyt_generic_branding_image(url: str) -> bool:
+    parts = urlsplit(url)
+    if (parts.hostname or "").casefold() != "static01.nyt.com":
+        return False
+    return bool(
+        re.search(
+            r"/vi-assets/images/share/\d+x\d+_(?:nameplate|t)\.png$|"
+            r"/images/icons/t_logo_\d+_black\.png$",
+            parts.path,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def _ft_image_led_article(

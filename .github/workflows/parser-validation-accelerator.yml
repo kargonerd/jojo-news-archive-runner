@@ -43,6 +43,16 @@ on:
           - holdout-v18
           - holdout-v19
           - holdout-v20
+          - holdout-v21
+          - holdout-v22
+          - holdout-v23
+          - holdout-v24
+          - holdout-v25
+          - holdout-v26
+          - holdout-v27
+          - holdout-v28
+          - holdout-v29
+          - holdout-v30
       year:
         description: "Single publication year to sample."
         required: true
@@ -168,7 +178,7 @@ jobs:
             echo "source manifest publisher does not match." >&2
             exit 2
           fi
-          if [[ ! "$COHORT" =~ ^(validation|holdout-v([1-9]|1[0-9]|20))$ ]]; then
+          if [[ ! "$COHORT" =~ ^(validation|holdout-v([1-9]|[12][0-9]|30))$ ]]; then
             echo "unsupported cohort" >&2
             exit 2
           fi
