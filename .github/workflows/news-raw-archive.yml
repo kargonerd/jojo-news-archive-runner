@@ -283,13 +283,21 @@ jobs:
                 --min-request-interval 0.5 \
                 --github-output "$GITHUB_OUTPUT"
             elif [ "$MANIFEST_MODE" = "wayback-urlkey" ]; then
+              wayback_page_limit=2000
+              if [ "$PUBLISHER" = "wsj" ] &&
+                 [ "$FROM_YEAR" -le 2013 ]; then
+                # The legacy online.wsj.com query is extremely broad. Smaller
+                # resumable pages avoid multi-minute 200 responses that CDX
+                # proxies sometimes truncate before the resume key.
+                wayback_page_limit=250
+              fi
               python services/olds-api/tools/build_wayback_manifest.py \
                 --publisher "$PUBLISHER" \
                 --from-year "$FROM_YEAR" \
                 --to-year "$TO_YEAR" \
                 --output "$manifest" \
                 --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
-                --page-limit 2000 \
+                --page-limit "$wayback_page_limit" \
                 --max-pages "$MAX_DISCOVERY_PAGES" \
                 --min-request-interval 1.0 \
                 --collapse urlkey \
