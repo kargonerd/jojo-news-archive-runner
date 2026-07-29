@@ -1818,7 +1818,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.7"
+    assert article.extraction.parser_version == "ap-parser/0.6.8"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -1852,7 +1852,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.7"
+    assert result.extraction.parser_version == "ap-parser/0.6.8"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -1875,7 +1875,8 @@ def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
 
     assert result.headline == "BKN--Heat-Magic Box"
     assert result.content_type.value == "interactive"
-    assert result.quality.status.value == "unsupported"
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
 
 
 def test_ap_parser_accepts_short_spanish_news_alert():
@@ -1930,7 +1931,9 @@ def test_ap_parser_classifies_metadata_only_nomination_result():
     )
 
     assert result.content_type.value == "interactive"
-    assert result.quality.status.value == "unsupported"
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
+    assert result.plain_text == "NY-House-6-nominated"
 
 
 def test_ap_parser_classifies_metadata_only_lottery_result():
@@ -1953,7 +1956,8 @@ def test_ap_parser_classifies_metadata_only_lottery_result():
 
     assert result.headline == "Classic Lotto"
     assert result.content_type.value == "interactive"
-    assert result.quality.status.value == "unsupported"
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
 
 
 def test_ap_parser_classifies_metadata_only_race_call():
@@ -1975,7 +1979,8 @@ def test_ap_parser_classifies_metadata_only_race_call():
     )
 
     assert result.content_type.value == "interactive"
-    assert result.quality.status.value == "unsupported"
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
 
 
 def test_ap_parser_classifies_metadata_only_state_winners():
@@ -1998,7 +2003,119 @@ def test_ap_parser_classifies_metadata_only_state_winners():
 
     assert result.headline == "HI-Winners"
     assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
+    assert result.plain_text == "HI-Winners"
+
+
+def test_ap_parser_recovers_metadata_only_county_election_result():
+    html = b"""
+    <html><head><script type="application/ld+json">{
+      "@type": "NewsArticle",
+      "headline": "LA-CAmend-2-UnanimousJury-Cnty",
+      "datePublished": "2018-11-07T04:00:00Z",
+      "keywords": ["LA-CAmend-2-UnanimousJury-Cnty"]
+    }</script></head><body><main></main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "https://apnews.com/"
+            "la-camend-2-unanimousjury-cnty-example"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+    assert result.plain_text == "LA-CAmend-2-UnanimousJury-Cnty"
+
+
+def test_ap_parser_recovers_self_contained_structured_description():
+    description = (
+        "Sweden's central bank says it will cut its key interest rate to "
+        "a record low of minus 0.50 percent, saying the measure is necessary "
+        "to safeguard its target of increasing inflation. The bank said its "
+        "expansionary monetary policy had strengthened the economy and that "
+        "it hopes the cut will increase inflation to its target in 2017."
+    )
+    payload = json.dumps(
+        {
+            "@type": "NewsArticle",
+            "headline": "Sweden cuts key interest rate",
+            "datePublished": "2016-02-11T10:00:00Z",
+            "description": description,
+            "keywords": ["General news", "International News"],
+        }
+    )
+    html = (
+        "<html><head><script type='application/ld+json'>"
+        f"{payload}</script></head><body><main></main></body></html>"
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/general-news-example",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.headline == "Sweden cuts key interest rate"
+    assert result.plain_text == description
+
+
+def test_ap_parser_recovers_structured_score_bulletin_description():
+    description = "GIRLS HOCKEY Herb Brooks Holiday Classic (Bronze Division)"
+    payload = json.dumps(
+        {
+            "@type": "NewsArticle",
+            "headline": "Wednesday's Scores",
+            "datePublished": "2020-12-30T23:00:00Z",
+            "description": description,
+            "keywords": ["MN-HKO--Prep Scores", "Hockey", "Sports"],
+        }
+    )
+    html = (
+        "<html><head><script type='application/ld+json'>"
+        f"{payload}</script></head><body><main></main></body></html>"
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/wednesdays-scores-example",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
+    assert result.plain_text == description
+
+
+def test_ap_parser_rejects_promotional_description_shell():
+    description = "Visit ProFootballWeekly.com | View Latest E-Edition"
+    payload = json.dumps(
+        {
+            "@type": "NewsArticle",
+            "headline": "2017 fantasy football fresh start",
+            "datePublished": "2017-08-01T00:00:00Z",
+            "description": description,
+            "keywords": ["Archive", "Football", "Sports"],
+        }
+    )
+    html = (
+        "<html><head><script type='application/ld+json'>"
+        f"{payload}</script></head><body><main></main></body></html>"
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/article/sports-football-example",
+    )
+
     assert result.quality.status.value == "unsupported"
+    assert result.plain_text == ""
 
 
 def test_ap_parser_restores_race_call_from_structured_description():

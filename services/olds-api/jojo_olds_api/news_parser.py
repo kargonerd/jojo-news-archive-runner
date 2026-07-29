@@ -84,6 +84,13 @@ def parse_article(
             structured_image_gallery_selected = True
         else:
             body = _ap_structured_race_call_body(news_article)
+            if body is None:
+                body = _ap_structured_description_body(news_article)
+            if body is None:
+                body = _ap_structured_data_bulletin_body(
+                    news_article,
+                    canonical_url,
+                )
     if spec.publisher == "nyt":
         body = _nyt_story_body_companions(soup)
     if spec.publisher in {"reuters", "bloomberg"} and _is_yahoo_syndication(
@@ -208,6 +215,9 @@ def parse_article(
         _string_or_none(nyt_preloaded_metadata.get("headline")),
         _string_or_none(news_article.get("headline")) if news_article else None,
         _ap_data_bulletin_headline(news_article)
+        if spec.publisher == "ap"
+        else None,
+        _ap_wire_keyword_headline(news_article)
         if spec.publisher == "ap"
         else None,
         _meta_content(soup, "property", "og:title"),
@@ -1170,6 +1180,61 @@ def _ap_structured_race_call_body(
     return article
 
 
+def _ap_structured_description_body(
+    news_article: dict[str, Any],
+) -> Tag | None:
+    """Recover self-contained AP briefs stored only in JSON-LD descriptions."""
+    if not news_article:
+        return None
+    description = _string_or_none(news_article.get("description"))
+    keywords = _string_list(news_article.get("keywords"))
+    is_score_bulletin = any(
+        re.search(r"(?i)\b(?:prep\s+)?scores?\b", keyword)
+        for keyword in keywords
+    )
+    if not description or (
+        len(description) < _MINIMUM_BODY_CHARACTERS
+        and not is_score_bulletin
+    ):
+        return None
+    if re.search(
+        r"(?i)^(?:visit|view|click|subscribe)\b.*(?:\||edition|website)",
+        description,
+    ):
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    paragraph = document.new_tag("p")
+    paragraph.string = description
+    article.append(paragraph)
+    return article
+
+
+def _ap_structured_data_bulletin_body(
+    news_article: dict[str, Any],
+    canonical_url: str,
+) -> Tag | None:
+    """Represent AP metadata-only election/result wires without inventing prose."""
+    if not _is_ap_data_bulletin(news_article, canonical_url):
+        return None
+    headline = _first_text(
+        _string_or_none(news_article.get("headline")),
+        _ap_data_bulletin_headline(news_article),
+    )
+    if not headline:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    paragraph = document.new_tag("p")
+    paragraph.string = headline
+    article.append(paragraph)
+    return article
+
+
 def _ap_data_bulletin_headline(
     news_article: dict[str, Any],
 ) -> str | None:
@@ -1192,6 +1257,22 @@ def _ap_data_bulletin_headline(
     return None
 
 
+def _ap_wire_keyword_headline(
+    news_article: dict[str, Any],
+) -> str | None:
+    """Use AP's descriptive wire slug when generic page metadata says AP News."""
+    if not news_article:
+        return None
+    return next(
+        (
+            keyword
+            for keyword in _string_list(news_article.get("keywords"))
+            if re.match(r"^[A-Z]{2,5}--\S", keyword)
+        ),
+        None,
+    )
+
+
 def _is_ap_data_bulletin(
     news_article: dict[str, Any],
     canonical_url: str,
@@ -1209,6 +1290,18 @@ def _is_ap_data_bulletin(
     combined = " ".join(
         [headline or "", canonical_url, *keywords]
     ).casefold()
+    metadata_only_election_slug = bool(
+        not has_description
+        and headline
+        and any(headline.casefold() == keyword.casefold() for keyword in keywords)
+        and re.fullmatch(
+            r"[a-z]{2}-(?=[a-z0-9-]*(?:"
+            r"uncontested|nominated|winners?|topraces|"
+            r"camend|house|sthou|delg-dist|cnty"
+            r"))[a-z0-9-]+",
+            headline.casefold(),
+        )
+    )
     return bool(
         re.search(r"--.*\bbox\b|\bbox score\b", combined)
         or re.search(
@@ -1236,6 +1329,7 @@ def _is_ap_data_bulletin(
                 for keyword in keywords
             )
         )
+        or metadata_only_election_slug
     )
 
 
@@ -1940,6 +2034,17 @@ def _is_structured_short_record(
             or "apnewsalert" in keyword_keys
         )
     )
+    ap_data_bulletin = (
+        _is_ap_data_bulletin(news_article, "")
+        and plain_text.casefold() == headline.casefold()
+    )
+    ap_score_bulletin = bool(
+        len(plain_text) >= 40
+        and any(
+            re.search(r"(?i)\b(?:prep\s+)?scores?\b", value)
+            for value in keyword_values
+        )
+    )
     return bool(
         (
             re.match(r"^\s*#\d+\b", headline)
@@ -1950,6 +2055,8 @@ def _is_structured_short_record(
             and len(metric_labels) >= 3
         )
         or ap_news_alert
+        or ap_data_bulletin
+        or ap_score_bulletin
     )
 
 
