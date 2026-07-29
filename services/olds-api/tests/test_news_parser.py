@@ -716,6 +716,91 @@ def test_reuters_parser_excludes_legacy_default_images():
     )
 
 
+def test_bloomberg_parser_excludes_social_default_images():
+    reporting = " ".join(["Bloomberg reporting sentence."] * 30)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Bloomberg historical report">
+      <meta property="article:published_time"
+            content="2017-06-01T00:00:00Z">
+      <meta property="og:image"
+            content="https://assets.bwbx.io/s3/javelin/public/javelin/images/social-default-a4f15fa7ee.jpg">
+    </head><body>
+      <div class="body-copy-v2">
+        <img src="https://assets.bwbx.io/javelin/public/images/social-markets-3d32d2f713.jpg">
+        <p>{reporting}</p>
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/"
+            "2017-06-01/historical-report"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected == 0
+    assert len(result.images) == 1
+    assert result.images[0].role == ImageRole.LOGO
+    assert result.images[0].should_archive is False
+
+
+def test_bloomberg_parser_deduplicates_image_renditions():
+    reporting = " ".join(["Bloomberg reporting sentence."] * 30)
+    asset_root = (
+        "https://assets.bwbx.io/images/users/example/image-id/v2"
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Bloomberg illustrated report">
+      <meta property="article:published_time"
+            content="2017-06-01T00:00:00Z">
+      <meta property="og:image"
+            content="{asset_root}/1200x776.jpg">
+      <script type="application/ld+json">
+      {{
+        "@type": "NewsArticle",
+        "headline": "Bloomberg illustrated report",
+        "datePublished": "2017-06-01T00:00:00Z",
+        "image": "{asset_root}/740x-1.jpg"
+      }}
+      </script>
+    </head><body>
+      <div class="body-copy-v2">
+        <figure>
+          <img src="{asset_root}/100x-1.jpg"
+               alt="Editorial photograph">
+          <figcaption>Editorial photograph caption.</figcaption>
+        </figure>
+        <p>{reporting}</p>
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/"
+            "2017-06-01/illustrated-report"
+        ),
+    )
+
+    assert result.quality.images_selected == 1
+    assert len(result.images) == 1
+    assert result.images[0].role == ImageRole.LEAD
+    assert result.images[0].caption == "Editorial photograph caption."
+    assert result.images[0].candidate_urls == [
+        f"{asset_root}/740x-1.jpg",
+        f"{asset_root}/1200x776.jpg",
+        f"{asset_root}/100x-1.jpg",
+    ]
+
+
 def test_parser_supports_legacy_nyt_story_body_and_pdate():
     canonical_url = (
         "https://www.nytimes.com/2016/01/03/business/example.html"
@@ -825,7 +910,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.3"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.4"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -867,7 +952,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.3"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.4"
 
 
 def test_bloomberg_parser_rejects_explicit_teaser_body():
@@ -899,7 +984,7 @@ def test_bloomberg_parser_rejects_explicit_teaser_body():
 
     assert result.quality.status.value == "partial"
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.3"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.4"
 
 
 def test_bloomberg_parser_extracts_legacy_div_span_story_body():
@@ -931,7 +1016,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.3"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.4"
 
 
 def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
@@ -1007,7 +1092,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
         "https://omny.fm/shows/example/episode"
     ]
     assert "Unrelated navigation card" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.3"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.4"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -1428,7 +1513,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.3"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.4"
 
 
 def test_nyt_generic_syndication_extracts_local_newspaper_copy():

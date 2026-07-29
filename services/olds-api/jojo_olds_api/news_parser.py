@@ -3657,6 +3657,14 @@ def _image_identity(url: str) -> str:
                 "",
             )
         )
+    if host == "assets.bwbx.io":
+        bloomberg_asset = re.fullmatch(
+            r"(.+/v\d+)/[^/]+",
+            parts.path,
+            re.IGNORECASE,
+        )
+        if bloomberg_asset is not None:
+            return f"bloomberg-image:{bloomberg_asset.group(1).casefold()}"
     if host == "int.nyt.com" and "/newsgraphics/" in parts.path:
         responsive_path = re.sub(
             r"_(?:300|480|720|800|945)_v(?=\d+\.[a-z0-9]+$)",
@@ -3859,6 +3867,11 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/defaultpromocrop.",
             "/rcom-default.png",
             "/r-generic-hdr.png",
+            "/javelin/images/social-",
+            "/javelin/public/images/social-",
+            "/lightsaber/_next/static/media/social-",
+            "yahoo_default_logo",
+            "yahoo-finance-default-logo",
         )
     )
 
