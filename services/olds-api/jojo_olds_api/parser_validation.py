@@ -907,6 +907,7 @@ def parser_validation_summary(
             "minimumCompleteRate": MINIMUM_COMPLETE_RATE,
             "minimumQaPassRate": MINIMUM_QA_PASS_RATE,
             "maximumParserErrors": 0,
+            "maximumUnboundCaptureInputs": 0,
         },
         "years": {},
     }
@@ -948,6 +949,8 @@ def parser_validation_summary(
                     ),
                     0
                 )
+                ,
+                COALESCE(SUM(source_capture_sha256 IS NULL), 0)
             FROM parser_validation_results
             WHERE sample_year=? AND parser_version=?
             """,
@@ -1013,6 +1016,7 @@ def parser_validation_summary(
             and complete_rate >= MINIMUM_COMPLETE_RATE
             and qa_pass_rate >= MINIMUM_QA_PASS_RATE
             and int(row[5]) == 0
+            and int(row[15]) == 0
         )
         result["ready"] = bool(result["ready"]) and year_ready
         years[str(sample_year)] = {
@@ -1041,6 +1045,7 @@ def parser_validation_summary(
                 4,
             ),
             "nonTextContent": int(row[14]),
+            "unboundCaptureInputs": int(row[15]),
             "issueCounts": dict(sorted(issue_counts.items())),
             "failureExamples": failure_examples,
         }
@@ -1063,6 +1068,7 @@ def parser_validation_target_reached(
         LEFT JOIN parser_validation_results AS result
           ON result.sample_year=config.sample_year
          AND result.parser_version=config.parser_version
+         AND result.source_capture_sha256 IS NOT NULL
         GROUP BY
             config.sample_year,
             config.target_size,
