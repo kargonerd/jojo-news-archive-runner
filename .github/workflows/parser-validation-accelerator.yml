@@ -260,7 +260,7 @@ jobs:
             gzip -dc "$RUNNER_TEMP/capture.sqlite3.gz" \
               > "$LOCAL_ROOT/raw/capture.sqlite3"
           fi
-          if [[ "$COHORT" =~ ^holdout-v([1-9]|10)$ ]]; then
+          if [[ "$COHORT" =~ ^holdout-v([1-9]|1[0-9]|20)$ ]]; then
             cohort_number="${BASH_REMATCH[1]}"
             restore_if_present \
               "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/validation/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
@@ -285,11 +285,11 @@ jobs:
                 restore_if_present \
                   "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${previous_cohort}/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
                   "$previous_gzip"
-                if [ ! -f "$previous_gzip" ]; then
-                  echo "Missing required prior cohort: ${previous_cohort}." >&2
-                  exit 1
+                if [ -f "$previous_gzip" ]; then
+                  gzip -dc "$previous_gzip" > "$previous_state"
+                else
+                  echo "::notice::No ${previous_cohort} state exists; skipping it."
                 fi
-                gzip -dc "$previous_gzip" > "$previous_state"
               done
             fi
           fi

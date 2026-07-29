@@ -14,6 +14,7 @@ if str(SERVICE_ROOT) not in sys.path:
 from jojo_olds_api.parser_validation import (
     DEFAULT_SEED,
     ensure_parser_validation_plan,
+    failed_completed_parser_validation_files,
     pending_completed_parser_validation_files,
 )
 from jojo_olds_api.raw_archive_capture import initialize_capture_schema
@@ -64,6 +65,13 @@ def main() -> int:
     pending = pending_completed_parser_validation_files(
         connection,
         maximum=args.max_replays,
+    )
+    failed = failed_completed_parser_validation_files(
+        connection,
+        maximum=max(0, args.max_replays - len(pending)),
+    )
+    pending.extend(
+        row for row in failed if row[0] not in {item[0] for item in pending}
     )
     connection.close()
 
