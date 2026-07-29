@@ -166,6 +166,10 @@ def parse_article(
             body = preloaded_body
     if body is None:
         body = _select_body(soup, spec)
+    if spec.publisher == "reuters":
+        legacy_reuters_body = _reuters_legacy_article_body(soup)
+        if legacy_reuters_body is not None:
+            body = legacy_reuters_body
     if spec.publisher == "wsj":
         gallery_body = _structured_image_gallery(soup)
         if gallery_body is None:
@@ -1177,6 +1181,45 @@ def _ap_structured_race_call_body(
     paragraph = document.new_tag("p")
     paragraph.string = description
     article.append(paragraph)
+    return article
+
+
+def _reuters_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
+    """Convert Reuters' pre-2011 BR-delimited articleText into paragraphs."""
+    source = soup.select_one("#articleText")
+    if not isinstance(source, Tag):
+        return None
+    text = _clean_text(source.get_text(" ", strip=True))
+    if len(text) < _MINIMUM_BODY_CHARACTERS:
+        return None
+    fragments = re.split(
+        r"(?:<br\s*/?>\s*){2,}",
+        source.decode_contents(),
+        flags=re.IGNORECASE,
+    )
+    paragraphs = [
+        _clean_text(BeautifulSoup(fragment, "html.parser").get_text(" "))
+        for fragment in fragments
+    ]
+    paragraphs = [
+        paragraph
+        for paragraph in paragraphs
+        if paragraph
+        and not re.fullmatch(
+            r"(?i)(?:editing by|reporting by)\b.*",
+            paragraph,
+        )
+    ]
+    if not paragraphs:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for value in paragraphs:
+        paragraph = document.new_tag("p")
+        paragraph.string = value
+        article.append(paragraph)
     return article
 
 

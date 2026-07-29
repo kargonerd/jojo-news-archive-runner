@@ -833,7 +833,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.2"
+    assert result.extraction.parser_version == "reuters-parser/0.7.3"
 
 
 @pytest.mark.parametrize(
@@ -880,7 +880,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.2"
+    assert result.extraction.parser_version == "reuters-parser/0.7.3"
 
 
 @pytest.mark.parametrize(
@@ -918,6 +918,19 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
             </span>
             """,
             "Classic Reuters article text",
+        ),
+        (
+            """
+            <span id="articleText">
+              LONDON, Jan 8 (Reuters) - Classic Reuters reporting stored
+              directly inside articleText remains available.<br><br>
+              A second BR-delimited paragraph preserves market context,
+              sources, and the rest of the historical report.<br><br>
+              A third paragraph supplies enough substantive detail for a
+              complete normalized article.
+            </span>
+            """,
+            "BR-delimited paragraph",
         ),
         (
             """
@@ -960,7 +973,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.2"
+    assert result.extraction.parser_version == "reuters-parser/0.7.3"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():

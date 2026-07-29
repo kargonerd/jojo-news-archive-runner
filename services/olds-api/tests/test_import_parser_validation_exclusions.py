@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import sqlite3
 import subprocess
 import sys
+
+from jojo_olds_api.parser_validation import initialize_parser_validation_schema
 
 
 TOOL = (
@@ -63,3 +66,60 @@ def test_imports_only_urls_actually_evaluated_by_prior_cohort(
     }
     target.close()
     assert urls == {"https://apnews.com/article/evaluated"}
+
+
+def test_removes_existing_samples_that_overlap_new_exclusions(
+    tmp_path: Path,
+):
+    source_path = tmp_path / "source.sqlite3"
+    target_path = tmp_path / "target.sqlite3"
+    source = sqlite3.connect(source_path)
+    source.executescript(
+        """
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY
+        );
+        INSERT INTO parser_validation_results VALUES
+            ('https://reuters.com/article/overlap');
+        """
+    )
+    source.commit()
+    source.close()
+    target = sqlite3.connect(target_path)
+    initialize_parser_validation_schema(target)
+    target.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        )
+        VALUES (?, 2012, 'priority', 'now')
+        """,
+        ("https://reuters.com/article/overlap",),
+    )
+    target.commit()
+    target.close()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(TOOL),
+            "--source-state",
+            str(source_path),
+            "--target-state",
+            str(target_path),
+            "--source-cohort",
+            "validation-v1",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["removedSampleOverlap"] == 1
+    assert payload["sampleOverlap"] == 0
+    target = sqlite3.connect(target_path)
+    assert target.execute(
+        "SELECT COUNT(*) FROM parser_validation_samples"
+    ).fetchone()[0] == 0
+    target.close()

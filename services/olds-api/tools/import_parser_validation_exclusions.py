@@ -82,6 +82,37 @@ def main() -> int:
                 """
             ).fetchone()[0]
         )
+        if overlap:
+            with target:
+                target.execute(
+                    """
+                    DELETE FROM parser_validation_results
+                    WHERE canonical_url IN (
+                        SELECT sample.canonical_url
+                        FROM parser_validation_samples AS sample
+                        JOIN parser_validation_exclusions AS exclusion
+                          USING(canonical_url)
+                    )
+                    """
+                )
+                target.execute(
+                    """
+                    DELETE FROM parser_validation_samples
+                    WHERE canonical_url IN (
+                        SELECT canonical_url
+                        FROM parser_validation_exclusions
+                    )
+                    """
+                )
+        remaining_overlap = int(
+            target.execute(
+                """
+                SELECT COUNT(*)
+                FROM parser_validation_samples AS sample
+                JOIN parser_validation_exclusions AS exclusion USING(canonical_url)
+                """
+            ).fetchone()[0]
+        )
         result = {
             "formatVersion": "jojo-parser-validation-exclusions/1",
             "sourceCohort": args.source_cohort,
@@ -92,13 +123,14 @@ def main() -> int:
                     "SELECT COUNT(*) FROM parser_validation_exclusions"
                 ).fetchone()[0]
             ),
-            "sampleOverlap": overlap,
+            "removedSampleOverlap": overlap,
+            "sampleOverlap": remaining_overlap,
         }
     finally:
         source.close()
         target.close()
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-    return 0 if overlap == 0 else 2
+    return 0 if remaining_overlap == 0 else 2
 
 
 if __name__ == "__main__":
