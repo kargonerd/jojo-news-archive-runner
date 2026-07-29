@@ -39,7 +39,7 @@ class PublisherSpec:
 PUBLISHER_SPECS = {
     "ap": PublisherSpec(
         publisher="ap",
-        parser_version="ap-parser/0.6.8",
+        parser_version="ap-parser/0.6.9",
         domains=("apnews.com",),
         default_language="en",
         edition="us",

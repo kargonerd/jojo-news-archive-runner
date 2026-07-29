@@ -221,7 +221,13 @@ def parse_article(
 
     headline = _first_text(
         _string_or_none(nyt_preloaded_metadata.get("headline")),
-        _string_or_none(news_article.get("headline")) if news_article else None,
+        _ap_structured_headline(news_article)
+        if spec.publisher == "ap"
+        else (
+            _string_or_none(news_article.get("headline"))
+            if news_article
+            else None
+        ),
         _ap_data_bulletin_headline(news_article)
         if spec.publisher == "ap"
         else None,
@@ -1242,9 +1248,14 @@ def _ap_structured_description_body(
         re.search(r"(?i)\b(?:prep\s+)?scores?\b", keyword)
         for keyword in keywords
     )
+    is_archive_brief = any(
+        keyword.casefold() == "archive"
+        for keyword in keywords
+    )
     if not description or (
         len(description) < _MINIMUM_BODY_CHARACTERS
         and not is_score_bulletin
+        and not is_archive_brief
     ):
         return None
     if re.search(
@@ -1307,17 +1318,50 @@ def _ap_data_bulletin_headline(
     return None
 
 
+def _ap_structured_headline(
+    news_article: dict[str, Any],
+) -> str | None:
+    headline = (
+        _string_or_none(news_article.get("headline"))
+        if news_article
+        else None
+    )
+    if headline and headline.casefold() in {"ap", "ap news"}:
+        return None
+    return headline
+
+
 def _ap_wire_keyword_headline(
     news_article: dict[str, Any],
 ) -> str | None:
     """Use AP's descriptive wire slug when generic page metadata says AP News."""
     if not news_article:
         return None
+    keywords = _string_list(news_article.get("keywords"))
+    strict_wire_slug = next(
+        (
+            keyword
+            for keyword in keywords
+            if re.match(r"^[A-Z]{2,5}--\S", keyword)
+        ),
+        None,
+    )
+    if strict_wire_slug:
+        return strict_wire_slug
+    ignored = {
+        "general news",
+        "international news",
+        "ap",
+        "ap news",
+        "archive",
+    }
     return next(
         (
             keyword
-            for keyword in _string_list(news_article.get("keywords"))
-            if re.match(r"^[A-Z]{2,5}--\S", keyword)
+            for keyword in keywords
+            if keyword.casefold() not in ignored
+            and "-" in keyword
+            and len(keyword) >= 12
         ),
         None,
     )
@@ -2275,6 +2319,20 @@ def _is_structured_short_record(
             for value in keyword_values
         )
     )
+    description = _string_or_none(news_article.get("description"))
+    ap_archive_brief = bool(
+        len(plain_text) >= 40
+        and description
+        and plain_text == description
+        and any(
+            value.casefold() == "archive"
+            for value in keyword_values
+        )
+        and not re.search(
+            r"(?i)^(?:visit|view|click|subscribe)\b",
+            plain_text,
+        )
+    )
     return bool(
         (
             re.match(r"^\s*#\d+\b", headline)
@@ -2287,6 +2345,7 @@ def _is_structured_short_record(
         or ap_news_alert
         or ap_data_bulletin
         or ap_score_bulletin
+        or ap_archive_brief
     )
 
 

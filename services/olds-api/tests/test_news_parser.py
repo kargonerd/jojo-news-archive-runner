@@ -1831,7 +1831,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.8"
+    assert article.extraction.parser_version == "ap-parser/0.6.9"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -1865,7 +1865,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.8"
+    assert result.extraction.parser_version == "ap-parser/0.6.9"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -2075,6 +2075,71 @@ def test_ap_parser_recovers_self_contained_structured_description():
 
     assert result.quality.status.value == "complete"
     assert result.headline == "Sweden cuts key interest rate"
+    assert result.plain_text == description
+
+
+def test_ap_parser_uses_descriptive_wire_slug_for_generic_headline():
+    description = (
+        "Police say a man entered a Houston auto shop where he used to "
+        "work and fatally shot two people before killing himself. "
+        "Investigators said the motive for the shooting was not clear."
+    )
+    payload = json.dumps(
+        {
+            "@type": "NewsArticle",
+            "headline": "AP News",
+            "datePublished": "2017-06-30T22:00:00Z",
+            "description": description,
+            "keywords": [
+                "General news",
+                "US-Auto-Shop-Shooting-Houston",
+                "Houston",
+            ],
+        }
+    )
+    html = (
+        "<html><head><script type='application/ld+json'>"
+        f"{payload}</script></head><body><main></main></body></html>"
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/general-news-example",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.headline == "US-Auto-Shop-Shooting-Houston"
+    assert result.plain_text == description
+
+
+def test_ap_parser_accepts_self_contained_archive_brief():
+    description = (
+        "The percentage of the workforce living in the county remains "
+        "below the goal."
+    )
+    payload = json.dumps(
+        {
+            "@type": "NewsArticle",
+            "headline": "20170329 a indicator report",
+            "datePublished": "2017-03-29T12:00:00Z",
+            "description": description,
+            "keywords": ["Archive"],
+        }
+    )
+    html = (
+        "<html><head><script type='application/ld+json'>"
+        f"{payload}</script></head><body><main></main></body></html>"
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/article/archive-brief",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == description
 
 
