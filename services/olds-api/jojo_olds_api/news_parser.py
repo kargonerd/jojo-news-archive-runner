@@ -173,6 +173,9 @@ def parse_article(
             < len(bloomberg_feature_body.get_text(" ", strip=True))
         ):
             body = bloomberg_feature_body
+        bloomberg_quiz_body = _bloomberg_embedded_quiz_body(soup)
+        if bloomberg_quiz_body is not None:
+            body = bloomberg_quiz_body
     if spec.publisher == "nyt":
         preloaded_body = _nyt_preloaded_article_body(
             soup,
@@ -359,6 +362,15 @@ def parse_article(
     _remove_noise(clean_body, spec)
 
     headline = _first_text(
+        (
+            "Bloomberg Tax Quiz"
+            if (
+                spec.publisher == "bloomberg"
+                and "/features/2017-tax-quiz" in canonical_url.casefold()
+                and soup.select_one("#quiz-container section.question")
+            )
+            else None
+        ),
         _string_or_none(nyt_preloaded_metadata.get("headline")),
         _ap_structured_headline(news_article)
         if spec.publisher == "ap"
@@ -908,6 +920,90 @@ def _bloomberg_feature_landing_body(soup: BeautifulSoup) -> Tag | None:
         figure.append(image)
         article.append(figure)
     return article
+
+
+def _bloomberg_embedded_quiz_body(soup: BeautifulSoup) -> Tag | None:
+    container = soup.select_one("#quiz-container")
+    if not isinstance(container, Tag):
+        return None
+    questions = container.select("section.question[id^='Q']")
+    if len(questions) < 3:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    seen_images: set[str] = set()
+    for question in questions:
+        identifier = _string_or_none(question.get("id"))
+        prompt = _tag_text(question.select_one(":scope > h2"))
+        options = [
+            text
+            for option in question.select(
+                ":scope > ol.quiz-answers > li"
+            )
+            if (text := _tag_text(option))
+        ]
+        if not prompt or len(options) < 2:
+            continue
+        heading = document.new_tag("h2")
+        heading.string = prompt
+        article.append(heading)
+        image = question.select_one(".quiz-question img[src]")
+        if isinstance(image, Tag):
+            source = _string_or_none(image.get("src"))
+            if source and _image_identity(source) not in seen_images:
+                seen_images.add(_image_identity(source))
+                figure = document.new_tag("figure")
+                image_copy = document.new_tag("img")
+                image_copy["src"] = source
+                caption = _tag_text(
+                    question.select_one(".quiz-question .captionline")
+                )
+                if caption:
+                    image_copy["alt"] = caption
+                figure.append(image_copy)
+                credit = _tag_text(
+                    question.select_one(".quiz-question .creditline")
+                )
+                if caption or credit:
+                    figcaption = document.new_tag("figcaption")
+                    figcaption.string = " ".join(
+                        value for value in (caption, credit) if value
+                    )
+                    figure.append(figcaption)
+                article.append(figure)
+        option_list = document.new_tag("ul")
+        for option in options:
+            item = document.new_tag("li")
+            item.string = option
+            option_list.append(item)
+        article.append(option_list)
+        answer = (
+            container.select_one(f"section.answer#A{identifier[1:]}")
+            if identifier and identifier[1:].isdigit()
+            else None
+        )
+        if isinstance(answer, Tag):
+            explanations = [
+                (len(text), text)
+                for node in answer.find_all("div", recursive=False)
+                if (
+                    "navbuttons" not in (node.get("class") or [])
+                    and "thisresult" not in (node.get("class") or [])
+                    and (text := _tag_text(node))
+                )
+            ]
+            if explanations:
+                explanation = document.new_tag("p")
+                explanation.string = max(explanations)[1]
+                article.append(explanation)
+    return (
+        article
+        if len(article.select("h2")) >= 3
+        and len(_clean_text(article.get_text(" ", strip=True))) >= 500
+        else None
+    )
 
 
 def _render_bloomberg_document(document: dict[str, Any]) -> Tag | None:
