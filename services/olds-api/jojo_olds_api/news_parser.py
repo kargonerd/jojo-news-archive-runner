@@ -386,6 +386,16 @@ def parse_article(
             )
             else None
         ),
+        (
+            _tag_text(
+                soup.select_one(
+                    "#quiz-container section.question h1, "
+                    "#quiz-container section.question h2"
+                )
+            )
+            if spec.publisher == "bloomberg"
+            else None
+        ),
         _string_or_none(nyt_preloaded_metadata.get("headline")),
         _ap_structured_headline(news_article)
         if spec.publisher == "ap"
