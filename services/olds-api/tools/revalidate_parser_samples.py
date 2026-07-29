@@ -49,33 +49,53 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def forced_replay_candidates(
+    connection: sqlite3.Connection,
+    *,
+    archive_root: Path,
+    maximum: int,
+) -> tuple[list[str], list[str]]:
+    rows = connection.execute(
+        """
+        SELECT result.canonical_url, capture.raw_path
+        FROM parser_validation_results AS result
+        JOIN parser_validation_samples AS sample
+          ON sample.canonical_url=result.canonical_url
+        JOIN captures AS capture
+          ON capture.canonical_url=result.canonical_url
+         AND capture.status='complete'
+        ORDER BY sample.sample_priority, result.canonical_url
+        LIMIT ?
+        """,
+        (maximum,),
+    ).fetchall()
+    replayable: list[str] = []
+    missing: list[str] = []
+    for canonical_url, raw_path in rows:
+        if raw_path and (archive_root / str(raw_path)).is_file():
+            replayable.append(str(canonical_url))
+        else:
+            missing.append(
+                str(raw_path)
+                if raw_path
+                else f"<missing raw_path for {canonical_url}>"
+            )
+    return replayable, missing
+
+
 def main() -> int:
     args = parse_args()
     if args.max_replays < 1 or args.progress_every < 1:
         raise SystemExit("--max-replays and --progress-every must be positive")
     connection = sqlite3.connect(args.state, timeout=60)
     forced = 0
+    missing: list[str] = []
     if args.force_existing:
-        rows = connection.execute(
-            """
-            SELECT result.canonical_url, capture.raw_path
-            FROM parser_validation_results AS result
-            JOIN parser_validation_samples AS sample
-              ON sample.canonical_url=result.canonical_url
-            JOIN captures AS capture
-              ON capture.canonical_url=result.canonical_url
-             AND capture.status='complete'
-            ORDER BY sample.sample_priority, result.canonical_url
-            LIMIT ?
-            """,
-            (args.max_replays,),
-        ).fetchall()
-        replayable = [
-            str(canonical_url)
-            for canonical_url, raw_path in rows
-            if raw_path
-            and (args.archive_root / str(raw_path)).is_file()
-        ]
+        replayable, missing = forced_replay_candidates(
+            connection,
+            archive_root=args.archive_root,
+            maximum=args.max_replays,
+        )
         with connection:
             connection.executemany(
                 """
@@ -99,7 +119,6 @@ def main() -> int:
     processed = 0
     parser_errors = 0
     requeued = 0
-    missing: list[str] = []
     for canonical_url, raw_path in pending:
         if not (args.archive_root / raw_path).is_file():
             missing.append(raw_path)
