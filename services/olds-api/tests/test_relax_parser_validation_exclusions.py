@@ -10,6 +10,25 @@ from tools.relax_parser_validation_exclusions import (
 )
 
 
+def test_empty_state_does_not_require_capture_schema():
+    connection = sqlite3.connect(":memory:")
+
+    result = relax_exclusions_if_under_target(
+        connection,
+        sample_year=2014,
+        target=300,
+    )
+
+    assert result["overlapAllowed"] is False
+    assert result["selectedBefore"] == 0
+    assert connection.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type='table' AND name='archive_metadata'
+        """
+    ).fetchone() == (1,)
+
+
 def test_relaxes_exclusions_when_disjoint_pool_is_under_target():
     connection = sqlite3.connect(":memory:")
     initialize_parser_validation_schema(connection)

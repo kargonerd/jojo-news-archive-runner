@@ -22,6 +22,14 @@ def relax_exclusions_if_under_target(
     target: int,
 ) -> dict[str, object]:
     initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS archive_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """
+    )
     selected_before = int(
         connection.execute(
             """

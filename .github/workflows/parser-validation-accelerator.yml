@@ -354,7 +354,8 @@ jobs:
           fallback_files="$RUNNER_TEMP/source-import-fallback-files.txt"
           fallback_marker="$RUNNER_TEMP/overlap-fallback-enabled"
           if [ ! -f "$source_state" ]; then
-            if [[ "$COHORT" == holdout-v* ]]; then
+            if [[ "$COHORT" == holdout-v* ]] \
+              && [ -f "$LOCAL_ROOT/raw/capture.sqlite3" ]; then
               python \
                 services/olds-api/tools/relax_parser_validation_exclusions.py \
                 --state "$LOCAL_ROOT/raw/capture.sqlite3" \
