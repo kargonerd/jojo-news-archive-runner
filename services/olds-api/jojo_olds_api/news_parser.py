@@ -877,10 +877,13 @@ def _nyt_story_body_companions(soup: BeautifulSoup) -> Tag | None:
 def _nyt_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
     nodes = [
         node
-        for node in soup.select(".articleBody")
+        for node in soup.select(".articleBody, #articleBody")
         if not any(
             isinstance(parent, Tag)
-            and "articleBody" in (parent.get("class") or [])
+            and (
+                "articleBody" in (parent.get("class") or [])
+                or parent.get("id") == "articleBody"
+            )
             for parent in node.parents
         )
     ]
@@ -2726,6 +2729,32 @@ def _nyt_media_content_type(
     if (
         "/opinion/cartoon-" in url
         and soup.select_one("article img, main img, .story-body img")
+    ):
+        return ContentType.GALLERY
+    legacy_story_body = soup.select_one(
+        "article.story.theme-main .story-body"
+    )
+    legacy_story_image = (
+        legacy_story_body.select_one(
+            "figure[itemprop='associatedMedia'] img[src]"
+        )
+        if isinstance(legacy_story_body, Tag)
+        else None
+    )
+    legacy_story_prose = (
+        " ".join(
+            node.get_text(" ", strip=True)
+            for node in legacy_story_body.select(
+                ".story-content[itemprop='articleBody'], "
+                "p.story-body-text.story-content"
+            )
+        )
+        if isinstance(legacy_story_body, Tag)
+        else ""
+    )
+    if (
+        legacy_story_image is not None
+        and len(_clean_text(legacy_story_prose)) < _MINIMUM_BODY_CHARACTERS
     ):
         return ContentType.GALLERY
     if "/interactive/" in url and default == ContentType.LIVEBLOG:
