@@ -2833,7 +2833,9 @@ def _is_publisher_notice(
     return bool(
         re.search(
             r"\barticle was published in error\b|"
-            r"\binadvertently published on this page\b",
+            r"\binadvertently published on this page\b|"
+            r"\b(?:article|feature) (?:has been|was) removed "
+            r"because of a copyright dispute\b",
             combined,
         )
     )

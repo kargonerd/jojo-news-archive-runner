@@ -532,7 +532,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.20"
+    assert result.extraction.parser_version == "nyt-parser/0.8.21"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -767,7 +767,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.20"
+    assert result.extraction.parser_version == "nyt-parser/0.8.21"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1207,7 +1207,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.20"
+    assert result.extraction.parser_version == "nyt-parser/0.8.21"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -1256,7 +1256,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.20"
+    assert result.extraction.parser_version == "nyt-parser/0.8.21"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -1296,7 +1296,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.20"
+    assert result.extraction.parser_version == "nyt-parser/0.8.21"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -2466,7 +2466,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.20"
+    assert result.extraction.parser_version == "nyt-parser/0.8.21"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -3324,7 +3324,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.20"
+    assert result.extraction.parser_version == "nyt-parser/0.8.21"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
@@ -3484,6 +3484,33 @@ def test_nyt_parser_accepts_explicit_publisher_error_notice():
         canonical_url=(
             "https://www.nytimes.com/2021/06/08/admin/"
             "this-article-was-published-in-error.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.warnings == ["publisher-notice"]
+
+
+def test_nyt_parser_accepts_copyright_removal_notice():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="An Archived Feature">
+      <meta property="article:published_time"
+            content="2019-03-06T00:00:00Z">
+    </head><body><article>
+      <p itemprop="articleBody">
+        Editors' Note: This feature has been removed because of a
+        copyright dispute.
+      </p>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2019/03/06/admin/"
+            "an-archived-feature.html"
         ),
     )
 
