@@ -172,7 +172,7 @@ def test_watchdog_prioritizes_nearly_complete_current_sample(
             "runnerOs": "ubuntu-latest",
             "currentEvaluated": 499,
             "replayableEvaluated": 499,
-            "parserVersion": "reuters-parser/0.7.4",
+                "parserVersion": "reuters-parser/0.7.5",
         }
     ]
 

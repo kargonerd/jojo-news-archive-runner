@@ -3599,6 +3599,9 @@ def _image_candidate(
     width: int | None = None,
     height: int | None = None,
 ) -> ImageCandidate:
+    if _is_placeholder_image_url(url):
+        role = ImageRole.LOGO
+        reasons = [*reasons, "generic-publisher-branding"]
     if spec.publisher == "nyt" and _nyt_generic_branding_image(url):
         role = ImageRole.LOGO
         reasons = [*reasons, "generic-publisher-branding"]
@@ -3854,6 +3857,8 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/default_social",
             "/default-social",
             "/defaultpromocrop.",
+            "/rcom-default.png",
+            "/r-generic-hdr.png",
         )
     )
 

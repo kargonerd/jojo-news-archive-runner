@@ -675,6 +675,47 @@ def test_parser_classifies_non_editorial_images_without_archiving_them():
     assert result.quality.images_selected == 0
 
 
+def test_reuters_parser_excludes_legacy_default_images():
+    reporting = " ".join(["Reuters reporting sentence."] * 30)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Reuters historical report">
+      <meta property="article:published_time"
+            content="2017-06-01T00:00:00Z">
+      <meta property="og:image"
+            content="https://s4.reutersmedia.net/resources_v2/images/rcom-default.png">
+    </head><body>
+      <div data-testid="article-body">
+        <img src="https://s4.reutersmedia.net/resources_v2/images/r-generic-hdr.png">
+        <p>{reporting}</p>
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=(
+            "https://www.reuters.com/article/"
+            "historical-report-idUSL1N1EXAMPLE"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected == 0
+    assert [image.original_url for image in result.images] == [
+        (
+            "https://s4.reutersmedia.net/resources_v2/images/"
+            "r-generic-hdr.png"
+        )
+    ]
+    assert result.images[0].role == ImageRole.LOGO
+    assert result.images[0].should_archive is False
+    assert "generic-publisher-branding" in (
+        result.images[0].selection_reasons
+    )
+
+
 def test_parser_supports_legacy_nyt_story_body_and_pdate():
     canonical_url = (
         "https://www.nytimes.com/2016/01/03/business/example.html"
@@ -1075,7 +1116,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.4"
+    assert result.extraction.parser_version == "reuters-parser/0.7.5"
 
 
 @pytest.mark.parametrize(
@@ -1122,7 +1163,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.4"
+    assert result.extraction.parser_version == "reuters-parser/0.7.5"
 
 
 @pytest.mark.parametrize(
@@ -1215,7 +1256,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.4"
+    assert result.extraction.parser_version == "reuters-parser/0.7.5"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():
