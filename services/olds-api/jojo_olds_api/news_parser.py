@@ -177,6 +177,12 @@ def parse_article(
         legacy_interactive = _nyt_legacy_interactive_graphic(soup)
         if legacy_interactive is not None:
             body = legacy_interactive
+        legacy_newsgraphic = _nyt_legacy_newsgraphic_body(soup)
+        if legacy_newsgraphic is not None:
+            body = legacy_newsgraphic
+        flex_interactive = _nyt_legacy_flex_body(soup)
+        if flex_interactive is not None:
+            body = flex_interactive
         interactive_documents = _nyt_interactive_document_body(soup)
         if interactive_documents is not None:
             body = interactive_documents
@@ -2023,10 +2029,12 @@ def _nyt_inline_interactive_media(soup: BeautifulSoup) -> Tag | None:
     graphic = soup.select_one(".interactive-graphic")
     if not isinstance(graphic, Tag):
         return None
+    scope = graphic.find_parent("article") or graphic
     urls: list[str] = []
+    alt_by_identity: dict[str, str] = {}
     seen: set[str] = set()
-    for script in graphic.select("script"):
-        value = (script.string or script.get_text()).replace("\\/", "/")
+    for source in scope.select("script, style"):
+        value = (source.string or source.get_text()).replace("\\/", "/")
         for match in re.finditer(
             r"""(?i)(?:https?:)?//(?:graphics\d*|static\d*)"""
             r"""\.(?:nytimes|nyt)\.com/[^"'()<>\s]+?"""
@@ -2041,6 +2049,36 @@ def _nyt_inline_interactive_media(soup: BeautifulSoup) -> Tag | None:
                 continue
             seen.add(identity)
             urls.append(url)
+    styled_nodes = list(scope.select("[style*='background-image']"))
+    for node in soup.select(".g-victim-photo[style*='background-image']"):
+        if node not in styled_nodes:
+            styled_nodes.append(node)
+    for node in styled_nodes:
+        value = _string_or_none(node.get("style"))
+        if not value:
+            continue
+        for match in re.finditer(
+            r"""(?i)(?:https?:)?//(?:graphics\d*|static\d*)"""
+            r"""\.(?:nytimes|nyt)\.com/[^"'()<>\s]+?"""
+            r"""\.(?:jpe?g|png|gif)(?:\?[^"'()<>\s]*)?""",
+            value.replace("\\/", "/"),
+        ):
+            url = match.group(0)
+            if url.startswith("//"):
+                url = f"https:{url}"
+            identity = _image_identity(url)
+            label = _first_text(
+                _string_or_none(node.get("data-name")),
+                _string_or_none(node.get("aria-label")),
+            )
+            if label:
+                alt_by_identity[identity] = _clean_text(
+                    label.replace("_", " ").replace("-", " ")
+                )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            urls.append(url)
     if len(urls) < 2:
         return None
     document = BeautifulSoup("<article></article>", "html.parser")
@@ -2051,9 +2089,153 @@ def _nyt_inline_interactive_media(soup: BeautifulSoup) -> Tag | None:
         figure = document.new_tag("figure")
         image = document.new_tag("img")
         image["src"] = url
+        alt = alt_by_identity.get(_image_identity(url))
+        if alt:
+            image["alt"] = alt
         figure.append(image)
         article.append(figure)
     return article
+
+
+def _nyt_legacy_newsgraphic_body(soup: BeautifulSoup) -> Tag | None:
+    """Recover malformed legacy graphics whose generated nodes escaped article."""
+    paragraphs = [
+        node
+        for node in soup.select(".g-body")
+        if _tag_text(node)
+    ]
+    if len(paragraphs) < 5:
+        return None
+    if sum(len(_tag_text(node) or "") for node in paragraphs) < 500:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    seen_text: set[str] = set()
+    seen_images: set[str] = set()
+    for node in soup.select(".g-body, .g-item-image img[src]"):
+        if node.name == "img":
+            source = _tag_attribute(node, "src")
+            if not source:
+                continue
+            identity = _image_identity(source)
+            if identity in seen_images:
+                continue
+            seen_images.add(identity)
+            figure = document.new_tag("figure")
+            image = document.new_tag("img")
+            image["src"] = source
+            alt = _tag_attribute(node, "alt")
+            if alt:
+                image["alt"] = alt
+            figure.append(image)
+            article.append(figure)
+            continue
+        text = _tag_text(node)
+        identity = text.casefold() if text else ""
+        if not text or identity in seen_text:
+            continue
+        seen_text.add(identity)
+        paragraph = document.new_tag("p")
+        paragraph.string = text
+        article.append(paragraph)
+    return article if article.select_one("p") else None
+
+
+def _nyt_legacy_flex_body(soup: BeautifulSoup) -> Tag | None:
+    """Recover text, statistics and media from NYT's legacy LOOK template."""
+    payload: dict[str, Any] | None = None
+    for script in soup.select("#interactiveFreeFormMain script"):
+        value = script.string or script.get_text()
+        match = re.search(
+            r"""(?s)function\s+getFlexData\s*\(\s*\)\s*\{\s*"""
+            r"""return\s*(?P<payload>\{.*?\})\s*;\s*\}""",
+            value,
+        )
+        if not match:
+            continue
+        try:
+            candidate = json.loads(match.group("payload"))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(candidate, dict):
+            payload = candidate
+            break
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    column_two = data.get("col2")
+    if isinstance(column_two, dict):
+        text = _string_or_none(column_two.get("text"))
+        if text:
+            paragraph = document.new_tag("p")
+            paragraph.string = text
+            article.append(paragraph)
+    slideshow = _string_or_none(data.get("gobig"))
+    if slideshow:
+        iframe = document.new_tag("iframe")
+        iframe["src"] = slideshow
+        iframe["title"] = "Slideshow"
+        article.append(iframe)
+    column_three = data.get("col3")
+    if isinstance(column_three, dict):
+        video = column_three.get("video")
+        if isinstance(video, dict):
+            promo = _string_or_none(video.get("promo"))
+            if promo:
+                figure = document.new_tag("figure")
+                image = document.new_tag("img")
+                image["src"] = promo
+                image["alt"] = _first_text(
+                    _string_or_none(video.get("title")),
+                    "Video",
+                )
+                figure.append(image)
+                caption = " ".join(
+                    value
+                    for value in (
+                        _string_or_none(video.get("caption")),
+                        _string_or_none(video.get("credit")),
+                    )
+                    if value
+                )
+                if caption:
+                    figcaption = document.new_tag("figcaption")
+                    figcaption.string = caption
+                    figure.append(figcaption)
+                article.append(figure)
+        stats = column_three.get("stats")
+        if isinstance(stats, list):
+            rendered_stats = [
+                (
+                    _string_or_none(item.get("key")),
+                    (
+                        str(item.get("value"))
+                        if isinstance(item.get("value"), (int, float))
+                        else _string_or_none(item.get("value"))
+                    ),
+                )
+                for item in stats
+                if isinstance(item, dict)
+            ]
+            rendered_stats = [
+                (key, value)
+                for key, value in rendered_stats
+                if key and value
+            ]
+            if rendered_stats:
+                stats_list = document.new_tag("ul")
+                for key, value in rendered_stats:
+                    item = document.new_tag("li")
+                    item.string = f"{key}: {value}"
+                    stats_list.append(item)
+                article.append(stats_list)
+    return article if article.select_one("p, iframe, figure, li") else None
 
 
 def _nyt_interactive_document_body(soup: BeautifulSoup) -> Tag | None:
@@ -2075,6 +2257,25 @@ def _nyt_interactive_document_body(soup: BeautifulSoup) -> Tag | None:
             continue
         seen.add(normalized)
         documents.append((normalized, _tag_text(anchor)))
+    for script in story.select("script"):
+        value = script.string or script.get_text()
+        for match in re.finditer(
+            r"""DV\.(?:flexLoad|load)\(\s*["']"""
+            r"""(?P<url>(?:https?:)?//"""
+            r"""(?:www\.)?documentcloud\.org/documents/[^"']+?)"""
+            r"""(?:\.js)?["']""",
+            value,
+            flags=re.IGNORECASE,
+        ):
+            url = match.group("url")
+            if url.startswith("//"):
+                url = f"https:{url}"
+            url = re.sub(r"\.js$", "", url, flags=re.IGNORECASE)
+            normalized = _normalized_url(url, base_url="https://www.nytimes.com/")
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            documents.append((normalized, "DocumentCloud document"))
     if not documents:
         return None
     document = BeautifulSoup("<article></article>", "html.parser")
@@ -2472,6 +2673,13 @@ def _nyt_media_content_type(
         and soup.select_one("article img, main img, .story-body img")
     ):
         return ContentType.GALLERY
+    if (
+        "/opinion/cartoon-" in url
+        and soup.select_one("article img, main img, .story-body img")
+    ):
+        return ContentType.GALLERY
+    if "/interactive/" in url and default == ContentType.LIVEBLOG:
+        return ContentType.INTERACTIVE
     return default
 
 

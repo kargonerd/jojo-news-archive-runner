@@ -960,7 +960,7 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, updated_at
         )
-            VALUES (2020, 1, 'test', 'nyt-parser/0.8.15', 'now')
+            VALUES (2020, 1, 'test', 'nyt-parser/0.8.16', 'now')
         """
     )
     connection.execute(

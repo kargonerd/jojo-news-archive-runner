@@ -532,7 +532,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.15"
+    assert result.extraction.parser_version == "nyt-parser/0.8.16"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -767,7 +767,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.15"
+    assert result.extraction.parser_version == "nyt-parser/0.8.16"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1207,7 +1207,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.15"
+    assert result.extraction.parser_version == "nyt-parser/0.8.16"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -1248,7 +1248,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
     )
 
     assert result.quality.status.value == "complete"
-    assert result.content_type.value == "liveblog"
+    assert result.content_type.value == "interactive"
     assert len(
         [block for block in result.blocks if block.type.value == "heading"]
     ) == 3
@@ -1256,7 +1256,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.15"
+    assert result.extraction.parser_version == "nyt-parser/0.8.16"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -1296,7 +1296,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.15"
+    assert result.extraction.parser_version == "nyt-parser/0.8.16"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -2466,7 +2466,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.15"
+    assert result.extraction.parser_version == "nyt-parser/0.8.16"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -2770,6 +2770,9 @@ def test_nyt_parser_preserves_documents_from_modern_legacy_shell():
       <main><article class="story theme-interactive">
         <a href="http://s3.documentcloud.org/report.pdf">Report (PDF)</a>
         <a href="http://s3.documentcloud.org/report.txt">Report (Text)</a>
+        <script>
+          DV.flexLoad("//www.documentcloud.org/documents/2956923-report.js");
+        </script>
       </article></main>
     </body></html>
     """
@@ -2787,7 +2790,108 @@ def test_nyt_parser_preserves_documents_from_modern_legacy_shell():
     assert [block.embed_url for block in result.blocks] == [
         "http://s3.documentcloud.org/report.pdf",
         "http://s3.documentcloud.org/report.txt",
+        "https://www.documentcloud.org/documents/2956923-report",
     ]
+
+
+def test_nyt_parser_recovers_legacy_flex_magazine_payload():
+    payload = {
+        "data": {
+            "gobig": (
+                "http://www.nytimes.com/slideshow/2013/09/08/"
+                "magazine/look-bond.slideshow.jsonp"
+            ),
+            "col2": {
+                "text": (
+                    "Ian Fleming took the name James Bond from the author of "
+                    "a book he found in Jamaica. The photographs examine the "
+                    "recurring characters, vehicles and objects in the films."
+                )
+            },
+            "col3": {
+                "video": {
+                    "promo": (
+                        "http://graphics8.nytimes.com/images/"
+                        "video-bondgirl-custom1.jpg"
+                    ),
+                    "title": "Bond Girl",
+                    "caption": "An actor reads lines dubbed for Dr. No.",
+                    "credit": "Taryn Simon",
+                },
+                "stats": [
+                    {"key": "James Bond books", "value": 14},
+                    {"key": "Women photographed", "value": 65},
+                ],
+            },
+        }
+    }
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="The Bond Market">
+      <meta property="article:published_time" content="2013-09-06T00:00:00Z">
+    </head><body>
+      <div id="interactiveShell"><div id="interactiveFreeFormMain">
+        <script>
+          function getFlexData() {{ return {json.dumps(payload)}; }}
+        </script>
+      </div></div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2013/09/08/magazine/"
+            "look-bond-market.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Ian Fleming took the name James Bond" in result.plain_text
+    assert "Women photographed: 65" in result.plain_text
+    assert result.blocks[1].embed_url.endswith("look-bond.slideshow.jsonp")
+    assert len(result.images) == 1
+
+
+def test_nyt_parser_recovers_legacy_newsgraphic_nodes_outside_article():
+    paragraphs = "".join(
+        f"""
+        <div class="story g-text">
+          <p class="g-body">
+            Victim profile {index}: this paragraph preserves detailed
+            reporting about a person and the attack that affected the family.
+          </p>
+        </div>
+        """
+        for index in range(1, 9)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="The Human Toll of Terror Attacks">
+      <meta property="article:published_time" content="2016-07-26T00:00:00Z">
+    </head><body>
+      <article class="story"><div class="interactive-graphic"></div></article>
+      {paragraphs}
+      <div class="story g-image"><div class="g-item-image">
+        <img src="https://static01.nyt.com/newsgraphics/victim.jpg"
+             alt="Victim portrait">
+      </div></div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2016/07/27/world/"
+            "human-toll-of-terror-attacks.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Victim profile 8" in result.plain_text
+    assert len(result.images) == 1
 
 
 def test_nyt_parser_recovers_inline_script_image_sequence():
@@ -2821,6 +2925,53 @@ def test_nyt_parser_recovers_inline_script_image_sequence():
     assert result.content_type.value == "interactive"
     assert len(result.images) == 3
     assert result.quality.images_selected == 3
+
+
+def test_nyt_parser_classifies_interactive_live_path_as_interactive():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Weekly Health Quiz">
+      <meta property="article:published_time" content="2016-10-14T00:00:00Z">
+    </head><body>
+      <div class="interactive-graphic"><div id="quiz"></div></div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2016/10/14/well/live/"
+            "healthquiz.html"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+
+
+def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Wake-up call">
+      <meta property="article:published_time" content="2016-02-15T00:00:00Z">
+      <meta property="og:image"
+            content="https://static01.nyt.com/images/cartoon.jpg">
+    </head><body><main><article>
+      <img src="https://static01.nyt.com/images/cartoon.jpg">
+    </article></main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2016/02/15/opinion/"
+            "cartoon-heng-on-north-koreas-rocket-launch.html"
+        ),
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
 
 
 def test_nyt_parser_preserves_blank_interactive_promo_destination():
@@ -2949,7 +3100,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.15"
+    assert result.extraction.parser_version == "nyt-parser/0.8.16"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
