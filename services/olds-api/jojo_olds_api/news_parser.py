@@ -452,6 +452,10 @@ def parse_article(
             "audio[data-audio-subtype='podcast'], "
             "audio source[type^='audio/']"
         )
+        and not (
+            spec.publisher == "bloomberg"
+            and _bloomberg_article_narration(soup)
+        )
     ):
         content_type = ContentType.AUDIO
 
@@ -482,6 +486,27 @@ def parse_article(
         for image in body_images:
             image_key = _image_identity(image.original_url)
             existing = images_by_url.get(image_key)
+            if (
+                existing is None
+                and spec.publisher == "bloomberg"
+                and _bloomberg_low_resolution_image(image)
+            ):
+                caption_key = _clean_text(
+                    image.caption or ""
+                ).casefold()
+                existing = next(
+                    (
+                        candidate
+                        for candidate in images_by_url.values()
+                        if candidate.role == ImageRole.LEAD
+                        and caption_key
+                        and _clean_text(
+                            candidate.caption or ""
+                        ).casefold()
+                        == caption_key
+                    ),
+                    None,
+                )
             if existing is None:
                 images_by_url[image_key] = image
                 continue
@@ -1518,6 +1543,31 @@ def _wsj_unsupported_media_gallery(soup: BeautifulSoup) -> Tag | None:
     paragraph.string = description
     article.append(paragraph)
     return article
+
+
+def _bloomberg_article_narration(soup: BeautifulSoup) -> bool:
+    """Distinguish Bloomberg's text-to-speech player from an audio story."""
+    for heading in soup.select("h1, h2, h3, h4, [role='heading']"):
+        if _clean_text(heading.get_text(" ", strip=True)).casefold() == (
+            "listen to article"
+        ):
+            return True
+    return bool(
+        soup.select_one(
+            "audio source[src*='assets.bwbx.io/s3/readings/'], "
+            "audio[src*='assets.bwbx.io/s3/readings/']"
+        )
+    )
+
+
+def _bloomberg_low_resolution_image(image: ImageCandidate) -> bool:
+    return bool(
+        re.search(
+            r"/(?:60x-1|60x60)\.(?:avif|gif|jpe?g|png|webp)(?:[?#]|$)",
+            image.original_url,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:
@@ -3586,6 +3636,18 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         elif (
             spec.publisher == "bloomberg"
             and text == "share this article"
+        ):
+            node.decompose()
+        elif (
+            spec.publisher == "bloomberg"
+            and node.name == "p"
+            and text.startswith(
+                (
+                    "want to receive this post in your inbox",
+                    "sign up for next china",
+                    "sign up here to receive the davos diary",
+                )
+            )
         ):
             node.decompose()
         elif (
