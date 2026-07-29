@@ -136,6 +136,9 @@ def parse_article(
     if body is None and spec.publisher == "nyt":
         body = _nyt_legacy_article_body(soup)
     if spec.publisher == "wsj":
+        partner_body = _wsj_tovima_body(soup)
+        if partner_body is not None:
+            body = partner_body
         puzzle_body = _wsj_puzzle_body(soup, canonical_url=canonical_url)
         if puzzle_body is not None:
             body = puzzle_body
@@ -712,6 +715,18 @@ def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
             ):
                 return copy
     return None
+
+
+def _wsj_tovima_body(soup: BeautifulSoup) -> Tag | None:
+    """Select only the licensed WSJ copy from To Vima partner pages."""
+    partner_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    if not partner_url or "tovima.com/" not in partner_url.casefold():
+        return None
+    body = soup.select_one(".post-body.main-content, .post-body.article-wrapper")
+    return body if isinstance(body, Tag) else None
 
 
 def _bloomberg_partner_body(soup: BeautifulSoup) -> Tag | None:
@@ -3844,7 +3859,7 @@ def _image_identity(url: str) -> str:
             parts.path,
             re.IGNORECASE,
         )
-        if host == "images.wsj.net"
+        if host in {"images.wsj.net", "opinion-images.wsj.net"}
         else None
     )
     if wsj_image is not None:
@@ -3857,6 +3872,19 @@ def _image_identity(url: str) -> str:
                 "",
             )
         )
+    if host == "si.wsj.net":
+        legacy_wsj_image = re.fullmatch(
+            r"(.+?)_(?:G|D|M|SOC|TOP|IM)_(\d+)\.([a-z0-9]+)",
+            parts.path,
+            re.IGNORECASE,
+        )
+        if legacy_wsj_image is not None:
+            return (
+                "wsj-legacy-image:"
+                f"{legacy_wsj_image.group(1).casefold()}_"
+                f"{legacy_wsj_image.group(2)}."
+                f"{legacy_wsj_image.group(3).casefold()}"
+            )
     return url
 
 
@@ -4022,6 +4050,10 @@ def _is_placeholder_image_url(url: str) -> bool:
             "yahoo-finance-default-logo",
             "/m/img/social/og-ft-logo",
             "/__assets/creatives/open-graph/ft-v1.jpg",
+            "/img/meta/wsj-social-share.",
+            "/img/wsj_logo_black_social.",
+            "/img/wsj_profile_lg.",
+            "/common/imgs/wsjsection.",
         )
     )
 

@@ -250,7 +250,82 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.8"
+    assert result.extraction.parser_version == "wsj-parser/0.8.9"
+
+
+def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
+    prose = " ".join(
+        f"Paragraph {index} contains licensed Wall Street Journal "
+        "reporting with concrete facts and sufficient original detail."
+        for index in range(8)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Licensed WSJ Report">
+      <meta property="og:url"
+            content="https://www.tovima.com/wsj/a-licensed-wsj-report/">
+      <meta property="og:image"
+            content="https://www.tovima.com/uploads/report.jpg">
+      <meta property="article:published_time"
+            content="2026-05-06T10:30:00Z">
+    </head><body><main><article>
+      <div class="post-body main-content article-wrapper">
+        <p>{prose}</p>
+        <div id="newsletter-home" class="newsletter-home">
+          <p>NEWSLETTER TABLE TALK Never miss a story. Subscribe now.</p>
+        </div>
+        <div class="googlenews"><p>Follow tovima.com on Google News.</p></div>
+        <p><img src="https://www.tovima.com/uploads/report.jpg"></p>
+      </div>
+      <div class="vima-box single__related">
+        <h4>Related Articles</h4>
+        <p>This unrelated current story must not enter the archive body.</p>
+        <img src="https://www.wsj.com/wp-content/themes/whsk_tovima.com/"
+             alt="WSJ section">
+      </div>
+    </article></main></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/world/a-licensed-wsj-report",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Paragraph 7 contains licensed" in result.plain_text
+    assert "Never miss a story" not in result.plain_text
+    assert "unrelated current story" not in result.plain_text
+    assert result.quality.images_selected == 1
+    assert result.images[0].original_url.endswith("/report.jpg")
+
+
+def test_wsj_parser_deduplicates_legacy_renditions_and_branding():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Legacy Image Renditions">
+      <meta property="article:published_time"
+            content="2014-12-21T00:00:00Z">
+      <meta property="og:image"
+            content="http://si.wsj.net/public/resources/images/BN-GC782_YATES_G_20141221165350.jpg">
+      <meta name="twitter:image"
+            content="http://si.wsj.net/public/resources/images/BN-GC782_YATES_D_20141221165350.jpg">
+    </head><body><article>
+      <p>This complete legacy report contains enough substantive text to
+      validate image rendition deduplication without relying on a shell.</p>
+      <img src="http://si.wsj.net/img/WSJ_Logo_black_social.gif">
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/legacy-image-renditions",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected == 1
+    assert len(result.images[0].candidate_urls) == 2
 
 
 def test_wsj_parser_classifies_embedded_acrostic_as_interactive():
@@ -330,7 +405,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.8"
+    assert result.extraction.parser_version == "wsj-parser/0.8.9"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -427,7 +502,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.8"
+    assert result.extraction.parser_version == "wsj-parser/0.8.9"
 
 
 def test_wsj_parser_classifies_legacy_slideshow_metadata_as_gallery():

@@ -54,7 +54,7 @@ PUBLISHER_SPECS = {
     ),
     "wsj": PublisherSpec(
         publisher="wsj",
-        parser_version="wsj-parser/0.8.8",
+        parser_version="wsj-parser/0.8.9",
         domains=("wsj.com", "www.wsj.com"),
         default_language="en",
         edition="us",
@@ -70,6 +70,9 @@ PUBLISHER_SPECS = {
             ".share_tools",
             "#trending_now",
             ".article-breadCrumb-wrapper",
+            ".newsletter-home",
+            "#newsletter-home",
+            ".googlenews",
         ),
         preferred_image_hosts=("images.wsj.net", "s.wsj.net"),
     ),
