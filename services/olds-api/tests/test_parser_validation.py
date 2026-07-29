@@ -933,6 +933,14 @@ def test_completed_validation_sample_records_parser_quality(tmp_path: Path):
     assert result["sample"] is True
     assert result["status"] == "complete"
     assert result["qaPass"] is True
+    assert connection.execute(
+        """
+        SELECT source_raw_sha256
+        FROM parser_validation_results
+        WHERE canonical_url=?
+        """,
+        (selected.canonical_url,),
+    ).fetchone()[0] == blob.sha256
     assert summary["years"]["2020"]["evaluated"] == 1
     assert summary["years"]["2020"]["complete"] == 1
     assert summary["years"]["2020"]["qaPassed"] == 1
@@ -1180,3 +1188,20 @@ def test_completed_sample_can_be_replayed_from_capture_state(tmp_path: Path):
         connection,
         maximum=10,
     ) == [(selected.canonical_url, blob.path)]
+    connection.execute(
+        """
+        UPDATE captures
+        SET raw_sha256=?
+        WHERE canonical_url=?
+        """,
+        ("b" * 64, selected.canonical_url),
+    )
+    initialize_parser_validation_schema(connection)
+    assert connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM parser_validation_results
+        WHERE canonical_url=?
+        """,
+        (selected.canonical_url,),
+    ).fetchone()[0] == 0

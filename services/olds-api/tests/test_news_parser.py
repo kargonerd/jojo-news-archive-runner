@@ -250,7 +250,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.5"
+    assert result.extraction.parser_version == "wsj-parser/0.8.6"
 
 
 def test_wsj_parser_classifies_embedded_acrostic_as_interactive():
@@ -330,7 +330,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.5"
+    assert result.extraction.parser_version == "wsj-parser/0.8.6"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -427,7 +427,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.5"
+    assert result.extraction.parser_version == "wsj-parser/0.8.6"
 
 
 def test_parser_classifies_non_editorial_images_without_archiving_them():

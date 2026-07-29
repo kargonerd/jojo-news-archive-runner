@@ -74,7 +74,8 @@ def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
             warnings_json TEXT NOT NULL,
             issues_json TEXT NOT NULL,
             error TEXT,
-            parsed_at TEXT NOT NULL
+            parsed_at TEXT NOT NULL,
+            source_raw_sha256 TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_parser_validation_results_year
@@ -111,6 +112,42 @@ def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
             """
             ALTER TABLE parser_validation_results
             ADD COLUMN content_type TEXT NOT NULL DEFAULT 'article'
+            """
+        )
+    if "source_raw_sha256" not in result_columns:
+        connection.execute(
+            """
+            ALTER TABLE parser_validation_results
+            ADD COLUMN source_raw_sha256 TEXT
+            """
+        )
+    captures_exist = connection.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type='table' AND name='captures'
+        """
+    ).fetchone()
+    if captures_exist is not None:
+        connection.execute(
+            """
+            DELETE FROM parser_validation_results
+            WHERE source_raw_sha256 IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM captures AS current_capture
+                WHERE current_capture.canonical_url =
+                    parser_validation_results.canonical_url
+                  AND current_capture.status='complete'
+                  AND current_capture.raw_sha256 IS NOT NULL
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM captures AS capture
+                WHERE capture.canonical_url =
+                    parser_validation_results.canonical_url
+                  AND capture.raw_sha256 =
+                    parser_validation_results.source_raw_sha256
+              )
             """
         )
     connection.commit()
@@ -673,6 +710,7 @@ def record_parser_validation(
         "issues_json": '["parser-exception"]',
         "error": None,
         "parsed_at": parsed_at.isoformat(),
+        "source_raw_sha256": capture.raw_html.sha256,
     }
     try:
         html_bytes = _read_capture_html(capture, archive_root)
@@ -780,7 +818,8 @@ def record_parser_validation(
                 warnings_json,
                 issues_json,
                 error,
-                parsed_at
+                parsed_at,
+                source_raw_sha256
             )
             VALUES (
                 :canonical_url,
@@ -801,7 +840,8 @@ def record_parser_validation(
                 :warnings_json,
                 :issues_json,
                 :error,
-                :parsed_at
+                :parsed_at,
+                :source_raw_sha256
             )
             ON CONFLICT(canonical_url) DO UPDATE SET
                 parser_version=excluded.parser_version,
@@ -819,7 +859,8 @@ def record_parser_validation(
                 warnings_json=excluded.warnings_json,
                 issues_json=excluded.issues_json,
                 error=excluded.error,
-                parsed_at=excluded.parsed_at
+                parsed_at=excluded.parsed_at,
+                source_raw_sha256=excluded.source_raw_sha256
             """,
             values,
         )
