@@ -532,7 +532,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.13"
+    assert result.extraction.parser_version == "nyt-parser/0.8.14"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -767,7 +767,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.13"
+    assert result.extraction.parser_version == "nyt-parser/0.8.14"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1207,7 +1207,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.13"
+    assert result.extraction.parser_version == "nyt-parser/0.8.14"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -1256,7 +1256,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.13"
+    assert result.extraction.parser_version == "nyt-parser/0.8.14"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -1296,7 +1296,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.13"
+    assert result.extraction.parser_version == "nyt-parser/0.8.14"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -2430,7 +2430,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.13"
+    assert result.extraction.parser_version == "nyt-parser/0.8.14"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -2685,6 +2685,138 @@ def test_nyt_parser_preserves_legacy_interactive_documents():
     ]
 
 
+def test_nyt_parser_recovers_div_only_interactive_text():
+    sections = "".join(
+        f"""
+        <div class="g-section">
+          <div class="g-source">({index}) Source rule {index} with details.</div>
+          <div class="g-translation">
+            Translation: explanation {index} gives readers useful context.
+          </div>
+        </div>
+        """
+        for index in range(1, 8)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Areas of Autonomy">
+      <meta property="article:published_time" content="2014-08-06T00:00:00Z">
+    </head><body>
+      <div class="interactive-graphic">
+        <div class="g-intro">
+          An introduction explaining what the proposed governance rules mean.
+        </div>
+        {sections}
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2014/08/06/sports/"
+            "ncaa-autonomy-translation.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Translation: explanation 7" in result.plain_text
+    assert len(result.blocks) == 15
+
+
+def test_nyt_parser_preserves_documents_from_modern_legacy_shell():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="S&amp;P Capital IQ Report">
+      <meta property="article:published_time" content="2014-05-01T00:00:00Z">
+    </head><body>
+      <main><article class="story theme-interactive">
+        <a href="http://s3.documentcloud.org/report.pdf">Report (PDF)</a>
+        <a href="http://s3.documentcloud.org/report.txt">Report (Text)</a>
+      </article></main>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2014/05/01/upshot/"
+            "report-docviewer.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert [block.embed_url for block in result.blocks] == [
+        "http://s3.documentcloud.org/report.pdf",
+        "http://s3.documentcloud.org/report.txt",
+    ]
+
+
+def test_nyt_parser_recovers_inline_script_image_sequence():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="The One-Page Magazine">
+      <meta property="article:published_time" content="2014-03-21T00:00:00Z">
+    </head><body>
+      <article class="story"><h2>Magazine</h2></article>
+      <div class="interactive-graphic">
+        <script>
+          window.slides = [
+            "http:\\/\\/graphics8.nytimes.com\\/packages\\/one.png",
+            "http:\\/\\/graphics8.nytimes.com\\/packages\\/two.jpg",
+            "http:\\/\\/graphics8.nytimes.com\\/packages\\/three.png"
+          ];
+        </script>
+      </div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2014/03/23/magazine/"
+            "23-one-page-magazine.html"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert len(result.images) == 3
+    assert result.quality.images_selected == 3
+
+
+def test_nyt_parser_preserves_blank_interactive_promo_destination():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Updating: New York Fashion Week">
+      <meta name="description"
+            content="Editors share highlights and reports from the shows.">
+      <meta property="article:published_time" content="2015-09-16T00:00:00Z">
+    </head><body>
+      <script>
+        var destUrl = "https://www.nytimes.com/interactive/projects/fashion";
+      </script>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2015/fashion/"
+            "inside-fashion-week-collections-promo.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Editors share highlights" in result.plain_text
+    assert result.blocks[-1].embed_url == (
+        "https://www.nytimes.com/interactive/projects/fashion"
+    )
+
+
 def test_nyt_parser_extracts_preloaded_legacy_slideshow():
     state = {
         "$Article.body.header.ledeMedia": {
@@ -2781,7 +2913,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.13"
+    assert result.extraction.parser_version == "nyt-parser/0.8.14"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():

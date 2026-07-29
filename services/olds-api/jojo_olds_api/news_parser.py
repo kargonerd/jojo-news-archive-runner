@@ -170,6 +170,14 @@ def parse_article(
         legacy_interactive = _nyt_legacy_interactive_graphic(soup)
         if legacy_interactive is not None:
             body = legacy_interactive
+        interactive_documents = _nyt_interactive_document_body(soup)
+        if interactive_documents is not None:
+            body = interactive_documents
+        inline_interactive = _nyt_inline_interactive_media(soup)
+        if inline_interactive is not None:
+            body = inline_interactive
+        if body is None and "/interactive/" in canonical_url.casefold():
+            body = _nyt_interactive_redirect_body(soup)
     if spec.publisher == "reuters":
         reuters_live_blog = _reuters_live_blog_body(soup)
         if reuters_live_blog is not None:
@@ -944,8 +952,41 @@ def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
                 quiz_body = _nyt_interactive_quiz_body(candidate)
                 if quiz_body is not None:
                     return quiz_body
+                div_body = _nyt_div_only_interactive_body(candidate)
+                if div_body is not None:
+                    return div_body
                 return candidate
     return None
+
+
+def _nyt_div_only_interactive_body(candidate: Tag) -> Tag | None:
+    """Turn old graphics made entirely from semantic divs into text blocks."""
+    if candidate.select_one("p, h1, h2, h3, h4, li, table"):
+        return None
+    sections = candidate.select(".g-section")
+    if len(sections) < 2:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    intro = _tag_text(candidate.select_one(".g-intro"))
+    if intro:
+        paragraph = document.new_tag("p")
+        paragraph.string = intro
+        article.append(paragraph)
+    for section in sections:
+        for selector, name in (
+            (".g-source", "p"),
+            (".g-translation", "blockquote"),
+        ):
+            text = _tag_text(section.select_one(selector))
+            if not text:
+                continue
+            node = document.new_tag(name)
+            node.string = text
+            article.append(node)
+    return article if len(_clean_text(article.get_text(" ", strip=True))) >= 200 else None
 
 
 def _nyt_interactive_quiz_body(candidate: Tag) -> Tag | None:
@@ -1966,6 +2007,122 @@ def _nyt_legacy_interactive_graphic(soup: BeautifulSoup) -> Tag | None:
         else:
             article.append(figcaption)
     return article if article.select_one("p, figure, iframe") else None
+
+
+def _nyt_inline_interactive_media(soup: BeautifulSoup) -> Tag | None:
+    """Recover image sequences embedded in JavaScript-only legacy graphics."""
+    graphic = soup.select_one(".interactive-graphic")
+    if not isinstance(graphic, Tag):
+        return None
+    urls: list[str] = []
+    seen: set[str] = set()
+    for script in graphic.select("script"):
+        value = (script.string or script.get_text()).replace("\\/", "/")
+        for match in re.finditer(
+            r"""(?i)(?:https?:)?//(?:graphics\d*|static\d*)"""
+            r"""\.(?:nytimes|nyt)\.com/[^"'()<>\s]+?"""
+            r"""\.(?:jpe?g|png|gif)(?:\?[^"'()<>\s]*)?""",
+            value,
+        ):
+            url = match.group(0)
+            if url.startswith("//"):
+                url = f"https:{url}"
+            identity = _image_identity(url)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            urls.append(url)
+    if len(urls) < 2:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for url in urls:
+        figure = document.new_tag("figure")
+        image = document.new_tag("img")
+        image["src"] = url
+        figure.append(image)
+        article.append(figure)
+    return article
+
+
+def _nyt_interactive_document_body(soup: BeautifulSoup) -> Tag | None:
+    """Preserve linked source documents in later legacy interactive shells."""
+    story = soup.select_one("article.story, .interactive-graphic")
+    if not isinstance(story, Tag):
+        return None
+    documents: list[tuple[str, str | None]] = []
+    seen: set[str] = set()
+    for anchor in story.select("a[href]"):
+        href = _string_or_none(anchor.get("href"))
+        if not href or not re.search(
+            r"(?i)\.(?:pdf|txt|csv)(?:$|[?#])",
+            href,
+        ):
+            continue
+        normalized = _normalized_url(href, base_url="https://www.nytimes.com/")
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        documents.append((normalized, _tag_text(anchor)))
+    if not documents:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    description = _first_text(
+        _meta_content(soup, "name", "description"),
+        _meta_content(soup, "name", "lp"),
+        _meta_content(soup, "property", "og:description"),
+    )
+    if description:
+        paragraph = document.new_tag("p")
+        paragraph.string = description
+        article.append(paragraph)
+    for href, label in documents:
+        iframe = document.new_tag("iframe")
+        iframe["src"] = href
+        if label:
+            iframe["title"] = label
+        article.append(iframe)
+    return article
+
+
+def _nyt_interactive_redirect_body(soup: BeautifulSoup) -> Tag | None:
+    """Preserve metadata and destination for NYT's intentionally blank promos."""
+    description = _first_text(
+        _meta_content(soup, "name", "description"),
+        _meta_content(soup, "name", "lp"),
+        _meta_content(soup, "property", "og:description"),
+    )
+    destination: str | None = None
+    for script in soup.select("script"):
+        value = script.string or script.get_text()
+        match = re.search(
+            r"""(?i)\bdestUrl\s*=\s*["'](?P<url>https?://[^"']+)""",
+            value,
+        )
+        if match:
+            destination = match.group("url")
+            break
+    if not description and not destination:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    if description:
+        paragraph = document.new_tag("p")
+        paragraph.string = description
+        article.append(paragraph)
+    if destination:
+        iframe = document.new_tag("iframe")
+        iframe["src"] = destination
+        iframe["title"] = "Interactive destination"
+        article.append(iframe)
+    return article
 
 
 def _nyt_preloaded_slideshow_rows(
