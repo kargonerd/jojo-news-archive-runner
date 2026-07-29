@@ -3534,6 +3534,22 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
             and "articles from ft.com" in text
         ):
             node.decompose()
+    if spec.publisher == "ft":
+        _strip_ft_copyright_suffixes(soup)
+
+
+def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
+    """Remove syndication copyright footers without dropping article prose."""
+    pattern = re.compile(
+        r"""(?i)\s*[–—-]\s*copyright\s+(?:the\s+)?"""
+        r"""financial\s+times\s+limited(?:\s+\d{4})?\s*$"""
+    )
+    for text_node in list(soup.find_all(string=pattern)):
+        cleaned = pattern.sub("", str(text_node)).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
 
 
 def _trim_reuters_recirculation_tail(soup: BeautifulSoup) -> None:

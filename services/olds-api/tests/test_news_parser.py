@@ -2446,7 +2446,40 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.11"
+    assert article.extraction.parser_version == "ft-parser/0.8.12"
+
+
+def test_ft_parser_strips_attached_syndication_copyright_suffix():
+    reporting = " ".join(["Syndicated FT reporting sentence."] * 20)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Syndicated FT report">
+      <meta property="article:published_time"
+            content="2025-03-11T12:00:00Z">
+    </head><body>
+      <article class="article-body-wrapper">
+        <p>{reporting}</p>
+        <p>
+          “That is good for them,” said Chris.
+          – Copyright The Financial Times Limited 2025
+        </p>
+      </article>
+    </body></html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "2164f23c-9602-4bcd-9c39-f310861dfd48"
+        ),
+    )
+
+    assert article.quality.status.value == "complete"
+    assert "That is good for them" in article.plain_text
+    assert "Copyright The Financial Times" not in article.plain_text
+    assert article.extraction.parser_version == "ft-parser/0.8.12"
 
 
 def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
@@ -2610,7 +2643,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.11"
+    assert article.extraction.parser_version == "ft-parser/0.8.12"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -2641,7 +2674,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.11"
+    assert article.extraction.parser_version == "ft-parser/0.8.12"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -2681,7 +2714,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.11"
+    assert article.extraction.parser_version == "ft-parser/0.8.12"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -2738,7 +2771,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.11"
+    assert article.extraction.parser_version == "ft-parser/0.8.12"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
