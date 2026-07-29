@@ -586,7 +586,11 @@ jobs:
               --enable-arquivo-pt-fallback
               --enable-common-crawl-fallback
             )
-            if [ "$ENABLE_FT_INFINI_DIRECT_DISCOVERY" = "true" ]; then
+            # Infini-News begins in 2016. Keep the opt-in enabled across
+            # auto-continuations, but do not pass an unsupported year to the
+            # direct catalog scanner.
+            if [ "$ENABLE_FT_INFINI_DIRECT_DISCOVERY" = "true" ] &&
+               [ "$SAMPLE_YEAR" -ge 2016 ]; then
               args+=(--enable-ft-infini-direct-discovery)
             fi
             if [ -f "$LOCAL_ROOT/catalog/source-discovery.sqlite3" ]; then
