@@ -532,7 +532,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.11"
+    assert result.extraction.parser_version == "nyt-parser/0.8.12"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -767,7 +767,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.11"
+    assert result.extraction.parser_version == "nyt-parser/0.8.12"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1148,7 +1148,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.11"
+    assert result.extraction.parser_version == "nyt-parser/0.8.12"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -1197,7 +1197,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.11"
+    assert result.extraction.parser_version == "nyt-parser/0.8.12"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -1237,7 +1237,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.11"
+    assert result.extraction.parser_version == "nyt-parser/0.8.12"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -2306,7 +2306,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.11"
+    assert result.extraction.parser_version == "nyt-parser/0.8.12"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -2479,6 +2479,49 @@ def test_nyt_parser_extracts_ordered_diptych_visual_story():
     ]
 
 
+def test_nyt_parser_recovers_legacy_interactive_graphic():
+    summary = (
+        "With well-connected sales representatives and relationships with "
+        "influential doctors, a small company became the main supplier of "
+        "heart devices to a large hospital virtually overnight."
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Quick Change in Heart Devices">
+      <meta property="article:published_time"
+            content="2011-04-02T00:00:00Z">
+    </head><body id="interactiveABC">
+      <div id="interactiveShell">
+        <div class="storySummary"><span class="summary">{summary}</span></div>
+        <div id="interactiveFreeFormMain">
+          <img src="http://graphics8.nytimes.com/packages/images/
+                     newsgraphics/2011/implant-web.jpg">
+        </div>
+        <div id="interactiveFooter">
+          <p class="credit">Sources: Company documents; Medical Center</p>
+        </div>
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2011/04/02/business/"
+            "a-quick-change-in-heart-devices.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "interactive"
+    assert result.plain_text == (
+        f"{summary}\n\nSources: Company documents; Medical Center"
+    )
+    assert len(result.images) == 1
+    assert result.quality.images_selected == 1
+
+
 def test_nyt_parser_extracts_preloaded_legacy_slideshow():
     state = {
         "$Article.body.header.ledeMedia": {
@@ -2575,7 +2618,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.11"
+    assert result.extraction.parser_version == "nyt-parser/0.8.12"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():

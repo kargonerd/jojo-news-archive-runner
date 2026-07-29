@@ -166,6 +166,10 @@ def parse_article(
             body = preloaded_body
     if body is None:
         body = _select_body(soup, spec)
+    if spec.publisher == "nyt":
+        legacy_interactive = _nyt_legacy_interactive_graphic(soup)
+        if legacy_interactive is not None:
+            body = legacy_interactive
     if spec.publisher == "reuters":
         legacy_reuters_body = _reuters_legacy_article_body(soup)
         if legacy_reuters_body is not None:
@@ -1742,6 +1746,42 @@ def _nyt_legacy_op_art_gallery(soup: BeautifulSoup) -> Tag | None:
         figcaption.string = " ".join(
             value for value in (description, credit) if value
         )
+        figure.append(figcaption)
+    article.append(figure)
+    return article
+
+
+def _nyt_legacy_interactive_graphic(soup: BeautifulSoup) -> Tag | None:
+    shell = soup.select_one("#interactiveShell")
+    freeform = soup.select_one("#interactiveFreeFormMain")
+    if not isinstance(shell, Tag) or not isinstance(freeform, Tag):
+        return None
+    source_image = freeform.select_one("img[src]")
+    source = _tag_attribute(source_image, "src")
+    summary = _tag_text(shell.select_one(".storySummary .summary, .storySummary"))
+    if not source or not summary:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    paragraph = document.new_tag("p")
+    paragraph.string = summary
+    article.append(paragraph)
+    figure = document.new_tag("figure")
+    image = document.new_tag("img")
+    image["src"] = source
+    image["alt"] = summary
+    figure.append(image)
+    sources = _tag_text(
+        shell.select_one(
+            "#interactiveFooter .sources, "
+            "#interactiveFooter .credit"
+        )
+    )
+    if sources:
+        figcaption = document.new_tag("figcaption")
+        figcaption.string = sources
         figure.append(figcaption)
     article.append(figure)
     return article
