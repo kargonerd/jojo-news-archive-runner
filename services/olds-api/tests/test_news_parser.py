@@ -1890,7 +1890,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.9"
+    assert article.extraction.parser_version == "ap-parser/0.6.10"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -1924,7 +1924,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.9"
+    assert result.extraction.parser_version == "ap-parser/0.6.10"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -2135,6 +2135,42 @@ def test_ap_parser_recovers_self_contained_structured_description():
     assert result.quality.status.value == "complete"
     assert result.headline == "Sweden cuts key interest rate"
     assert result.plain_text == description
+
+
+def test_ap_parser_prefers_full_dom_story_over_truncated_description():
+    html = b"""
+    <html><head>
+      <script type="application/ld+json">
+      {
+        "@type": "NewsArticle",
+        "headline": "AP Interview: Rose says he finally gets it",
+        "datePublished": "2010-10-19T21:03:00Z",
+        "description": "So, he's 'fessing up."
+      }
+      </script>
+    </head><body>
+      <div class="RichTextStoryBody">
+        <p>CINCINNATI (AP) - Pete Rose says he finally understands what the
+        former baseball commissioner meant when he asked him to reconfigure
+        his life after receiving a lifetime ban.</p>
+        <p>Baseball's hits king told The Associated Press that the realization
+        took him many years and that he is now ready to acknowledge it.</p>
+      </div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "https://apnews.com/article/"
+            "mlb-sports-43db9ba6c12f42eb8c496302bc337b43"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.plain_text.startswith("CINCINNATI (AP)")
+    assert "Baseball's hits king" in result.plain_text
 
 
 def test_ap_parser_uses_descriptive_wire_slug_for_generic_headline():

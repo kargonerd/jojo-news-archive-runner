@@ -91,6 +91,13 @@ def parse_article(
                     news_article,
                     canonical_url,
                 )
+        ap_dom_body = _select_body(soup, spec)
+        if ap_dom_body is not None and (
+            body is None
+            or len(_clean_text(ap_dom_body.get_text(" ", strip=True)))
+            > len(_clean_text(body.get_text(" ", strip=True)))
+        ):
+            body = ap_dom_body
     if spec.publisher == "nyt":
         body = _nyt_story_body_companions(soup)
     if spec.publisher in {"reuters", "bloomberg"} and _is_yahoo_syndication(
