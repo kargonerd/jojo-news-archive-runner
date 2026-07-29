@@ -355,7 +355,7 @@ jobs:
             --year "$SAMPLE_YEAR" \
             --target-per-year "$VALIDATION_TARGET" \
             --seed "$VALIDATION_SEED" \
-            --reserve-per-year 20000 \
+            --reserve-per-year 0 \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
             --files-from "$files_from"
           if [[ "$COHORT" == holdout-v* ]]; then
@@ -374,7 +374,7 @@ jobs:
                 --year "$SAMPLE_YEAR" \
                 --target-per-year "$VALIDATION_TARGET" \
                 --seed "$VALIDATION_SEED" \
-                --reserve-per-year 20000 \
+                --reserve-per-year 0 \
                 --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
                 --files-from "$fallback_files"
               python \
