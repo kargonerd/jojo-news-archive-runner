@@ -29,6 +29,7 @@ from jojo_olds_api.wayback_manifest import (
     extract_wsj_legacy_published_at,
     infer_published_at,
     initialize_discovery_schema,
+    initialize_wsj_legacy_date_schema,
     initialize_wsj_bluesky_schema,
     initialize_wsj_google_news_schema,
     initialize_wsj_rss_schema,
@@ -55,6 +56,48 @@ def test_extract_wsj_legacy_published_at_from_json_ld():
     assert extract_wsj_legacy_published_at(
         """<script>{"datePublished":"2014-06-03T12:34:56Z"}</script>"""
     ) == "2014-06-03T12:34:56+00:00"
+
+
+def test_wsj_legacy_no_date_candidate_is_removed_from_year_pool():
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=archive_source_spec("wsj"),
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+    canonical_url = "https://www.wsj.com/articles/SB100014240527487"
+    connection.execute(
+        """
+        INSERT INTO candidates(
+            canonical_url, published_at, timestamp, original_url,
+            digest, mimetype, status_code, byte_count, rank_score
+        ) VALUES (?, ?, ?, ?, '', 'text/html', 200, 1234, 0)
+        """,
+        (
+            canonical_url,
+            "2012-04-03T12:00:00+00:00",
+            "20120403120000",
+            canonical_url,
+        ),
+    )
+    initialize_wsj_legacy_date_schema(connection)
+    connection.execute(
+        """
+        UPDATE wsj_legacy_date_hydration
+        SET status='no-date'
+        WHERE canonical_url=?
+        """,
+        (canonical_url,),
+    )
+
+    initialize_wsj_legacy_date_schema(connection)
+
+    assert connection.execute(
+        "SELECT COUNT(*) FROM candidates WHERE canonical_url=?",
+        (canonical_url,),
+    ).fetchone()[0] == 0
 
 
 class StubWsjSyndicationResponse:

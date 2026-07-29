@@ -371,6 +371,16 @@ def initialize_wsj_legacy_date_schema(
         """,
         undated_urls,
     )
+    connection.execute(
+        """
+        DELETE FROM candidates
+        WHERE canonical_url IN (
+            SELECT canonical_url
+            FROM wsj_legacy_date_hydration
+            WHERE status='no-date'
+        )
+        """
+    )
     connection.commit()
 
 
@@ -492,6 +502,14 @@ def process_wsj_legacy_dates(
                         "DELETE FROM candidates WHERE canonical_url=?",
                         (canonical_url,),
                     )
+            elif status == "no-date":
+                # A capture timestamp is not evidence of publication time.
+                # Keeping this row would silently place an undated legacy
+                # article in the year when Wayback happened to crawl it.
+                connection.execute(
+                    "DELETE FROM candidates WHERE canonical_url=?",
+                    (canonical_url,),
+                )
     remaining = connection.execute(
         """
         SELECT COUNT(*) FROM wsj_legacy_date_hydration
