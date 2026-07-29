@@ -1510,7 +1510,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.7"
+    assert result.extraction.parser_version == "reuters-parser/0.7.8"
 
 
 def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
@@ -1600,7 +1600,51 @@ def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
     assert "Unrelated recommendation" not in result.plain_text
     assert "Capital Calls" not in result.plain_text
     assert "Another unrelated" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.7"
+    assert result.extraction.parser_version == "reuters-parser/0.7.8"
+
+
+def test_reuters_parser_trims_read_next_and_author_profile_tail():
+    reporting = " ".join(["Verified Reuters reporting sentence."] * 25)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Reuters report with recirculation">
+      <meta property="article:published_time"
+            content="2023-10-16T12:00:00Z">
+    </head><body><article>
+      <div class="article-body__content__17Yit">
+        <p>{reporting}</p>
+        <p>Reporting by Example Reporter; Editing by Example Editor</p>
+        <div>
+          <p class="article-body__element__2p5pI trust-badge">
+            Our Standards: The Thomson Reuters Trust Principles.
+          </p>
+        </div>
+        <p>Reporter profile biography must not enter the article.</p>
+        <div class="article-body__element__2p5pI">
+          <div class="read-next-mobile__container__10f75">
+            <h2>Read Next</h2>
+            <p>Unrelated recommended story headline</p>
+          </div>
+        </div>
+      </div>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=(
+            "https://www.reuters.com/world/example-report-2023-10-16/"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Verified Reuters reporting sentence." in result.plain_text
+    assert "Reporting by Example Reporter" in result.plain_text
+    assert "Trust Principles" not in result.plain_text
+    assert "Reporter profile biography" not in result.plain_text
+    assert "Read Next" not in result.plain_text
+    assert "Unrelated recommended" not in result.plain_text
 
 
 def test_reuters_parser_does_not_pad_truncated_body_with_interface_text():
@@ -1685,7 +1729,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.7"
+    assert result.extraction.parser_version == "reuters-parser/0.7.8"
 
 
 @pytest.mark.parametrize(
@@ -1778,7 +1822,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.7"
+    assert result.extraction.parser_version == "reuters-parser/0.7.8"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():

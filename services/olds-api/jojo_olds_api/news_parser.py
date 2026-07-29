@@ -326,9 +326,9 @@ def parse_article(
         if birdkit_body is not None:
             body = birdkit_body
     clean_body = BeautifulSoup(str(body), "html.parser") if body else BeautifulSoup("", "html.parser")
-    _remove_noise(clean_body, spec)
     if spec.publisher == "reuters":
         _trim_reuters_recirculation_tail(clean_body)
+    _remove_noise(clean_body, spec)
 
     headline = _first_text(
         _string_or_none(nyt_preloaded_metadata.get("headline")),
@@ -3618,26 +3618,46 @@ def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
 
 def _trim_reuters_recirculation_tail(soup: BeautifulSoup) -> None:
     """Drop modern Reuters recommendation modules appended inside body."""
-    marker = soup.select_one(
-        "[data-testid='Latest Updates'], "
-        "[data-variant-id='article-latest-updates']"
+    markers = list(
+        soup.select(
+            "[data-testid='Latest Updates'], "
+            "[data-variant-id='article-latest-updates'], "
+            "[class*='read-next-mobile__container']"
+        )
     )
-    if not isinstance(marker, Tag):
+    for node in soup.select("p, div"):
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        if text.startswith(
+            "our standards: the thomson reuters trust principles"
+        ):
+            markers.append(node)
+    if not markers:
         return
     top = soup.find()
     if not isinstance(top, Tag):
         return
-    tail = marker
-    while isinstance(tail.parent, Tag) and tail.parent is not top:
-        tail = tail.parent
-    if tail.parent is not top:
+    marker_ids = {id(marker) for marker in markers}
+    marker = next(
+        (
+            node
+            for node in top.descendants
+            if isinstance(node, Tag) and id(node) in marker_ids
+        ),
+        None,
+    )
+    if not isinstance(marker, Tag):
         return
-    for sibling in list(tail.next_siblings):
-        if isinstance(sibling, Tag):
-            sibling.decompose()
-        else:
-            sibling.extract()
-    tail.decompose()
+    tail = marker
+    while isinstance(tail.parent, Tag):
+        for sibling in list(tail.next_siblings):
+            if isinstance(sibling, Tag):
+                sibling.decompose()
+            else:
+                sibling.extract()
+        if tail.parent is top:
+            break
+        tail = tail.parent
+    marker.decompose()
 
 
 def _extract_blocks(
