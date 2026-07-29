@@ -1848,7 +1848,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.12"
+    assert result.extraction.parser_version == "reuters-parser/0.7.13"
 
 
 def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
@@ -1915,7 +1915,67 @@ def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
     assert "Sign In or Create" not in result.plain_text
     assert "Advertisement" not in result.plain_text
     assert "Postmedia is committed" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.12"
+    assert result.extraction.parser_version == "reuters-parser/0.7.13"
+
+
+def test_reuters_syndication_removes_registration_and_subscription_ui():
+    canonical_url = (
+        "https://www.reuters.com/world/uk/"
+        "licensed-partner-report-2021-04-07"
+    )
+    partner_url = "https://www.thestar.com.my/example"
+    capture = raw_capture("reuters", canonical_url).model_copy(
+        update={
+            "selected_candidate": CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=partner_url,
+            ),
+            "final_url": partner_url,
+        }
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Licensed Reuters report">
+      <meta property="article:published_time"
+            content="2021-04-07T06:13:00Z">
+    </head><body>
+      <article class="article-content">
+        <p>LONDON (Reuters) - The licensed report begins with verified
+        facts and enough substantive context to preserve the story.</p>
+        <p>A second paragraph records the response from named sources and
+        explains the consequences for readers.</p>
+        <p>Register now for FREE unlimited access to Reuters.com</p>
+        <p>The company and law firm names shown above are generated
+        automatically based on the text of the article. We are improving
+        this feature as we continue to test and develop in beta.</p>
+        <p>Reporting by Example Reporter; Editing by Example Editor</p>
+        <p>Already a subscriber? <a>Log in</a></p>
+        <hr>
+        <h2>Get 20% OFF The Star Digital Access</h2>
+        <p>Cancel anytime. Ad-free. Unlimited access with perks.</p>
+        <h3>Monthly Plan</h3>
+        <p>RM 13.90/month RM 11.12/month</p>
+        <p>Thank you for your report!</p>
+      </article>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+        raw_capture=capture,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "licensed report begins" in result.plain_text
+    assert "Reporting by Example Reporter" in result.plain_text
+    assert "Register now" not in result.plain_text
+    assert "generated automatically" not in result.plain_text
+    assert "subscriber" not in result.plain_text
+    assert "Monthly Plan" not in result.plain_text
+    assert "Thank you for your report" not in result.plain_text
+    assert result.extraction.parser_version == "reuters-parser/0.7.13"
 
 
 def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
@@ -2001,7 +2061,7 @@ def test_reuters_parser_promotes_and_deduplicates_legacy_lazy_image():
     assert result.images[0].original_url == lead
     assert lazy in result.images[0].candidate_urls
     assert result.images[0].alt == "A detainee holds a fence."
-    assert result.extraction.parser_version == "reuters-parser/0.7.12"
+    assert result.extraction.parser_version == "reuters-parser/0.7.13"
 
 
 def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
@@ -2047,7 +2107,7 @@ def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
     assert "Unrelated recommendation" not in result.plain_text
     assert "Capital Calls" not in result.plain_text
     assert "Another unrelated" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.12"
+    assert result.extraction.parser_version == "reuters-parser/0.7.13"
 
 
 def test_reuters_parser_trims_read_next_and_author_profile_tail():
@@ -2182,7 +2242,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.12"
+    assert result.extraction.parser_version == "reuters-parser/0.7.13"
 
 
 @pytest.mark.parametrize(
@@ -2275,7 +2335,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.12"
+    assert result.extraction.parser_version == "reuters-parser/0.7.13"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():

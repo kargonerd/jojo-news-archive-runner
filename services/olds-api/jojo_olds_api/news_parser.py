@@ -570,7 +570,10 @@ def parse_article(
             for block in blocks:
                 if block.asset_id == image.asset_id:
                     block.asset_id = existing.asset_id
-        blocks = _deduplicate_blocks(blocks)
+        blocks = _deduplicate_blocks(
+            blocks,
+            deduplicate_contained_pull_quotes=spec.publisher == "ft",
+        )
 
     if content_type == ContentType.ARTICLE and (
         structured_image_gallery_selected
@@ -4543,6 +4546,48 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
     if spec.publisher == "ft":
         _remove_ft_newsletter_promos(soup)
         _strip_ft_copyright_suffixes(soup)
+    if spec.publisher == "reuters":
+        _remove_reuters_promos(soup)
+
+
+def _remove_reuters_promos(soup: BeautifulSoup) -> None:
+    """Remove Reuters registration UI and licensed-partner subscription tails."""
+    for node in list(soup.select("p, h2, h3, h4, h5, h6")):
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        if text.startswith(
+            "register now for free unlimited access to reuters.com"
+        ) or text.startswith(
+            "the company and law firm names shown above are generated "
+            "automatically based on the text of the article"
+        ):
+            node.decompose()
+
+    marker = next(
+        (
+            node
+            for node in soup.select("p")
+            if _clean_text(node.get_text(" ", strip=True))
+            .casefold()
+            .startswith("already a subscriber? log in")
+        ),
+        None,
+    )
+    if not isinstance(marker, Tag):
+        return
+    top = soup.find()
+    if not isinstance(top, Tag):
+        return
+    tail = marker
+    while isinstance(tail.parent, Tag):
+        for sibling in list(tail.next_siblings):
+            if isinstance(sibling, Tag):
+                sibling.decompose()
+            else:
+                sibling.extract()
+        if tail.parent is top:
+            break
+        tail = tail.parent
+    marker.decompose()
 
 
 def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
@@ -4962,13 +5007,20 @@ def _has_selected_ancestor(node: Tag, body: BeautifulSoup) -> bool:
     return False
 
 
-def _deduplicate_blocks(blocks: list[ContentBlock]) -> list[ContentBlock]:
+def _deduplicate_blocks(
+    blocks: list[ContentBlock],
+    *,
+    deduplicate_contained_pull_quotes: bool = False,
+) -> list[ContentBlock]:
     contained_pull_quotes: set[int] = set()
     textual_types = {
         BlockType.PARAGRAPH,
         BlockType.QUOTE,
     }
-    for index, block in enumerate(blocks):
+    pull_quote_candidates = (
+        enumerate(blocks) if deduplicate_contained_pull_quotes else ()
+    )
+    for index, block in pull_quote_candidates:
         if block.type not in textual_types or not block.text:
             continue
         normalized = _normalize_block_text(block.text)
