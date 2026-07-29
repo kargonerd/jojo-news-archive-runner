@@ -532,7 +532,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.18"
+    assert result.extraction.parser_version == "nyt-parser/0.8.19"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -767,7 +767,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.18"
+    assert result.extraction.parser_version == "nyt-parser/0.8.19"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1207,7 +1207,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.18"
+    assert result.extraction.parser_version == "nyt-parser/0.8.19"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -1256,7 +1256,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.18"
+    assert result.extraction.parser_version == "nyt-parser/0.8.19"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -1296,7 +1296,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.18"
+    assert result.extraction.parser_version == "nyt-parser/0.8.19"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -2466,7 +2466,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.18"
+    assert result.extraction.parser_version == "nyt-parser/0.8.19"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -3049,6 +3049,68 @@ def test_nyt_parser_classifies_short_legacy_visual_story_as_gallery():
     assert len(result.images) == 1
 
 
+def test_nyt_parser_recovers_hidden_plain_text_timeline_fallback():
+    timeline = " ".join(
+        f"Year {1900 + index}: students organized a documented campus action."
+        for index in range(12)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Campus Activism Timeline">
+      <meta property="article:published_time" content="2016-02-07T00:00:00Z">
+    </head><body>
+      <article class="story">
+        <div class="interactive-graphic">
+          <script>window.TIMELINE_JSON_PATH = "/timeline.json";</script>
+          <div id="timeline_plain_text" style="color:white">{timeline}</div>
+        </div>
+      </article>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2016/02/07/"
+            "education/campus-activism-timeline.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.plain_text.startswith("Year 1900")
+    assert "Year 1911" in result.plain_text
+
+
+def test_nyt_parser_preserves_description_for_javascript_only_interactive():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Precinct Results">
+      <meta property="og:description"
+            content="Detailed results in the race for president.">
+      <meta property="article:published_time" content="2016-02-01T00:00:00Z">
+    </head><body>
+      <script>
+        window.resultsAssets =
+          "https://int.nyt.com/newsgraphics/2016/results/";
+      </script>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2016/02/01/us/"
+            "precinct-results.html"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "partial"
+    assert result.plain_text == "Detailed results in the race for president."
+
+
 def test_nyt_parser_recovers_inline_script_image_sequence():
     html = b"""
     <html><head>
@@ -3255,7 +3317,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.18"
+    assert result.extraction.parser_version == "nyt-parser/0.8.19"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():

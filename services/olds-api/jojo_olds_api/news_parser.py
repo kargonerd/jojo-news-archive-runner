@@ -199,6 +199,15 @@ def parse_article(
             redirect_interactive = _nyt_interactive_redirect_body(soup)
             if redirect_interactive is not None:
                 body = redirect_interactive
+            metadata_interactive = _nyt_interactive_metadata_body(soup)
+            if metadata_interactive is not None and (
+                body is None
+                or body.select_one(
+                    "p, h1, h2, h3, h4, li, table, figure, iframe"
+                )
+                is None
+            ):
+                body = metadata_interactive
     if spec.publisher == "reuters":
         reuters_live_blog = _reuters_live_blog_body(soup)
         if reuters_live_blog is not None:
@@ -1007,6 +1016,19 @@ def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
 
 def _nyt_div_only_interactive_body(candidate: Tag) -> Tag | None:
     """Turn old graphics made entirely from semantic divs into text blocks."""
+    plain_text_fallback = candidate.select_one("#timeline_plain_text")
+    if isinstance(plain_text_fallback, Tag):
+        text = _clean_text(
+            plain_text_fallback.get_text(" ", strip=True)
+        )
+        if len(text) >= _MINIMUM_BODY_CHARACTERS:
+            document = BeautifulSoup("<article></article>", "html.parser")
+            article = document.article
+            if isinstance(article, Tag):
+                paragraph = document.new_tag("p")
+                paragraph.string = text
+                article.append(paragraph)
+                return article
     if candidate.select_one("p, h1, h2, h3, h4, li, table"):
         return None
     sections = candidate.select(".g-section")
@@ -1033,6 +1055,25 @@ def _nyt_div_only_interactive_body(candidate: Tag) -> Tag | None:
             node.string = text
             article.append(node)
     return article if len(_clean_text(article.get_text(" ", strip=True))) >= 200 else None
+
+
+def _nyt_interactive_metadata_body(soup: BeautifulSoup) -> Tag | None:
+    """Keep useful metadata when a legacy interactive is only a JS shell."""
+    description = _first_text(
+        _meta_content(soup, "name", "description"),
+        _meta_content(soup, "property", "og:description"),
+        _meta_content(soup, "name", "twitter:description"),
+    )
+    if not description:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    paragraph = document.new_tag("p")
+    paragraph.string = description
+    article.append(paragraph)
+    return article
 
 
 def _nyt_interactive_quiz_body(candidate: Tag) -> Tag | None:
