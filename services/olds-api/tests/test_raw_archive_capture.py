@@ -4834,6 +4834,31 @@ def test_raw_quality_rejects_ft_chinese_percentage_preview():
     assert signals["ftExplicitTruncationNotice"] is True
 
 
+def test_raw_quality_rejects_bloomberg_teaser_body():
+    score, signals = score_raw_capture(
+        b"""
+        <html><body>
+          <div class="teaser-body__b6065d89">
+            <div class="body-content teaser-content__388dc739">
+              <p>An occasional glimpse inside the world of selling very
+              expensive homes.</p>
+              <p>Words fail me. I am blown away by this house.</p>
+            </div>
+          </div>
+        </body></html>
+        """ + (b" " * 90_000),
+        http_status=200,
+        content_type="text/html",
+        final_url=(
+            "https://web.archive.org/web/20221204041948id_/"
+            "https://www.bloomberg.com/news/articles/2022-12-03/example"
+        ),
+    )
+
+    assert score < 85
+    assert signals["bloombergTeaserShell"] is True
+
+
 def test_raw_quality_keeps_image_led_ft_data_story():
     images = b"".join(
         b"<figure><img src='https://www.ft.com/image.png'></figure>"

@@ -506,6 +506,8 @@ def parse_article(
         warnings.append("structured-short-record")
     if spec.publisher == "ft" and _ft_explicit_truncation_notice(soup):
         warnings.append("truncated-body")
+    if spec.publisher == "bloomberg" and _bloomberg_teaser_shell(soup):
+        warnings.append("truncated-body")
     if not published_at:
         warnings.append("missing-published-at")
     if body is None:
@@ -3589,6 +3591,15 @@ def _ft_explicit_truncation_notice(soup: BeautifulSoup) -> bool:
         "您已阅读" in text
         and "剩余" in text
         and "订阅以继续探索完整内容" in text
+    )
+
+
+def _bloomberg_teaser_shell(soup: BeautifulSoup) -> bool:
+    return bool(
+        soup.select_one(
+            "[class*='teaser-body'], "
+            ".body-content[class*='teaser-content']"
+        )
     )
 
 

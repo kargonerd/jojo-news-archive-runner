@@ -5478,6 +5478,16 @@ def score_raw_capture(
         and b"log in to keep reading" in prefix
         and b"bloomberg" in prefix
     )
+    bloomberg_teaser_shell = bool(
+        "bloomberg.com/" in decoded_final_url
+        and (
+            b"teaser-body__" in prefix
+            or (
+                b"body-content" in prefix
+                and b"teaser-content__" in prefix
+            )
+        )
+    )
     wsj_snippet_shell = b'"issnippetview":true' in prefix
     wsj_empty_article_shell = bool(
         re.search(br'"headline"\s*:\s*""', prefix)
@@ -5522,6 +5532,7 @@ def score_raw_capture(
         or subscription_shell
         or redirect_shell
         or ft_truncated_article_shell
+        or bloomberg_teaser_shell
     ):
         score = max(0, score - 60)
     return score, {
@@ -5532,6 +5543,7 @@ def score_raw_capture(
         "authenticationShell": authentication_shell,
         "accessChallengeShell": access_challenge_shell,
         "subscriptionShell": subscription_shell,
+        "bloombergTeaserShell": bloomberg_teaser_shell,
         "ftLegacyBarrierUrl": ft_legacy_barrier_url,
         "wsjEmptyArticleShell": wsj_empty_article_shell,
         "redirectShell": redirect_shell,
