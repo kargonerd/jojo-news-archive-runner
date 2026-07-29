@@ -176,8 +176,10 @@ def parse_article(
         inline_interactive = _nyt_inline_interactive_media(soup)
         if inline_interactive is not None:
             body = inline_interactive
-        if body is None and "/interactive/" in canonical_url.casefold():
-            body = _nyt_interactive_redirect_body(soup)
+        if "/interactive/" in canonical_url.casefold():
+            redirect_interactive = _nyt_interactive_redirect_body(soup)
+            if redirect_interactive is not None:
+                body = redirect_interactive
     if spec.publisher == "reuters":
         reuters_live_blog = _reuters_live_blog_body(soup)
         if reuters_live_blog is not None:
@@ -2101,13 +2103,13 @@ def _nyt_interactive_redirect_body(soup: BeautifulSoup) -> Tag | None:
     for script in soup.select("script"):
         value = script.string or script.get_text()
         match = re.search(
-            r"""(?i)\bdestUrl\s*=\s*["'](?P<url>https?://[^"']+)""",
+            r"""(?i)\bdestUrl\s*=\s*["']\s*(?P<url>https?://[^"']+)""",
             value,
         )
         if match:
-            destination = match.group("url")
+            destination = match.group("url").strip()
             break
-    if not description and not destination:
+    if not destination:
         return None
     document = BeautifulSoup("<article></article>", "html.parser")
     article = document.article
