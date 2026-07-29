@@ -1976,7 +1976,11 @@ def _reuters_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
         flags=re.IGNORECASE,
     )
     paragraphs = [
-        _clean_text(BeautifulSoup(fragment, "html.parser").get_text(" "))
+        _clean_text(
+            BeautifulSoup(fragment, "html.parser").get_text(" ")
+            if "<" in fragment
+            else html_module.unescape(fragment)
+        )
         for fragment in fragments
     ]
     paragraphs = [
