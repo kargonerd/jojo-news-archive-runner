@@ -1365,7 +1365,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.6"
+    assert result.extraction.parser_version == "reuters-parser/0.7.7"
 
 
 def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
@@ -1410,6 +1410,52 @@ def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
     assert "Trending Stories" not in result.plain_text
     assert "unrelated recommendation" not in result.plain_text
     assert "Our Standards" not in result.plain_text
+
+
+def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
+    reporting = " ".join(["Modern Reuters reporting sentence."] * 25)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Modern Reuters report">
+      <meta property="article:published_time"
+            content="2023-03-13T12:00:00Z">
+    </head><body>
+      <article>
+        <div class="article-body__content__17Yit paywall-article">
+          <p data-testid="Body">{reporting}</p>
+          <p class="article-body__element__2p5pI" data-testid="Body">
+            Our Standards:
+            <a href="https://www.thomsonreuters.com/en/about-us/trust-principles.html">
+              The Thomson Reuters Trust Principles.
+            </a>
+          </p>
+          <div data-testid="Latest Updates"
+               data-variant-id="article-latest-updates">
+            <h3>Latest Updates</h3>
+            <p>Unrelated recommendation headline, article with image</p>
+          </div>
+          <p>Capital Calls - More concise insights on global finance:</p>
+          <p>Another unrelated recommended article read more</p>
+        </div>
+      </article>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=(
+            "https://www.reuters.com/world/example-report-2023-03-13/"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Modern Reuters reporting sentence." in result.plain_text
+    assert "Trust Principles" not in result.plain_text
+    assert "Unrelated recommendation" not in result.plain_text
+    assert "Capital Calls" not in result.plain_text
+    assert "Another unrelated" not in result.plain_text
+    assert result.extraction.parser_version == "reuters-parser/0.7.7"
 
 
 def test_reuters_parser_does_not_pad_truncated_body_with_interface_text():
@@ -1494,7 +1540,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.6"
+    assert result.extraction.parser_version == "reuters-parser/0.7.7"
 
 
 @pytest.mark.parametrize(
@@ -1587,7 +1633,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.6"
+    assert result.extraction.parser_version == "reuters-parser/0.7.7"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():

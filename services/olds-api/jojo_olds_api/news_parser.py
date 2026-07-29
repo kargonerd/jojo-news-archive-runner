@@ -325,6 +325,8 @@ def parse_article(
             body = birdkit_body
     clean_body = BeautifulSoup(str(body), "html.parser") if body else BeautifulSoup("", "html.parser")
     _remove_noise(clean_body, spec)
+    if spec.publisher == "reuters":
+        _trim_reuters_recirculation_tail(clean_body)
 
     headline = _first_text(
         _string_or_none(nyt_preloaded_metadata.get("headline")),
@@ -3527,6 +3529,30 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
             and "articles from ft.com" in text
         ):
             node.decompose()
+
+
+def _trim_reuters_recirculation_tail(soup: BeautifulSoup) -> None:
+    """Drop modern Reuters recommendation modules appended inside body."""
+    marker = soup.select_one(
+        "[data-testid='Latest Updates'], "
+        "[data-variant-id='article-latest-updates']"
+    )
+    if not isinstance(marker, Tag):
+        return
+    top = soup.find()
+    if not isinstance(top, Tag):
+        return
+    tail = marker
+    while isinstance(tail.parent, Tag) and tail.parent is not top:
+        tail = tail.parent
+    if tail.parent is not top:
+        return
+    for sibling in list(tail.next_siblings):
+        if isinstance(sibling, Tag):
+            sibling.decompose()
+        else:
+            sibling.extract()
+    tail.decompose()
 
 
 def _extract_blocks(
