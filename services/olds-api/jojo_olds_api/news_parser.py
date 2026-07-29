@@ -330,7 +330,7 @@ def parse_article(
             body = birdkit_body
     clean_body = BeautifulSoup(str(body), "html.parser") if body else BeautifulSoup("", "html.parser")
     if spec.publisher == "ap":
-        _remove_ap_newsletter_promos(clean_body)
+        _remove_ap_body_promos(clean_body)
     if spec.publisher == "reuters":
         _trim_reuters_recirculation_tail(clean_body)
     if spec.publisher == "nyt":
@@ -3760,14 +3760,19 @@ def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
             text_node.extract()
 
 
-def _remove_ap_newsletter_promos(soup: BeautifulSoup) -> None:
-    """Remove AP newsletter calls-to-action embedded as legacy body paragraphs."""
-    pattern = re.compile(
-        r"(?i)\bsign up for (?:the )?ap(?:'s|’s) .*newsletter\b"
+def _remove_ap_body_promos(soup: BeautifulSoup) -> None:
+    """Remove AP calls-to-action embedded as legacy body paragraphs."""
+    patterns = (
+        re.compile(
+            r"(?i)\bsign up for (?:the )?ap(?:'s|’s) .*newsletter\b"
+        ),
+        re.compile(
+            r"(?i)^for more lottery results,\s*go to jackpot\.com\b"
+        ),
     )
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
-        if not pattern.search(text):
+        if not any(pattern.search(text) for pattern in patterns):
             continue
         previous = node.find_previous_sibling()
         for _ in range(4):

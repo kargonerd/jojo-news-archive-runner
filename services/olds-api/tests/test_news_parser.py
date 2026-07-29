@@ -3155,6 +3155,8 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
       <p>More AP college football: https://apnews.com/college-football.
       Sign up for the AP’s weekly newsletter showcasing our best
       reporting: http://apne.ws/example</p>
+      <p>For more lottery results, go to Jackpot.com |
+      Order Lottery Tickets</p>
     </article></body></html>
     """.encode()
 
@@ -3167,8 +3169,9 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert result.quality.status.value == "complete"
     assert "AP reporting sentence." in result.plain_text
     assert "weekly newsletter" not in result.plain_text
+    assert "Jackpot.com" not in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.12"
+    assert result.extraction.parser_version == "ap-parser/0.6.13"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -3211,7 +3214,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.12"
+    assert article.extraction.parser_version == "ap-parser/0.6.13"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -3245,7 +3248,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.12"
+    assert result.extraction.parser_version == "ap-parser/0.6.13"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
