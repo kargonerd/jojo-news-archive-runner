@@ -168,7 +168,7 @@ jobs:
             echo "source manifest publisher does not match." >&2
             exit 2
           fi
-          if [[ ! "$COHORT" =~ ^(validation|holdout-v([1-9]|10))$ ]]; then
+          if [[ ! "$COHORT" =~ ^(validation|holdout-v([1-9]|1[0-9]|20))$ ]]; then
             echo "unsupported cohort" >&2
             exit 2
           fi
