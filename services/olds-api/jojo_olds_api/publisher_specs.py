@@ -151,7 +151,7 @@ PUBLISHER_SPECS = {
     ),
     "reuters": PublisherSpec(
         publisher="reuters",
-        parser_version="reuters-parser/0.7.8",
+        parser_version="reuters-parser/0.7.9",
         domains=("reuters.com", "www.reuters.com"),
         default_language="en",
         edition="global",
@@ -171,6 +171,7 @@ PUBLISHER_SPECS = {
             "[class*='TrustBadge-trust-badge']",
             "p:has(a[href*='trust-principles'])",
             ".info-box",
+            ".more-on",
         ),
         preferred_image_hosts=("cloudfront-us-east-2.images.arcpublishing.com",),
         embedded_html_body_keys=("body",),
