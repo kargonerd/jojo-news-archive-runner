@@ -377,6 +377,17 @@ def parse_article(
         and _wsj_interactive_puzzle(soup, news_article, canonical_url)
     ):
         content_type = ContentType.INTERACTIVE
+    if spec.publisher == "wsj":
+        wsj_page_content_type = _clean_text(
+            _meta_content(soup, "name", "page.content.type") or ""
+        ).casefold()
+        if wsj_page_content_type in {
+            "gallery",
+            "photo gallery",
+            "photo-gallery",
+            "slideshow",
+        }:
+            content_type = ContentType.GALLERY
     if (
         spec.publisher == "ap"
         and _is_ap_data_bulletin(news_article, canonical_url)
