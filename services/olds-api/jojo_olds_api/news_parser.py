@@ -4897,7 +4897,23 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
-    """Remove legacy inline recirculation videos embedded after the story."""
+    """Remove legacy recirculation and standardized article footers."""
+    footer_patterns = (
+        re.compile(
+            r"(?i)^to contact the "
+            r"(?:author of|editor responsible for|reporter on) "
+            r"this (?:story|article)\s*:"
+        ),
+        re.compile(
+            r"(?i)^this (?:column|article) does not necessarily reflect "
+            r"the opinion of bloomberg lp and its owners\.?$"
+        ),
+    )
+    for node in list(soup.select("p, li, span")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if any(pattern.search(text) for pattern in footer_patterns):
+            node.decompose()
+
     for heading in soup.select("h1, h2, h3, h4"):
         text = _clean_text(heading.get_text(" ", strip=True))
         if not re.match(r"(?i)^watch this next\s*:", text):
