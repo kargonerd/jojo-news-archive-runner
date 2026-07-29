@@ -1106,7 +1106,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.34"
+    assert result.extraction.parser_version == "nyt-parser/0.8.35"
 
 
 def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
@@ -1152,7 +1152,54 @@ def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
     assert result.images[0].caption is None
     assert result.images[0].credit == "Hiroyuki Ito"
     assert "recommended.jpg" not in result.body_html
-    assert result.extraction.parser_version == "nyt-parser/0.8.34"
+    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+
+
+def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
+    summary = (
+        "Russian forces shelled the evacuation route as civilians "
+        "attempted to flee to safety on Sunday. Several people were killed."
+    )
+    payload = json.dumps(
+        {
+            "initialState": {
+                "$Article:photo.sprinkledBody.content.0": {
+                    "__typename": "ParagraphBlock",
+                },
+                "$Article:photo.sprinkledBody.content.1": {
+                    "__typename": "InteractiveBlock",
+                },
+            }
+        }
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title"
+            content="In photos: Evacuation comes under fire">
+      <meta property="article:published_time"
+            content="2022-03-06T12:00:00Z">
+      <meta property="og:image"
+            content="https://static01.nyt.com/vi-assets/images/share/1200x675_nameplate.png">
+    </head><body>
+      <section name="articleBody"><p>{summary}</p></section>
+      <script>window.__preloadedData = {payload};</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2022/03/06/world/europe/"
+            "in-photos-evacuation-comes-under-fire-near-kyiv.html"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "partial"
+    assert "incomplete-interactive" in result.quality.warnings
+    assert result.quality.images_selected == 0
+    assert result.extraction.parser_version == "nyt-parser/0.8.35"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -1735,7 +1782,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.34"
+    assert result.extraction.parser_version == "nyt-parser/0.8.35"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -2536,7 +2583,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.34"
+    assert result.extraction.parser_version == "nyt-parser/0.8.35"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -2585,7 +2632,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.34"
+    assert result.extraction.parser_version == "nyt-parser/0.8.35"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -2625,7 +2672,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.34"
+    assert result.extraction.parser_version == "nyt-parser/0.8.35"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -4176,7 +4223,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.34"
+    assert result.extraction.parser_version == "nyt-parser/0.8.35"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -5226,7 +5273,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.34"
+    assert result.extraction.parser_version == "nyt-parser/0.8.35"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -5380,7 +5427,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.34"
+    assert result.extraction.parser_version == "nyt-parser/0.8.35"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():

@@ -661,6 +661,17 @@ def parse_article(
         and sum(image.should_archive for image in images) < 3
     ):
         warnings.append("incomplete-gallery")
+    if (
+        spec.publisher == "nyt"
+        and _nyt_unhydrated_interactive_shell(
+            soup,
+            content_type=content_type,
+            plain_text=plain_text,
+            blocks=blocks,
+            images=images,
+        )
+    ):
+        warnings.append("incomplete-interactive")
     if not published_at:
         warnings.append("missing-published-at")
     if body is None:
@@ -674,6 +685,7 @@ def parse_article(
         or "missing-headline" in warnings
         or "truncated-body" in warnings
         or "incomplete-gallery" in warnings
+        or "incomplete-interactive" in warnings
     ):
         status = ArticleStatus.PARTIAL
 
@@ -3726,6 +3738,8 @@ def _nyt_denormalized_gallery_rows(
                 url,
                 _clean_text(
                     BeautifulSoup(caption, "html.parser").get_text(" ")
+                    if "<" in caption
+                    else html_module.unescape(caption)
                 )
                 if caption
                 else None,
@@ -4018,6 +4032,32 @@ def _nyt_media_content_type(
     if "/interactive/" in url and default == ContentType.LIVEBLOG:
         return ContentType.INTERACTIVE
     return default
+
+
+def _nyt_unhydrated_interactive_shell(
+    soup: BeautifulSoup,
+    *,
+    content_type: ContentType,
+    plain_text: str,
+    blocks: list[ContentBlock],
+    images: list[ImageCandidate],
+) -> bool:
+    """Reject a short NYT interactive whose actual media never hydrated."""
+    if content_type != ContentType.INTERACTIVE or len(plain_text) >= 500:
+        return False
+    state = _nyt_preloaded_state(soup)
+    if not any(
+        isinstance(value, dict)
+        and value.get("__typename") == "InteractiveBlock"
+        for value in state.values()
+    ):
+        return False
+    if any(image.should_archive for image in images):
+        return False
+    return not any(
+        block.type in {BlockType.IMAGE, BlockType.EMBED, BlockType.TABLE}
+        for block in blocks
+    )
 
 
 def _is_publisher_notice(
