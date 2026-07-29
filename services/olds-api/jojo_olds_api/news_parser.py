@@ -183,10 +183,16 @@ def parse_article(
         flex_interactive = _nyt_legacy_flex_body(soup)
         if flex_interactive is not None:
             body = flex_interactive
-        interactive_documents = _nyt_interactive_document_body(soup)
+        interactive_documents = _nyt_interactive_document_body(
+            soup,
+            canonical_url=canonical_url,
+        )
         if interactive_documents is not None:
             body = interactive_documents
-        inline_interactive = _nyt_inline_interactive_media(soup)
+        inline_interactive = _nyt_inline_interactive_media(
+            soup,
+            canonical_url=canonical_url,
+        )
         if inline_interactive is not None:
             body = inline_interactive
         if "/interactive/" in canonical_url.casefold():
@@ -879,7 +885,29 @@ def _nyt_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
         )
     ]
     if not nodes:
-        return None
+        primary = soup.select_one(
+            "article.story.theme-main .story-body, "
+            "article#story .story-body"
+        )
+        if not isinstance(primary, Tag):
+            return None
+        nodes = [
+            node
+            for node in primary.select(
+                ".story-content, [itemprop='articleBody']"
+            )
+            if not any(
+                isinstance(parent, Tag)
+                and parent is not primary
+                and (
+                    "story-content" in (parent.get("class") or [])
+                    or parent.get("itemprop") == "articleBody"
+                )
+                for parent in node.parents
+            )
+        ]
+        if not nodes:
+            return None
     document = BeautifulSoup(
         "<div data-jojo-source='nyt-legacy-article-body'></div>",
         "html.parser",
@@ -888,12 +916,12 @@ def _nyt_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
     if wrapper is None:
         return None
     for node in nodes:
-        copy = BeautifulSoup(str(node), "html.parser").select_one(
-            ".articleBody"
-        )
+        copy = BeautifulSoup(str(node), "html.parser").find()
         if copy is not None:
             wrapper.append(copy)
-    return wrapper if wrapper.select_one('[itemprop="articleBody"], p') else None
+    return wrapper if wrapper.select_one(
+        '[itemprop="articleBody"], .story-content, p'
+    ) else None
 
 
 def _nyt_watching_body(soup: BeautifulSoup) -> Tag | None:
@@ -2024,8 +2052,17 @@ def _nyt_legacy_interactive_graphic(soup: BeautifulSoup) -> Tag | None:
     return article if article.select_one("p, figure, iframe") else None
 
 
-def _nyt_inline_interactive_media(soup: BeautifulSoup) -> Tag | None:
+def _nyt_inline_interactive_media(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
     """Recover image sequences embedded in JavaScript-only legacy graphics."""
+    if (
+        "/interactive/" not in canonical_url.casefold()
+        and not soup.select_one("#interactiveShell")
+    ):
+        return None
     graphic = soup.select_one(".interactive-graphic")
     if not isinstance(graphic, Tag):
         return None
@@ -2099,6 +2136,10 @@ def _nyt_inline_interactive_media(soup: BeautifulSoup) -> Tag | None:
 
 def _nyt_legacy_newsgraphic_body(soup: BeautifulSoup) -> Tag | None:
     """Recover malformed legacy graphics whose generated nodes escaped article."""
+    if not soup.select_one(".interactive-graphic"):
+        return None
+    if not soup.select_one(".g-victim-photo, .g-item-image"):
+        return None
     paragraphs = [
         node
         for node in soup.select(".g-body")
@@ -2238,8 +2279,17 @@ def _nyt_legacy_flex_body(soup: BeautifulSoup) -> Tag | None:
     return article if article.select_one("p, iframe, figure, li") else None
 
 
-def _nyt_interactive_document_body(soup: BeautifulSoup) -> Tag | None:
+def _nyt_interactive_document_body(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
     """Preserve linked source documents in later legacy interactive shells."""
+    if (
+        "/interactive/" not in canonical_url.casefold()
+        and not soup.select_one("#interactiveShell")
+    ):
+        return None
     story = soup.select_one("article.story, .interactive-graphic")
     if not isinstance(story, Tag):
         return None

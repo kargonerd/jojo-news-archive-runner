@@ -532,7 +532,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.16"
+    assert result.extraction.parser_version == "nyt-parser/0.8.17"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -767,7 +767,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.16"
+    assert result.extraction.parser_version == "nyt-parser/0.8.17"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1207,7 +1207,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.16"
+    assert result.extraction.parser_version == "nyt-parser/0.8.17"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -1256,7 +1256,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.16"
+    assert result.extraction.parser_version == "nyt-parser/0.8.17"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -1296,7 +1296,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.16"
+    assert result.extraction.parser_version == "nyt-parser/0.8.17"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -2466,7 +2466,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.16"
+    assert result.extraction.parser_version == "nyt-parser/0.8.17"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -2894,6 +2894,93 @@ def test_nyt_parser_recovers_legacy_newsgraphic_nodes_outside_article():
     assert len(result.images) == 1
 
 
+def test_nyt_parser_does_not_treat_regular_story_g_body_as_newsgraphic():
+    noise = "".join(
+        f"""
+        <div class="g-body">
+          <img src="https://static01.nyt.com/noise-{index}.jpg">
+          Unrelated generated module {index} with enough repeated text to
+          resemble an old graphics payload but no interactive root.
+        </div>
+        """
+        for index in range(8)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Regular News Article">
+      <meta property="article:published_time" content="2016-03-01T00:00:00Z">
+    </head><body>
+      <article>
+        <p>The first reported paragraph contains the actual article text and
+        establishes the facts readers need to understand the story.</p>
+        <p>The second paragraph adds interviews, context and further details
+        from the newspaper's reporting.</p>
+      </article>
+      {noise}
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2016/03/01/movies/"
+            "a-regular-news-article.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.plain_text.startswith("The first reported paragraph")
+    assert "Unrelated generated module" not in result.plain_text
+    assert len(result.images) == 0
+
+
+def test_nyt_parser_recovers_2016_story_content_body():
+    paragraphs = "".join(
+        f"""
+        <p class="story-body-text story-content" itemprop="articleBody">
+          Legacy story paragraph {index} contains reporting, interviews and
+          historical context from the original newspaper article.
+        </p>
+        """
+        for index in range(1, 7)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Legacy Story">
+      <meta property="og:description" content="A short article summary.">
+      <meta property="article:published_time" content="2016-01-15T00:00:00Z">
+    </head><body>
+      <article id="story" class="story theme-main">
+        <div class="story-body">{paragraphs}
+          <p class="story-content">
+            <a href="https://example.org/supporting-study.pdf">
+              Supporting study
+            </a>
+          </p>
+        </div>
+      </article>
+      <article class="story theme-summary">
+        <div class="story-body"><p>Unrelated recommendation.</p></div>
+      </article>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2016/01/15/obituaries/"
+            "a-legacy-story.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.plain_text.startswith("Legacy story paragraph 1")
+    assert "Legacy story paragraph 6" in result.plain_text
+    assert "Unrelated recommendation" not in result.plain_text
+
+
 def test_nyt_parser_recovers_inline_script_image_sequence():
     html = b"""
     <html><head>
@@ -3100,7 +3187,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.16"
+    assert result.extraction.parser_version == "nyt-parser/0.8.17"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
