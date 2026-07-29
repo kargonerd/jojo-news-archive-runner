@@ -2225,9 +2225,21 @@ def _reuters_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
     source = soup.select_one("#articleText")
     if not isinstance(source, Tag):
         return None
+    if source.select_one("#div_with_disclaimer_id"):
+        document = BeautifulSoup(str(source), "html.parser")
+        cleaned_source = document.select_one("#articleText")
+        if isinstance(cleaned_source, Tag):
+            source = cleaned_source
+            for disclaimer in source.select("#div_with_disclaimer_id"):
+                disclaimer.decompose()
     text = _clean_text(source.get_text(" ", strip=True))
     if len(text) < _MINIMUM_BODY_CHARACTERS:
         return None
+    if source.select_one("#bwbodyimg:has(img)"):
+        document = BeautifulSoup(str(source), "html.parser")
+        preserved = document.select_one("#articleText")
+        if isinstance(preserved, Tag):
+            return preserved
     fragments = re.split(
         r"(?:<br\s*/?>\s*){2,}",
         source.decode_contents(),
@@ -4631,6 +4643,7 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         _strip_ft_copyright_suffixes(soup)
     if spec.publisher == "reuters":
         _remove_reuters_promos(soup)
+        _normalize_reuters_legacy_press_release_media(soup)
     if spec.publisher == "wsj":
         _remove_wsj_promos(soup)
 
@@ -4863,6 +4876,53 @@ def _trim_reuters_recirculation_tail(soup: BeautifulSoup) -> None:
             break
         tail = tail.parent
     marker.decompose()
+
+
+def _normalize_reuters_legacy_press_release_media(
+    soup: BeautifulSoup,
+) -> None:
+    """Restore Business Wire media nested inside one legacy body paragraph."""
+    for media in list(soup.select("p > #bwbodyimg:has(img)")):
+        paragraph = media.parent
+        if not isinstance(paragraph, Tag) or paragraph.name != "p":
+            continue
+
+        before = BeautifulSoup("<p></p>", "html.parser").p
+        after = BeautifulSoup("<p></p>", "html.parser").p
+        if not isinstance(before, Tag) or not isinstance(after, Tag):
+            continue
+
+        before_nodes = list(media.previous_siblings)
+        after_nodes = list(media.next_siblings)
+        for node in before_nodes:
+            before.append(node.extract())
+        for node in after_nodes:
+            after.append(node.extract())
+
+        media.extract()
+        media.name = "figure"
+        caption = media.find("p")
+        if isinstance(caption, Tag):
+            caption.name = "figcaption"
+            caption_text = _clean_text(caption.get_text(" ", strip=True))
+            parenthetical_credit = re.fullmatch(
+                r"(.+?)\s*\(((?:photographer|photo|credit|"
+                r"illustration|graphic)s?\s*:\s*.+)\)",
+                caption_text,
+                flags=re.IGNORECASE,
+            )
+            if parenthetical_credit is not None:
+                caption.string = (
+                    f"{parenthetical_credit.group(1)}\n"
+                    f"{parenthetical_credit.group(2)}"
+                )
+
+        if _clean_text(before.get_text(" ", strip=True)):
+            paragraph.insert_before(before)
+        paragraph.insert_before(media)
+        if _clean_text(after.get_text(" ", strip=True)):
+            paragraph.insert_before(after)
+        paragraph.decompose()
 
 
 def _trim_nyt_access_shell_tail(soup: BeautifulSoup) -> None:

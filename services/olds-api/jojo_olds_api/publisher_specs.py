@@ -153,7 +153,7 @@ PUBLISHER_SPECS = {
     ),
     "reuters": PublisherSpec(
         publisher="reuters",
-        parser_version="reuters-parser/0.7.13",
+        parser_version="reuters-parser/0.7.14",
         domains=("reuters.com", "www.reuters.com"),
         default_language="en",
         edition="global",
@@ -172,6 +172,7 @@ PUBLISHER_SPECS = {
             "[class*='ReadTime-read-time']",
             "[class*='TrustBadge-trust-badge']",
             "[data-testid='promo-box']",
+            "#div_with_disclaimer_id",
             "p:has(a[href*='trust-principles'])",
             ".info-box",
             ".more-on",
