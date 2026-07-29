@@ -62,6 +62,11 @@ def test_imports_only_selected_incomplete_source_captures(
         manifest_path=manifest,
         publisher="wsj",
     )
+    # Production source shards created before dependent-resource archiving do
+    # not have this additive state column.
+    source.execute(
+        "ALTER TABLE captures DROP COLUMN dependent_resources_json"
+    )
     selected_candidate = json.dumps(
         {
             "provider": "wayback",

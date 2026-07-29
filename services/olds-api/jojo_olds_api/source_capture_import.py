@@ -29,6 +29,23 @@ SOURCE_CAPTURE_COLUMNS = (
 )
 
 
+def _source_capture_select_columns(
+    connection: sqlite3.Connection,
+) -> str:
+    available = {
+        str(column[1])
+        for column in connection.execute("PRAGMA table_info(captures)")
+    }
+    return ", ".join(
+        (
+            column
+            if column in available
+            else f"NULL AS {column}"
+        )
+        for column in SOURCE_CAPTURE_COLUMNS
+    )
+
+
 def export_completed_capture_index(
     *,
     source_connection: sqlite3.Connection,
@@ -65,7 +82,7 @@ def export_completed_capture_index(
     skipped = 0
     cursor = source_connection.execute(
         f"""
-        SELECT {", ".join(SOURCE_CAPTURE_COLUMNS)}
+        SELECT {_source_capture_select_columns(source_connection)}
         FROM captures
         WHERE status='complete'
         ORDER BY canonical_url
@@ -170,7 +187,7 @@ def import_selected_source_captures(
         placeholders = ",".join("?" for _ in batch)
         for row in source_connection.execute(
             f"""
-            SELECT {", ".join(SOURCE_CAPTURE_COLUMNS)}
+            SELECT {_source_capture_select_columns(source_connection)}
             FROM captures
             WHERE status='complete'
               AND canonical_url IN ({placeholders})
