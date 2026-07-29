@@ -3132,7 +3132,7 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.15"
+    assert article.extraction.parser_version == "ft-parser/0.8.16"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
@@ -3191,7 +3191,7 @@ def test_ft_parser_removes_flattened_newsletter_cards():
     assert "Follow @FTMag" not in article.plain_text
     assert "The FT is free to read today" not in article.plain_text
     assert "Do you want to receive Lex" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.15"
+    assert article.extraction.parser_version == "ft-parser/0.8.16"
 
 
 def test_ft_parser_strips_attached_syndication_copyright_suffix():
@@ -3224,7 +3224,7 @@ def test_ft_parser_strips_attached_syndication_copyright_suffix():
     assert article.quality.status.value == "complete"
     assert "That is good for them" in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.15"
+    assert article.extraction.parser_version == "ft-parser/0.8.16"
 
 
 def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
@@ -3388,7 +3388,83 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.15"
+    assert article.extraction.parser_version == "ft-parser/0.8.16"
+
+
+def test_ft_parser_recovers_images_flattened_into_json_ld_article_body():
+    first_image = (
+        "http://com.ft.imagepublish.upp-prod-eu.s3.amazonaws.com/"
+        "first-image"
+    )
+    second_image = (
+        "http://com.ft.imagepublish.upp-prod-eu.s3.amazonaws.com/"
+        "second-image"
+    )
+    article_body = "\n\n".join(
+        [
+            (
+                "Agency description that is not article prose "
+                f"[{first_image}]\n"
+                "The lead image caption © Reuters"
+                "The complete report begins with substantive reporting and "
+                "enough context to identify the real body."
+            ),
+            (
+                "The complete article begins with substantive reporting and "
+                "enough context to identify the real body"
+            ),
+            (
+                "Second agency description that is not article prose "
+                f"[{second_image}]\n"
+                "The second image caption © AP"
+                "The reporter repeats that the complete article begins with "
+                "substantive reporting and enough context to identify the "
+                "real body before explaining the development."
+            ),
+        ]
+    )
+    html = f"""
+    <html>
+      <head>
+        <title>Subscribe to read | Financial Times</title>
+        <script type="application/ld+json">
+          {{
+            "@type": "NewsArticle",
+            "headline": "Structured FT article with embedded images",
+            "datePublished": "2017-07-18T17:00:02Z",
+            "articleBody": {json.dumps(article_body)}
+          }}
+        </script>
+      </head>
+      <body><main class="subscription-barrier"></main></body>
+    </html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/embedded-images",
+    )
+
+    assert article.quality.status.value == "complete"
+    assert [image.original_url for image in article.images] == [
+        first_image,
+        second_image,
+    ]
+    assert [image.caption for image in article.images] == [
+        "The lead image caption",
+        "The second image caption",
+    ]
+    assert [image.credit for image in article.images] == [
+        "Photo: Reuters",
+        "Photo: AP",
+    ]
+    assert "Agency description" not in article.plain_text
+    assert "[http" not in article.plain_text
+    assert article.plain_text.casefold().count(
+        "the complete article begins"
+    ) == 1
+    assert "The reporter repeats" in article.plain_text
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -3419,7 +3495,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.15"
+    assert article.extraction.parser_version == "ft-parser/0.8.16"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -3459,7 +3535,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.15"
+    assert article.extraction.parser_version == "ft-parser/0.8.16"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -3516,7 +3592,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.15"
+    assert article.extraction.parser_version == "ft-parser/0.8.16"
 
 
 def test_ft_parser_promotes_origami_images_and_deduplicates_raw_lead():

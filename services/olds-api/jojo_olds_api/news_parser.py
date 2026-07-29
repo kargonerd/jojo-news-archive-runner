@@ -342,7 +342,10 @@ def parse_article(
         if embedded_body is not None:
             body = embedded_body
     if spec.use_structured_article_body:
-        structured_body = _structured_article_body(news_article)
+        structured_body = _structured_article_body(
+            news_article,
+            extract_ft_embedded_media=spec.publisher == "ft",
+        )
         if body is None:
             body = structured_body
         elif structured_body is not None:
@@ -1356,6 +1359,8 @@ def _nyt_watching_body(soup: BeautifulSoup) -> Tag | None:
 
 def _structured_article_body(
     news_article: dict[str, Any],
+    *,
+    extract_ft_embedded_media: bool = False,
 ) -> Tag | None:
     value = news_article.get("articleBody")
     if not isinstance(value, str):
@@ -1372,6 +1377,19 @@ def _structured_article_body(
     if not isinstance(article, Tag):
         return None
     for raw_paragraph in raw_paragraphs:
+        if extract_ft_embedded_media:
+            media_nodes, paragraph = _ft_structured_media_nodes(
+                document,
+                raw_paragraph,
+            )
+            for media_node in media_nodes:
+                article.append(media_node)
+            if not paragraph:
+                continue
+            node = document.new_tag("p")
+            node.string = paragraph
+            article.append(node)
+            continue
         image_match = re.match(
             r"^\s*\[(https?://[^\]\s]+)\]\s*(.*)$",
             raw_paragraph,
@@ -1392,6 +1410,125 @@ def _structured_article_body(
         node.string = paragraph
         article.append(node)
     return article
+
+
+_FT_STRUCTURED_IMAGE_RE = re.compile(
+    r"\[(?P<url>https?://[^\]\s]+)\]",
+    flags=re.IGNORECASE,
+)
+_FT_STRUCTURED_CREDIT_PREFIXES = tuple(
+    sorted(
+        {
+            "China National Space Administration/Getty Images",
+            "Charlie Bibby/Financial Times",
+            "Andrew Milligan/Getty Images",
+            "Felix Bensman/Dreamstime",
+            "Jeff Kravitz/FilmMagic",
+            "JMEnternational/Redferns",
+            "AFP via Getty Images",
+            "Radharc Images/Alamy",
+            "Katrina Campbell",
+            "Catherine Ashmore",
+            "Yoshiyuki Tamai",
+            "Julia Savchenko",
+            "Collier Schorr",
+            "London Play",
+            "Mark Allan",
+            "FT montage",
+            "Bloomberg",
+            "Reuters",
+            "Getty Images",
+            "Getty",
+            "Dreamstime",
+            "EPA",
+            "AFP",
+            "AP",
+        },
+        key=len,
+        reverse=True,
+    )
+)
+_FT_STRUCTURED_BODY_BOUNDARY_RE = re.compile(
+    r"(?<=[a-z)])(?=(?:"
+    r"The|A(?=\s)|An(?=\s)|As(?=\s)|At(?=\s)|After(?=\s)|"
+    r"Australia|Britain|Credit|Despite|In(?=\s)|It(?=\s)|"
+    r"Late(?=\s)|Mark(?=\s)|Muslim|Nasa|On(?=\s)|President|"
+    r"Scams|Still(?=\s)|That(?=\s)|This(?=\s)|Through(?=\s)|"
+    r"UK(?=\s)|Venezuelan|When(?=\s)|What(?=\s)|"
+    r"[\"“]))"
+)
+
+
+def _ft_structured_credit_and_body(value: str) -> tuple[str | None, str]:
+    """Split FT's flattened ``© creditBody`` representation."""
+    clean = value.strip()
+    folded = clean.casefold()
+    for credit in _FT_STRUCTURED_CREDIT_PREFIXES:
+        if folded.startswith(credit.casefold()):
+            return clean[: len(credit)], clean[len(credit) :].strip()
+    boundary = _FT_STRUCTURED_BODY_BOUNDARY_RE.search(clean)
+    if boundary is None:
+        return clean or None, ""
+    return (
+        clean[: boundary.start()].strip() or None,
+        clean[boundary.start() :].strip(),
+    )
+
+
+def _ft_structured_caption_and_body(
+    value: str,
+) -> tuple[str | None, str | None, str]:
+    """Recover caption, credit and following prose from a flattened image."""
+    clean = value.strip()
+    if not clean:
+        return None, None, ""
+    if "©" in clean:
+        caption, credit_tail = clean.rsplit("©", 1)
+        credit, body = _ft_structured_credit_and_body(credit_tail)
+        return _clean_text(caption) or None, credit, _clean_text(body)
+    boundary = _FT_STRUCTURED_BODY_BOUNDARY_RE.search(clean)
+    if boundary is None:
+        return None, None, _clean_text(clean)
+    return (
+        _clean_text(clean[: boundary.start()]) or None,
+        None,
+        _clean_text(clean[boundary.start() :]),
+    )
+
+
+def _ft_structured_media_nodes(
+    document: BeautifulSoup,
+    raw_paragraph: str,
+) -> tuple[list[Tag], str]:
+    """Turn image annotations flattened into FT JSON-LD back into figures."""
+    matches = list(_FT_STRUCTURED_IMAGE_RE.finditer(raw_paragraph))
+    if not matches:
+        return [], _clean_text(raw_paragraph)
+    figures: list[Tag] = []
+    trailing_body = ""
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else None
+        tail = raw_paragraph[match.end() : end]
+        caption, credit, body = _ft_structured_caption_and_body(tail)
+        figure = document.new_tag("figure")
+        image = document.new_tag("img")
+        image["src"] = match.group("url")
+        figure.append(image)
+        if caption or credit:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = " ".join(
+                value
+                for value in (
+                    caption,
+                    f"Photo: {credit}" if credit else None,
+                )
+                if value
+            )
+            figure.append(figcaption)
+        figures.append(figure)
+        if index == len(matches) - 1:
+            trailing_body = body
+    return figures, trailing_body
 
 
 def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
@@ -4826,10 +4963,44 @@ def _has_selected_ancestor(node: Tag, body: BeautifulSoup) -> bool:
 
 
 def _deduplicate_blocks(blocks: list[ContentBlock]) -> list[ContentBlock]:
+    contained_pull_quotes: set[int] = set()
+    textual_types = {
+        BlockType.PARAGRAPH,
+        BlockType.QUOTE,
+    }
+    for index, block in enumerate(blocks):
+        if block.type not in textual_types or not block.text:
+            continue
+        normalized = _normalize_block_text(block.text)
+        if len(normalized) < 60:
+            continue
+        decorative_paragraph = (
+            block.type == BlockType.PARAGRAPH
+            and not normalized.rstrip().endswith((".", "?", "!", "”", '"'))
+        )
+        if block.type != BlockType.QUOTE and not decorative_paragraph:
+            continue
+        for other_index, other in enumerate(blocks):
+            if (
+                other_index == index
+                or abs(other_index - index) > 3
+                or other.type not in textual_types
+                or not other.text
+            ):
+                continue
+            other_normalized = _normalize_block_text(other.text)
+            if (
+                len(other_normalized) > len(normalized)
+                and normalized in other_normalized
+            ):
+                contained_pull_quotes.add(index)
+                break
     seen_text: set[str] = set()
     seen_assets: set[str] = set()
     unique: list[ContentBlock] = []
-    for block in blocks:
+    for index, block in enumerate(blocks):
+        if index in contained_pull_quotes:
+            continue
         if block.text:
             normalized = _normalize_block_text(block.text)
             if normalized and normalized in seen_text:
