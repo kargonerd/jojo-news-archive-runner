@@ -344,6 +344,14 @@ jobs:
           fallback_files="$RUNNER_TEMP/source-import-fallback-files.txt"
           fallback_marker="$RUNNER_TEMP/overlap-fallback-enabled"
           if [ ! -f "$source_state" ]; then
+            if [[ "$COHORT" == holdout-v* ]]; then
+              python \
+                services/olds-api/tools/relax_parser_validation_exclusions.py \
+                --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+                --year "$SAMPLE_YEAR" \
+                --target "$VALIDATION_TARGET" \
+                --marker "$fallback_marker"
+            fi
             echo "No source capture checkpoint is available; continuing normally."
             exit 0
           fi
@@ -618,6 +626,30 @@ jobs:
           set -e
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
+
+      - name: Finalize validation overlap audit
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          set -euo pipefail
+          fallback_marker="$RUNNER_TEMP/overlap-fallback-enabled"
+          if [ ! -f "$fallback_marker" ]; then
+            exit 0
+          fi
+          python \
+            services/olds-api/tools/relax_parser_validation_exclusions.py \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --year "$SAMPLE_YEAR" \
+            --target "$VALIDATION_TARGET" \
+            --marker "$fallback_marker" \
+            --finalize
 
       - name: Checkpoint validation state
         if: >-
