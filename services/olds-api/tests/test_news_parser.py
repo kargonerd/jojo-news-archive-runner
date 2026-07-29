@@ -1276,7 +1276,89 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.5"
+    assert result.extraction.parser_version == "reuters-parser/0.7.6"
+
+
+def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A Complete Legacy Reuters Report">
+      <meta property="article:published_time"
+            content="2017-05-12T00:00:00Z">
+    </head><body><div id="rcs-articleContent">
+      <div class="column1 col col-10">
+        <span id="article-text">
+          <p>ORWELL, Ohio (Reuters) - The complete report begins with
+          detailed observations from reporters and named sources.</p>
+          <p>Further paragraphs preserve the evidence, context and response
+          necessary for a complete historical news article.</p>
+        </span>
+        <div class="info-box">
+          Our Standards: The Thomson Reuters Trust Principles
+        </div>
+        <section><h3>Next In Autos</h3>
+          <p>An unrelated recommendation must not enter the body.</p>
+        </section>
+        <div id="bd_article">From Around the Web Promoted by Revcontent</div>
+      </div>
+      <div class="column2">Trending Stories Pictures</div>
+      <div class="story-content">Photos of the week</div>
+    </div></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=(
+            "https://www.reuters.com/article/autos-used/"
+            "complete-report-idUSKBN1881PU"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "complete report begins" in result.plain_text
+    assert "Promoted by" not in result.plain_text
+    assert "Trending Stories" not in result.plain_text
+    assert "unrelated recommendation" not in result.plain_text
+    assert "Our Standards" not in result.plain_text
+
+
+def test_reuters_parser_does_not_pad_truncated_body_with_interface_text():
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="Currencies Stable Ahead of Central Bank Decision">
+      <meta property="article:published_time"
+            content="2020-10-07T00:00:00Z">
+    </head><body><article class="ArticlePage-article-body-1xN5M">
+      <div class="ArticleBodyWrapper">
+        <p class="Byline-byline ArticleBody-byline">
+          By Anita Komuves BUDAPEST, Oct 7 (Reuters) - Central European
+          currencies held.
+        </p>
+        <div class="ArticleBody-read-time-and-social">
+          <p class="ReadTime-read-time-1s3CG">0 Min Read</p>
+        </div>
+        <div class="TrustBadge-trust-badge-20GM8">
+          <p>Our Standards: The Thomson Reuters Trust Principles.</p>
+        </div>
+      </div>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=(
+            "https://www.reuters.com/article/easteurope-markets/"
+            "currencies-idUSL8N2GY1OV"
+        ),
+    )
+
+    assert result.quality.status.value == "partial"
+    assert result.quality.warnings == ["body-too-short"]
+    assert "0 Min Read" not in result.plain_text
+    assert "Our Standards" not in result.plain_text
 
 
 @pytest.mark.parametrize(
@@ -1323,7 +1405,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.5"
+    assert result.extraction.parser_version == "reuters-parser/0.7.6"
 
 
 @pytest.mark.parametrize(
@@ -1416,7 +1498,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.5"
+    assert result.extraction.parser_version == "reuters-parser/0.7.6"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():

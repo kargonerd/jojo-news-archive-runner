@@ -247,6 +247,11 @@ def parse_article(
         if reuters_live_blog is not None:
             body = reuters_live_blog
         else:
+            modern_legacy_body = soup.select_one(
+                "#rcs-articleContent #article-text"
+            )
+            if isinstance(modern_legacy_body, Tag):
+                body = modern_legacy_body
             legacy_reuters_body = _reuters_legacy_article_body(soup)
             if legacy_reuters_body is not None:
                 body = legacy_reuters_body
