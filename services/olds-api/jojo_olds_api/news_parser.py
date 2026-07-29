@@ -328,6 +328,8 @@ def parse_article(
     clean_body = BeautifulSoup(str(body), "html.parser") if body else BeautifulSoup("", "html.parser")
     if spec.publisher == "reuters":
         _trim_reuters_recirculation_tail(clean_body)
+    if spec.publisher == "nyt":
+        _trim_nyt_access_shell_tail(clean_body)
     _remove_noise(clean_body, spec)
 
     headline = _first_text(
@@ -3708,6 +3710,38 @@ def _trim_reuters_recirculation_tail(soup: BeautifulSoup) -> None:
         None,
     )
     if not isinstance(marker, Tag):
+        return
+    tail = marker
+    while isinstance(tail.parent, Tag):
+        for sibling in list(tail.next_siblings):
+            if isinstance(sibling, Tag):
+                sibling.decompose()
+            else:
+                sibling.extract()
+        if tail.parent is top:
+            break
+        tail = tail.parent
+    marker.decompose()
+
+
+def _trim_nyt_access_shell_tail(soup: BeautifulSoup) -> None:
+    """Remove verification/paywall UI appended after a recovered NYT body."""
+    marker = next(
+        (
+            node
+            for node in soup.select("p, div")
+            if _clean_text(node.get_text(" ", strip=True))
+            .casefold()
+            .startswith(
+                "thank you for your patience while we verify access"
+            )
+        ),
+        None,
+    )
+    if not isinstance(marker, Tag):
+        return
+    top = soup.find()
+    if not isinstance(top, Tag):
         return
     tail = marker
     while isinstance(tail.parent, Tag):
