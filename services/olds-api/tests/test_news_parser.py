@@ -833,7 +833,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.3"
+    assert result.extraction.parser_version == "reuters-parser/0.7.4"
 
 
 @pytest.mark.parametrize(
@@ -880,7 +880,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.3"
+    assert result.extraction.parser_version == "reuters-parser/0.7.4"
 
 
 @pytest.mark.parametrize(
@@ -973,7 +973,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.3"
+    assert result.extraction.parser_version == "reuters-parser/0.7.4"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():
@@ -1024,6 +1024,65 @@ def test_reuters_legacy_parser_uses_embedded_rcom_body():
         32,
         tzinfo=timezone.utc,
     )
+
+
+def test_reuters_parser_recovers_structured_live_blog_updates():
+    news_article = {
+        "@type": "NewsArticle",
+        "headline": "Hurricane Melissa as it happened",
+        "datePublished": "2025-10-28T13:50:23Z",
+    }
+    live_blog = {
+        "@type": "LiveBlogPosting",
+        "headline": "Hurricane Melissa",
+        "liveBlogUpdate": [
+            {
+                "@type": "BlogPosting",
+                "headline": "Summary",
+                "datePublished": "2025-10-28T13:50:46Z",
+                "articleBody": (
+                    "Hurricane Melissa roared through Cuba on Wednesday"
+                    "More than 700,000 people evacuated from their homes"
+                    "Four deaths were reported in Jamaica"
+                    "Trouble viewing video posts? Content depends on your "
+                    "cookie settings"
+                ),
+            },
+            {
+                "@type": "BlogPosting",
+                "headline": "Storm sweeps towards The Bahamas",
+                "datePublished": "2025-10-29T21:55:56Z",
+                "articleBody": (
+                    "The storm hit Cuba after unleashing devastation in "
+                    "Jamaica. Authorities continued assessing damage."
+                ),
+            },
+        ],
+    }
+    html = (
+        "<html><head>"
+        "<script type='application/ld+json'>"
+        f"{json.dumps(news_article)}</script>"
+        "<script type='application/ld+json'>"
+        f"{json.dumps(live_blog)}</script>"
+        "</head><body><main data-testid='LivePage'></main></body></html>"
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=(
+            "https://www.reuters.com/world/"
+            "hurricane-melissa-live-example"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "liveblog"
+    assert result.quality.block_count == 4
+    assert "Wednesday. More than 700,000" in result.plain_text
+    assert "cookie settings" not in result.plain_text
+    assert "Storm sweeps towards The Bahamas" in result.plain_text
 
 
 def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():

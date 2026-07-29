@@ -171,9 +171,13 @@ def parse_article(
         if legacy_interactive is not None:
             body = legacy_interactive
     if spec.publisher == "reuters":
-        legacy_reuters_body = _reuters_legacy_article_body(soup)
-        if legacy_reuters_body is not None:
-            body = legacy_reuters_body
+        reuters_live_blog = _reuters_live_blog_body(soup)
+        if reuters_live_blog is not None:
+            body = reuters_live_blog
+        else:
+            legacy_reuters_body = _reuters_legacy_article_body(soup)
+            if legacy_reuters_body is not None:
+                body = legacy_reuters_body
     if spec.publisher == "wsj":
         gallery_body = _structured_image_gallery(soup)
         if gallery_body is None:
@@ -793,6 +797,18 @@ def _walk_json_objects(value: Any) -> Iterable[dict[str, Any]]:
             yield from _walk_json_objects(child)
 
 
+def _json_ld_objects(soup: BeautifulSoup) -> Iterable[dict[str, Any]]:
+    for script in soup.select('script[type="application/ld+json"]'):
+        value = script.string or script.get_text()
+        if not value.strip():
+            continue
+        try:
+            payload = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        yield from _walk_json_objects(payload)
+
+
 def _select_body(soup: BeautifulSoup, spec: PublisherSpec) -> Tag | None:
     for selector in spec.body_selectors:
         nodes = [node for node in soup.select(selector) if isinstance(node, Tag)]
@@ -1234,6 +1250,65 @@ def _reuters_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
         paragraph.string = value
         article.append(paragraph)
     return article
+
+
+def _reuters_live_blog_body(soup: BeautifulSoup) -> Tag | None:
+    posting = next(
+        (
+            value
+            for value in _json_ld_objects(soup)
+            if value.get("@type") == "LiveBlogPosting"
+        ),
+        None,
+    )
+    if posting is None:
+        return None
+    updates = posting.get("liveBlogUpdate")
+    if not isinstance(updates, list):
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    seen: set[tuple[str, str]] = set()
+    for update in updates:
+        if not isinstance(update, dict):
+            continue
+        headline = _string_or_none(update.get("headline"))
+        raw_body = _string_or_none(update.get("articleBody"))
+        body_text = (
+            _clean_text(
+                BeautifulSoup(raw_body, "html.parser").get_text(" ")
+            )
+            if raw_body
+            else None
+        )
+        if body_text:
+            body_text = re.sub(
+                r"(?<=[a-z0-9)])(?=[A-Z](?:[a-z]{2,}|['’][a-z]))",
+                ". ",
+                body_text,
+            )
+            body_text = re.sub(
+                r"(?i)\s*Trouble viewing video posts\?.*cookie settings\s*$",
+                "",
+                body_text,
+            ).strip()
+        if not headline and not body_text:
+            continue
+        identity = (headline or "", body_text or "")
+        if identity in seen:
+            continue
+        seen.add(identity)
+        if headline:
+            heading = document.new_tag("h2")
+            heading.string = headline
+            article.append(heading)
+        if body_text:
+            paragraph = document.new_tag("p")
+            paragraph.string = body_text
+            article.append(paragraph)
+    return article if len(article.get_text(" ", strip=True)) >= 80 else None
 
 
 def _ap_structured_description_body(
