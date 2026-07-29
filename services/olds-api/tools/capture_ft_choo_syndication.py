@@ -119,7 +119,7 @@ def capture(
             - connection.execute(
                 """
                 SELECT COUNT(*) FROM parser_validation_results
-                WHERE parser_version = 'ft-parser/0.8.6'
+                WHERE parser_version = 'ft-parser/0.8.7'
                 """
             ).fetchone()[0],
         )
@@ -152,7 +152,7 @@ def capture(
                    SUM(extraction_status = 'complete'),
                    SUM(error IS NOT NULL)
             FROM parser_validation_results
-            WHERE parser_version = 'ft-parser/0.8.6'
+            WHERE parser_version = 'ft-parser/0.8.7'
             """
         ).fetchone()
         return {

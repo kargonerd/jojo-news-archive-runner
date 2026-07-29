@@ -5450,12 +5450,23 @@ def score_raw_capture(
         sampled_content,
         final_url=final_url,
     )
+    ft_explicit_truncation_notice = all(
+        marker in sampled_content
+        for marker in (
+            "您已阅读".encode(),
+            "剩余".encode(),
+            "订阅以继续探索完整内容".encode(),
+        )
+    )
     ft_truncated_article_shell = (
-        ft_body_characters is not None
-        and has_article_marker
-        and has_strong_body_marker
-        and ft_body_characters < FT_CAPTURE_MINIMUM_BODY_CHARACTERS
-        and ft_body_images < FT_IMAGE_LED_MINIMUM_IMAGES
+        ft_explicit_truncation_notice
+        or (
+            ft_body_characters is not None
+            and has_article_marker
+            and has_strong_body_marker
+            and ft_body_characters < FT_CAPTURE_MINIMUM_BODY_CHARACTERS
+            and ft_body_images < FT_IMAGE_LED_MINIMUM_IMAGES
+        )
     )
     wsj_subscription_shell = (
         b"continue reading" in prefix
@@ -5525,6 +5536,7 @@ def score_raw_capture(
         "wsjEmptyArticleShell": wsj_empty_article_shell,
         "redirectShell": redirect_shell,
         "ftTruncatedArticleShell": ft_truncated_article_shell,
+        "ftExplicitTruncationNotice": ft_explicit_truncation_notice,
         "ftBodyCharacters": ft_body_characters,
         "ftBodyImages": ft_body_images,
         "substantialResponse": substantial,

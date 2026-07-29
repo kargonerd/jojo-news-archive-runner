@@ -4809,6 +4809,31 @@ def test_raw_quality_rejects_truncated_ft_article_body():
     assert signals["ftBodyCharacters"] < 100
 
 
+def test_raw_quality_rejects_ft_chinese_percentage_preview():
+    score, signals = score_raw_capture(
+        """
+        <html><body>
+          <div id="story-body-container" class="story-body">
+            <p>First visible paragraph from the Financial Times story.</p>
+            <p>Second visible paragraph with additional reporting.</p>
+            <p>Third visible paragraph before the subscription barrier.</p>
+            <div class="clearfloat"><strong>
+              您已阅读12%（426字），剩余88%（3217字）包含更多重要信息，
+            </strong>订阅以继续探索完整内容，并享受更多专属服务。</div>
+          </div>
+        </body></html>
+        """.encode()
+        + (b" " * 90_000),
+        http_status=200,
+        content_type="text/html",
+        final_url="https://m.ftchinese.com/interactive/284389/en?full=y",
+    )
+
+    assert score < 85
+    assert signals["ftTruncatedArticleShell"] is True
+    assert signals["ftExplicitTruncationNotice"] is True
+
+
 def test_raw_quality_keeps_image_led_ft_data_story():
     images = b"".join(
         b"<figure><img src='https://www.ft.com/image.png'></figure>"

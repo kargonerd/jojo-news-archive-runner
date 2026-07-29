@@ -504,6 +504,8 @@ def parse_article(
         warnings.append("publisher-notice")
     if structured_short_record:
         warnings.append("structured-short-record")
+    if spec.publisher == "ft" and _ft_explicit_truncation_notice(soup):
+        warnings.append("truncated-body")
     if not published_at:
         warnings.append("missing-published-at")
     if body is None:
@@ -512,7 +514,11 @@ def parse_article(
     status = ArticleStatus.COMPLETE
     if "article-body-not-found" in warnings:
         status = ArticleStatus.UNSUPPORTED
-    elif "body-too-short" in warnings or "missing-headline" in warnings:
+    elif (
+        "body-too-short" in warnings
+        or "missing-headline" in warnings
+        or "truncated-body" in warnings
+    ):
         status = ArticleStatus.PARTIAL
 
     capture_reference = _capture_reference(
@@ -3531,6 +3537,15 @@ def _ft_image_led_article(
         and isinstance(height, int)
         and width >= 800
         and height >= 600
+    )
+
+
+def _ft_explicit_truncation_notice(soup: BeautifulSoup) -> bool:
+    text = _clean_text(soup.get_text(" ", strip=True))
+    return (
+        "您已阅读" in text
+        and "剩余" in text
+        and "订阅以继续探索完整内容" in text
     )
 
 

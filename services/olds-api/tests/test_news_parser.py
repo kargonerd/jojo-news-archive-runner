@@ -1750,7 +1750,38 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.6"
+    assert article.extraction.parser_version == "ft-parser/0.8.7"
+
+
+def test_ft_parser_rejects_ft_chinese_percentage_preview():
+    html = """
+    <html><head>
+      <meta property="og:title"
+            content="AbbVie buys Apogee for $10.9bn">
+      <meta property="article:published_time"
+            content="2026-06-22T20:39:26Z">
+    </head><body>
+      <div class="article__content-body">
+        <p>AbbVie is buying biotech Apogee Therapeutics in a $10.9bn
+        deal, strengthening its pipeline for immunology medicines.</p>
+        <p>Shareholders will receive cash at a premium under the deal.</p>
+        <p>The two companies commented on the proposed acquisition.</p>
+        <div class="clearfloat"><strong>
+          您已阅读12%（426字），剩余88%（3217字）包含更多重要信息，
+        </strong>订阅以继续探索完整内容，并享受更多专属服务。</div>
+      </div>
+    </body></html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/percentage-preview",
+    )
+
+    assert article.quality.status.value == "partial"
+    assert "truncated-body" in article.quality.warnings
+    assert article.extraction.parser_version == "ft-parser/0.8.7"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -1790,7 +1821,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.6"
+    assert article.extraction.parser_version == "ft-parser/0.8.7"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -1847,7 +1878,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.6"
+    assert article.extraction.parser_version == "ft-parser/0.8.7"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
