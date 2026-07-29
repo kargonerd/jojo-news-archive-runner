@@ -409,7 +409,10 @@ def parse_article(
             ContentType.VIDEO,
             ContentType.AUDIO,
         }
-        and any(block.type == BlockType.EMBED for block in blocks)
+        and any(
+            block.type in {BlockType.EMBED, BlockType.IMAGE}
+            for block in blocks
+        )
     )
     publisher_notice = _is_publisher_notice(
         headline=headline,
@@ -1752,27 +1755,83 @@ def _nyt_legacy_op_art_gallery(soup: BeautifulSoup) -> Tag | None:
 
 
 def _nyt_legacy_interactive_graphic(soup: BeautifulSoup) -> Tag | None:
-    shell = soup.select_one("#interactiveShell")
+    shell = soup.select_one("#interactiveShell, #main")
     freeform = soup.select_one("#interactiveFreeFormMain")
     if not isinstance(shell, Tag) or not isinstance(freeform, Tag):
         return None
-    source_image = freeform.select_one("img[src]")
-    source = _tag_attribute(source_image, "src")
     summary = _tag_text(shell.select_one(".storySummary .summary, .storySummary"))
-    if not source or not summary:
-        return None
     document = BeautifulSoup("<article></article>", "html.parser")
     article = document.article
     if not isinstance(article, Tag):
         return None
-    paragraph = document.new_tag("p")
-    paragraph.string = summary
-    article.append(paragraph)
-    figure = document.new_tag("figure")
-    image = document.new_tag("img")
-    image["src"] = source
-    image["alt"] = summary
-    figure.append(image)
+    if summary and not summary.casefold().startswith("related article"):
+        paragraph = document.new_tag("p")
+        paragraph.string = summary
+        article.append(paragraph)
+    seen_images: set[str] = set()
+    for source_image in freeform.select("img[src]"):
+        source = _tag_attribute(source_image, "src")
+        if (
+            not source
+            or any(
+                marker in source.casefold()
+                for marker in (
+                    "nytlogo",
+                    "masthead-logo",
+                    "/adx/",
+                    "up.nytimes.com",
+                    "wt.o.nytimes.com",
+                    "unavailable-photo",
+                )
+            )
+        ):
+            continue
+        identity = _image_identity(source)
+        if identity in seen_images:
+            continue
+        seen_images.add(identity)
+        figure = document.new_tag("figure")
+        image = document.new_tag("img")
+        image["src"] = source
+        alt = _first_text(
+            _string_or_none(source_image.get("alt")),
+            summary if len(seen_images) == 1 else None,
+        )
+        if alt:
+            image["alt"] = alt
+        figure.append(image)
+        article.append(figure)
+    embed_rows: list[tuple[str, str | None]] = []
+    for anchor in freeform.select("a[href]"):
+        href = _string_or_none(anchor.get("href"))
+        if href and re.search(r"(?i)\.(?:pdf|txt|csv)(?:$|[?#])", href):
+            embed_rows.append((href, _tag_text(anchor)))
+    for script in freeform.select("script"):
+        value = script.string or script.get_text()
+        match = re.search(
+            r"""DV\.load\(\s*["'](?P<url>(?:https?:)?//"""
+            r"""(?:www\.)?documentcloud\.org/documents/[^"']+?)"""
+            r"""(?:\.js)?["']""",
+            value,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            url = match.group("url")
+            if url.startswith("//"):
+                url = f"https:{url}"
+            url = re.sub(r"\.js$", "", url, flags=re.IGNORECASE)
+            embed_rows.append((url, "DocumentCloud document"))
+    seen_embeds: set[str] = set()
+    for href, label in embed_rows:
+        normalized = _normalized_url(href, base_url="https://www.nytimes.com/")
+        if not normalized or normalized in seen_embeds:
+            continue
+        seen_embeds.add(normalized)
+        iframe = document.new_tag("iframe")
+        iframe["src"] = normalized
+        if label:
+            iframe["title"] = label
+        article.append(iframe)
     sources = _tag_text(
         shell.select_one(
             "#interactiveFooter .sources, "
@@ -1782,9 +1841,12 @@ def _nyt_legacy_interactive_graphic(soup: BeautifulSoup) -> Tag | None:
     if sources:
         figcaption = document.new_tag("figcaption")
         figcaption.string = sources
-        figure.append(figcaption)
-    article.append(figure)
-    return article
+        last_figure = article.find_all("figure")[-1] if article.find("figure") else None
+        if isinstance(last_figure, Tag):
+            last_figure.append(figcaption)
+        else:
+            article.append(figcaption)
+    return article if article.select_one("p, figure, iframe") else None
 
 
 def _nyt_preloaded_slideshow_rows(
