@@ -479,7 +479,7 @@ def parse_article(
             "photo gallery",
             "photo-gallery",
             "slideshow",
-        }:
+        } or soup.select_one(".slideshow-article"):
             content_type = ContentType.GALLERY
     if (
         spec.publisher == "ap"
@@ -654,6 +654,13 @@ def parse_article(
         and _wsj_legacy_ellipsis_truncation(plain_text)
     ):
         warnings.append("truncated-body")
+    if (
+        spec.publisher == "wsj"
+        and content_type == ContentType.GALLERY
+        and soup.select_one(".slideshow-article")
+        and sum(image.should_archive for image in images) < 3
+    ):
+        warnings.append("incomplete-gallery")
     if not published_at:
         warnings.append("missing-published-at")
     if body is None:
@@ -666,6 +673,7 @@ def parse_article(
         "body-too-short" in warnings
         or "missing-headline" in warnings
         or "truncated-body" in warnings
+        or "incomplete-gallery" in warnings
     ):
         status = ArticleStatus.PARTIAL
 

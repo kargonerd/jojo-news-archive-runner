@@ -59,7 +59,7 @@ CAPTURE_POLICY_VERSIONS = {
     "ft": "ft-capture/0.20.2",
     "nyt": "nyt-capture/0.9.0",
     "reuters": "reuters-capture/0.7.2",
-    "wsj": "wsj-capture/0.8.4",
+    "wsj": "wsj-capture/0.8.5",
 }
 ACCEPTED_HTTP_STATUSES = {200, 206}
 WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"
@@ -5319,9 +5319,9 @@ def _wsj_capture_parser_evidence(
         and article.quality.images_selected >= 3
     )
     usable = (
-        article.quality.status == ArticleStatus.COMPLETE
-        or nontext
-        or gallery_usable
+        gallery_usable
+        if article.content_type == ContentType.GALLERY
+        else article.quality.status == ArticleStatus.COMPLETE or nontext
     )
     return usable, {
         "wsjCaptureParserUsable": usable,

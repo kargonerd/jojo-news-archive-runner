@@ -5396,6 +5396,42 @@ def test_wsj_capture_parser_evidence_rejects_one_image_gallery_shell():
     assert signals["wsjCaptureImagesSelected"] < 3
 
 
+def test_wsj_capture_rejects_long_description_slideshow_shell():
+    description = (
+        "This photographic home tour describes a large historic property, "
+        "its gardens, architecture, interior design and asking price in "
+        "enough detail to exceed the ordinary article body threshold."
+    )
+    usable, signals = _wsj_capture_parser_evidence(
+        f"""
+        <html><head>
+          <meta property="og:title" content="A Hamptons Cottage">
+          <meta property="article:published_time"
+                content="2019-02-05T15:00:00Z">
+          <meta property="og:image"
+                content="https://si.wsj.net/public/resources/lead.jpg">
+          <meta name="description" content="{description}">
+        </head><body><article>
+          <div class="wsj-article-headline-wrap slideshow-article">
+            <h2 class="sub-head">{description}</h2>
+          </div>
+          <div class="wsj-snippet-body">
+            <p>This article contains media that is not currently supported.</p>
+          </div>
+        </article></body></html>
+        """.encode(),
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "a-hamptons-cottage-with-a-garden-11549378800"
+        ),
+    )
+
+    assert usable is False
+    assert signals["wsjCaptureContentType"] == "gallery"
+    assert signals["wsjCaptureExtractionStatus"] == "partial"
+    assert signals["wsjCaptureImagesSelected"] < 3
+
+
 def test_ap_capture_parser_evidence_rejects_unhydrated_score_table():
     usable, signals = _ap_capture_parser_evidence(
         b"""
