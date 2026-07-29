@@ -1051,6 +1051,70 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
     assert summary["years"]["2020"]["unsupported"] == 1
 
 
+def test_validation_rejects_interface_noise_inside_complete_body(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    selected = pending_captures(
+        connection,
+        retry_errors=False,
+        maximum=1,
+        maximum_record_attempts=3,
+        prioritize_parser_validation=True,
+    )[0]
+    body = " ".join(["Substantive archived reporting sentence."] * 30)
+    html = f"""
+    <html><head>
+      <script type="application/ld+json">{{
+        "@type": "NewsArticle",
+        "headline": "A report contaminated by a recommendation module",
+        "datePublished": "2020-01-01T00:00:00Z"
+      }}</script>
+    </head><body><article>
+      <p>{body}</p>
+      <aside><p>From Around the Web Promoted by Taboola</p></aside>
+    </article></body></html>
+    """.encode()
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id=selected.article_id,
+        publisher="ap",
+        canonical_url=selected.canonical_url,
+        published_at=datetime.fromisoformat(selected.published_at),
+        selected_candidate=selected.candidates[0],
+        candidates_considered=list(selected.candidates),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=selected.candidates[0].snapshot_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "complete"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["interface-noise-in-body"]
+    assert summary["years"]["2020"]["issueCounts"] == {
+        "interface-noise-in-body": 1
+    }
+
+
 def test_validation_uses_parsed_publication_year_not_capture_year(
     tmp_path: Path,
 ):

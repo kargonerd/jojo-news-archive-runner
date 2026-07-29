@@ -32,6 +32,25 @@ _PAYWALL_PHRASES = (
     "already a subscriber",
     "unlock this article",
 )
+_UI_NOISE_PHRASES = (
+    "promoted by taboola",
+    "promoted by revcontent",
+    "sponsored content from around the web",
+    "more from reuters sponsored content",
+    "trending stories",
+    "share this article",
+    "our standards: the thomson reuters trust principles",
+)
+_PLACEHOLDER_IMAGE_MARKERS = (
+    "wsj-social-share",
+    "wsj_logo_black_social",
+    "wsj_profile_lg",
+    "wsjsection.",
+    "rcom-default.png",
+    "r-generic-hdr.png",
+    "og-ft-logo",
+    "social-default",
+)
 
 
 def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
@@ -776,6 +795,26 @@ def record_parser_validation(
             issues.append("source-link-mismatch")
         if duplicate_blocks:
             issues.append("duplicate-text-blocks")
+        normalized_blocks = [
+            _normalize_text(block.text).casefold()
+            for block in article.blocks
+            if block.text and _normalize_text(block.text)
+        ]
+        if any(
+            text == "0 min read"
+            or any(phrase in text for phrase in _UI_NOISE_PHRASES)
+            for text in normalized_blocks
+        ):
+            issues.append("interface-noise-in-body")
+        if any(
+            image.should_archive
+            and any(
+                marker in image.original_url.casefold()
+                for marker in _PLACEHOLDER_IMAGE_MARKERS
+            )
+            for image in article.images
+        ):
+            issues.append("selected-placeholder-image")
         prefix = article.plain_text[:1_500].casefold()
         if (
             article.quality.body_characters < 1_000
