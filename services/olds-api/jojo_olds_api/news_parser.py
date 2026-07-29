@@ -76,6 +76,7 @@ def parse_article(
     )
     body = None
     structured_image_gallery_selected = False
+    nyt_interactive_body_selected = False
     if spec.publisher == "ap":
         gallery_body = _ap_carousel_gallery(soup)
         if gallery_body is not None:
@@ -125,6 +126,14 @@ def parse_article(
         and "/watching/" in canonical_url.casefold()
     ):
         body = _nyt_watching_body(soup)
+    if (
+        spec.publisher == "nyt"
+        and "/interactive/" in canonical_url.casefold()
+    ):
+        interactive_body = _nyt_interactive_body(soup)
+        if interactive_body is not None:
+            body = interactive_body
+            nyt_interactive_body_selected = True
     if spec.publisher == "bloomberg":
         embedded_bloomberg_body = _bloomberg_embedded_article_body(soup)
         if embedded_bloomberg_body is not None and (
@@ -157,7 +166,7 @@ def parse_article(
             structured_image_gallery_selected = True
     if spec.publisher == "nyt":
         gallery_body = _nyt_preloaded_image_gallery(soup)
-        if gallery_body is not None:
+        if gallery_body is not None and not nyt_interactive_body_selected:
             body = gallery_body
             structured_image_gallery_selected = True
     if spec.embedded_html_body_keys and (
@@ -861,6 +870,58 @@ def _structured_article_body(
         node.string = paragraph
         article.append(node)
     return article
+
+
+def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
+    for selector in (
+        ".g-story.g-freebird",
+        ".interactive-graphic",
+        ".interactive-body",
+        "section.interactive-content",
+    ):
+        for candidate in soup.select(selector):
+            if len(_clean_text(candidate.get_text(" ", strip=True))) >= 200:
+                quiz_body = _nyt_interactive_quiz_body(candidate)
+                if quiz_body is not None:
+                    return quiz_body
+                return candidate
+    return None
+
+
+def _nyt_interactive_quiz_body(candidate: Tag) -> Tag | None:
+    questions = candidate.select(".multiple-choice-question")
+    if len(questions) < 2:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for question in questions:
+        figure = question.select_one("figure")
+        if isinstance(figure, Tag):
+            figure_copy = BeautifulSoup(str(figure), "html.parser").find(
+                "figure"
+            )
+            if isinstance(figure_copy, Tag):
+                article.append(figure_copy)
+        prompt = _tag_text(question.select_one(".question-text"))
+        if prompt:
+            heading = document.new_tag("h2")
+            heading.string = prompt
+            article.append(heading)
+        answers = [
+            text
+            for node in question.select(".answer-text")
+            if (text := _tag_text(node))
+        ]
+        if answers:
+            answer_list = document.new_tag("ul")
+            for answer in answers:
+                item = document.new_tag("li")
+                item.string = answer
+                answer_list.append(item)
+            article.append(answer_list)
+    return article if len(article.select("h2")) >= 2 else None
 
 
 def _structured_image_gallery(soup: BeautifulSoup) -> Tag | None:

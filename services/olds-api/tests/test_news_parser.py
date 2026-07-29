@@ -496,7 +496,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.8"
+    assert result.extraction.parser_version == "nyt-parser/0.8.9"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -731,7 +731,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.8"
+    assert result.extraction.parser_version == "nyt-parser/0.8.9"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -1099,7 +1099,96 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.8"
+    assert result.extraction.parser_version == "nyt-parser/0.8.9"
+
+
+def test_nyt_parser_normalizes_legacy_interactive_quiz():
+    questions = "".join(
+        f"""
+        <div class="multiple-choice-question">
+          <figure><img src="https://static01.nyt.com/quiz-{index}.jpg">
+            <figcaption>Quiz photograph {index}</figcaption>
+          </figure>
+          <div class="question-text">{index + 1} of 3 Question {index}
+            asks readers about a reported health finding.</div>
+          <div class="question-answers">
+            <div class="answer-text">First possible answer {index}</div>
+            <div class="answer-text">Second possible answer {index}</div>
+            <div class="answer-text">Third possible answer {index}</div>
+          </div>
+        </div>
+        """
+        for index in range(3)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="The Weekly Health Quiz">
+      <meta property="article:published_time"
+            content="2017-04-21T09:00:00Z">
+    </head><body>
+      <div class="interactive-graphic">{questions}</div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2017/04/21/"
+            "well/live/health-quiz.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "liveblog"
+    assert len(
+        [block for block in result.blocks if block.type.value == "heading"]
+    ) == 3
+    assert len(
+        [block for block in result.blocks if block.type.value == "list"]
+    ) == 3
+    assert "Third possible answer 2" in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.9"
+
+
+def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
+    paragraphs = "".join(
+        f"<p>Interactive narrative paragraph {index} preserves substantive "
+        "reporting, participant testimony and historical context.</p>"
+        for index in range(1, 9)
+    )
+    html = f"""
+    <html><head>
+      <script type="application/ld+json">{{
+        "@type": "NewsArticle",
+        "headline": "Coming Out in a Pandemic",
+        "datePublished": "2021-06-26T09:00:00Z",
+        "image": [
+          "https://static01.nyt.com/interactive-lead.jpg",
+          "https://static01.nyt.com/interactive-second.jpg"
+        ]
+      }}</script>
+    </head><body>
+      <article class="interactive">
+        <div class="g-story g-freebird">{paragraphs}</div>
+      </article>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2021/06/26/"
+            "opinion/coming-out.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "opinion"
+    assert "paragraph 8" in result.plain_text
+    assert result.quality.body_characters >= 800
+    assert result.extraction.parser_version == "nyt-parser/0.8.9"
 
 
 def test_parser_falls_back_to_catalog_publication_time():
@@ -1881,7 +1970,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.8"
+    assert result.extraction.parser_version == "nyt-parser/0.8.9"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -2074,7 +2163,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.8"
+    assert result.extraction.parser_version == "nyt-parser/0.8.9"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
