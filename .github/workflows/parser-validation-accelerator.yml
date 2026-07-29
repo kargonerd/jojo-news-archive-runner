@@ -231,7 +231,8 @@ jobs:
           if rclone copyto \
               "${SOURCE_ROOT}/catalog/manifest.jsonl.gz" \
               "$source_manifest" \
-              --retries 8 --low-level-retries 20; then
+              --retries 8 --low-level-retries 20 \
+              && [ -f "$source_manifest" ]; then
             python services/olds-api/tools/filter_archive_manifest.py \
               --input "$source_manifest" \
               --output "$refreshed_manifest" \
