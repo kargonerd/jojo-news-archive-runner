@@ -1600,6 +1600,28 @@ def _promote_bloomberg_image_candidates(candidates: list[str]) -> list[str]:
     return promoted
 
 
+def _promote_ft_image_candidates(candidates: list[str]) -> list[str]:
+    """Prefer a 1200px FT Origami rendition while retaining source variants."""
+    promoted: list[str] = []
+    for url in candidates:
+        parts = urlsplit(url)
+        if (
+            parts.hostname in {"ft.com", "www.ft.com"}
+            and "/__origami/service/image/" in parts.path
+        ):
+            high_resolution = re.sub(
+                r"([?&]width=)(?:[1-9]\d{0,2}|1[01]\d{2})(?=&|$)",
+                r"\g<1>1200",
+                url,
+                flags=re.IGNORECASE,
+            )
+            if high_resolution != url and high_resolution not in promoted:
+                promoted.append(high_resolution)
+        if url not in promoted:
+            promoted.append(url)
+    return promoted
+
+
 def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:
     for carousel in soup.select(
         ".Page-main bsp-carousel.Carousel, "
@@ -3743,7 +3765,77 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         ):
             node.decompose()
     if spec.publisher == "ft":
+        _remove_ft_newsletter_promos(soup)
         _strip_ft_copyright_suffixes(soup)
+
+
+def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
+    """Remove newsletter cards flattened into FT syndication body paragraphs."""
+    for heading in list(soup.select("h2, h3, h4")):
+        heading_text = _clean_text(
+            heading.get_text(" ", strip=True)
+        ).casefold()
+        card = heading.find_parent(
+            class_=lambda value: value and "n-content-layout" in value
+        )
+        if not isinstance(card, Tag):
+            continue
+        card_text = _clean_text(card.get_text(" ", strip=True)).casefold()
+        if (
+            "newsletter" in heading_text
+            or (
+                heading_text == "house & home unlocked"
+                and "newsletter" in card_text
+            )
+        ):
+            card.decompose()
+    cta_patterns = (
+        re.compile(r"(?i)^sign up here with one click\b"),
+        re.compile(r"(?i)^sign up here[.!]?$"),
+        re.compile(
+            r"(?i)^sign up for the newsletter by clicking here\b"
+        ),
+    )
+    promo_patterns = (
+        re.compile(r"(?i)\bnewsletter\b"),
+        re.compile(r"(?i)\bin your inbox\b"),
+        re.compile(r"(?i)^track trends in tech, media and telecoms\b"),
+        re.compile(r"(?i)^house\s*&\s*home unlocked$"),
+        re.compile(r"(?i)^follow @ft"),
+    )
+    direct_promo_patterns = (
+        re.compile(
+            r"(?i)^lex recommends the ft(?:'s|’s) .*newsletter\b"
+        ),
+        re.compile(r"(?i)^our popular newsletter .*sign up here\b"),
+        re.compile(r"(?i)^subscribers can use myft to follow\b"),
+        re.compile(r"(?i)^follow ft(?:'s|’s) live coverage\b"),
+        re.compile(r"(?i)^follow @ft"),
+        re.compile(r"(?i)^join our online book group\b"),
+    )
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if any(pattern.search(text) for pattern in direct_promo_patterns):
+            node.decompose()
+            continue
+        if not any(pattern.search(text) for pattern in cta_patterns):
+            continue
+        previous = node.find_previous_sibling()
+        for _ in range(4):
+            if not isinstance(previous, Tag):
+                break
+            earlier = previous.find_previous_sibling()
+            previous_text = _clean_text(
+                previous.get_text(" ", strip=True)
+            )
+            if not any(
+                pattern.search(previous_text)
+                for pattern in promo_patterns
+            ):
+                break
+            previous.decompose()
+            previous = earlier
+        node.decompose()
 
 
 def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
@@ -4122,6 +4214,8 @@ def _image_from_tag(
         return None
     if spec.publisher == "bloomberg":
         candidates = _promote_bloomberg_image_candidates(candidates)
+    if spec.publisher == "ft":
+        candidates = _promote_ft_image_candidates(candidates)
     original_url = candidates[0]
     width = _integer_attribute(image_node, "width")
     height = _integer_attribute(image_node, "height")
@@ -4248,13 +4342,15 @@ def _image_identity(url: str) -> str:
             )
         nested_parts = urlsplit(nested)
         if nested_parts.scheme in {"http", "https"} and nested_parts.netloc:
-            return urlunsplit(
-                (
-                    nested_parts.scheme.casefold(),
-                    nested_parts.netloc.casefold(),
-                    nested_parts.path,
-                    "",
-                    "",
+            return _image_identity(
+                urlunsplit(
+                    (
+                        nested_parts.scheme.casefold(),
+                        nested_parts.netloc.casefold(),
+                        nested_parts.path,
+                        "",
+                        "",
+                    )
                 )
             )
     if host == "d1e00ek4ebabms.cloudfront.net":
@@ -4487,6 +4583,8 @@ def _lead_image_urls(
             and normalized not in result
         ):
             result.append(normalized)
+    if "ft.com" in (urlsplit(base_url).hostname or "").casefold():
+        return _promote_ft_image_candidates(result)
     return result
 
 

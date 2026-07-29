@@ -2814,7 +2814,60 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.12"
+    assert article.extraction.parser_version == "ft-parser/0.8.13"
+
+
+def test_ft_parser_removes_flattened_newsletter_cards():
+    reporting_before = " ".join(["FT reporting before module."] * 20)
+    reporting_after = " ".join(["FT reporting after module."] * 20)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="FT company report">
+      <meta property="article:published_time"
+            content="2019-10-11T00:00:00Z">
+    </head><body><article>
+      <p>{reporting_before}</p>
+      <div class="n-content-layout">
+        <div class="n-content-layout__container">
+          <h2>Daily newsletter</h2>
+          <div class="n-content-layout__slot">
+            <figure><img src="https://www.ft.com/newsletter-card.jpg"></figure>
+          </div>
+        </div>
+      </div>
+      <p>DAILY NEWSLETTER — Are you interested in the latest company
+      news? Every morning our City reporter delivers it to your inbox.</p>
+      <p>Sign up here with one click</p>
+      <p>{reporting_after}</p>
+      <p>Sign up for the newsletter by clicking here.</p>
+      <p>Lex recommends the FT’s Due Diligence newsletter, a curated
+      briefing. Click here to sign up.</p>
+      <p>Follow @FTMag on Twitter to find out about our latest stories
+      first. Subscribe to our podcast.</p>
+      <p>Tuesday's parliamentary schedule follows.</p>
+    </article></body></html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/example-newsletter",
+    )
+
+    assert article.quality.status.value == "complete"
+    assert "FT reporting before module." in article.plain_text
+    assert "FT reporting after module." in article.plain_text
+    assert "Tuesday's parliamentary schedule" in article.plain_text
+    assert "DAILY NEWSLETTER" not in article.plain_text
+    assert not any(
+        "newsletter-card.jpg" in image.original_url
+        for image in article.images
+    )
+    assert "Sign up here" not in article.plain_text
+    assert "Sign up for the newsletter" not in article.plain_text
+    assert "Lex recommends" not in article.plain_text
+    assert "Follow @FTMag" not in article.plain_text
+    assert article.extraction.parser_version == "ft-parser/0.8.13"
 
 
 def test_ft_parser_strips_attached_syndication_copyright_suffix():
@@ -2847,7 +2900,7 @@ def test_ft_parser_strips_attached_syndication_copyright_suffix():
     assert article.quality.status.value == "complete"
     assert "That is good for them" in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.12"
+    assert article.extraction.parser_version == "ft-parser/0.8.13"
 
 
 def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
@@ -3011,7 +3064,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.12"
+    assert article.extraction.parser_version == "ft-parser/0.8.13"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -3042,7 +3095,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.12"
+    assert article.extraction.parser_version == "ft-parser/0.8.13"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -3082,7 +3135,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.12"
+    assert article.extraction.parser_version == "ft-parser/0.8.13"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -3139,7 +3192,63 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.12"
+    assert article.extraction.parser_version == "ft-parser/0.8.13"
+
+
+def test_ft_parser_promotes_origami_images_and_deduplicates_raw_lead():
+    lead_raw = (
+        "http://prod-upp-image-read.ft.com/"
+        "3b1050e6-326a-11e9-bb0c-42459962a812"
+    )
+    lead_wrapped = (
+        "https://www.ft.com/__origami/service/image/v2/images/raw/"
+        + quote(lead_raw, safe="")
+        + "?fit=scale-down&source=next&width=900"
+    )
+    body_raw = (
+        "http://prod-upp-image-read.ft.com/"
+        "9c98486e-3288-11e9-bd3a-8b2a211d90d5"
+    )
+    body_wrapped = (
+        "https://www.ft.com/__origami/service/image/v2/images/raw/"
+        + quote(body_raw, safe="")
+        + "?fit=scale-down&source=next&width=700"
+    )
+    reporting = " ".join(["FT image reporting sentence."] * 30)
+    structured = {
+        "@type": "NewsArticle",
+        "headline": "FT image report",
+        "datePublished": "2019-02-18T00:00:00Z",
+        "articleBody": reporting,
+        "image": lead_raw,
+    }
+    html = f"""
+    <html><head>
+      <script type="application/ld+json">{json.dumps(structured)}</script>
+      <meta property="og:image" content="{lead_wrapped}">
+    </head><body><article>
+      <p>{reporting}</p>
+      <figure><img src="{body_wrapped}">
+        <figcaption>Distinct body photograph.</figcaption>
+      </figure>
+    </article></body></html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/image-report",
+    )
+
+    assert len(article.images) == 2
+    lead = next(image for image in article.images if image.role.value == "lead")
+    body = next(image for image in article.images if image.role.value == "body")
+    assert lead.original_url == lead_raw
+    assert lead_wrapped.replace("width=900", "width=1200") in (
+        lead.candidate_urls
+    )
+    assert body.original_url.endswith("source=next&width=1200")
+    assert body_wrapped in body.candidate_urls
 
 
 def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
