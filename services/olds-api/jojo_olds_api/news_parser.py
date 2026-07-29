@@ -3885,7 +3885,7 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
             node.decompose()
         elif (
             spec.publisher == "bloomberg"
-            and node.name == "p"
+            and node.name in {"p", "li", "span"}
             and text.startswith(
                 (
                     "want to receive this post in your inbox",
@@ -3894,6 +3894,8 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
                     "sign up for the new economy daily newsletter",
                     "sign up for our middle east newsletter",
                     "sign up for our coming middle east newsletter",
+                    "for the best in travel, food, drinks, fashion, cars, "
+                    "and life, sign up for the pursuits newsletter",
                 )
             )
         ):
