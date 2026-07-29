@@ -1260,7 +1260,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
 
 
 def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
@@ -1306,7 +1306,7 @@ def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
     assert result.images[0].caption is None
     assert result.images[0].credit == "Hiroyuki Ito"
     assert "recommended.jpg" not in result.body_html
-    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
 
 
 def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
@@ -1353,7 +1353,7 @@ def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
     assert result.quality.status.value == "partial"
     assert "incomplete-interactive" in result.quality.warnings
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -1974,7 +1974,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -2790,6 +2790,79 @@ def test_nyt_parser_trims_access_shell_after_complete_article():
     assert "Already a subscriber" not in result.plain_text
 
 
+def test_nyt_parser_removes_sponsorship_subscription_and_opinion_footer_ui():
+    reporting = " ".join(["New York Times reporting sentence."] * 35)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Times Report">
+      <meta property="article:published_time"
+            content="2020-12-23T12:00:00Z">
+    </head><body><article>
+      <section name="articleBody">
+        <p>Supported by</p>
+        <p>{reporting}</p>
+        <p>The reporting is supported by extensive documentary evidence.</p>
+        <p>Subscriber support helps make Times journalism possible.
+        If you’re not already a subscriber, please consider becoming one
+        today.</p>
+        <p>The Times is committed to publishing a diversity of letters to
+        the editor. We’d like to hear what you think.</p>
+        <p>Follow The New York Times Opinion section on Facebook,
+        Instagram and X.</p>
+        <p>Share full article</p>
+      </section>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2020/12/23/briefing/times-report.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "New York Times reporting sentence." in result.plain_text
+    assert "supported by extensive documentary evidence" in result.plain_text
+    assert "Subscriber support" not in result.plain_text
+    assert "diversity of letters" not in result.plain_text
+    assert "Opinion section on Facebook" not in result.plain_text
+    assert "Share full article" not in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
+
+
+def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
+    reporting = " ".join(["New York Times live reporting sentence."] * 35)
+    html = f"""
+    <html><head>
+      <title>The New York Times</title>
+      <meta property="article:published_time"
+            content="2020-10-02T22:58:07-04:00">
+    </head><body><article>
+      <header>
+        <h1 itemprop="headline"></h1>
+        <p id="article-summary">Positive tests inch up in New York City.</p>
+      </header>
+      <section name="articleBody"><p>{reporting}</p></section>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2020/10/02/world/"
+            "02virus-briefing-deblasio.html"
+        ),
+    )
+
+    assert result.headline == "Positive tests inch up in New York City."
+    assert result.quality.status.value == "complete"
+    assert "missing-headline" not in result.quality.warnings
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
+
+
 def test_nyt_parser_removes_related_coverage_and_newsletter_modules():
     reporting = " ".join(["New York Times analysis sentence."] * 35)
     html = f"""
@@ -2887,7 +2960,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -2936,7 +3009,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -2976,7 +3049,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -4603,7 +4676,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -5653,7 +5726,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -5807,7 +5880,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.35"
+    assert result.extraction.parser_version == "nyt-parser/0.8.36"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():

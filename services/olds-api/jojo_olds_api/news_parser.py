@@ -402,6 +402,11 @@ def parse_article(
         _meta_content(soup, "property", "og:title"),
         _meta_content(soup, "name", "twitter:title"),
         _tag_text(soup.select_one("article h1, main h1, h1")),
+        (
+            _tag_text(soup.select_one("#article-summary"))
+            if spec.publisher == "nyt"
+            else None
+        ),
     )
     description = _first_text(
         _string_or_none(nyt_preloaded_metadata.get("description")),
@@ -4641,11 +4646,45 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
     if spec.publisher == "ft":
         _remove_ft_newsletter_promos(soup)
         _strip_ft_copyright_suffixes(soup)
+    if spec.publisher == "nyt":
+        _remove_nyt_promos(soup)
     if spec.publisher == "reuters":
         _remove_reuters_promos(soup)
         _normalize_reuters_legacy_press_release_media(soup)
     if spec.publisher == "wsj":
         _remove_wsj_promos(soup)
+
+
+def _remove_nyt_promos(soup: BeautifulSoup) -> None:
+    """Remove NYT sponsorship, subscription and standardized engagement UI."""
+    patterns = (
+        re.compile(r"(?i)^supported by$"),
+        re.compile(r"(?i)^share full article$"),
+        re.compile(
+            r"(?i)^subscriber support helps make times journalism possible\b"
+        ),
+        re.compile(r"(?i)^\(?want to get .*briefing by email\?"),
+        re.compile(
+            r"(?i)^sign up here to get (?:this newsletter|"
+            r"the briefing)\b"
+        ),
+        re.compile(
+            r"(?i)^if you are not a subscriber to this newsletter\b"
+        ),
+        re.compile(r"(?i)^browse our full range of times newsletters\b"),
+        re.compile(
+            r"(?i)^the times is committed to publishing a diversity "
+            r"of letters to the editor\b"
+        ),
+        re.compile(
+            r"(?i)^follow the new york times opinion section on\b"
+        ),
+        re.compile(r"(?i)^for newspaper delivery questions\b"),
+    )
+    for node in list(soup.select("p, li, span")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if any(pattern.search(text) for pattern in patterns):
+            node.decompose()
 
 
 def _remove_reuters_promos(soup: BeautifulSoup) -> None:
