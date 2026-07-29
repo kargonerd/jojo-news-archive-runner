@@ -632,6 +632,26 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
+      - name: Verify saved parser results are reproducible
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python services/olds-api/tools/revalidate_parser_samples.py \
+            --publisher "$PUBLISHER" \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --archive-root "$LOCAL_ROOT/raw" \
+            --max-replays 1000 \
+            --progress-every 50 \
+            --force-existing \
+            --summary "$LOCAL_ROOT/raw/summary.json"
+
       - name: Finalize validation overlap audit
         if: >-
           ${{

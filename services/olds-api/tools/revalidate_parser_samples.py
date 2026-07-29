@@ -38,6 +38,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-replays", type=int, default=500)
     parser.add_argument("--progress-every", type=int, default=50)
     parser.add_argument("--summary", type=Path)
+    parser.add_argument(
+        "--force-existing",
+        action="store_true",
+        help=(
+            "Reparse existing validation results whose completed raw object "
+            "is present locally. This is an end-of-run reproducibility gate."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -46,6 +54,37 @@ def main() -> int:
     if args.max_replays < 1 or args.progress_every < 1:
         raise SystemExit("--max-replays and --progress-every must be positive")
     connection = sqlite3.connect(args.state, timeout=60)
+    forced = 0
+    if args.force_existing:
+        rows = connection.execute(
+            """
+            SELECT result.canonical_url, capture.raw_path
+            FROM parser_validation_results AS result
+            JOIN parser_validation_samples AS sample
+              ON sample.canonical_url=result.canonical_url
+            JOIN captures AS capture
+              ON capture.canonical_url=result.canonical_url
+             AND capture.status='complete'
+            ORDER BY sample.sample_priority, result.canonical_url
+            LIMIT ?
+            """,
+            (args.max_replays,),
+        ).fetchall()
+        replayable = [
+            str(canonical_url)
+            for canonical_url, raw_path in rows
+            if raw_path
+            and (args.archive_root / str(raw_path)).is_file()
+        ]
+        with connection:
+            connection.executemany(
+                """
+                DELETE FROM parser_validation_results
+                WHERE canonical_url=?
+                """,
+                ((canonical_url,) for canonical_url in replayable),
+            )
+        forced = len(replayable)
     pending = pending_completed_parser_validation_files(
         connection,
         maximum=args.max_replays,
@@ -134,6 +173,7 @@ def main() -> int:
     connection.close()
     result = {
         "publisher": args.publisher,
+        "forced": forced,
         "requested": len(pending),
         "processed": processed,
         "parserErrors": parser_errors,
