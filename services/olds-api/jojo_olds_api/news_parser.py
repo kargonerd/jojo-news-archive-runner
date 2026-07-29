@@ -432,6 +432,14 @@ def parse_article(
         content_type = ContentType.INTERACTIVE
     if spec.publisher == "ft" and ft_crossword_selected:
         content_type = ContentType.INTERACTIVE
+    if (
+        content_type == ContentType.ARTICLE
+        and soup.select_one(
+            "audio[data-audio-subtype='podcast'], "
+            "audio source[type^='audio/']"
+        )
+    ):
+        content_type = ContentType.AUDIO
 
     images_by_url: dict[str, ImageCandidate] = {}
     blocks: list[ContentBlock] = []
@@ -1065,18 +1073,34 @@ def _structured_article_body(
     value = news_article.get("articleBody")
     if not isinstance(value, str):
         return None
-    paragraphs = [
-        _clean_text(paragraph)
+    raw_paragraphs = [
+        paragraph
         for paragraph in re.split(r"\n\s*\n", value)
         if _clean_text(paragraph)
     ]
-    if not paragraphs:
+    if not raw_paragraphs:
         return None
     document = BeautifulSoup("<article></article>", "html.parser")
     article = document.article
     if not isinstance(article, Tag):
         return None
-    for paragraph in paragraphs:
+    for raw_paragraph in raw_paragraphs:
+        image_match = re.match(
+            r"^\s*\[(https?://[^\]\s]+)\]\s*(.*)$",
+            raw_paragraph,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if image_match is not None:
+            figure = document.new_tag("figure")
+            image = document.new_tag("img")
+            image["src"] = image_match.group(1)
+            figure.append(image)
+            article.append(figure)
+            paragraph = _clean_text(image_match.group(2))
+            if not paragraph:
+                continue
+        else:
+            paragraph = _clean_text(raw_paragraph)
         node = document.new_tag("p")
         node.string = paragraph
         article.append(node)
@@ -3483,6 +3507,8 @@ def _extract_blocks(
         "table",
         "hr",
         "iframe",
+        "audio",
+        "amp-brightcove",
         *spec.text_block_selectors,
     ]
     selected = body.select(", ".join(selectors))
@@ -3605,6 +3631,41 @@ def _extract_blocks(
         elif name == "iframe":
             source = _normalized_url(node.get("src"), base_url=base_url)
             if source:
+                blocks.append(
+                    ContentBlock(
+                        type=BlockType.EMBED,
+                        position=position,
+                        embed_url=source,
+                        html=str(node),
+                    )
+                )
+        elif name == "audio":
+            source_node = node.select_one("source[src]")
+            source_value = (
+                source_node.get("src")
+                if isinstance(source_node, Tag)
+                else node.get("src")
+            )
+            source = _normalized_url(source_value, base_url=base_url)
+            if source:
+                blocks.append(
+                    ContentBlock(
+                        type=BlockType.EMBED,
+                        position=position,
+                        embed_url=source,
+                        html=str(node),
+                    )
+                )
+        elif name == "amp-brightcove":
+            account = _string_or_none(node.get("data-account"))
+            player = _string_or_none(node.get("data-player")) or "default"
+            embed = _string_or_none(node.get("data-embed")) or "default"
+            video_id = _string_or_none(node.get("data-video-id"))
+            if account and video_id:
+                source = (
+                    f"https://players.brightcove.net/{account}/"
+                    f"{player}_{embed}/index.html?videoId={video_id}"
+                )
                 blocks.append(
                     ContentBlock(
                         type=BlockType.EMBED,
@@ -3825,6 +3886,18 @@ def _image_identity(url: str) -> str:
                 "",
             )
         )
+    if host in {
+        "prod-upp-image-read.ft.com",
+        "com.ft.imagepublish.upp-prod-eu.s3.amazonaws.com",
+    }:
+        ft_asset = re.search(
+            r"/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+            r"[0-9a-f]{4}-[0-9a-f]{12})(?:$|[./])",
+            parts.path,
+            re.IGNORECASE,
+        )
+        if ft_asset is not None:
+            return f"ft-image:{ft_asset.group(1).casefold()}"
     if host == "assets.bwbx.io":
         bloomberg_asset = re.fullmatch(
             r"(.+/v\d+)/[^/]+",

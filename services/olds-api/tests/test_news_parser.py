@@ -2322,7 +2322,132 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.8"
+    assert article.extraction.parser_version == "ft-parser/0.8.11"
+
+
+def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="Barclays under fire on climate">
+      <meta property="article:published_time"
+            content="2020-02-04T12:00:00Z">
+    </head><body><div class="article__content-body">
+      <audio controls data-o-component="o-audio"
+             data-audio-subtype="podcast"
+             data-content-id="example">
+        <source src="https://media.acast.com/ft-banking-weekly/example/media.mp3"
+                type="audio/mpeg">
+      </audio>
+      <p>Your browser does not support playing this file but you can still
+      download the MP3.</p>
+      <p>The banking team discusses climate policy and provides sufficient
+      context for this archived podcast episode.</p>
+      <p>A transcript for this podcast is currently unavailable.</p>
+    </div></body></html>
+    """
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "0e20fd1c-3a01-4fbe-85bd-8b5b0c99a460"
+        ),
+    )
+
+    assert article.content_type.value == "audio"
+    assert article.quality.status.value == "complete"
+    assert [
+        block.embed_url for block in article.blocks if block.embed_url
+    ] == [
+        "https://media.acast.com/ft-banking-weekly/example/media.mp3"
+    ]
+
+
+def test_ft_parser_preserves_legacy_brightcove_video_embeds():
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="Election report with video analysis">
+      <meta property="article:published_time"
+            content="2015-05-08T00:00:00Z">
+    </head><body><div class="article__content-body">
+      <p>The election report contains complete written analysis and
+      explains the result with enough historical context.</p>
+      <amp-brightcove data-account="47628783001"
+                      data-player="default"
+                      data-embed="default"
+                      data-video-id="4224995535001">
+      </amp-brightcove>
+      <p>A second paragraph records the response and preserves the rest of
+      the original Financial Times report.</p>
+    </div></body></html>
+    """
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "f350d9ac-f4fa-11e4-8a42-00144feab7de"
+        ),
+    )
+
+    assert article.content_type.value == "article"
+    assert article.quality.status.value == "complete"
+    assert [
+        block.embed_url for block in article.blocks if block.embed_url
+    ] == [
+        "https://players.brightcove.net/47628783001/"
+        "default_default/index.html?videoId=4224995535001"
+    ]
+
+
+def test_ft_parser_converts_structured_image_placeholder_to_body_block():
+    asset_id = "66874fc6-23f5-11e6-9d4d-c11776a5124d"
+    placeholder_url = (
+        "http://com.ft.imagepublish.upp-prod-eu.s3.amazonaws.com/"
+        + asset_id
+    )
+    lead_url = "http://prod-upp-image-read.ft.com/" + asset_id
+    body = (
+        f"[{placeholder_url}]\n"
+        "Left, a subject pictured during the reported event. "
+        "The complete article begins with substantive reporting and "
+        "explains the dispute using named sources and documentary context."
+        "\n\nA second paragraph preserves the response and the remainder "
+        "of the original Financial Times report."
+    )
+    structured = {
+        "@type": "NewsArticle",
+        "headline": "A report with a structured image placeholder",
+        "datePublished": "2016-05-27T23:00:26Z",
+        "articleBody": body,
+        "image": {"@type": "ImageObject", "url": lead_url},
+    }
+    html = f"""
+    <html><head>
+      <script type="application/ld+json">{json.dumps(structured)}</script>
+    </head><body><main class="subscription-barrier"></main></body></html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/structured-image",
+    )
+
+    assert article.quality.status.value == "complete"
+    assert article.quality.images_selected == 1
+    assert article.blocks[0].type.value == "image"
+    assert article.blocks[0].asset_id == article.images[0].asset_id
+    assert set(article.images[0].candidate_urls) == {
+        placeholder_url,
+        lead_url,
+    }
+    assert placeholder_url not in article.plain_text
+    assert "complete article begins" in article.plain_text
 
 
 def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
@@ -2361,7 +2486,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.8"
+    assert article.extraction.parser_version == "ft-parser/0.8.11"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -2392,7 +2517,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.8"
+    assert article.extraction.parser_version == "ft-parser/0.8.11"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -2432,7 +2557,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.8"
+    assert article.extraction.parser_version == "ft-parser/0.8.11"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -2489,7 +2614,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.8"
+    assert article.extraction.parser_version == "ft-parser/0.8.11"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
