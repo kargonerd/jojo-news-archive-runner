@@ -1430,6 +1430,23 @@ def capture_item(
         candidates_considered.extend(arquivo_pt_candidates)
         consider_candidates(arquivo_pt_candidates)
 
+    if (
+        best_response is not None
+        and item.publisher == "ap"
+        and best_response[0].provider == CaptureProvider.LIVE_ORIGIN
+    ):
+        live_usable, live_evidence = _ap_capture_parser_evidence(
+            best_response[2],
+            canonical_url=item.canonical_url,
+        )
+        best_response = (
+            *best_response[:6],
+            best_response[6] | live_evidence,
+        )
+        if not live_usable:
+            failures.append("ap-live-origin-parser-incomplete")
+            best_response = None
+
     if best_response is not None:
         (
             candidate,

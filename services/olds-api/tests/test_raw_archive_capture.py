@@ -1925,6 +1925,132 @@ def test_ap_live_origin_gallery_remains_full_quality(tmp_path: Path):
     assert capture.quality_signals["apThinLiveOrigin"] is False
 
 
+def test_ap_live_origin_title_shell_falls_back_to_archive(tmp_path: Path):
+    canonical_url = "https://apnews.com/article/archived-report-example"
+    archive_url = (
+        "https://web.archive.org/web/20170727075535id_/"
+        f"{canonical_url}"
+    )
+    shell = b"""
+    <html><head>
+      <meta property="og:title" content="An Archived AP Report">
+      <meta property="og:description" content="An Archived AP Report">
+      <meta property="article:published_time" content="2017-07-27T07:55:35Z">
+      <meta property="og:image"
+            content="https://assets.apnews.com/defaultshareimage-copy.png">
+    </head><body>
+      <main><div class="RichTextStoryBody">
+        <p>An Archived AP Report</p>
+      </div></main>
+    </body></html>
+    """ + (b" " * 2_048)
+    article = b"""
+    <html><head>
+      <meta property="og:title" content="An Archived AP Report">
+      <meta property="article:published_time" content="2017-07-27T07:55:35Z">
+    </head><body>
+      <main><div class="RichTextStoryBody">
+        <p>The first paragraph contains the complete archived report and
+        establishes the facts needed by readers.</p>
+        <p>The second paragraph adds interviews, context and supporting
+        details from the original Associated Press story.</p>
+      </div></main>
+    </body></html>
+    """ + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            canonical_url: (
+                200,
+                {"content-type": "text/html"},
+                shell,
+                canonical_url,
+            ),
+            archive_url: (
+                200,
+                {"content-type": "text/html"},
+                article,
+                archive_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="ap",
+        canonical_url=canonical_url,
+        published_at="2017-07-27T07:55:35Z",
+        section="archive",
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.LIVE_ORIGIN,
+                snapshot_url=canonical_url,
+            ),
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=archive_url,
+            ),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.WAYBACK
+    assert capture.quality_signals["apCaptureParserUsable"] is True
+
+
+def test_ap_live_origin_title_shell_is_not_persisted(tmp_path: Path):
+    canonical_url = "https://apnews.com/article/incomplete-live-shell"
+    shell = b"""
+    <html><head>
+      <meta property="og:title" content="Incomplete Live Shell">
+      <meta property="og:description" content="Incomplete Live Shell">
+      <meta property="og:image"
+            content="https://assets.apnews.com/defaultshareimage-copy.png">
+    </head><body>
+      <main><div class="RichTextStoryBody">
+        <p>Incomplete Live Shell</p>
+      </div></main>
+    </body></html>
+    """ + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            canonical_url: (
+                200,
+                {"content-type": "text/html"},
+                shell,
+                canonical_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="ap",
+        canonical_url=canonical_url,
+        published_at=None,
+        section=None,
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.LIVE_ORIGIN,
+                snapshot_url=canonical_url,
+            ),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "error"
+    assert result["capture"] is None
+    assert "ap-live-origin-parser-incomplete" in result["error"]
+
+
 def test_capture_keeps_strong_article_instead_of_first_html_shell(
     tmp_path: Path,
 ):
