@@ -1718,7 +1718,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.10"
+    assert result.extraction.parser_version == "reuters-parser/0.7.11"
 
 
 def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
@@ -1804,7 +1804,7 @@ def test_reuters_parser_promotes_and_deduplicates_legacy_lazy_image():
     assert result.images[0].original_url == lead
     assert lazy in result.images[0].candidate_urls
     assert result.images[0].alt == "A detainee holds a fence."
-    assert result.extraction.parser_version == "reuters-parser/0.7.10"
+    assert result.extraction.parser_version == "reuters-parser/0.7.11"
 
 
 def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
@@ -1850,7 +1850,7 @@ def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
     assert "Unrelated recommendation" not in result.plain_text
     assert "Capital Calls" not in result.plain_text
     assert "Another unrelated" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.10"
+    assert result.extraction.parser_version == "reuters-parser/0.7.11"
 
 
 def test_reuters_parser_trims_read_next_and_author_profile_tail():
@@ -1985,7 +1985,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.10"
+    assert result.extraction.parser_version == "reuters-parser/0.7.11"
 
 
 @pytest.mark.parametrize(
@@ -2078,7 +2078,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.10"
+    assert result.extraction.parser_version == "reuters-parser/0.7.11"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():
@@ -5876,3 +5876,47 @@ def test_nyt_parser_extracts_exact_liveblog_post_from_preloaded_state():
     assert result.quality.status.value == "complete"
     assert result.quality.block_count == 3
     assert result.published_at.isoformat() == "2022-01-13T22:27:01+00:00"
+
+
+def test_reuters_parser_extracts_numbered_div_paragraphs():
+    paragraphs = "".join(
+        f"""
+        <div data-testid="paragraph-{index}"
+             class="article-body__paragraph__2-BtD">
+          Paragraph {index} contains substantive Reuters reporting about
+          commodity markets, company decisions and the economic context
+          needed to understand the development in full.
+        </div>
+        """
+        for index in range(6)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Commodity export outlook changes">
+      <meta property="article:published_time"
+            content="2025-06-30T12:00:00Z">
+    </head><body><main><article>
+      <div class="article-body__content__17Yit">
+        {paragraphs}
+        <p data-testid="promo-box">Sign up here.</p>
+        <div class="article-body__element__2p5pI">
+          <p>Reporting by Example Reporter; Editing by Example Editor</p>
+        </div>
+      </div>
+    </article></main></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=(
+            "https://www.reuters.com/markets/commodities/"
+            "commodity-export-outlook-changes-2025-06-30"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters > 700
+    assert "Paragraph 0 contains" in result.plain_text
+    assert "Paragraph 5 contains" in result.plain_text
+    assert "Sign up here" not in result.plain_text
