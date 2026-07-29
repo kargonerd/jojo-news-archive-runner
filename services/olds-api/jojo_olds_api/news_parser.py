@@ -182,7 +182,11 @@ def parse_article(
         if legacy_interactive is not None:
             body = legacy_interactive
         embedded_interactive = _nyt_embedded_interactive_lede(soup)
-        if embedded_interactive is not None:
+        if embedded_interactive is not None and (
+            body is None
+            or _nyt_noninteractive_body_length(body)
+            < len(embedded_interactive.get_text(" ", strip=True))
+        ):
             body = embedded_interactive
         legacy_newsgraphic = _nyt_legacy_newsgraphic_body(soup)
         if legacy_newsgraphic is not None:
@@ -1046,14 +1050,23 @@ def _nyt_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
         )
     ]
     if not nodes:
-        primary = soup.select_one(
+        primary_nodes = [
+            node
+            for node in soup.select(
             "article.story.theme-main .story-body, "
             "article#story .story-body"
-        )
-        if not isinstance(primary, Tag):
+            )
+            if not any(
+                isinstance(parent, Tag)
+                and "story-body" in (parent.get("class") or [])
+                for parent in node.parents
+            )
+        ]
+        if not primary_nodes:
             return None
         nodes = [
             node
+            for primary in primary_nodes
             for node in primary.select(
                 ".story-content, [itemprop='articleBody']"
             )
@@ -1067,6 +1080,12 @@ def _nyt_legacy_article_body(soup: BeautifulSoup) -> Tag | None:
                 for parent in node.parents
             )
         ]
+        if not nodes:
+            nodes = [
+                primary
+                for primary in primary_nodes
+                if primary.select_one("p, figure, table")
+            ]
         if not nodes:
             return None
     document = BeautifulSoup(
@@ -2715,6 +2734,19 @@ def _nyt_embedded_interactive_lede(soup: BeautifulSoup) -> Tag | None:
             insertion_point.insert_after(figure)
             insertion_point = figure
     return recovered
+
+
+def _nyt_noninteractive_body_length(body: Tag) -> int:
+    """Measure surrounding prose without counting an embedded graphic twice."""
+    document = BeautifulSoup(str(body), "html.parser")
+    copy = document.find()
+    if not isinstance(copy, Tag):
+        return 0
+    for graphic in copy.select(
+        "figure.interactive-embedded, .interactive-graphic"
+    ):
+        graphic.decompose()
+    return len(_clean_text(copy.get_text(" ", strip=True)))
 
 
 def _nyt_inline_interactive_media(

@@ -1106,7 +1106,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.28"
+    assert result.extraction.parser_version == "nyt-parser/0.8.29"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -1573,7 +1573,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.28"
+    assert result.extraction.parser_version == "nyt-parser/0.8.29"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -2307,7 +2307,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.28"
+    assert result.extraction.parser_version == "nyt-parser/0.8.29"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -2356,7 +2356,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.28"
+    assert result.extraction.parser_version == "nyt-parser/0.8.29"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -2396,7 +2396,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.28"
+    assert result.extraction.parser_version == "nyt-parser/0.8.29"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -3941,7 +3941,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.28"
+    assert result.extraction.parser_version == "nyt-parser/0.8.29"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -4203,6 +4203,46 @@ def test_nyt_parser_recovers_embedded_interactive_lede_tables():
     assert "first critic explains" in result.plain_text
     assert "second critic explains" in result.plain_text
     assert result.quality.images_selected == 1
+
+
+def test_nyt_parser_does_not_replace_article_with_short_interactive_nav():
+    article_text = (
+        "The nominations included expected contenders, but the academy also "
+        "recognized several historic achievements and overlooked other films. "
+    ) * 8
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="The Snubs and Surprises">
+      <meta property="article:published_time"
+            content="2018-01-23T00:00:00Z">
+    </head><body>
+      <article id="story" class="story theme-main">
+        <div class="story-body">
+          <div class="story-content"><p>{article_text}</p></div>
+          <figure class="interactive interactive-embedded lede">
+            <div class="interactive-graphic">
+              <p>Oscars 2018</p>
+              <p>Catch Up Snubs and Surprises Ballot Stream Nominees</p>
+              <img src="https://static01.nyt.com/oscars-navigation.jpg">
+            </div>
+          </figure>
+        </div>
+      </article>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2018/01/23/movies/"
+            "oscars-snubs-surprises.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "historic achievements" in result.plain_text
+    assert len(result.plain_text) > 500
 
 
 def test_nyt_parser_treats_interpreted_by_cartoon_as_complete_gallery():
@@ -4802,7 +4842,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.28"
+    assert result.extraction.parser_version == "nyt-parser/0.8.29"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -4956,7 +4996,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.28"
+    assert result.extraction.parser_version == "nyt-parser/0.8.29"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
