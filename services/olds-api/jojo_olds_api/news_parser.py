@@ -271,6 +271,8 @@ def parse_article(
             gallery_body = _wsj_amp_story_gallery(soup)
         if gallery_body is None:
             gallery_body = _wsj_legacy_slideshow(soup)
+        if gallery_body is None:
+            gallery_body = _wsj_unsupported_media_gallery(soup)
         if gallery_body is not None:
             body = gallery_body
             structured_image_gallery_selected = True
@@ -577,6 +579,12 @@ def parse_article(
     if spec.publisher == "ft" and _ft_explicit_truncation_notice(soup):
         warnings.append("truncated-body")
     if spec.publisher == "bloomberg" and _bloomberg_teaser_shell(soup):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "wsj"
+        and content_type == ContentType.ARTICLE
+        and _wsj_legacy_ellipsis_truncation(plain_text)
+    ):
         warnings.append("truncated-body")
     if not published_at:
         warnings.append("missing-published-at")
@@ -1404,8 +1412,11 @@ def _wsj_amp_story_gallery(soup: BeautifulSoup) -> Tag | None:
 
 
 def _wsj_legacy_slideshow(soup: BeautifulSoup) -> Tag | None:
-    slides = soup.select(".dj-slideshow .slide-wrapper:not(.thumbgrid-wrapper)")
-    if len(slides) < 3:
+    slides = soup.select(
+        ".dj-slideshow .slide-wrapper:not(.thumbgrid-wrapper), "
+        ".wsj-slideshow-slide:not(.explore-more-slide)"
+    )
+    if len(slides) < 2:
         return None
     document = BeautifulSoup("<article></article>", "html.parser")
     article = document.article
@@ -1413,19 +1424,37 @@ def _wsj_legacy_slideshow(soup: BeautifulSoup) -> Tag | None:
         return None
     for slide in slides:
         image = slide.select_one("img[src], img[data-src]")
-        if not isinstance(image, Tag):
-            continue
+        content_url = slide.select_one(
+            "meta[itemprop='contentUrl'][content], "
+            "meta[property='contentUrl'][content]"
+        )
         source = _first_text(
-            _string_or_none(image.get("src")),
-            _string_or_none(image.get("data-src")),
+            _string_or_none(content_url.get("content"))
+            if isinstance(content_url, Tag)
+            else None,
+            _string_or_none(image.get("src"))
+            if isinstance(image, Tag)
+            else None,
+            _string_or_none(image.get("data-src"))
+            if isinstance(image, Tag)
+            else None,
         )
         if not source:
             continue
         credit = _first_text(
             _string_or_none(slide.get("data-credit")),
-            _tag_text(slide.select_one(".caption-wrapper span")),
+            _tag_text(
+                slide.select_one(
+                    ".caption-wrapper span, "
+                    "[itemprop='copyrightHolder'], "
+                    ".credit"
+                )
+            ),
         )
-        caption_node = slide.select_one(".caption-wrapper p")
+        caption_node = slide.select_one(
+            ".caption-wrapper p, [itemprop='caption'], "
+            ".wsj-slideshow-caption, figcaption"
+        )
         caption = None
         if isinstance(caption_node, Tag):
             caption_copy = BeautifulSoup(
@@ -1453,7 +1482,42 @@ def _wsj_legacy_slideshow(soup: BeautifulSoup) -> Tag | None:
             )
             figure.append(figcaption)
         article.append(figure)
-    return article if len(article.select("figure")) >= 3 else None
+    return article if len(article.select("figure")) >= 2 else None
+
+
+def _wsj_legacy_ellipsis_truncation(plain_text: str) -> bool:
+    """Recognize short legacy archive captures cut off with a literal ellipsis."""
+    text = plain_text.rstrip()
+    return len(text) < 1_000 and bool(
+        re.search(r"[A-Za-z][.]{3}$", text)
+    )
+
+
+def _wsj_unsupported_media_gallery(soup: BeautifulSoup) -> Tag | None:
+    """Recover the synopsis when an old slideshow app cannot be replayed."""
+    shell = soup.select_one(".wsj-snippet-body, .wsj-snippet-login")
+    if not isinstance(shell, Tag):
+        return None
+    shell_text = shell.get_text(" ", strip=True).casefold()
+    if (
+        "media that is not currently supported" not in shell_text
+        or soup.select_one(".slideshow-article") is None
+    ):
+        return None
+    description = _first_text(
+        _meta_content(soup, "name", "description"),
+        _meta_content(soup, "property", "og:description"),
+    )
+    if not description:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    paragraph = document.new_tag("p")
+    paragraph.string = description
+    article.append(paragraph)
+    return article
 
 
 def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:

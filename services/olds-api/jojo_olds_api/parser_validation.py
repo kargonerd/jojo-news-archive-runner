@@ -40,6 +40,10 @@ _UI_NOISE_PHRASES = (
     "trending stories",
     "share this article",
     "our standards: the thomson reuters trust principles",
+    "get livefyre",
+    "text size regular medium large",
+    "if you are not redirected automatically",
+    "save article log in to save subscribe to wsj",
 )
 _PLACEHOLDER_IMAGE_MARKERS = (
     "wsj-social-share",

@@ -250,7 +250,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.10"
+    assert result.extraction.parser_version == "wsj-parser/0.8.11"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -405,7 +405,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.10"
+    assert result.extraction.parser_version == "wsj-parser/0.8.11"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -502,7 +502,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.10"
+    assert result.extraction.parser_version == "wsj-parser/0.8.11"
 
 
 def test_wsj_parser_classifies_legacy_slideshow_metadata_as_gallery():
@@ -582,6 +582,121 @@ def test_wsj_parser_removes_legacy_article_tools_and_trending_modules():
     assert "Unrelated" not in result.plain_text
 
 
+def test_wsj_parser_removes_legacy_share_comments_and_journal_reports():
+    reporting = " ".join(["Core reporting remains intact."] * 25)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Legacy Page Furniture">
+      <meta property="article:published_time" content="2018-10-22T00:00:00Z">
+    </head><body><article>
+      <div class="article-content"><p>{reporting}</p></div>
+      <ul class="article_tools"><li>Text Size Regular Medium Large</li>
+        <li>Save Article Log In to Save Subscribe to WSJ</li></ul>
+      <div id="livefyre-wrapper"><p>Get Livefyre</p><p>FAQ</p></div>
+      <div class="module jr-module"><p>College Rankings</p>
+        <p>Wealth Management</p></div>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/legacy-furniture-1540174021",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Core reporting remains intact." in result.plain_text
+    assert "Text Size" not in result.plain_text
+    assert "Livefyre" not in result.plain_text
+    assert "College Rankings" not in result.plain_text
+
+
+def test_wsj_parser_extracts_imageobject_legacy_slideshow():
+    slides = "".join(
+        f"""
+        <div class="wsj-slideshow-slide" itemtype="http://schema.org/ImageObject">
+          <meta itemprop="contentUrl"
+                content="https://images.wsj.net/im-{index}.jpg">
+          <p itemprop="caption">Historical image {index}.</p>
+          <span itemprop="copyrightHolder">Photographer {index}</span>
+        </div>
+        """
+        for index in range(3)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Buick Show Stopper">
+      <meta property="article:published_time" content="2014-12-16T00:00:00Z">
+    </head><body><article>
+      {slides}
+      <div class="wsj-slideshow-slide explore-more-slide">
+        <p>More Slideshows</p><p>Unrelated promotion</p>
+      </div>
+      <div id="livefyre-wrapper"><p>Get Livefyre</p><p>FAQ</p></div>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/a-buick-show-stopper-1418751477",
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert len(result.images) == 3
+    assert "Historical image 0." in result.plain_text
+    assert "More Slideshows" not in result.plain_text
+    assert "Livefyre" not in result.plain_text
+
+
+def test_wsj_parser_recovers_description_from_unsupported_slideshow_shell():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A Day at Design Boot Camp">
+      <meta name="description" content="Boot campers visit furniture showrooms and study interior design during a three-day workshop.">
+      <meta property="article:published_time" content="2014-10-24T00:00:00Z">
+    </head><body><article>
+      <div class="wsj-article-headline-wrap slideshow-article"></div>
+      <div class="wsj-snippet-body">
+        <p>We're sorry but this article contains media that is not currently supported.</p>
+        <p>If you are not redirected automatically, click this link.</p>
+      </div>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/design-boot-camp-1414169304",
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.plain_text.startswith("Boot campers visit")
+    assert "not redirected automatically" not in result.plain_text
+
+
+def test_wsj_parser_marks_short_ellipsis_capture_as_partial():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Bangladesh Power Restored">
+      <meta property="article:published_time" content="2014-11-02T00:00:00Z">
+    </head><body><article><div class="article-content">
+      <p>Electricity returned to many areas after a nationwide blackout.</p>
+      <p>Officials said engineers were still investigating the...</p>
+    </div></article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/bangladesh-power-1414915894",
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "truncated-body" in result.quality.warnings
+
+
 def test_wsj_parser_marks_subscription_snippet_as_partial():
     html = b"""
     <html><head>
@@ -627,7 +742,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.10"
+    assert result.extraction.parser_version == "wsj-parser/0.8.11"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
