@@ -1106,7 +1106,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.32"
+    assert result.extraction.parser_version == "nyt-parser/0.8.33"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -1652,7 +1652,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.32"
+    assert result.extraction.parser_version == "nyt-parser/0.8.33"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -2386,7 +2386,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.32"
+    assert result.extraction.parser_version == "nyt-parser/0.8.33"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -2435,7 +2435,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.32"
+    assert result.extraction.parser_version == "nyt-parser/0.8.33"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -2475,7 +2475,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.32"
+    assert result.extraction.parser_version == "nyt-parser/0.8.33"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -4023,7 +4023,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.32"
+    assert result.extraction.parser_version == "nyt-parser/0.8.33"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -5073,7 +5073,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.32"
+    assert result.extraction.parser_version == "nyt-parser/0.8.33"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -5227,7 +5227,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.32"
+    assert result.extraction.parser_version == "nyt-parser/0.8.33"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
@@ -5659,6 +5659,118 @@ def test_nyt_parser_preserves_rendered_legacy_interactive_tables():
     assert result.quality.body_characters > 300
     assert "Critic 5" in result.plain_text
     assert "Film choice 5" in result.plain_text
+
+
+def test_nyt_parser_recovers_archived_adventure_quiz_resource():
+    resource_url = (
+        "https://int.nyt.com/assets/adventure/js/"
+        "southern-novels-adventure-production.js"
+    )
+    entities = {
+        "quiz": {
+            "id": "quiz",
+            "type": "quiz",
+            "entities": ["question-1", "question-2", "question-3"],
+            "data": {},
+        }
+    }
+    for number in range(1, 4):
+        entities[f"question-{number}"] = {
+            "id": f"question-{number}",
+            "type": "multiple_choice_question",
+            "data": {},
+            "entities": [
+                f"prompt-{number}",
+                f"answer-{number}-a",
+                f"answer-{number}-b",
+                f"response-{number}",
+            ],
+        }
+        entities[f"prompt-{number}"] = {
+            "id": f"prompt-{number}",
+            "type": "text",
+            "data": {
+                "content": (
+                    f"Question {number} asks which Southern state provides "
+                    "the setting for this novel and why that geography "
+                    "matters to its characters?"
+                )
+            },
+            "entities": [],
+        }
+        for suffix, state, correct in (
+            ("a", "Mississippi", True),
+            ("b", "Georgia", False),
+        ):
+            entities[f"answer-{number}-{suffix}"] = {
+                "id": f"answer-{number}-{suffix}",
+                "type": "answer",
+                "data": {"correct": correct},
+                "entities": [f"answer-text-{number}-{suffix}"],
+            }
+            entities[f"answer-text-{number}-{suffix}"] = {
+                "id": f"answer-text-{number}-{suffix}",
+                "type": "text",
+                "data": {"content": state},
+                "entities": [],
+            }
+        entities[f"response-{number}"] = {
+            "id": f"response-{number}",
+            "type": "response",
+            "data": {"when": "all"},
+            "entities": [f"explanation-{number}"],
+        }
+        entities[f"explanation-{number}"] = {
+            "id": f"explanation-{number}",
+            "type": "text",
+            "data": {
+                "content": (
+                    "The Book Review explains how the author uses landscape, "
+                    "family history and regional memory to shape the story "
+                    "in a detailed critical discussion."
+                )
+            },
+            "entities": [],
+        }
+    serialized = json.dumps(
+        {"entitiesById": entities, "root": "quiz"},
+        separators=(",", ":"),
+    )
+    javascript = (
+        "module.exports=JSON.parse('"
+        + serialized.replace("\\", "\\\\").replace("'", "\\'")
+        + "');"
+    ).encode()
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="How Well Do You Know These Novels?">
+      <meta property="article:published_time" content="2022-10-07T00:00:00Z">
+      <meta name="description" content="A literary geography quiz.">
+    </head><body><main><article>
+      <section class="interactive-content">
+        <div id="adventure-project-container">
+          <script src="{resource_url}"></script>
+        </div>
+      </section>
+    </article></main></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2022/10/07/books/"
+            "review/southern-novels-quiz.html"
+        ),
+        dependent_resources={resource_url: javascript},
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters > 500
+    assert "Question 3 asks" in result.plain_text
+    # Identical answer labels are intentionally de-duplicated as text blocks.
+    assert "Correct answer: Mississippi" in result.plain_text
 
 
 def test_nyt_parser_preserves_balloteer_quiz_data_endpoint():

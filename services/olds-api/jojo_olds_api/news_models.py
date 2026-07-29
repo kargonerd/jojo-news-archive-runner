@@ -57,6 +57,13 @@ class BlobReference(ArchiveModel):
     content_encoding: str | None = None
 
 
+class DependentResource(ArchiveModel):
+    source_url: str
+    snapshot_url: str
+    content_type: str
+    blob: BlobReference
+
+
 class RawCapture(ArchiveModel):
     format_version: str = "jojo-raw-capture/1"
     article_id: str
@@ -74,6 +81,7 @@ class RawCapture(ArchiveModel):
     quality_score: int
     quality_signals: dict[str, Any] = Field(default_factory=dict)
     raw_html: BlobReference
+    dependent_resources: list[DependentResource] = Field(default_factory=list)
 
 
 class ArticleStatus(str, Enum):

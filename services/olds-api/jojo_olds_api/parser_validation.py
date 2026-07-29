@@ -759,6 +759,10 @@ def record_parser_validation(
             publisher=capture.publisher,
             canonical_url=capture.canonical_url,
             raw_capture=capture,
+            dependent_resources=_read_dependent_resources(
+                capture,
+                archive_root,
+            ),
             parsed_at=parsed_at,
         )
         if article.published_at is not None:
@@ -1213,6 +1217,28 @@ def _read_capture_html(capture: RawCapture, archive_root: Path) -> bytes:
             f"expected {capture.raw_html.sha256}, got {actual}"
         )
     return content
+
+
+def _read_dependent_resources(
+    capture: RawCapture,
+    archive_root: Path,
+) -> dict[str, bytes]:
+    resources: dict[str, bytes] = {}
+    for resource in capture.dependent_resources:
+        path = archive_root / resource.blob.path
+        if resource.blob.content_encoding == "gzip":
+            with gzip.open(path, "rb") as handle:
+                content = handle.read()
+        else:
+            content = path.read_bytes()
+        actual = hashlib.sha256(content).hexdigest()
+        if actual != resource.blob.sha256:
+            raise ValueError(
+                "dependent resource checksum mismatch: "
+                f"expected {resource.blob.sha256}, got {actual}"
+            )
+        resources[resource.source_url] = content
+    return resources
 
 
 def _normalize_text(value: str | None) -> str:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from datetime import datetime, timezone
 import hashlib
 import html as html_module
@@ -63,6 +64,7 @@ def parse_article(
     publisher: str,
     canonical_url: str,
     raw_capture: RawCapture | None = None,
+    dependent_resources: dict[str, bytes] | None = None,
     parsed_at: datetime | None = None,
     allow_generic_syndication: bool = False,
 ) -> JojoArticle:
@@ -182,6 +184,12 @@ def parse_article(
             < len(preloaded_body.get_text(" ", strip=True))
         ):
             body = preloaded_body
+        adventure_body = _nyt_adventure_resource_body(
+            soup,
+            dependent_resources=dependent_resources or {},
+        )
+        if adventure_body is not None:
+            body = adventure_body
     if body is None:
         body = _select_body(soup, spec)
     if spec.publisher == "nyt":
@@ -2656,6 +2664,166 @@ def _nyt_legacy_op_art_gallery(soup: BeautifulSoup) -> Tag | None:
         figure.append(figcaption)
     article.append(figure)
     return article
+
+
+def _nyt_adventure_resource_body(
+    soup: BeautifulSoup,
+    *,
+    dependent_resources: dict[str, bytes],
+) -> Tag | None:
+    """Recover quiz prose serialized inside an archived Adventure JS bundle."""
+    script_urls = {
+        _normalized_url(
+            str(script.get("src") or ""),
+            base_url="https://www.nytimes.com/",
+        )
+        for script in soup.select(
+            "#adventure-project-container script[src], "
+            "section.interactive-content script[src]"
+        )
+    }
+    matching_resources = [
+        content
+        for url, content in dependent_resources.items()
+        if _normalized_url(url, base_url="https://www.nytimes.com/")
+        in script_urls
+    ]
+    for content in matching_resources:
+        javascript = content.decode("utf-8", errors="replace")
+        for match in re.finditer(
+            r"""JSON\.parse\('((?:\\.|[^'\\])*)'\)""",
+            javascript,
+        ):
+            serialized = match.group(1)
+            if '"entitiesById"' not in serialized:
+                continue
+            try:
+                decoded = ast.literal_eval(f"'{serialized}'")
+                payload = json.loads(decoded)
+            except (SyntaxError, ValueError, json.JSONDecodeError):
+                continue
+            body = _nyt_adventure_entity_body(payload)
+            if body is not None:
+                return body
+    return None
+
+
+def _nyt_adventure_entity_body(payload: object) -> Tag | None:
+    if not isinstance(payload, dict):
+        return None
+    entities = payload.get("entitiesById")
+    root_id = payload.get("root")
+    if not isinstance(entities, dict) or not isinstance(root_id, str):
+        return None
+    root = entities.get(root_id)
+    if not isinstance(root, dict) or root.get("type") != "quiz":
+        return None
+    question_ids = [
+        value
+        for value in root.get("entities", [])
+        if (
+            isinstance(value, str)
+            and isinstance(entities.get(value), dict)
+            and entities[value].get("type") == "multiple_choice_question"
+        )
+    ]
+    if len(question_ids) < 3:
+        return None
+
+    def entity_text(entity_id: object) -> str | None:
+        entity = entities.get(entity_id)
+        if not isinstance(entity, dict):
+            return None
+        data = entity.get("data")
+        content = data.get("content") if isinstance(data, dict) else None
+        if not isinstance(content, str):
+            return None
+        # Adventure text supports Markdown plus small HTML fragments.
+        rendered = BeautifulSoup(content, "html.parser").get_text(
+            " ",
+            strip=True,
+        )
+        rendered = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", rendered)
+        return _clean_text(rendered) or None
+
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for number, question_id in enumerate(question_ids, start=1):
+        question = entities[question_id]
+        children = question.get("entities", [])
+        if not isinstance(children, list):
+            continue
+        prompt = next(
+            (
+                entity_text(child_id)
+                for child_id in children
+                if (
+                    isinstance(entities.get(child_id), dict)
+                    and entities[child_id].get("type") == "text"
+                )
+            ),
+            None,
+        )
+        answers: list[tuple[str, bool]] = []
+        explanation: str | None = None
+        for child_id in children:
+            child = entities.get(child_id)
+            if not isinstance(child, dict):
+                continue
+            child_type = child.get("type")
+            descendants = child.get("entities", [])
+            if not isinstance(descendants, list):
+                continue
+            if child_type == "answer":
+                answer_text = next(
+                    (entity_text(value) for value in descendants if entity_text(value)),
+                    None,
+                )
+                data = child.get("data")
+                correct = bool(
+                    isinstance(data, dict) and data.get("correct") is True
+                )
+                if answer_text:
+                    answers.append((answer_text, correct))
+            elif child_type == "response":
+                explanation = next(
+                    (
+                        entity_text(value)
+                        for value in descendants
+                        if (
+                            isinstance(entities.get(value), dict)
+                            and entities[value].get("type") == "text"
+                            and entity_text(value)
+                        )
+                    ),
+                    None,
+                )
+        if not prompt or len(answers) < 2:
+            continue
+        heading = document.new_tag("h2")
+        heading.string = f"{number}. {prompt}"
+        article.append(heading)
+        choices = document.new_tag("ul")
+        for answer_text, _ in answers:
+            item = document.new_tag("li")
+            item.string = answer_text
+            choices.append(item)
+        article.append(choices)
+        correct_answers = [text for text, correct in answers if correct]
+        if correct_answers:
+            answer_paragraph = document.new_tag("p")
+            answer_paragraph.string = (
+                "Correct answer: " + "; ".join(correct_answers)
+            )
+            article.append(answer_paragraph)
+        if explanation:
+            explanation_paragraph = document.new_tag("p")
+            explanation_paragraph.string = explanation
+            article.append(explanation_paragraph)
+    text = _clean_text(article.get_text(" ", strip=True))
+    return article if len(text) >= 500 else None
 
 
 def _nyt_legacy_interactive_graphic(soup: BeautifulSoup) -> Tag | None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import sqlite3
 
@@ -19,6 +20,7 @@ SOURCE_CAPTURE_COLUMNS = (
     "content_type",
     "quality_score",
     "quality_signals_json",
+    "dependent_resources_json",
     "raw_path",
     "raw_sha256",
     "raw_bytes",
@@ -45,6 +47,7 @@ def export_completed_capture_index(
             content_type TEXT,
             quality_score INTEGER,
             quality_signals_json TEXT,
+            dependent_resources_json TEXT,
             raw_path TEXT NOT NULL,
             raw_sha256 TEXT NOT NULL,
             raw_bytes INTEGER,
@@ -205,6 +208,7 @@ def import_selected_source_captures(
                     content_type=?,
                     quality_score=?,
                     quality_signals_json=?,
+                    dependent_resources_json=?,
                     raw_path=?,
                     raw_sha256=?,
                     raw_bytes=?,
@@ -223,6 +227,7 @@ def import_selected_source_captures(
                     values["content_type"],
                     values["quality_score"],
                     values["quality_signals_json"],
+                    values["dependent_resources_json"],
                     raw_path,
                     raw_sha256,
                     values["raw_bytes"],
@@ -237,6 +242,29 @@ def import_selected_source_captures(
             ).fetchone()[0]:
                 imported += 1
                 imported_paths.append(raw_path)
+                dependent_resources = values["dependent_resources_json"]
+                if isinstance(dependent_resources, str):
+                    try:
+                        resources = json.loads(dependent_resources)
+                    except (ValueError, TypeError):
+                        resources = []
+                    for resource in resources:
+                        blob = (
+                            resource.get("blob")
+                            if isinstance(resource, dict)
+                            else None
+                        )
+                        path = (
+                            blob.get("path")
+                            if isinstance(blob, dict)
+                            else None
+                        )
+                        if (
+                            isinstance(path, str)
+                            and path.startswith("objects/")
+                            and ".." not in Path(path).parts
+                        ):
+                            imported_paths.append(path)
     return {
         "publisher": publisher,
         "sampleYear": sample_year,

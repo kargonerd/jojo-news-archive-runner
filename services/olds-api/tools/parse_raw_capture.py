@@ -54,6 +54,10 @@ def main() -> int:
         publisher=capture.publisher,
         canonical_url=capture.canonical_url,
         raw_capture=capture,
+        dependent_resources=_read_dependent_resources(
+            capture,
+            archive_root=archive_root,
+        ),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_suffix(args.output.suffix + ".tmp")
@@ -81,6 +85,29 @@ def main() -> int:
         )
     )
     return 0
+
+
+def _read_dependent_resources(
+    capture: RawCapture,
+    *,
+    archive_root: Path,
+) -> dict[str, bytes]:
+    resources: dict[str, bytes] = {}
+    for resource in capture.dependent_resources:
+        path = archive_root / resource.blob.path
+        if resource.blob.content_encoding == "gzip":
+            with gzip.open(path, "rb") as handle:
+                content = handle.read()
+        else:
+            content = path.read_bytes()
+        digest = hashlib.sha256(content).hexdigest()
+        if digest != resource.blob.sha256:
+            raise SystemExit(
+                "dependent resource checksum mismatch: "
+                f"expected {resource.blob.sha256}, got {digest}"
+            )
+        resources[resource.source_url] = content
+    return resources
 
 
 def _infer_archive_root(record_path: Path) -> Path:

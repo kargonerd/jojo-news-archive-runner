@@ -33,6 +33,7 @@ from jojo_olds_api.raw_archive_capture import (
     WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     _ap_syndication_search_urls,
     _ap_capture_parser_evidence,
+    _capture_nyt_interactive_resources,
     _decode_archived_html_content,
     _ft_capture_parser_evidence,
     _wsj_capture_parser_evidence,
@@ -42,6 +43,7 @@ from jojo_olds_api.raw_archive_capture import (
     capture_item,
     capture_summary,
     completed_capture_rejection_reason,
+    completed_raw_capture,
     discover_arquivo_pt_candidates,
     discover_ap_syndication_candidates,
     discover_ft_syndication_candidates,
@@ -99,6 +101,116 @@ class StubArchiveClient:
         if len(response[2]) > maximum_bytes:
             raise ValueError("too large")
         return response
+
+
+def test_archives_wayback_nyt_adventure_script_as_dependent_resource(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.nytimes.com/interactive/2022/10/07/books/"
+        "review/southern-novels-quiz.html"
+    )
+    source_url = (
+        "https://int.nyt.com/assets/adventure/js/"
+        "southern-novels-adventure-production.js"
+    )
+    snapshot_url = (
+        "https://web.archive.org/web/20221007165153id_/" + source_url
+    )
+    javascript = b"module.exports=JSON.parse('{\"entitiesById\":{}}');"
+    client = StubArchiveClient(
+        {
+            snapshot_url: (
+                200,
+                {"content-type": "application/javascript; charset=utf-8"},
+                javascript,
+                snapshot_url,
+            )
+        }
+    )
+    item = ManifestItem(
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at="2022-10-07T00:00:00Z",
+        section=None,
+        candidates=(),
+    )
+    candidate = CaptureCandidate(
+        provider=CaptureProvider.WAYBACK,
+        snapshot_url=(
+            "https://web.archive.org/web/20221007165153id_/"
+            + canonical_url
+        ),
+    )
+    html = (
+        '<section class="interactive-content">'
+        '<div id="adventure-project-container">'
+        f'<script src="{source_url}"></script>'
+        "</div></section>"
+    ).encode()
+
+    resources = _capture_nyt_interactive_resources(
+        item,
+        candidate=candidate,
+        html_bytes=html,
+        archive_client=client,
+        output_dir=tmp_path,
+    )
+
+    assert client.requests == [snapshot_url]
+    assert len(resources) == 1
+    assert resources[0].source_url == source_url
+    assert resources[0].content_type == "application/javascript"
+    with gzip.open(tmp_path / resources[0].blob.path, "rb") as handle:
+        assert handle.read() == javascript
+
+    raw_html = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id=item.article_id,
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at="2022-10-07T00:00:00Z",
+        selected_candidate=candidate,
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=raw_html,
+        dependent_resources=resources,
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="nyt",
+        authorization_reference="test",
+    )
+    connection.execute(
+        """
+        INSERT INTO captures(
+            canonical_url, article_id, publisher, published_at, section,
+            candidates_json, status, updated_at
+        ) VALUES (?, ?, 'nyt', ?, NULL, '[]', 'pending', 'now')
+        """,
+        (canonical_url, item.article_id, item.published_at),
+    )
+    record_capture_result(
+        connection,
+        {
+            "canonicalUrl": canonical_url,
+            "status": "complete",
+            "capture": capture,
+            "recordPath": "records/test.json",
+            "error": None,
+        },
+    )
+
+    restored = completed_raw_capture(
+        connection,
+        canonical_url=canonical_url,
+    )
+
+    assert restored.dependent_resources == resources
 
 
 def test_known_ap_pakistan_copy_uses_exact_canonical_id():

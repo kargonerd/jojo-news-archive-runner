@@ -205,6 +205,34 @@
       ],
       "title": "CaptureRepresentation",
       "type": "string"
+    },
+    "DependentResource": {
+      "additionalProperties": false,
+      "properties": {
+        "blob": {
+          "$ref": "#/$defs/BlobReference"
+        },
+        "contentType": {
+          "title": "Contenttype",
+          "type": "string"
+        },
+        "snapshotUrl": {
+          "title": "Snapshoturl",
+          "type": "string"
+        },
+        "sourceUrl": {
+          "title": "Sourceurl",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceUrl",
+        "snapshotUrl",
+        "contentType",
+        "blob"
+      ],
+      "title": "DependentResource",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -227,6 +255,13 @@
     "contentType": {
       "title": "Contenttype",
       "type": "string"
+    },
+    "dependentResources": {
+      "items": {
+        "$ref": "#/$defs/DependentResource"
+      },
+      "title": "Dependentresources",
+      "type": "array"
     },
     "finalUrl": {
       "title": "Finalurl",

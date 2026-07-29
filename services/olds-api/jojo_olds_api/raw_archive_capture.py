@@ -14,7 +14,14 @@ import sqlite3
 import unicodedata
 from threading import Lock
 from typing import Callable, Iterable
-from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
+from urllib.parse import (
+    parse_qs,
+    unquote,
+    urlencode,
+    urljoin,
+    urlsplit,
+    urlunsplit,
+)
 from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
@@ -40,6 +47,7 @@ from .news_models import (
     CaptureProvider,
     CaptureRepresentation,
     ContentType,
+    DependentResource,
     RawCapture,
 )
 
@@ -49,7 +57,7 @@ CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.4",
     "bloomberg": "bloomberg-capture/0.10.3",
     "ft": "ft-capture/0.20.2",
-    "nyt": "nyt-capture/0.8.1",
+    "nyt": "nyt-capture/0.9.0",
     "reuters": "reuters-capture/0.7.2",
     "wsj": "wsj-capture/0.8.3",
 }
@@ -272,6 +280,7 @@ def initialize_capture_schema(
             content_type TEXT,
             quality_score INTEGER,
             quality_signals_json TEXT,
+            dependent_resources_json TEXT,
             raw_path TEXT,
             raw_sha256 TEXT,
             raw_bytes INTEGER,
@@ -288,6 +297,14 @@ def initialize_capture_schema(
             ON captures(published_at);
         """
     )
+    capture_columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(captures)")
+    }
+    if "dependent_resources_json" not in capture_columns:
+        connection.execute(
+            "ALTER TABLE captures ADD COLUMN dependent_resources_json TEXT"
+        )
     capture_policy_version = CAPTURE_POLICY_VERSIONS.get(
         publisher,
         f"{publisher}-capture/1",
@@ -1458,6 +1475,13 @@ def capture_item(
             signals,
         ) = best_response
         raw_reference = store_raw_html(output_dir, content)
+        dependent_resources = _capture_nyt_interactive_resources(
+            item,
+            candidate=candidate,
+            html_bytes=content,
+            archive_client=archive_client,
+            output_dir=output_dir,
+        )
         retrieved_at = datetime.now(timezone.utc)
         selected_candidate = resolved_capture_candidate(
             candidate,
@@ -1486,6 +1510,7 @@ def capture_item(
             quality_score=quality_score,
             quality_signals=signals,
             raw_html=raw_reference,
+            dependent_resources=dependent_resources,
         )
         record_path = store_capture_record(output_dir, capture)
         return {
@@ -5614,6 +5639,99 @@ def store_raw_html(output_dir: Path, content: bytes) -> BlobReference:
     )
 
 
+def store_dependent_resource(
+    output_dir: Path,
+    content: bytes,
+) -> BlobReference:
+    digest = hashlib.sha256(content).hexdigest()
+    relative = (
+        Path("objects") / "resources" / digest[:2] / f"{digest}.bin.gz"
+    )
+    destination = output_dir / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    compressed = gzip.compress(content, compresslevel=9, mtime=0)
+    if destination.exists():
+        if destination.read_bytes() != compressed:
+            raise RuntimeError(f"content-addressed object collision: {relative}")
+    else:
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        temporary.write_bytes(compressed)
+        temporary.replace(destination)
+    return BlobReference(
+        path=relative.as_posix(),
+        sha256=digest,
+        byte_count=len(content),
+        stored_byte_count=len(compressed),
+        content_encoding="gzip",
+    )
+
+
+def _capture_nyt_interactive_resources(
+    item: ManifestItem,
+    *,
+    candidate: CaptureCandidate,
+    html_bytes: bytes,
+    archive_client: ArchiveClient,
+    output_dir: Path,
+) -> list[DependentResource]:
+    if item.publisher != "nyt":
+        return []
+    timestamp_match = re.search(
+        r"/web/(?P<timestamp>\d{14})(?:id_)?/",
+        candidate.snapshot_url,
+    )
+    if timestamp_match is None:
+        return []
+    soup = BeautifulSoup(html_bytes, "html.parser")
+    source_urls: list[str] = []
+    for script in soup.select(
+        "#adventure-project-container script[src], "
+        "section.interactive-content script[src]"
+    ):
+        source = str(script.get("src") or "").strip()
+        absolute = urljoin(item.canonical_url, source)
+        parts = urlsplit(absolute)
+        if (
+            parts.scheme not in {"http", "https"}
+            or (parts.hostname or "").casefold() != "int.nyt.com"
+            or "/assets/adventure/js/" not in parts.path
+            or absolute in source_urls
+        ):
+            continue
+        source_urls.append(absolute)
+        if len(source_urls) >= 3:
+            break
+    resources: list[DependentResource] = []
+    timestamp = timestamp_match.group("timestamp")
+    for source_url in source_urls:
+        snapshot_url = (
+            f"https://web.archive.org/web/{timestamp}id_/{source_url}"
+        )
+        try:
+            status, headers, content, final_url = archive_client.fetch(
+                snapshot_url,
+                maximum_bytes=5_000_000,
+            )
+        except Exception:
+            continue
+        if status != 200 or not content:
+            continue
+        content_type = (
+            headers.get("content-type")
+            or headers.get("Content-Type")
+            or "application/octet-stream"
+        ).split(";", 1)[0].strip()
+        resources.append(
+            DependentResource(
+                source_url=source_url,
+                snapshot_url=final_url or snapshot_url,
+                content_type=content_type,
+                blob=store_dependent_resource(output_dir, content),
+            )
+        )
+    return resources
+
+
 def store_capture_record(output_dir: Path, capture: RawCapture) -> str:
     article_hash = capture.article_id.rsplit(":", 1)[-1]
     relative = Path("records") / article_hash[:2] / f"{article_hash}.json"
@@ -5649,6 +5767,7 @@ def record_capture_result(
         "content_type": None,
         "quality_score": None,
         "quality_signals_json": None,
+        "dependent_resources_json": None,
         "raw_path": None,
         "raw_sha256": None,
         "raw_bytes": None,
@@ -5673,6 +5792,18 @@ def record_capture_result(
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),
+                "dependent_resources_json": json.dumps(
+                    [
+                        resource.model_dump(
+                            mode="json",
+                            by_alias=True,
+                            exclude_none=True,
+                        )
+                        for resource in capture.dependent_resources
+                    ],
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
                 "raw_path": capture.raw_html.path,
                 "raw_sha256": capture.raw_html.sha256,
                 "raw_bytes": capture.raw_html.byte_count,
@@ -5691,6 +5822,7 @@ def record_capture_result(
                 content_type=:content_type,
                 quality_score=:quality_score,
                 quality_signals_json=:quality_signals_json,
+                dependent_resources_json=:dependent_resources_json,
                 raw_path=:raw_path,
                 raw_sha256=:raw_sha256,
                 raw_bytes=:raw_bytes,
@@ -5730,6 +5862,7 @@ def completed_raw_capture(
             content_type,
             quality_score,
             quality_signals_json,
+            dependent_resources_json,
             raw_path,
             raw_sha256,
             raw_bytes,
@@ -5750,10 +5883,10 @@ def completed_raw_capture(
         "http_status": row[9],
         "content_type": row[10],
         "quality_score": row[11],
-        "raw_path": row[13],
-        "raw_sha256": row[14],
-        "raw_bytes": row[15],
-        "stored_bytes": row[16],
+        "raw_path": row[14],
+        "raw_sha256": row[15],
+        "raw_bytes": row[16],
+        "stored_bytes": row[17],
     }
     missing = [name for name, value in required.items() if value is None]
     if missing:
@@ -5783,12 +5916,18 @@ def completed_raw_capture(
             json.loads(str(row[12])) if row[12] is not None else {}
         ),
         raw_html=BlobReference(
-            path=str(row[13]),
-            sha256=str(row[14]),
-            byte_count=int(row[15]),
-            stored_byte_count=int(row[16]),
+            path=str(row[14]),
+            sha256=str(row[15]),
+            byte_count=int(row[16]),
+            stored_byte_count=int(row[17]),
             content_encoding="gzip",
         ),
+        dependent_resources=[
+            DependentResource.model_validate(resource)
+            for resource in (
+                json.loads(str(row[13])) if row[13] is not None else []
+            )
+        ],
     )
 
 

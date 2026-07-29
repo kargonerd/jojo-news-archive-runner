@@ -81,6 +81,10 @@ def main() -> int:
     pending.extend(
         row for row in failed if row[0] not in {item[0] for item in pending}
     )
+    pending_resource_files = _dependent_resource_paths(
+        connection,
+        [canonical_url for canonical_url, _ in pending],
+    )
     existing_result_files = [
         str(raw_path)
         for (raw_path,) in connection.execute(
@@ -97,11 +101,33 @@ def main() -> int:
             """
         )
     ]
+    existing_result_urls = [
+        str(canonical_url)
+        for (canonical_url,) in connection.execute(
+            """
+            SELECT DISTINCT result.canonical_url
+            FROM parser_validation_results AS result
+            JOIN captures AS capture
+              ON capture.canonical_url=result.canonical_url
+             AND capture.status='complete'
+            WHERE capture.raw_path IS NOT NULL
+            """
+        )
+    ]
+    existing_result_files.extend(
+        _dependent_resource_paths(connection, existing_result_urls)
+    )
     connection.close()
 
     args.files_from.parent.mkdir(parents=True, exist_ok=True)
     args.files_from.write_text(
-        "".join(f"{raw_path}\n" for _, raw_path in pending),
+        "".join(
+            f"{raw_path}\n"
+            for raw_path in (
+                [raw_path for _, raw_path in pending]
+                + pending_resource_files
+            )
+        ),
         encoding="utf-8",
     )
     if args.all_result_files_from:
@@ -125,6 +151,38 @@ def main() -> int:
         with args.github_output.open("a", encoding="utf-8") as handle:
             handle.write(f"replays={len(pending)}\n")
     return 0
+
+
+def _dependent_resource_paths(
+    connection: sqlite3.Connection,
+    canonical_urls: list[str],
+) -> list[str]:
+    if not canonical_urls:
+        return []
+    paths: set[str] = set()
+    for offset in range(0, len(canonical_urls), 500):
+        batch = canonical_urls[offset : offset + 500]
+        placeholders = ",".join("?" for _ in batch)
+        rows = connection.execute(
+            f"""
+            SELECT dependent_resources_json
+            FROM captures
+            WHERE canonical_url IN ({placeholders})
+              AND dependent_resources_json IS NOT NULL
+            """,
+            batch,
+        )
+        for (serialized,) in rows:
+            try:
+                resources = json.loads(str(serialized))
+            except (TypeError, ValueError):
+                continue
+            for resource in resources:
+                blob = resource.get("blob") if isinstance(resource, dict) else None
+                path = blob.get("path") if isinstance(blob, dict) else None
+                if isinstance(path, str):
+                    paths.add(path)
+    return sorted(paths)
 
 
 if __name__ == "__main__":
