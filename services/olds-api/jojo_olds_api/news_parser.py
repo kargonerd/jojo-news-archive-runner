@@ -1622,6 +1622,29 @@ def _promote_ft_image_candidates(candidates: list[str]) -> list[str]:
     return promoted
 
 
+def _promote_reuters_image_candidates(candidates: list[str]) -> list[str]:
+    """Prefer a full-size rendition for Reuters' legacy lazy image endpoint."""
+    promoted: list[str] = []
+    for url in candidates:
+        parts = urlsplit(url)
+        if (
+            parts.hostname
+            and parts.hostname.casefold().endswith("reutersmedia.net")
+            and parts.path == "/resources/r/"
+        ):
+            high_resolution = re.sub(
+                r"([?&]w=)(?:[1-9]\d{0,2}|1[01]\d{2})(?=&|$)",
+                r"\g<1>1200",
+                url,
+                flags=re.IGNORECASE,
+            )
+            if high_resolution != url and high_resolution not in promoted:
+                promoted.append(high_resolution)
+        if url not in promoted:
+            promoted.append(url)
+    return promoted
+
+
 def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:
     for carousel in soup.select(
         ".Page-main bsp-carousel.Carousel, "
@@ -4216,10 +4239,15 @@ def _image_from_tag(
         candidates = _promote_bloomberg_image_candidates(candidates)
     if spec.publisher == "ft":
         candidates = _promote_ft_image_candidates(candidates)
+    if spec.publisher == "reuters":
+        candidates = _promote_reuters_image_candidates(candidates)
     original_url = candidates[0]
     width = _integer_attribute(image_node, "width")
     height = _integer_attribute(image_node, "height")
-    alt = _clean_text(image_node.get("alt", "")) or None
+    alt = _first_text(
+        _clean_text(image_node.get("alt", "")),
+        _clean_text(image_node.get("aria-label", "")),
+    )
     caption_container = container
     if spec.publisher == "ap":
         carousel_slide = image_node.find_parent(
@@ -4363,6 +4391,14 @@ def _image_identity(url: str) -> str:
                 "",
             )
         )
+    if host.endswith("reutersmedia.net") and parts.path == "/resources/r/":
+        legacy_id = re.search(
+            r"(?:^|&)i=(\d+)(?:&|$)",
+            parts.query,
+            flags=re.IGNORECASE,
+        )
+        if legacy_id is not None:
+            return f"reuters-image:{legacy_id.group(1)}"
     if host in {
         "prod-upp-image-read.ft.com",
         "com.ft.imagepublish.upp-prod-eu.s3.amazonaws.com",

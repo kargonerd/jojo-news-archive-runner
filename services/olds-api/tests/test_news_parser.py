@@ -1639,7 +1639,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.9"
+    assert result.extraction.parser_version == "reuters-parser/0.7.10"
 
 
 def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
@@ -1686,6 +1686,48 @@ def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
     assert "Our Standards" not in result.plain_text
 
 
+def test_reuters_parser_promotes_and_deduplicates_legacy_lazy_image():
+    reporting = " ".join(["Reuters reporting sentence."] * 30)
+    lead = (
+        "https://s1.reutersmedia.net/resources/r/"
+        "?m=02&d=20120310&t=2&i=580898814&w=1200&r=CBRE82902CK00"
+    )
+    lazy = (
+        "https://s1.reutersmedia.net/resources/r/"
+        "?m=02&d=20120310&t=2&i=580898814&r=CBRE82902CK00&w=20"
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Reuters legacy image report">
+      <meta property="og:image" content="{lead}">
+      <meta property="article:published_time"
+            content="2012-03-10T00:00:00Z">
+    </head><body><article>
+      <p>{reporting}</p>
+      <figure>
+        <img src="{lazy}" aria-label="A detainee holds a fence.">
+      </figure>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=(
+            "https://www.reuters.com/article/"
+            "us-legacy-image-idUSBRE82901O20120310"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert len(result.images) == 1
+    assert result.images[0].role.value == "lead"
+    assert result.images[0].original_url == lead
+    assert lazy in result.images[0].candidate_urls
+    assert result.images[0].alt == "A detainee holds a fence."
+    assert result.extraction.parser_version == "reuters-parser/0.7.10"
+
+
 def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
     reporting = " ".join(["Modern Reuters reporting sentence."] * 25)
     html = f"""
@@ -1729,7 +1771,7 @@ def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
     assert "Unrelated recommendation" not in result.plain_text
     assert "Capital Calls" not in result.plain_text
     assert "Another unrelated" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.9"
+    assert result.extraction.parser_version == "reuters-parser/0.7.10"
 
 
 def test_reuters_parser_trims_read_next_and_author_profile_tail():
@@ -1864,7 +1906,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.9"
+    assert result.extraction.parser_version == "reuters-parser/0.7.10"
 
 
 @pytest.mark.parametrize(
@@ -1957,7 +1999,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.9"
+    assert result.extraction.parser_version == "reuters-parser/0.7.10"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():
