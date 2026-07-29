@@ -2890,7 +2890,7 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.13"
+    assert article.extraction.parser_version == "ft-parser/0.8.14"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
@@ -2920,6 +2920,8 @@ def test_ft_parser_removes_flattened_newsletter_cards():
       briefing. Click here to sign up.</p>
       <p>Follow @FTMag on Twitter to find out about our latest stories
       first. Subscribe to our podcast.</p>
+      <p>The FT is free to read today. You can share this article using
+      the buttons at the top.</p>
       <p>Tuesday's parliamentary schedule follows.</p>
     </article></body></html>
     """.encode()
@@ -2943,7 +2945,8 @@ def test_ft_parser_removes_flattened_newsletter_cards():
     assert "Sign up for the newsletter" not in article.plain_text
     assert "Lex recommends" not in article.plain_text
     assert "Follow @FTMag" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.13"
+    assert "The FT is free to read today" not in article.plain_text
+    assert article.extraction.parser_version == "ft-parser/0.8.14"
 
 
 def test_ft_parser_strips_attached_syndication_copyright_suffix():
@@ -2976,7 +2979,7 @@ def test_ft_parser_strips_attached_syndication_copyright_suffix():
     assert article.quality.status.value == "complete"
     assert "That is good for them" in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.13"
+    assert article.extraction.parser_version == "ft-parser/0.8.14"
 
 
 def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
@@ -3140,7 +3143,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.13"
+    assert article.extraction.parser_version == "ft-parser/0.8.14"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -3171,7 +3174,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.13"
+    assert article.extraction.parser_version == "ft-parser/0.8.14"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -3211,7 +3214,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.13"
+    assert article.extraction.parser_version == "ft-parser/0.8.14"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -3268,7 +3271,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.13"
+    assert article.extraction.parser_version == "ft-parser/0.8.14"
 
 
 def test_ft_parser_promotes_origami_images_and_deduplicates_raw_lead():

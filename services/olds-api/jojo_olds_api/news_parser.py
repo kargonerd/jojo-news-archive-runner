@@ -3956,6 +3956,10 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
         re.compile(r"(?i)^follow ft(?:'s|’s) live coverage\b"),
         re.compile(r"(?i)^follow @ft"),
         re.compile(r"(?i)^join our online book group\b"),
+        re.compile(
+            r"(?i)^the ft is free to read today\.\s*"
+            r"you can share this article\b"
+        ),
     )
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
