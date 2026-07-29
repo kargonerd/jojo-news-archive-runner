@@ -4366,6 +4366,10 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^lex recommends the ft(?:'s|’s) .*newsletter\b"
         ),
+        re.compile(
+            r"(?i)^do you want to receive lex in your inbox\?\s*"
+            r"sign up for the weekly best of lex email\b"
+        ),
         re.compile(r"(?i)^our popular newsletter .*sign up here\b"),
         re.compile(r"(?i)^subscribers can use myft to follow\b"),
         re.compile(r"(?i)^follow ft(?:'s|’s) live coverage\b"),
