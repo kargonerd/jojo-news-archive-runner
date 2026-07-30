@@ -5587,7 +5587,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
 
 def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     """Remove NYT sponsorship, subscription and standardized engagement UI."""
-    for node in list(soup.select("figure.byline")):
+    for node in list(
+        soup.select("figure.byline, figure[data-testid='byline']")
+    ):
         node.decompose()
     patterns = (
         re.compile(r"(?i)^supported by$"),
@@ -7048,7 +7050,10 @@ def _nyt_caption_credit(container: Tag) -> tuple[str | None, str | None]:
         hidden.decompose()
     credit_parts: list[str] = []
     credit_nodes = list(
-        copy.select("[itemprop='copyrightHolder'], [class*='credit' i]")
+        copy.select(
+            "[itemprop='copyrightHolder'], [class*='credit' i], "
+            "[data-testid='credit']"
+        )
     )
     if not credit_nodes:
         caption, credit = _caption_credit(container)
