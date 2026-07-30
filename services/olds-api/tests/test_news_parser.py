@@ -256,7 +256,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.20"
+    assert result.extraction.parser_version == "wsj-parser/0.8.21"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -417,7 +417,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.20"
+    assert result.extraction.parser_version == "wsj-parser/0.8.21"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -514,7 +514,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.20"
+    assert result.extraction.parser_version == "wsj-parser/0.8.21"
 
 
 def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
@@ -587,7 +587,7 @@ def test_wsj_parser_accepts_complete_short_report_matching_declared_words():
     assert "Northrop completed" in result.plain_text
     assert "The two missiles" in result.plain_text
     assert "Copyright" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.20"
+    assert result.extraction.parser_version == "wsj-parser/0.8.21"
 
 
 def test_wsj_parser_rejects_legacy_sign_in_snippet():
@@ -997,7 +997,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.20"
+    assert result.extraction.parser_version == "wsj-parser/0.8.21"
 
 
 def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
@@ -1039,7 +1039,7 @@ def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
     assert "Most Popular news" not in result.plain_text
     assert "Recommended Videos" not in result.plain_text
     assert "Unrelated popular headline" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.20"
+    assert result.extraction.parser_version == "wsj-parser/0.8.21"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
@@ -2049,6 +2049,47 @@ def test_nyt_parser_classifies_legacy_documentcloud_page_as_interactive():
         == "https://www.documentcloud.org/documents/2187046-testimony"
         for block in result.blocks
     )
+
+
+def test_wsj_parser_removes_coronavirus_subscription_and_theme_nav():
+    reporting = " ".join(["WSJ reporting sentence."] * 35)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Coronavirus Research">
+      <meta property="article:published_time"
+            content="2020-08-09T00:00:00Z">
+    </head><body><article><div class="article-content">
+      <p>{reporting}</p>
+      <div class="media-object type-InsetRichText inline article__inset">
+        <div class="media-object-rich-text">
+          <h4>STAY INFORMED</h4>
+          <p>Get a coronavirus briefing six days a week, and a weekly
+          Health newsletter once the crisis abates: Sign up here.</p>
+        </div>
+      </div>
+      <div class="media-object type-InsetDynamic article__inset">
+        <div class="theme-nav-wrapper">
+          <p>Coronavirus</p><p>Free Resources</p><p>Live Updates</p>
+          <p>Symptoms</p><p>Daily Video Briefing</p>
+        </div>
+      </div>
+    </div></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/coronavirus-research-11596978001"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "WSJ reporting sentence." in result.plain_text
+    assert "STAY INFORMED" not in result.plain_text
+    assert "Sign up here" not in result.plain_text
+    assert "Free Resources" not in result.plain_text
+    assert "Daily Video Briefing" not in result.plain_text
 
 
 def test_bloomberg_parser_merges_caption_matched_low_resolution_lead():
@@ -7171,7 +7212,7 @@ def test_wsj_parser_accepts_complete_short_editorial_letter():
     assert result.quality.status.value == "complete"
     assert "body-too-short" not in result.quality.warnings
     assert "Warren Tunwall" in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.20"
+    assert result.extraction.parser_version == "wsj-parser/0.8.21"
 
 
 def test_nyt_parser_preserves_image_led_legacy_interactive():
@@ -7843,7 +7884,7 @@ def test_wsj_parser_recovers_legacy_video_headline_from_at_vars():
     )
     assert result.content_type.value == "video"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "wsj-parser/0.8.20"
+    assert result.extraction.parser_version == "wsj-parser/0.8.21"
 
 
 def test_wsj_parser_preserves_legacy_video_transcript():

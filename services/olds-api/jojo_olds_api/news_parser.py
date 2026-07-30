@@ -5682,6 +5682,21 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
         )
     ):
         node.decompose()
+    for wrapper in list(soup.select(".theme-nav-wrapper")):
+        inset = wrapper.find_parent(
+            class_=lambda value: value
+            and "article__inset" in " ".join(
+                value if isinstance(value, list) else [value]
+            )
+        )
+        (inset if isinstance(inset, Tag) else wrapper).decompose()
+    for node in list(soup.select(".media-object.type-InsetRichText")):
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        if (
+            text.startswith("stay informed get a coronavirus briefing")
+            and "sign up here" in text
+        ):
+            node.decompose()
     for node in list(soup.select("p, h2, h3, h4, h5, h6")):
         text = _clean_text(node.get_text(" ", strip=True))
         folded = text.casefold()
