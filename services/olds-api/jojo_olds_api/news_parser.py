@@ -5607,6 +5607,24 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
 
 def _remove_reuters_promos(soup: BeautifulSoup) -> None:
     """Remove Reuters registration UI and licensed-partner subscription tails."""
+    for marker in list(soup.select("[data-testid^='paragraph-']")):
+        if _clean_text(marker.get_text(" ", strip=True)).casefold() != "read more:":
+            continue
+        candidates: list[Tag] = [marker]
+        sibling = marker.find_next_sibling()
+        boundary_found = False
+        while isinstance(sibling, Tag) and len(candidates) <= 6:
+            text = _clean_text(sibling.get_text(" ", strip=True)).casefold()
+            if text.startswith(("reporting by ", "editing by ")):
+                boundary_found = True
+                break
+            candidates.append(sibling)
+            sibling = sibling.find_next_sibling()
+        if not boundary_found:
+            continue
+        for node in candidates:
+            node.decompose()
+
     for node in list(soup.select("p, h2, h3, h4, h5, h6")):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
         if text.startswith(
