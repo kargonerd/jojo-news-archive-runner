@@ -2474,9 +2474,7 @@ def _wsj_webui_slideshow(soup: BeautifulSoup) -> Tag | None:
 def _wsj_legacy_ellipsis_truncation(plain_text: str) -> bool:
     """Recognize short legacy archive captures cut off with a literal ellipsis."""
     text = plain_text.rstrip()
-    return len(text) < 1_000 and bool(
-        re.search(r"(?:[A-Za-z]\.{3}|(?:^|\n)\s*\.{3})$", text)
-    )
+    return len(text) < 1_000 and bool(re.search(r"\.{3,}$", text))
 
 
 def _wsj_subscription_truncation(
@@ -5871,9 +5869,10 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
     for node in list(
         soup.select(
             ".coupon-list, [class*='SavingsUnited' i], "
-            "[class*='SnippetSignIn' i], .author-links, "
+            "[class*='SnippetSignIn' i], .author-links, .author-info, "
             "[class*='mobile-modal-author' i], .byline-wrap, "
             ".article__byline, .module.automated-news, "
+            ".module.editors-picks, "
             ".article-news-front, [class*='AuthoringContainer'], "
             "[data-block='doNotPrint'], "
             "[data-module-zone='opinion_editors_picks'], "

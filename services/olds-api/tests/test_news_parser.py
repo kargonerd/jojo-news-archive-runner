@@ -256,7 +256,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -417,7 +417,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -514,7 +514,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
@@ -587,7 +587,7 @@ def test_wsj_parser_accepts_complete_short_report_matching_declared_words():
     assert "Northrop completed" in result.plain_text
     assert "The two missiles" in result.plain_text
     assert "Copyright" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_wsj_parser_does_not_treat_deliver_in_url_as_liveblog():
@@ -616,7 +616,7 @@ def test_wsj_parser_does_not_treat_deliver_in_url_as_liveblog():
     assert result.content_type.value == "article"
     assert result.quality.status.value == "partial"
     assert "body-too-short" in result.quality.warnings
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_wsj_parser_rejects_legacy_sign_in_snippet():
@@ -919,6 +919,39 @@ def test_wsj_parser_marks_short_ellipsis_capture_as_partial():
     assert "truncated-body" in result.quality.warnings
 
 
+@pytest.mark.parametrize(
+    "ending",
+    [
+        "Revenue was expected to reach 39...",
+        "The district had no testing requirement,...",
+        "The brokerage reported a quarterly loss....",
+    ],
+)
+def test_wsj_parser_marks_legacy_attached_ellipsis_as_partial(ending):
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Truncated Legacy Report">
+      <meta property="article:published_time"
+            content="2016-11-02T00:00:00Z">
+    </head><body><article><div class="article-content">
+      <p>Officials released an update concerning the company.</p>
+      <p>{ending}</p>
+    </div></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "a-truncated-legacy-report-1478044800"
+        ),
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "truncated-body" in result.quality.warnings
+
+
 def test_wsj_parser_recovers_embedded_inset_data_tables():
     rows = [
         {
@@ -1027,7 +1060,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
@@ -1069,7 +1102,7 @@ def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
     assert "Most Popular news" not in result.plain_text
     assert "Recommended Videos" not in result.plain_text
     assert "Unrelated popular headline" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_wsj_parser_removes_legacy_more_in_and_top_news_modules():
@@ -1099,6 +1132,11 @@ def test_wsj_parser_removes_legacy_more_in_and_top_news_modules():
           <p>and</p>
           <a data-testid="author-link">Modern Reporter Three</a>
         </div>
+        <ul class="author-info">
+          <li><a class="author icon bio">Biography</a></li>
+          <li><a class="author icon twitter">@legacyreporter</a></li>
+          <li><a class="author icon email">legacy@wsj.com</a></li>
+        </ul>
         <p>{reporting}</p>
         <p>.</p>
         <p>&#8203;</p>
@@ -1147,6 +1185,14 @@ def test_wsj_parser_removes_legacy_more_in_and_top_news_modules():
             </ul>
           </div>
         </div>
+        <div class="module editors-picks">
+          <h3 class="section">Explore More</h3>
+          <ul class="setList">
+            <li><a href="/articles/unrelated-explore-more">
+              Unrelated Explore More story
+            </a></li>
+          </ul>
+        </div>
         <div class="magazine-collection">
           <article><h2>Unrelated magazine story one</h2></article>
           <article><h2>Unrelated magazine story two</h2></article>
@@ -1177,6 +1223,8 @@ def test_wsj_parser_removes_legacy_more_in_and_top_news_modules():
     assert "Biography" not in result.plain_text
     assert "example@wsj.com" not in result.plain_text
     assert "Modern Reporter" not in result.plain_text
+    assert "legacyreporter" not in result.plain_text
+    assert "legacy@wsj.com" not in result.plain_text
     assert "Unrelated story" not in result.plain_text
     assert "Unrelated magazine story" not in result.plain_text
     assert "Unrelated news-front headline" not in result.plain_text
@@ -1185,9 +1233,11 @@ def test_wsj_parser_removes_legacy_more_in_and_top_news_modules():
     assert "Unrelated read-next headline" not in result.plain_text
     assert "Opinion Editor's Picks" not in result.plain_text
     assert "Unrelated opinion editor's pick" not in result.plain_text
+    assert "Explore More" not in result.plain_text
+    assert "Unrelated Explore More story" not in result.plain_text
     assert "See All" not in result.plain_text
     assert "Top News" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
@@ -7794,7 +7844,7 @@ def test_wsj_parser_accepts_complete_short_editorial_letter():
     assert result.quality.status.value == "complete"
     assert "body-too-short" not in result.quality.warnings
     assert "Warren Tunwall" in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_nyt_parser_preserves_image_led_legacy_interactive():
@@ -8466,7 +8516,7 @@ def test_wsj_parser_recovers_legacy_video_headline_from_at_vars():
     )
     assert result.content_type.value == "video"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_wsj_parser_preserves_legacy_video_transcript():
@@ -8963,7 +9013,7 @@ def test_wsj_parser_removes_buy_side_recommendation_widget():
     assert "Biography" not in result.plain_text
     assert "reporter@wsj.com" not in result.plain_text
     assert "<button" not in result.body_html
-    assert result.extraction.parser_version == "wsj-parser/0.8.33"
+    assert result.extraction.parser_version == "wsj-parser/0.8.34"
 
 
 def test_ap_parser_removes_legacy_terminal_period_paragraph():
