@@ -5485,6 +5485,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             sibling.decompose()
             marker.decompose()
     footer_patterns = (
+        re.compile(r"(?i)^©\s*\d{4}\s+bloomberg\s+l\.?p\.?$"),
         re.compile(
             r"(?i)^to contact the "
             r"(?:authors? of|editors? responsible for|reporters? on) "
