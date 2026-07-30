@@ -5934,6 +5934,8 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             "[data-module-zone='opinion_editors_picks'], "
             "[data-module-zone='contentCarousel'], "
             ".content-carousel, .olympics-carousel, "
+            "[class*='-JRStrap'], [class*='-JRNextArticle'], "
+            "[class*='-JRMoreArticles'], "
             ".opinion-editors-picks"
         )
     ):
