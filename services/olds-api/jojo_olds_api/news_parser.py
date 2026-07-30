@@ -5937,7 +5937,8 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             ".story-package[data-track-comp-name='moreOn'], "
             ".insideArticleShare, "
             ".ftlabsaudioplayerholder, "
-            ".component-share__button"
+            ".component-share__button, "
+            "button[data-trackable='save-for-later']"
         )
     ):
         node.decompose()
