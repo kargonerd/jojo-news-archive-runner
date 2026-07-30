@@ -5893,7 +5893,8 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             isinstance(heading, Tag)
             and _clean_text(heading.get_text(" ", strip=True))
             .casefold()
-            .startswith(("more in ", "more from "))
+            .startswith("more ")
+            and node.select_one("ul.articleList") is not None
         ):
             node.decompose()
     for heading in list(soup.select("h2.subhead")):
