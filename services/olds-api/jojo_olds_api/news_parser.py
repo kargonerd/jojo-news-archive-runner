@@ -5876,6 +5876,8 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             ".article-news-front, [class*='AuthoringContainer'], "
             "[data-block='doNotPrint'], "
             "[data-module-zone='opinion_editors_picks'], "
+            "[data-module-zone='contentCarousel'], "
+            ".content-carousel, .olympics-carousel, "
             ".opinion-editors-picks"
         )
     ):
@@ -5886,7 +5888,7 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             isinstance(heading, Tag)
             and _clean_text(heading.get_text(" ", strip=True))
             .casefold()
-            .startswith("more in ")
+            .startswith(("more in ", "more from "))
         ):
             node.decompose()
     for heading in list(soup.select("h2.subhead")):
