@@ -268,7 +268,7 @@ def parse_article(
             if metadata_interactive is not None and (
                 body is None
                 or body.select_one(
-                    "p, h1, h2, h3, h4, li, table, figure, iframe"
+                    "p, h1, h2, h3, h4, li, table, figure, iframe, img[src]"
                 )
                 is None
                 or (
@@ -1775,12 +1775,28 @@ def _nyt_div_only_interactive_body(candidate: Tag) -> Tag | None:
     if candidate.select_one("p, h1, h2, h3, h4, li, table"):
         return None
     sections = candidate.select(".g-section")
-    if len(sections) < 2:
-        return None
     document = BeautifulSoup("<article></article>", "html.parser")
     article = document.article
     if not isinstance(article, Tag):
         return None
+    if len(sections) < 2:
+        text = _clean_text(candidate.get_text(" ", strip=True))
+        if (
+            len(text) < _MINIMUM_BODY_CHARACTERS
+            or candidate.select_one("img[src], iframe") is None
+        ):
+            return None
+        paragraph = document.new_tag("p")
+        paragraph.string = text
+        article.append(paragraph)
+        for media in candidate.select("img[src], iframe"):
+            media_copy = BeautifulSoup(
+                str(media),
+                "html.parser",
+            ).find(media.name)
+            if isinstance(media_copy, Tag):
+                article.append(media_copy)
+        return article
     intro = _tag_text(candidate.select_one(".g-intro"))
     if intro:
         paragraph = document.new_tag("p")
