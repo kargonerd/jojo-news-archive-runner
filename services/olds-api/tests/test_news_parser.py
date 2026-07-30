@@ -256,7 +256,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.18"
+    assert result.extraction.parser_version == "wsj-parser/0.8.19"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -417,7 +417,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.18"
+    assert result.extraction.parser_version == "wsj-parser/0.8.19"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -514,7 +514,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.18"
+    assert result.extraction.parser_version == "wsj-parser/0.8.19"
 
 
 def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
@@ -587,7 +587,7 @@ def test_wsj_parser_accepts_complete_short_report_matching_declared_words():
     assert "Northrop completed" in result.plain_text
     assert "The two missiles" in result.plain_text
     assert "Copyright" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.18"
+    assert result.extraction.parser_version == "wsj-parser/0.8.19"
 
 
 def test_wsj_parser_rejects_legacy_sign_in_snippet():
@@ -997,7 +997,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.18"
+    assert result.extraction.parser_version == "wsj-parser/0.8.19"
 
 
 def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
@@ -1039,7 +1039,7 @@ def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
     assert "Most Popular news" not in result.plain_text
     assert "Recommended Videos" not in result.plain_text
     assert "Unrelated popular headline" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.18"
+    assert result.extraction.parser_version == "wsj-parser/0.8.19"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
@@ -6911,7 +6911,7 @@ def test_wsj_parser_accepts_complete_short_editorial_letter():
     assert result.quality.status.value == "complete"
     assert "body-too-short" not in result.quality.warnings
     assert "Warren Tunwall" in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.18"
+    assert result.extraction.parser_version == "wsj-parser/0.8.19"
 
 
 def test_nyt_parser_preserves_image_led_legacy_interactive():
@@ -7488,3 +7488,56 @@ def test_nyt_parser_preserves_article_document_card():
     assert result.quality.status.value == "complete"
     assert result.blocks[-1].type.value == "embed"
     assert result.blocks[-1].embed_url.endswith("resignation-letter.html")
+
+
+def test_wsj_parser_preserves_legacy_video_description():
+    result = parse_article(
+        b"""
+        <html><head><title>Economic Growth Video</title>
+          <meta name="description" content="The Treasury secretary explains
+          why tax reform alone is not enough to produce economic growth.">
+        </head><body><h1>Economic Growth Video</h1>
+          <script>var AT_VARS={articleType:'Video - WSJ',
+            publicationDate:'2011-11-16'};</script>
+          <div id="masterVideoCenter"><div class="js_videoPlayer">
+            <div id="videoPlayer"></div>
+          </div></div>
+        </body></html>
+        """,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/article/video-id.html",
+    )
+
+    assert result.content_type.value == "video"
+    assert result.quality.status.value == "complete"
+    assert result.published_at is not None
+    assert result.blocks[-1].type.value == "embed"
+
+
+def test_wsj_parser_preserves_legacy_video_transcript():
+    result = parse_article(
+        b"""
+        <html><head><title>Documentary Video</title></head><body>
+          <h1>Documentary Video</h1>
+          <script>var AT_VARS={articleType:'Video - WSJ',
+            publicationDate:'2012-12-22'};</script>
+          <div class="vcrPlayerArea"><div id="videoPlayer"></div></div>
+          <div id="videoPlayerDescription"><div id="currentVideoInfo">
+            <p><span itemprop="description">A documentary description with
+            background on the subject and the reporting.</span></p>
+          </div></div>
+          <div class="vcrTranscript"><div class="vcrTranscriptContent">
+            This is the complete archived transcript. It contains the
+            narration, interviews, evidence and conclusions presented in
+            the documentary, preserving content that was otherwise hidden
+            behind the retired video player.
+          </div></div>
+        </body></html>
+        """,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/article/documentary-id.html",
+    )
+
+    assert result.content_type.value == "video"
+    assert result.quality.status.value == "complete"
+    assert "complete archived transcript" in result.plain_text

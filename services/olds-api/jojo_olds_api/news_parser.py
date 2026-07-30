@@ -144,6 +144,12 @@ def parse_article(
         partner_body = _wsj_tovima_body(soup)
         if partner_body is not None:
             body = partner_body
+        legacy_video_body = _wsj_legacy_video_body(
+            soup,
+            canonical_url=canonical_url,
+        )
+        if legacy_video_body is not None:
+            body = legacy_video_body
         puzzle_body = _wsj_puzzle_body(soup, canonical_url=canonical_url)
         if puzzle_body is not None:
             body = puzzle_body
@@ -476,6 +482,11 @@ def parse_article(
             _meta_content(soup, "name", "sailthru.date"),
             _nyt_visible_published_at(soup),
             _ft_legacy_published_at(soup) if spec.publisher == "ft" else None,
+            (
+                _wsj_legacy_published_at(soup)
+                if spec.publisher == "wsj"
+                else None
+            ),
             _tag_attribute(
                 soup.select_one(
                     '[itemprop="datePublished"][datetime], '
@@ -528,6 +539,8 @@ def parse_article(
         and _wsj_interactive_puzzle(soup, news_article, canonical_url)
     ):
         content_type = ContentType.INTERACTIVE
+    if spec.publisher == "wsj" and _wsj_is_legacy_video(soup):
+        content_type = ContentType.VIDEO
     if spec.publisher == "wsj":
         wsj_page_content_type = _clean_text(
             _meta_content(soup, "name", "page.content.type") or ""
@@ -1830,6 +1843,70 @@ def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
                     return div_body
                 return candidate
     return None
+
+
+def _wsj_is_legacy_video(soup: BeautifulSoup) -> bool:
+    if soup.select_one(
+        "#masterVideoCenter, .vcrPlayerArea, .js_videoPlayer #videoPlayer"
+    ):
+        return True
+    return any(
+        re.search(r"""articleType\s*:\s*["']Video\s*-\s*WSJ["']""", value)
+        for script in soup.select("script")
+        if (value := script.string or script.get_text())
+    )
+
+
+def _wsj_legacy_video_body(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
+    """Recover descriptions and transcripts from the old WSJ Video Center."""
+    if not _wsj_is_legacy_video(soup):
+        return None
+    description = _first_text(
+        _tag_text(
+            soup.select_one(
+                "#videoPlayerDescription [itemprop='description'], "
+                "#currentVideoInfo > p"
+            )
+        ),
+        _meta_content(soup, "name", "description"),
+        _meta_content(soup, "property", "og:description"),
+    )
+    transcript = _tag_text(soup.select_one(".vcrTranscriptContent"))
+    video_url = _first_text(
+        _tag_attribute(soup.select_one("#videoTitle[href]"), "href"),
+        canonical_url,
+    )
+    if not description and not transcript and not video_url:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    if description:
+        paragraph = document.new_tag("p")
+        paragraph.string = description
+        article.append(paragraph)
+    if transcript:
+        heading = document.new_tag("h2")
+        heading.string = "Transcript"
+        article.append(heading)
+        paragraph = document.new_tag("p")
+        paragraph.string = transcript
+        article.append(paragraph)
+    normalized_video_url = _normalized_url(
+        video_url,
+        base_url=canonical_url,
+    )
+    if normalized_video_url:
+        iframe = document.new_tag("iframe")
+        iframe["src"] = normalized_video_url
+        iframe["title"] = "WSJ video"
+        article.append(iframe)
+    return article
 
 
 def _nyt_div_only_interactive_body(candidate: Tag) -> Tag | None:
@@ -6680,6 +6757,22 @@ def _ft_legacy_published_at(soup: BeautifulSoup) -> str | None:
         except ValueError:
             continue
         return parsed.replace(tzinfo=timezone.utc).isoformat()
+    return None
+
+
+def _wsj_legacy_published_at(soup: BeautifulSoup) -> str | None:
+    """Read publication dates serialized by WSJ's pre-Oak templates."""
+    for script in soup.select("script"):
+        value = script.string or script.get_text()
+        match = re.search(
+            r"""(?:publicationDate\s*:\s*|"""
+            r"""setMetaData\(\s*["']apublished["']\s*,\s*)"""
+            r"""["'](?P<date>\d{4}-\d{2}-\d{2}"""
+            r"""(?:T\d{2}:\d{2}(?::\d{2})?)?)["']""",
+            value,
+        )
+        if match:
+            return match.group("date")
     return None
 
 
