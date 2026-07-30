@@ -1113,7 +1113,22 @@ def _bloomberg_embedded_article_body(soup: BeautifulSoup) -> Tag | None:
 
 
 def _bloomberg_feature_landing_body(soup: BeautifulSoup) -> Tag | None:
-    """Recover editorial indexes from Bloomberg's legacy feature template."""
+    """Recover stories and editorial indexes from legacy feature templates."""
+    story = soup.select_one(
+        ".dvz-page-wrapper.dvz-feature .feature-wrapper"
+    )
+    if isinstance(story, Tag):
+        paragraphs = [
+            _clean_text(paragraph.get_text(" ", strip=True))
+            for paragraph in story.select("p")
+        ]
+        substantive = [text for text in paragraphs if text]
+        if (
+            len(substantive) >= 3
+            and sum(len(text) for text in substantive) >= 700
+        ):
+            return story
+
     container = soup.select_one(".dvz-content2")
     if not isinstance(container, Tag):
         return None
@@ -5341,6 +5356,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^subscribe to .+ on pocket casts\.?$"
         ),
         re.compile(
+            r"(?i)^subscribe to .+ on pocketcasts?\.?$"
+        ),
+        re.compile(
             r"(?i)^if you(?:'|’)d like to get the daily prophet in "
             r"e-?mail form, right in your inbox, please subscribe "
             r"to this link\s*\.\s*thanks!?"
@@ -5352,6 +5370,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^sign up to receive the brexit bulletin in your inbox, "
             r"and follow @brexit on twitter\.?$"
+        ),
+        re.compile(
+            r"(?i)^sign up to receive the brexit bulletin, a daily briefing "
+            r"on the biggest news related to britain(?:'|’)s departure "
+            r"from the eu\.?$"
         ),
         re.compile(
             r"(?i)^a version of this column originally appeared in "
@@ -5391,7 +5414,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     )
     for node in list(soup.select("p, li, span, div")):
         text = _clean_text(node.get_text(" ", strip=True))
-        if any(pattern.search(text) for pattern in footer_patterns):
+        if (
+            text.casefold() == "watch this next"
+            or any(pattern.search(text) for pattern in footer_patterns)
+        ):
             node.decompose()
 
     for link in list(soup.select("a")):
