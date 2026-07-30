@@ -100,6 +100,11 @@ def _has_publisher_interface_noise(
         }
         if theme_navigation.issubset(set(blocks)):
             return True
+        if any(
+            "sign up for our" in text and "newsletter" in text
+            for text in blocks
+        ):
+            return True
     if publisher == "bloomberg":
         return any(
             text == "watch this next"
@@ -941,7 +946,7 @@ def record_parser_validation(
         ):
             issues.append("interface-noise-in-body")
         if (
-            capture.publisher == "ap"
+            capture.publisher in {"ap", "wsj"}
             and article.content_type == ContentType.ARTICLE
             and "<button" in article.body_html.casefold()
         ):
