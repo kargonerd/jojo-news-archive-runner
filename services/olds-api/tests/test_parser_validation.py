@@ -62,6 +62,27 @@ def test_publisher_interface_noise_detects_bloomberg_promos():
     assert _has_publisher_interface_noise(
         "bloomberg",
         [
+            "want to receive this post in your inbox every day? sign up "
+            "for the terms of trade newsletter."
+        ],
+    )
+    assert _has_publisher_interface_noise(
+        "bloomberg",
+        [
+            "sign up to receive the green daily newsletter in your "
+            "inbox every weekday."
+        ],
+    )
+    assert _has_publisher_interface_noise(
+        "bloomberg",
+        [
+            "for even more: subscribe to bloomberg all access for full "
+            "global news coverage."
+        ],
+    )
+    assert _has_publisher_interface_noise(
+        "bloomberg",
+        [
             "sign up to receive the brexit bulletin, a daily briefing "
             "on britain's departure from the eu."
         ],

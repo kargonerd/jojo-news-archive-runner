@@ -1579,7 +1579,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.23"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
 
 
 def test_bloomberg_parser_keeps_listen_to_article_as_article():
@@ -1820,7 +1820,7 @@ def test_bloomberg_parser_removes_legacy_inline_newsletter_nested_in_paragraph()
     assert "Opening article paragraph." in result.plain_text
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "markets daily newsletter" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.23"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
 
 
 def test_bloomberg_parser_recovers_legacy_feature_landing_page():
@@ -2124,6 +2124,85 @@ def test_ft_parser_removes_acast_privacy_boilerplate_from_podcast():
     assert "transcript for this podcast" in result.plain_text
 
 
+def test_bloomberg_parser_removes_green_daily_and_all_access_promos():
+    reporting = " ".join(["Bloomberg climate reporting sentence."] * 30)
+    html = f"""
+    <html><head>
+      <script type="application/ld+json">{{
+        "@type": "NewsArticle",
+        "headline": "The Rise of Green Finance",
+        "datePublished": "2020-03-04T11:00:22Z",
+        "description": "Sign up to receive the Green Daily newsletter."
+      }}</script>
+    </head><body><article><div class="body-copy-v2">
+      <p><span class="news-designed-for-consumer-media">
+        <a href="https://example.com/signup">Sign up to receive</a>
+        the Green Daily newsletter in your inbox every weekday.
+      </span></p>
+      <p>{reporting}</p>
+      <p>Emily Chasan writes about climate-conscious investors.
+        <span class="news-designed-for-consumer-media">
+          Sign up to receive the Green Daily newsletter in your inbox
+          every weekday.
+        </span>
+      </p>
+      <p><span class="news-designed-for-consumer-media">
+        For even more: Subscribe to Bloomberg All Access for full global
+        news coverage and two in-depth daily newsletters.
+      </span></p>
+    </div></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2020-03-04/"
+            "the-rise-of-green-finance"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.description is None
+    assert "Bloomberg climate reporting sentence." in result.plain_text
+    assert "Emily Chasan writes about" in result.plain_text
+    assert "Green Daily" not in result.plain_text
+    assert "Bloomberg All Access" not in result.plain_text
+
+
+def test_bloomberg_parser_rejects_newsletter_cta_description():
+    html = """
+    <html><head>
+      <script type="application/ld+json">{
+        "@type": "NewsArticle",
+        "headline": "Trade and Economic Policy",
+        "datePublished": "2020-03-05T11:00:22Z",
+        "description": "Want to receive this post in your inbox every day?
+        Sign up for the Terms of Trade newsletter."
+      }</script>
+    </head><body><article><div class="body-copy-v2">
+      <p>Substantive Bloomberg economic reporting about trade policy and
+      international investment.</p>
+      <p>Additional reporting explains the consequences for businesses,
+      governments and consumers across several countries.</p>
+    </div></article></body></html>
+    """.replace(
+        "every day?\\n        Sign up",
+        "every day? Sign up",
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2020-03-05/"
+            "trade-and-economic-policy"
+        ),
+    )
+
+    assert result.description is None
+
+
 def test_bloomberg_parser_merges_caption_matched_low_resolution_lead():
     caption = "Demonstrators stand near railway tracks during a protest."
     reporting = " ".join(["Bloomberg reporting sentence."] * 30)
@@ -2243,7 +2322,7 @@ def test_bloomberg_parser_separates_explicit_figure_credit():
     assert len(result.images) == 1
     assert result.images[0].caption == "Welcome to the factory floor."
     assert result.images[0].credit == "Tesla"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.23"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -2285,7 +2364,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.23"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
 
 
 def test_bloomberg_parser_rejects_explicit_teaser_body():
@@ -2317,7 +2396,7 @@ def test_bloomberg_parser_rejects_explicit_teaser_body():
 
     assert result.quality.status.value == "partial"
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.23"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
 
 
 def test_bloomberg_parser_trims_professional_subscription_shell():
@@ -2422,7 +2501,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.23"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
 
 
 def test_bloomberg_parser_scopes_legacy_body_without_right_rail():
@@ -2493,7 +2572,7 @@ def test_bloomberg_parser_removes_share_article_control_from_body():
     assert result.quality.status.value == "complete"
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "SHARE THIS ARTICLE" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.23"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
 
 
 def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
@@ -2569,7 +2648,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
         "https://omny.fm/shows/example/episode"
     ]
     assert "Unrelated navigation card" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.23"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -3450,7 +3529,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.23"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
 
 
 def test_nyt_parser_trims_access_shell_after_complete_article():
@@ -7720,7 +7799,7 @@ def test_bloomberg_parser_uses_first_question_for_untitled_quiz():
     )
     assert result.content_type.value == "interactive"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.23"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
 
 
 def test_nyt_parser_accepts_intentionally_short_corrections_notice():

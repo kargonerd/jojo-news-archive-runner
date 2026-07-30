@@ -101,6 +101,19 @@ def _has_publisher_interface_noise(
                 text.startswith("subscribe to bloomberg benchmark")
                 and ("pocketcast" in text or "itunes" in text)
             )
+            or (
+                "sign up to receive" in text
+                and "green daily" in text
+                and "newsletter" in text
+            )
+            or text.startswith(
+                "for even more: subscribe to bloomberg all access"
+            )
+            or (
+                text.startswith("want to receive this post in your inbox")
+                and "sign up for" in text
+                and "newsletter" in text
+            )
             for text in blocks
         )
     return False
@@ -872,7 +885,14 @@ def record_parser_validation(
             for text in normalized_blocks
         ) or _has_publisher_interface_noise(
             capture.publisher,
-            normalized_blocks,
+            [
+                *normalized_blocks,
+                *(
+                    [_normalize_text(article.description).casefold()]
+                    if article.description
+                    else []
+                ),
+            ],
         ):
             issues.append("interface-noise-in-body")
         if any(

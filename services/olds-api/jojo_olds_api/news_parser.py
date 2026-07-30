@@ -470,6 +470,26 @@ def parse_article(
         _meta_content(soup, "name", "description"),
         _meta_content(soup, "property", "og:description"),
     )
+    if (
+        spec.publisher == "bloomberg"
+        and description
+        and (
+            re.match(
+                r"(?i)^sign up to receive (?:the )?.+ newsletter\b",
+                description,
+            )
+            or re.match(
+                r"(?i)^want to receive this post in your inbox\b.*"
+                r"\bsign up for\b.*\bnewsletter\b",
+                description,
+            )
+            or re.match(
+                r"(?i)^for even more:\s*subscribe to bloomberg all access\b",
+                description,
+            )
+        )
+    ):
+        description = None
     authors = _extract_authors(news_article, soup)
     metadata_authors = nyt_preloaded_metadata.get("authors")
     if isinstance(metadata_authors, list) and metadata_authors:
