@@ -5903,6 +5903,24 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             == "related video"
         ):
             strap.decompose()
+    for rich_text in list(soup.select(".media-object-rich-text")):
+        heading = rich_text.select_one("h2, h3, h4, h5, h6")
+        if (
+            isinstance(heading, Tag)
+            and _clean_text(heading.get_text(" ", strip=True)).casefold()
+            == "share your thoughts"
+        ):
+            rich_text.decompose()
+    for paragraph in list(soup.select("p")):
+        if (
+            _clean_text(paragraph.get_text(" ", strip=True))
+            .casefold()
+            .startswith(
+                "to explore and search through all our recipes, "
+                "check out the new wsj recipes page"
+            )
+        ):
+            paragraph.decompose()
 
     for node in list(
         soup.select(
