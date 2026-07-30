@@ -4935,8 +4935,38 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"this (?:story|article)\s*:"
         ),
         re.compile(
+            r"(?i)^to contact the (?:senior )?editor responsible for "
+            r"bloomberg view(?:'s|’s) editorials\s*:"
+        ),
+        re.compile(
             r"(?i)^this (?:column|article) does not necessarily reflect "
-            r"the opinion of bloomberg lp and its owners\.?$"
+            r"the opinion of (?:the editorial board or )?"
+            r"bloomberg lp and its owners\.?$"
+        ),
+        re.compile(
+            r"(?is)^this transcript may not be 100% accurate\b.*"
+            r"any opinion expressed in the transcript does not necessarily "
+            r"reflect the views of bloomberg lp\.?$"
+        ),
+        re.compile(
+            r"(?i)^follow @\w+ for all the latest news, and sign up for "
+            r"our daily .+ newsletter\.?$"
+        ),
+        re.compile(
+            r"(?i)^\(?\s*sign up for the .+ newsletter, your best source "
+            r"for .+\)?\.?$"
+        ),
+        re.compile(
+            r"(?i)^want to go deeper inside .+\? sign up for .+ newsletter "
+            r"from bloomberg\.?$"
+        ),
+        re.compile(
+            r"(?i)^for a fresh perspective on .+, sign up for our weekly "
+            r"newsletter\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^sign up for our .+ weekly newsletter, follow us @\w+ "
+            r"and subscribe to our podcast\.?$"
         ),
     )
     for node in list(soup.select("p, li, span")):
