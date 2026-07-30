@@ -5926,7 +5926,8 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
         folded = text.casefold()
         classes = " ".join(node.get("class") or []).casefold()
         if (
-            (
+            text in {".", "\u200b", "\ufeff"}
+            or (
                 folded.startswith("copyright ©")
                 and "dow jones & company" in folded
             )
