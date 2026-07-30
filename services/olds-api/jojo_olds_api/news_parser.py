@@ -5622,10 +5622,18 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
             "button.ad-slide-skip, button.comments-button, "
             "button[class*='SectionBarShare-shareButton'], "
             "button[class*='SaveToWatchlistButton__saveToWatchlistButton'], "
-            "button[class*='LikeButton__likeButton']"
+            "button[class*='LikeButton__likeButton'], "
+            "button#comment-callout-comment-button"
         )
     ):
         button.decompose()
+
+    for button in list(soup.select("button")):
+        if _clean_text(button.get_text(" ", strip=True)).casefold() in {
+            "view more",
+            "comment on artsbeat",
+        }:
+            button.decompose()
 
     for node in list(
         soup.select("figure.byline, figure[data-testid='byline']")
