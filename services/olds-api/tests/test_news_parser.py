@@ -1403,7 +1403,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
@@ -1449,7 +1449,7 @@ def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
     assert result.images[0].caption is None
     assert result.images[0].credit == "Hiroyuki Ito"
     assert "recommended.jpg" not in result.body_html
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
@@ -1496,7 +1496,7 @@ def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
     assert result.quality.status.value == "partial"
     assert "incomplete-interactive" in result.quality.warnings
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_nyt_parser_keeps_hydrated_image_interactive_over_short_metadata():
@@ -1936,6 +1936,119 @@ def test_bloomberg_parser_removes_legacy_brexit_and_podcast_promos():
     assert "Brexit Bulletin" not in result.plain_text
     assert "Pocketcast" not in result.plain_text
     assert "Watch This Next" not in result.plain_text
+
+
+def test_nyt_parser_recovers_legacy_listings_rendered_outside_article():
+    entries = "".join(
+        f"""
+        <li>
+          <h4>Dance Event {index}</h4>
+          <p>{"A detailed critical preview of the coming performance. " * 8}</p>
+          <img src="https://graphics8.nytimes.com/images/dance-{index}.jpg">
+        </li>
+        """
+        for index in range(1, 7)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Fall Arts Preview - Dance">
+      <meta property="article:published_time" content="2014-09-04">
+    </head><body>
+      <div class="shell"><article class="story theme-interactive">
+        <div class="interactive-graphic"><div id="g-graphic"></div></div>
+      </article></div>
+      <div class="control-width"><div class="listings listings-dance">
+        <ol>{entries}</ol>
+      </div></div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2014/09/04/arts/"
+            "fall-arts-preview-times-100-calendar-dance-events.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Dance Event 6" in result.plain_text
+    assert "detailed critical preview" in result.plain_text
+    assert result.quality.images_selected == 6
+
+
+def test_nyt_parser_recovers_standalone_legacy_contribution_form():
+    instructions = " ".join(
+        ["Position the pin and tell us where your story takes place."] * 8
+    )
+    legal = " ".join(
+        ["By submitting, you confirm that the contribution is original."] * 8
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Show Us Your Memorable Walk in NYC">
+      <meta property="article:published_time" content="2015-04-20">
+    </head><body>
+      <div id="g-graphic" class="g-form stage-1">
+        <h1>Show Us Your Memorable Walk in NYC</h1>
+        <div class="g-intro-text"><span>{instructions}</span></div>
+        <div class="g-form-group"><h3>Share your story</h3>
+          <form><textarea name="story"></textarea>
+            <p class="g-form-legal">{legal}</p>
+          </form>
+        </div>
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2015/04/20/magazine/"
+            "newyorkcity-walks-form.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Share your story" in result.plain_text
+    assert "contribution is original" in result.plain_text
+
+
+def test_nyt_parser_classifies_legacy_documentcloud_page_as_interactive():
+    html = """
+    <html><head>
+      <meta property="og:title" content="Grand Jury Testimony">
+      <meta name="description"
+            content="The full grand jury testimonies from two witnesses.">
+      <meta property="article:published_time" content="2015-08-05">
+    </head><body><article class="story theme-interactive">
+      <div class="interactive-graphic">
+        <script>
+          DV.flexLoad("//www.documentcloud.org/documents/2187046-testimony.js",
+                      {container: "#viewer"});
+        </script>
+      </div>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2015/08/04/opinion/"
+            "opdoc-verbatim-testimonies.html"
+        ),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+    assert any(
+        block.embed_url
+        == "https://www.documentcloud.org/documents/2187046-testimony"
+        for block in result.blocks
+    )
 
 
 def test_bloomberg_parser_merges_caption_matched_low_resolution_lead():
@@ -2426,7 +2539,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_reuters_parser_removes_toolbar_licensing_ui_and_promotes_ksl_image():
@@ -3342,7 +3455,7 @@ def test_nyt_parser_removes_sponsorship_subscription_and_opinion_footer_ui():
     assert "diversity of letters" not in result.plain_text
     assert "Opinion section on Facebook" not in result.plain_text
     assert "Share full article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
@@ -3373,7 +3486,7 @@ def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
     assert result.headline == "Positive tests inch up in New York City."
     assert result.quality.status.value == "complete"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_nyt_parser_removes_related_coverage_and_newsletter_modules():
@@ -3473,7 +3586,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_reuters_generic_syndication_removes_benzinga_recirculation_tail():
@@ -3656,7 +3769,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -3696,7 +3809,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -5445,7 +5558,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -6506,7 +6619,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -6660,7 +6773,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
@@ -7675,7 +7788,7 @@ def test_nyt_parser_accepts_legacy_short_editorial_cartoon():
     assert result.content_type.value == "gallery"
     assert result.quality.status.value == "complete"
     assert result.images
-    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+    assert result.extraction.parser_version == "nyt-parser/0.8.41"
 
 
 def test_wsj_parser_preserves_legacy_video_description():

@@ -225,6 +225,9 @@ def parse_article(
         legacy_newsgraphic = _nyt_legacy_newsgraphic_body(soup)
         if legacy_newsgraphic is not None:
             body = legacy_newsgraphic
+        escaped_interactive = _nyt_escaped_legacy_interactive_body(soup)
+        if escaped_interactive is not None:
+            body = escaped_interactive
         flex_interactive = _nyt_legacy_flex_body(soup)
         if flex_interactive is not None:
             body = flex_interactive
@@ -1890,6 +1893,74 @@ def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
                 if div_body is not None:
                     return div_body
                 return candidate
+    return None
+
+
+def _nyt_escaped_legacy_interactive_body(
+    soup: BeautifulSoup,
+) -> Tag | None:
+    """Recover rendered graphics emitted outside the legacy article shell."""
+    listings = soup.select_one(
+        "body > .control-width .listings, "
+        "body > div.control-width .listings"
+    )
+    if isinstance(listings, Tag):
+        paragraphs = [
+            text
+            for paragraph in listings.select("p")
+            if (text := _tag_text(paragraph))
+        ]
+        if (
+            len(paragraphs) >= 5
+            and sum(len(text) for text in paragraphs) >= 500
+        ):
+            document = BeautifulSoup("<article></article>", "html.parser")
+            article = document.article
+            if not isinstance(article, Tag):
+                return None
+            for entry in listings.select("li"):
+                for source_node in entry.select(":scope > h4, :scope > p"):
+                    copy = BeautifulSoup(
+                        str(source_node),
+                        "html.parser",
+                    ).find(source_node.name)
+                    if isinstance(copy, Tag):
+                        article.append(copy)
+                for source_image in entry.select("img[src]"):
+                    figure = document.new_tag("figure")
+                    image = document.new_tag("img")
+                    image["src"] = str(source_image["src"])
+                    alt = _tag_attribute(source_image, "alt")
+                    if alt:
+                        image["alt"] = alt
+                    figure.append(image)
+                    caption = _tag_text(
+                        source_image.find_parent(class_="img")
+                        .select_one(".img-caption")
+                        if isinstance(
+                            source_image.find_parent(class_="img"),
+                            Tag,
+                        )
+                        else None
+                    )
+                    credit = _tag_text(entry.select_one(".img-credit"))
+                    if caption or credit:
+                        figcaption = document.new_tag("figcaption")
+                        figcaption.string = " ".join(
+                            value for value in (caption, credit) if value
+                        )
+                        figure.append(figcaption)
+                    article.append(figure)
+            return article
+
+    contribution_form = soup.select_one("#g-graphic.g-form")
+    if isinstance(contribution_form, Tag):
+        text = _clean_text(contribution_form.get_text(" ", strip=True))
+        if (
+            len(text) >= 300
+            and contribution_form.select_one("form, textarea, input")
+        ):
+            return contribution_form
     return None
 
 
@@ -4729,6 +4800,19 @@ def _nyt_media_content_type(
         and soup.select_one(
             "img[src*='int.nyt.com/newsgraphics/'], "
             "img[data-src*='int.nyt.com/newsgraphics/']"
+        )
+    ):
+        return ContentType.INTERACTIVE
+    if (
+        "/interactive/" in url
+        and any(
+            re.search(
+                r"""DV\.(?:flexLoad|load)\(\s*["']"""
+                r"""(?:https?:)?//(?:www\.)?documentcloud\.org/""",
+                script.string or script.get_text(),
+                flags=re.IGNORECASE,
+            )
+            for script in soup.select(".interactive-graphic script")
         )
     ):
         return ContentType.INTERACTIVE
