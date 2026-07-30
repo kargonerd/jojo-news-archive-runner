@@ -256,7 +256,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.19"
+    assert result.extraction.parser_version == "wsj-parser/0.8.20"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -417,7 +417,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.19"
+    assert result.extraction.parser_version == "wsj-parser/0.8.20"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -514,7 +514,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.19"
+    assert result.extraction.parser_version == "wsj-parser/0.8.20"
 
 
 def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
@@ -587,7 +587,7 @@ def test_wsj_parser_accepts_complete_short_report_matching_declared_words():
     assert "Northrop completed" in result.plain_text
     assert "The two missiles" in result.plain_text
     assert "Copyright" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.19"
+    assert result.extraction.parser_version == "wsj-parser/0.8.20"
 
 
 def test_wsj_parser_rejects_legacy_sign_in_snippet():
@@ -997,7 +997,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.19"
+    assert result.extraction.parser_version == "wsj-parser/0.8.20"
 
 
 def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
@@ -1039,7 +1039,7 @@ def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
     assert "Most Popular news" not in result.plain_text
     assert "Recommended Videos" not in result.plain_text
     assert "Unrelated popular headline" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.19"
+    assert result.extraction.parser_version == "wsj-parser/0.8.20"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
@@ -1403,7 +1403,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
@@ -1449,7 +1449,7 @@ def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
     assert result.images[0].caption is None
     assert result.images[0].credit == "Hiroyuki Ito"
     assert "recommended.jpg" not in result.body_html
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
@@ -1496,7 +1496,7 @@ def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
     assert result.quality.status.value == "partial"
     assert "incomplete-interactive" in result.quality.warnings
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_nyt_parser_keeps_hydrated_image_interactive_over_short_metadata():
@@ -2352,7 +2352,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_reuters_parser_removes_toolbar_licensing_ui_and_promotes_ksl_image():
@@ -3268,7 +3268,7 @@ def test_nyt_parser_removes_sponsorship_subscription_and_opinion_footer_ui():
     assert "diversity of letters" not in result.plain_text
     assert "Opinion section on Facebook" not in result.plain_text
     assert "Share full article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
@@ -3299,7 +3299,7 @@ def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
     assert result.headline == "Positive tests inch up in New York City."
     assert result.quality.status.value == "complete"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_nyt_parser_removes_related_coverage_and_newsletter_modules():
@@ -3399,7 +3399,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_reuters_generic_syndication_removes_benzinga_recirculation_tail():
@@ -3582,7 +3582,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -3622,7 +3622,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -5371,7 +5371,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -6432,7 +6432,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -6586,7 +6586,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.39"
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
@@ -6984,7 +6984,7 @@ def test_wsj_parser_accepts_complete_short_editorial_letter():
     assert result.quality.status.value == "complete"
     assert "body-too-short" not in result.quality.warnings
     assert "Warren Tunwall" in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.19"
+    assert result.extraction.parser_version == "wsj-parser/0.8.20"
 
 
 def test_nyt_parser_preserves_image_led_legacy_interactive():
@@ -7563,6 +7563,47 @@ def test_nyt_parser_preserves_article_document_card():
     assert result.blocks[-1].embed_url.endswith("resignation-letter.html")
 
 
+def test_nyt_parser_accepts_legacy_short_editorial_cartoon():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Clashes in the Philippines">
+          <meta property="article:published_time"
+            content="2013-09-22T00:00:00Z">
+          <meta property="og:image"
+            content="https://static01.nyt.com/cartoon-large.jpg">
+          <meta name="description"
+            content="For the Philippines, America is the heavy lifter.">
+        </head><body><main>
+          <h1>Clashes in the Philippines</h1>
+          <div class="articleSpanImage">
+            <span itemprop="associatedMedia" itemscope
+              itemtype="http://schema.org/ImageObject">
+              <img itemprop="url"
+                src="https://static01.nyt.com/cartoon-large.jpg"
+                width="600" height="431">
+            </span>
+          </div>
+          <div class="articleBody"><nyt_text>
+            <p><!--shortarticle--></p>
+            <p itemprop="articleBody">For the Philippines, America is the
+            heavy lifter.</p>
+          </nyt_text></div>
+        </main></body></html>
+        """,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2013/09/22/opinion/global/"
+            "clashes-in-the-philippines.html"
+        ),
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert result.images
+    assert result.extraction.parser_version == "nyt-parser/0.8.40"
+
+
 def test_wsj_parser_preserves_legacy_video_description():
     result = parse_article(
         b"""
@@ -7585,6 +7626,37 @@ def test_wsj_parser_preserves_legacy_video_description():
     assert result.quality.status.value == "complete"
     assert result.published_at is not None
     assert result.blocks[-1].type.value == "embed"
+
+
+def test_wsj_parser_recovers_legacy_video_headline_from_at_vars():
+    result = parse_article(
+        b"""
+        <html><head>
+          <title>Humor: My Nike Ad (With Apologies to Tiger) - WSJ.com</title>
+          <meta name="description" content="A short archived video
+          description.">
+        </head><body>
+          <script>var AT_VARS={
+            articleHeadline:'Humor: My Nike Ad (With Apologies to Tiger)',
+            clickTitle:'WSJ.com - Humor: My Nike Ad',
+            articleType:'Video - WSJ',
+            publicationDate:'2010-04-09'};</script>
+          <div id="masterVideoCenter"><div id="videoPlayer"></div></div>
+        </body></html>
+        """,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/article/"
+            "83852A75-620A-47C7-9B3C-045FAE5960AB.html"
+        ),
+    )
+
+    assert result.headline == (
+        "Humor: My Nike Ad (With Apologies to Tiger)"
+    )
+    assert result.content_type.value == "video"
+    assert result.quality.status.value == "complete"
+    assert result.extraction.parser_version == "wsj-parser/0.8.20"
 
 
 def test_wsj_parser_preserves_legacy_video_transcript():

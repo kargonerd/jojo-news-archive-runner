@@ -10,7 +10,7 @@ import re
 from typing import Any, Iterable
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, Comment, Tag
 from dateutil.parser import isoparse
 
 from .news_models import (
@@ -442,6 +442,9 @@ def parse_article(
         else None,
         _ap_wire_keyword_headline(news_article)
         if spec.publisher == "ap"
+        else None,
+        _wsj_legacy_headline(soup)
+        if spec.publisher == "wsj"
         else None,
         _meta_content(soup, "property", "og:title"),
         _meta_content(soup, "name", "twitter:title"),
@@ -4601,6 +4604,25 @@ def _nyt_media_content_type(
 ) -> ContentType:
     if structured_image_gallery_selected:
         return ContentType.GALLERY
+    if (
+        soup.find(
+            string=lambda value: isinstance(value, Comment)
+            and "shortarticle" in value.casefold()
+        )
+        and soup.select_one(
+            ".articleSpanImage img[src], .articleInline img[src]"
+        )
+        and len(
+            _clean_text(
+                " ".join(
+                    node.get_text(" ", strip=True)
+                    for node in soup.select("[itemprop='articleBody']")
+                )
+            )
+        )
+        < _MINIMUM_BODY_CHARACTERS
+    ):
+        return ContentType.GALLERY
     if any(
         re.search(
             r"""(?i)["']source["']\s*:\s*["'][^"']+\.mp3(?:[?"']|$)""",
@@ -6944,6 +6966,33 @@ def _wsj_legacy_published_at(soup: BeautifulSoup) -> str | None:
         )
         if match:
             return match.group("date")
+    return None
+
+
+def _wsj_legacy_headline(soup: BeautifulSoup) -> str | None:
+    """Read headlines serialized by WSJ's legacy video templates."""
+    for script in soup.select("script"):
+        value = script.string or script.get_text()
+        match = re.search(
+            r"""(?:articleHeadline|clickTitle)\s*:\s*"""
+            r"""(?P<quote>["'])(?P<headline>.+?)(?P=quote)"""
+            r"""(?=\s*[,}])""",
+            value,
+        )
+        if match:
+            headline = _clean_text(match.group("headline"))
+            headline = re.sub(r"(?i)^wsj\.com\s*-\s*", "", headline)
+            if headline:
+                return headline
+    title = _tag_text(soup.select_one("head > title"))
+    if title:
+        title = re.sub(r"(?i)\s*-\s*wsj\.com\s*$", "", title).strip()
+        if title and title.casefold() not in {
+            "the wall street journal",
+            "wsj",
+            "wsj.com",
+        }:
+            return title
     return None
 
 

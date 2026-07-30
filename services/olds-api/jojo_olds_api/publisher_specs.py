@@ -54,7 +54,7 @@ PUBLISHER_SPECS = {
     ),
     "wsj": PublisherSpec(
         publisher="wsj",
-        parser_version="wsj-parser/0.8.19",
+        parser_version="wsj-parser/0.8.20",
         domains=("wsj.com", "www.wsj.com"),
         default_language="en",
         edition="us",
@@ -124,7 +124,7 @@ PUBLISHER_SPECS = {
     ),
     "nyt": PublisherSpec(
         publisher="nyt",
-        parser_version="nyt-parser/0.8.39",
+        parser_version="nyt-parser/0.8.40",
         domains=("nytimes.com", "www.nytimes.com"),
         default_language="en",
         edition="us",
