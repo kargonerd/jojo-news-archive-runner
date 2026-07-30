@@ -256,7 +256,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.16"
+    assert result.extraction.parser_version == "wsj-parser/0.8.17"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -417,7 +417,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.16"
+    assert result.extraction.parser_version == "wsj-parser/0.8.17"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -514,7 +514,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.16"
+    assert result.extraction.parser_version == "wsj-parser/0.8.17"
 
 
 def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
@@ -587,7 +587,7 @@ def test_wsj_parser_accepts_complete_short_report_matching_declared_words():
     assert "Northrop completed" in result.plain_text
     assert "The two missiles" in result.plain_text
     assert "Copyright" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.16"
+    assert result.extraction.parser_version == "wsj-parser/0.8.17"
 
 
 def test_wsj_parser_rejects_legacy_sign_in_snippet():
@@ -997,7 +997,49 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.16"
+    assert result.extraction.parser_version == "wsj-parser/0.8.17"
+
+
+def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
+    reporting = " ".join(["State budget reporting sentence."] * 12)
+    recirculation = " ".join(["Unrelated popular headline."] * 80)
+    html = f"""
+    <html><head>
+      <meta property="og:title"
+            content="States Push Tax Cuts Amid Big Budgets">
+      <meta property="article:published_time"
+            content="2022-03-04T12:00:00Z">
+    </head><body><article>
+      <div data-type="article-body">
+        <p data-type="paragraph">{reporting}</p>
+        <div class="ArticleRoadblock__Container-sc-test">
+          <p class="ScenarioStandard__ReadFullStory-sc-test">
+            To Read the Full Story
+          </p>
+        </div>
+        <section><h2>Most Popular news</h2><p>{recirculation}</p></section>
+        <section><h2>Recommended Videos</h2></section>
+      </div>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "states-push-tax-cuts-amid-big-budgets-11646593068"
+        ),
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "truncated-body" in result.quality.warnings
+    assert "State budget reporting sentence." in result.plain_text
+    assert "To Read the Full Story" not in result.plain_text
+    assert "Most Popular news" not in result.plain_text
+    assert "Recommended Videos" not in result.plain_text
+    assert "Unrelated popular headline" not in result.plain_text
+    assert result.extraction.parser_version == "wsj-parser/0.8.17"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
