@@ -5171,7 +5171,7 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert "weekly newsletter" not in result.plain_text
     assert "Jackpot.com" not in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.14"
+    assert result.extraction.parser_version == "ap-parser/0.6.15"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -5214,7 +5214,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.14"
+    assert article.extraction.parser_version == "ap-parser/0.6.15"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -5248,7 +5248,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.14"
+    assert result.extraction.parser_version == "ap-parser/0.6.15"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -8510,6 +8510,7 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
             described documents and testimony they planned to introduce.
             The trial was expected to continue for several weeks, with
             additional witnesses scheduled to appear before the jury.</p>
+            <p>______</p>
             <p>.</p>
           </div>
         </article></body></html>
@@ -8523,8 +8524,12 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
 
     assert result.quality.status.value == "complete"
     assert result.blocks[-1].text != "."
+    assert not any(
+        len(block.text) >= 2 and set(block.text) == {"_"}
+        for block in result.blocks
+    )
     assert result.plain_text.rstrip().endswith("jury.")
-    assert result.extraction.parser_version == "ap-parser/0.6.14"
+    assert result.extraction.parser_version == "ap-parser/0.6.15"
 
 
 def test_bloomberg_parser_removes_legacy_related_stories_list():

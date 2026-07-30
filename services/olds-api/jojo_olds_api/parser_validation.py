@@ -900,6 +900,7 @@ def record_parser_validation(
             text == "0 min read"
             or text == "read more:"
             or text == "promoted content"
+            or (len(text) >= 2 and set(text) == {"_"})
             or text.startswith("recommended *")
             or text.startswith("share on twitter (opens new window)")
             or text.startswith("follow the topics in this ")
