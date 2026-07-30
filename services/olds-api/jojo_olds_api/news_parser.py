@@ -5872,10 +5872,20 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
         soup.select(
             ".coupon-list, [class*='SavingsUnited' i], "
             "[class*='SnippetSignIn' i], .author-links, "
-            "[class*='mobile-modal-author' i], .byline-wrap"
+            "[class*='mobile-modal-author' i], .byline-wrap, "
+            ".article__byline, .module.automated-news"
         )
     ):
         node.decompose()
+    for node in list(soup.select(".media-object.inline")):
+        heading = node.select_one("h2, h3, h4, h5, h6")
+        if (
+            isinstance(heading, Tag)
+            and _clean_text(heading.get_text(" ", strip=True))
+            .casefold()
+            .startswith("more in ")
+        ):
+            node.decompose()
     for wrapper in list(soup.select(".theme-nav-wrapper")):
         inset = wrapper.find_parent(
             class_=lambda value: value
