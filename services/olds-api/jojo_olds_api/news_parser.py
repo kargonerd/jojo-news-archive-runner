@@ -556,6 +556,11 @@ def parse_article(
     )
     language = _document_language(soup, default=spec.default_language)
     content_type = _content_type(news_article, canonical_url)
+    if any(
+        value.get("@type") == "LiveBlogPosting"
+        for value in _json_ld_objects(soup)
+    ):
+        content_type = ContentType.LIVEBLOG
     ft_missing_legacy_visual = bool(
         spec.publisher == "ft"
         and _ft_missing_legacy_visual(soup)
@@ -7425,7 +7430,7 @@ def _extract_authors(
 def _content_type(article: dict[str, Any], canonical_url: str) -> ContentType:
     article_type = article.get("@type") if article else None
     url = canonical_url.casefold()
-    if re.search(r"(?:^|[-_/])live(?:[-_/]|$)", url):
+    if article_type == "LiveBlogPosting" or re.search(r"/live(?:/|$)", url):
         return ContentType.LIVEBLOG
     if "newsletter" in url:
         return ContentType.NEWSLETTER
