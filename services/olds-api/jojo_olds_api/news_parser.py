@@ -892,9 +892,15 @@ def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
             for noise in copy.select(
                 "aside, header, nav, footer, form, button, "
                 "[class*='recommend' i], [class*='related' i], "
-                "[class*='newsletter' i], [class*='advert' i]"
+                "[class*='newsletter' i], [class*='advert' i], "
+                "[class*='subscription' i], [class*='get-app' i], "
+                "[class*='whatsapp-group' i]"
             ):
                 noise.decompose()
+            _remove_generic_syndication_partner_noise(
+                copy,
+                source_document=soup,
+            )
             paragraphs = [
                 _clean_text(paragraph.get_text(" ", strip=True))
                 for paragraph in copy.select("p")
@@ -908,6 +914,58 @@ def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
             ):
                 return copy
     return None
+
+
+def _remove_generic_syndication_partner_noise(
+    body: Tag,
+    *,
+    source_document: BeautifulSoup,
+) -> None:
+    """Remove partner-site recirculation without trimming licensed copy."""
+    partner_url = _first_text(
+        _meta_content(source_document, "property", "og:url"),
+        _tag_attribute(
+            source_document.select_one("link[rel='canonical']"),
+            "href",
+        ),
+    )
+    hostname = (
+        (urlsplit(partner_url).hostname or "").casefold()
+        if partner_url
+        else ""
+    )
+    if hostname == "benzinga.com" or hostname.endswith(".benzinga.com"):
+        marker = next(
+            (
+                node
+                for node in body.select("p, h2, h3, h4")
+                if re.match(
+                    r"(?i)^(?:see also|read next)\s*:",
+                    _clean_text(node.get_text(" ", strip=True)),
+                )
+            ),
+            None,
+        )
+        if isinstance(marker, Tag):
+            tail = marker
+            while isinstance(tail.parent, Tag):
+                for sibling in list(tail.next_siblings):
+                    if isinstance(sibling, Tag):
+                        sibling.decompose()
+                    else:
+                        sibling.extract()
+                if tail.parent is body:
+                    break
+                tail = tail.parent
+            marker.decompose()
+    if (
+        hostname == "bnnbloomberg.ca"
+        or hostname.endswith(".bnnbloomberg.ca")
+    ):
+        for node in list(body.select("p, li, ul, ol")):
+            text = _clean_text(node.get_text(" ", strip=True)).casefold()
+            if text == "latest updates on company news here":
+                node.decompose()
 
 
 def _postmedia_syndication_body(soup: BeautifulSoup) -> Tag | None:
