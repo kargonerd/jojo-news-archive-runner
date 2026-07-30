@@ -5888,6 +5888,16 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             .startswith("more in ")
         ):
             node.decompose()
+    for heading in list(soup.select("h2.subhead")):
+        if (
+            _clean_text(heading.get_text(" ", strip=True)).casefold()
+            != "opinion editor's picks"
+        ):
+            continue
+        sibling = heading.find_next_sibling()
+        if isinstance(sibling, Tag) and sibling.name in {"ul", "ol"}:
+            sibling.decompose()
+        heading.decompose()
     for control in list(soup.select("a[role='button']")):
         if _clean_text(control.get_text(" ", strip=True)).casefold() != "see all":
             continue
