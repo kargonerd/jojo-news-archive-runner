@@ -5594,6 +5594,14 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
 
 def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     """Remove NYT sponsorship, subscription and standardized engagement UI."""
+    for button in list(
+        soup.select(
+            "button[aria-label='expand or collapse modal'], "
+            "button.ad-slide-skip"
+        )
+    ):
+        button.decompose()
+
     for node in list(
         soup.select("figure.byline, figure[data-testid='byline']")
     ):

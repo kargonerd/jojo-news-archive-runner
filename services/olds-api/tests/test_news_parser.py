@@ -1403,7 +1403,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
@@ -1449,7 +1449,7 @@ def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
     assert result.images[0].caption is None
     assert result.images[0].credit == "Hiroyuki Ito"
     assert "recommended.jpg" not in result.body_html
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
@@ -1496,7 +1496,7 @@ def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
     assert result.quality.status.value == "partial"
     assert "incomplete-interactive" in result.quality.warnings
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_nyt_parser_keeps_hydrated_image_interactive_over_short_metadata():
@@ -2771,7 +2771,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_reuters_parser_removes_toolbar_licensing_ui_and_promotes_ksl_image():
@@ -3687,7 +3687,7 @@ def test_nyt_parser_removes_sponsorship_subscription_and_opinion_footer_ui():
     assert "diversity of letters" not in result.plain_text
     assert "Opinion section on Facebook" not in result.plain_text
     assert "Share full article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
@@ -3718,7 +3718,7 @@ def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
     assert result.headline == "Positive tests inch up in New York City."
     assert result.quality.status.value == "complete"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_nyt_parser_removes_related_coverage_and_newsletter_modules():
@@ -3818,7 +3818,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_reuters_generic_syndication_removes_benzinga_recirculation_tail():
@@ -4001,7 +4001,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -4041,7 +4041,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -5798,7 +5798,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -6859,7 +6859,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -7013,7 +7013,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
@@ -8028,7 +8028,7 @@ def test_nyt_parser_accepts_legacy_short_editorial_cartoon():
     assert result.content_type.value == "gallery"
     assert result.quality.status.value == "complete"
     assert result.images
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
 
 def test_wsj_parser_preserves_legacy_video_description():
@@ -8621,6 +8621,10 @@ def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
           <p>Passengers should allow extra time, wear a mask when
           required and pay attention to signs directing foot traffic.
           Operators may adjust service as conditions change.</p>
+          <button aria-label="expand or collapse modal">
+            Expand related media
+          </button>
+          <button class="ad-slide-skip">Skip advertisement</button>
           <figure data-testid="byline">
             <img alt="Katherine Cusumano"
               src="https://static01.nyt.com/images/author-katherine.jpg">
@@ -8663,4 +8667,6 @@ def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
     assert avatar.should_archive is False
     assert "___" not in result.plain_text
     assert "Science Times newsletter" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.45"
+    assert "<button" not in result.body_html
+    assert "Skip advertisement" not in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.46"

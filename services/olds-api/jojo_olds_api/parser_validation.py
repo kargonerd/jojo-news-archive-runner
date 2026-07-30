@@ -948,7 +948,7 @@ def record_parser_validation(
         ):
             issues.append("interface-noise-in-body")
         if (
-            capture.publisher in {"ap", "bloomberg", "wsj"}
+            capture.publisher in {"ap", "bloomberg", "nyt", "wsj"}
             and article.content_type == ContentType.ARTICLE
             and "<button" in article.body_html.casefold()
         ):
