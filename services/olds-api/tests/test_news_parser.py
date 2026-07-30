@@ -5151,6 +5151,10 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
             content="2018-04-12T12:00:00Z">
     </head><body><article>
       <p>{reporting}</p>
+      <div data-ap-readmore>
+        <button class="ap-readmore-btn">Read More</button>
+      </div>
+      <button class="ReadMore-more-button">Read More</button>
       <p>___</p>
       <p>More AP college football: https://apnews.com/college-football.
       Sign up for the AP’s weekly newsletter showcasing our best
@@ -5171,7 +5175,9 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert "weekly newsletter" not in result.plain_text
     assert "Jackpot.com" not in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.15"
+    assert "<button" not in result.body_html
+    assert "data-ap-readmore" not in result.body_html
+    assert result.extraction.parser_version == "ap-parser/0.6.16"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -5214,7 +5220,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.15"
+    assert article.extraction.parser_version == "ap-parser/0.6.16"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -5248,7 +5254,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.15"
+    assert result.extraction.parser_version == "ap-parser/0.6.16"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -8539,7 +8545,7 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
         for block in result.blocks
     )
     assert result.plain_text.rstrip().endswith("jury.")
-    assert result.extraction.parser_version == "ap-parser/0.6.15"
+    assert result.extraction.parser_version == "ap-parser/0.6.16"
 
 
 def test_bloomberg_parser_removes_legacy_related_stories_list():

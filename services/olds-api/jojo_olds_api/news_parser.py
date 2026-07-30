@@ -6082,6 +6082,11 @@ def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
 
 def _remove_ap_body_promos(soup: BeautifulSoup) -> None:
     """Remove AP calls-to-action embedded as legacy body paragraphs."""
+    for node in list(soup.select("[data-ap-readmore]")):
+        node.decompose()
+    for button in list(soup.select("button")):
+        button.decompose()
+
     patterns = (
         re.compile(
             r"(?i)\bsign up for (?:the )?ap(?:'s|’s) .*newsletter\b"
