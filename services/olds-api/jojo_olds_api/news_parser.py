@@ -5656,6 +5656,9 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
 
 def _remove_reuters_promos(soup: BeautifulSoup) -> None:
     """Remove Reuters registration UI and licensed-partner subscription tails."""
+    for node in list(soup.select(".rich-share, [data-testid='rich-share']")):
+        node.decompose()
+
     for button in list(soup.select("button")):
         classes = " ".join(button.get("class") or []).casefold()
         if "socialtools" in classes:
@@ -5679,6 +5682,11 @@ def _remove_reuters_promos(soup: BeautifulSoup) -> None:
         if not boundary_found:
             continue
         for node in candidates:
+            node.decompose()
+
+    for node in list(soup.select("p, div, span")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(r"[_^]{3,}", text):
             node.decompose()
 
     for node in list(soup.select("p, h2, h3, h4, h5, h6")):
