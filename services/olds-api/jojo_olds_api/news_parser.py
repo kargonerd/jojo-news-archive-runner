@@ -5626,6 +5626,12 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             node.decompose()
             continue
         if re.match(
+            r"(?i)^follow @financialtimesfashion on instagram\b",
+            text,
+        ) and "subscribe to culture call" in text.casefold():
+            node.decompose()
+            continue
+        if re.match(
             r"(?i)^the ft is offering a free \d+-day trial to "
             r"coronavirus business update\b",
             text,
@@ -5648,6 +5654,12 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             or (
                 text.startswith("get alerts on ")
                 and text.endswith(" when a new story is published")
+            )
+            or (
+                text.startswith(
+                    "ft subscriber? sign up for the weekly "
+                )
+                and " newsletter" in text
             )
         ):
             tail_markers.append(node)

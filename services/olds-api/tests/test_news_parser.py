@@ -4082,7 +4082,7 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.23"
+    assert article.extraction.parser_version == "ft-parser/0.8.24"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
@@ -4174,7 +4174,7 @@ def test_ft_parser_removes_flattened_newsletter_cards():
     assert "Related stories" not in article.plain_text
     assert "Unrelated recirculated story" not in article.plain_text
     assert "Do you want to receive Lex" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.23"
+    assert article.extraction.parser_version == "ft-parser/0.8.24"
 
 
 def test_ft_parser_strips_attached_syndication_copyright_suffix():
@@ -4207,7 +4207,7 @@ def test_ft_parser_strips_attached_syndication_copyright_suffix():
     assert article.quality.status.value == "complete"
     assert "That is good for them" in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.23"
+    assert article.extraction.parser_version == "ft-parser/0.8.24"
 
 
 def test_ft_parser_strips_standalone_syndication_copyright_footer():
@@ -4237,7 +4237,7 @@ def test_ft_parser_strips_standalone_syndication_copyright_footer():
     assert article.quality.status.value == "complete"
     assert "Syndicated FT reporting sentence." in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.23"
+    assert article.extraction.parser_version == "ft-parser/0.8.24"
 
 
 def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
@@ -4401,7 +4401,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.23"
+    assert article.extraction.parser_version == "ft-parser/0.8.24"
 
 
 def test_ft_parser_recovers_images_flattened_into_json_ld_article_body():
@@ -4536,7 +4536,7 @@ def test_ft_parser_uses_photo_hint_to_split_unknown_credit_from_body():
     assert "Nippon Paint has agreed" in article.plain_text
     assert "Like the families in the original novel" in article.plain_text
     assert all(len(image.credit or "") < 100 for image in article.images)
-    assert article.extraction.parser_version == "ft-parser/0.8.23"
+    assert article.extraction.parser_version == "ft-parser/0.8.24"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -4567,7 +4567,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.23"
+    assert article.extraction.parser_version == "ft-parser/0.8.24"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -4607,7 +4607,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.23"
+    assert article.extraction.parser_version == "ft-parser/0.8.24"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -4664,7 +4664,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.23"
+    assert article.extraction.parser_version == "ft-parser/0.8.24"
 
 
 def test_ft_parser_promotes_origami_images_and_deduplicates_raw_lead():
@@ -7878,7 +7878,7 @@ def test_ft_parser_recovers_legacy_flash_interactive():
         "get_flash.png" not in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "ft-parser/0.8.23"
+    assert result.extraction.parser_version == "ft-parser/0.8.24"
 
 
 def test_ft_parser_marks_migrated_caption_without_visual_partial():
@@ -7919,4 +7919,71 @@ def test_ft_parser_marks_migrated_caption_without_visual_partial():
     assert result.plain_text.startswith("Japan's Prime Minister")
     assert "World" not in result.plain_text
     assert result.images == []
-    assert result.extraction.parser_version == "ft-parser/0.8.23"
+    assert result.extraction.parser_version == "ft-parser/0.8.24"
+
+
+def test_ft_parser_removes_fashion_and_podcast_subscription_tails():
+    fashion = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A fashion business profile">
+          <meta property="article:published_time"
+            content="2019-12-13T05:00:42Z">
+        </head><body><article><div class="article-body"
+          itemprop="articleBody">
+          <p>The profile explains how the founder built the company,
+          expanded its product range and attracted a global audience.</p>
+          <p>A second paragraph provides substantial reporting about the
+          strategy, finances and competitive market facing the brand.</p>
+          <p><em>Follow @financialtimesfashion on Instagram to find out
+          about our latest stories first. Listen and subscribe to Culture
+          Call at ft.com/culture-call or on Apple Podcasts</em></p>
+        </div></article></body></html>
+        """,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "f98447aa-1b6f-11ea-9186-7348c2f183af"
+        ),
+    )
+    podcast = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A Working It episode">
+          <meta property="article:published_time"
+            content="2022-06-01T12:00:00Z">
+        </head><body><article>
+          <div class="article__content-body">
+            <audio data-audio-subtype="podcast">
+              <source src="https://example.com/episode.mp3"
+                type="audio/mpeg">
+            </audio>
+            <p>The episode examines class and inclusion at work through
+            interviews with employees, executives and specialist reporters.</p>
+            <p>Want more?</p>
+            <p>A useful employer toolkit on social mobility.</p>
+            <p>FT subscriber? Sign up for the weekly Working It newsletter.
+            We cover all things workplace and management.</p>
+            <p>What's coming next. One-click sign-up at
+            www.ft.com/newsletters</p>
+            <p>Subscribe to Working It wherever you get your podcasts.</p>
+            <p>See acast.com/privacy for privacy and opt-out information.</p>
+          </div>
+        </article></body></html>
+        """,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "1f5aa82d-d25b-48d9-b71e-661ad539c8b2"
+        ),
+    )
+
+    assert fashion.quality.status.value == "complete"
+    assert "@financialtimesfashion" not in fashion.plain_text
+    assert "strategy, finances" in fashion.plain_text
+    assert podcast.content_type.value == "audio"
+    assert podcast.quality.status.value == "complete"
+    assert "A useful employer toolkit" in podcast.plain_text
+    assert "FT subscriber?" not in podcast.plain_text
+    assert "acast.com/privacy" not in podcast.plain_text
+    assert podcast.extraction.parser_version == "ft-parser/0.8.24"

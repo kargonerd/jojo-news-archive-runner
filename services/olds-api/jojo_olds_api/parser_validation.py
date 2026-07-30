@@ -53,6 +53,9 @@ _UI_NOISE_PHRASES = (
     "market wire, all rights reserved",
     "this content requires an adobe flash plugin",
     "your plugin is either missing or out of date",
+    "follow @financialtimesfashion on instagram",
+    "ft subscriber? sign up for the weekly working it newsletter",
+    "see acast.com/privacy for privacy and opt-out information",
 )
 _PLACEHOLDER_IMAGE_MARKERS = (
     "wsj-social-share",
