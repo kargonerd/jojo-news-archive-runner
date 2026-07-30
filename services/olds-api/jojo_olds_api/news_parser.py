@@ -5873,7 +5873,8 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             ".coupon-list, [class*='SavingsUnited' i], "
             "[class*='SnippetSignIn' i], .author-links, "
             "[class*='mobile-modal-author' i], .byline-wrap, "
-            ".article__byline, .module.automated-news"
+            ".article__byline, .module.automated-news, "
+            ".article-news-front"
         )
     ):
         node.decompose()
