@@ -5870,6 +5870,12 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
     """Remove metered-view controls, copyright footers and coupon modules."""
     for button in list(soup.select("button")):
         button.decompose()
+    for tagline in list(soup.select("p.articleTagLine")):
+        if re.fullmatch(
+            r"[_=—–-]+",
+            _clean_text(tagline.get_text(" ", strip=True)),
+        ):
+            tagline.decompose()
 
     for node in list(
         soup.select(
