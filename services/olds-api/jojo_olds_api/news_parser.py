@@ -626,6 +626,7 @@ def parse_article(
 
     images_by_url: dict[str, ImageCandidate] = {}
     blocks: list[ContentBlock] = []
+    wsj_standalone_truncation_marker = False
     for url in _lead_image_urls(soup, news_article, canonical_url):
         image = _image_candidate(
             url=url,
@@ -694,6 +695,21 @@ def parse_article(
             blocks,
             deduplicate_contained_pull_quotes=spec.publisher == "ft",
         )
+        if spec.publisher == "wsj":
+            trailing_text = (
+                _clean_text(blocks[-1].text or "") if blocks else ""
+            )
+            wsj_standalone_truncation_marker = bool(
+                blocks
+                and blocks[-1].type == BlockType.PARAGRAPH
+                and len(trailing_text) <= 80
+                and (
+                    trailing_text == "…"
+                    or re.search(r"\.{3,}$", trailing_text)
+                )
+            )
+            if wsj_standalone_truncation_marker:
+                blocks.pop()
 
     if content_type == ContentType.ARTICLE and (
         structured_image_gallery_selected
@@ -790,7 +806,10 @@ def parse_article(
     if (
         spec.publisher == "wsj"
         and content_type == ContentType.ARTICLE
-        and _wsj_legacy_ellipsis_truncation(plain_text)
+        and (
+            wsj_standalone_truncation_marker
+            or _wsj_legacy_ellipsis_truncation(plain_text)
+        )
     ):
         warnings.append("truncated-body")
     if (
