@@ -256,7 +256,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.23"
+    assert result.extraction.parser_version == "wsj-parser/0.8.24"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -417,7 +417,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.23"
+    assert result.extraction.parser_version == "wsj-parser/0.8.24"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -514,7 +514,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.23"
+    assert result.extraction.parser_version == "wsj-parser/0.8.24"
 
 
 def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
@@ -587,7 +587,7 @@ def test_wsj_parser_accepts_complete_short_report_matching_declared_words():
     assert "Northrop completed" in result.plain_text
     assert "The two missiles" in result.plain_text
     assert "Copyright" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.23"
+    assert result.extraction.parser_version == "wsj-parser/0.8.24"
 
 
 def test_wsj_parser_rejects_legacy_sign_in_snippet():
@@ -875,7 +875,8 @@ def test_wsj_parser_marks_short_ellipsis_capture_as_partial():
       <meta property="article:published_time" content="2014-11-02T00:00:00Z">
     </head><body><article><div class="article-content">
       <p>Electricity returned to many areas after a nationwide blackout.</p>
-      <p>Officials said engineers were still investigating the...</p>
+      <p>Officials said engineers were still investigating the cause.</p>
+      <p>...</p>
     </div></article></body></html>
     """
 
@@ -997,7 +998,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.23"
+    assert result.extraction.parser_version == "wsj-parser/0.8.24"
 
 
 def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
@@ -1039,7 +1040,7 @@ def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
     assert "Most Popular news" not in result.plain_text
     assert "Recommended Videos" not in result.plain_text
     assert "Unrelated popular headline" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.23"
+    assert result.extraction.parser_version == "wsj-parser/0.8.24"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
@@ -7480,7 +7481,7 @@ def test_wsj_parser_accepts_complete_short_editorial_letter():
     assert result.quality.status.value == "complete"
     assert "body-too-short" not in result.quality.warnings
     assert "Warren Tunwall" in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.23"
+    assert result.extraction.parser_version == "wsj-parser/0.8.24"
 
 
 def test_nyt_parser_preserves_image_led_legacy_interactive():
@@ -8152,7 +8153,7 @@ def test_wsj_parser_recovers_legacy_video_headline_from_at_vars():
     )
     assert result.content_type.value == "video"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "wsj-parser/0.8.23"
+    assert result.extraction.parser_version == "wsj-parser/0.8.24"
 
 
 def test_wsj_parser_preserves_legacy_video_transcript():
@@ -8549,6 +8550,12 @@ def test_wsj_parser_removes_buy_side_recommendation_widget():
         </head><body><article>
           <p>The company filed for bankruptcy after freight demand
           weakened and financing costs increased across the industry.</p>
+          <div class="clearfix byline-wrap">
+            <div class="author-info">
+              <a class="author icon bio">Biography</a>
+              <a class="author icon email">reporter@wsj.com</a>
+            </div>
+          </div>
           <p>Executives said customers would continue to receive service
           while the business completes an orderly restructuring. Court
               filings described the company's assets, liabilities, lenders and
@@ -8583,8 +8590,10 @@ def test_wsj_parser_removes_buy_side_recommendation_widget():
     assert "Buy Side from WSJ" not in result.plain_text
     assert "Will Filing Taxes" not in result.plain_text
     assert "weekly newsletter" not in result.plain_text
+    assert "Biography" not in result.plain_text
+    assert "reporter@wsj.com" not in result.plain_text
     assert "<button" not in result.body_html
-    assert result.extraction.parser_version == "wsj-parser/0.8.23"
+    assert result.extraction.parser_version == "wsj-parser/0.8.24"
 
 
 def test_ap_parser_removes_legacy_terminal_period_paragraph():

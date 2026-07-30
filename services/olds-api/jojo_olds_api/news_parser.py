@@ -2454,7 +2454,7 @@ def _wsj_legacy_ellipsis_truncation(plain_text: str) -> bool:
     """Recognize short legacy archive captures cut off with a literal ellipsis."""
     text = plain_text.rstrip()
     return len(text) < 1_000 and bool(
-        re.search(r"[A-Za-z][.]{3}$", text)
+        re.search(r"(?:[A-Za-z]\.{3}|(?:^|\n)\s*\.{3})$", text)
     )
 
 
@@ -5807,7 +5807,7 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
         soup.select(
             ".coupon-list, [class*='SavingsUnited' i], "
             "[class*='SnippetSignIn' i], .author-links, "
-            "[class*='mobile-modal-author' i]"
+            "[class*='mobile-modal-author' i], .byline-wrap"
         )
     ):
         node.decompose()
