@@ -253,20 +253,23 @@ jobs:
             restore_if_present \
               "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/validation/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
               "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz"
-            if [ ! -f "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" ]; then
-              restore_if_present \
-                "${SOURCE_ROOT}/state/capture.sqlite3.gz" \
-                "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz"
-            fi
             if [ -f "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" ]; then
               gzip -dc "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" \
                 > "$RUNNER_TEMP/exclusion-validation-v1.sqlite3"
             elif [ "$SAMPLE_YEAR" -ge 2016 ]; then
               echo "Original validation state required for 2016+ disjoint holdout." >&2
               exit 1
+            else
+              echo "::notice::No original validation state exists for this pre-2016 cell."
             fi
             if [ "$cohort_number" -gt 1 ]; then
-              for previous_number in $(seq 1 $((cohort_number - 1))); do
+              # A finite publisher/year catalog cannot support indefinitely many
+              # globally-disjoint 300-article cohorts. Keep every new cohort
+              # disjoint from the original validation baseline and from the most
+              # recent available holdout. Older cohorts may overlap naturally,
+              # which keeps the rolling audit sustainable without silently
+              # shrinking it below the requested target.
+              for previous_number in $(seq $((cohort_number - 1)) -1 1); do
                 previous_cohort="holdout-v${previous_number}"
                 previous_gzip="$RUNNER_TEMP/exclusion-${previous_cohort}.sqlite3.gz"
                 previous_state="$RUNNER_TEMP/exclusion-${previous_cohort}.sqlite3"
@@ -275,6 +278,8 @@ jobs:
                   "$previous_gzip"
                 if [ -f "$previous_gzip" ]; then
                   gzip -dc "$previous_gzip" > "$previous_state"
+                  echo "Using ${previous_cohort} as the rolling holdout exclusion."
+                  break
                 else
                   echo "::notice::No ${previous_cohort} state exists; skipping it."
                 fi
