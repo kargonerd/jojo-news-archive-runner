@@ -815,6 +815,14 @@ def record_parser_validation(
         if any(
             text == "0 min read"
             or text == "read more:"
+            or text == "promoted content"
+            or text.startswith("recommended *")
+            or text.startswith("share on twitter (opens new window)")
+            or text.startswith("follow the topics in this ")
+            or (
+                text.startswith("get alerts on ")
+                and text.endswith(" when a new story is published")
+            )
             or any(phrase in text for phrase in _UI_NOISE_PHRASES)
             for text in normalized_blocks
         ):

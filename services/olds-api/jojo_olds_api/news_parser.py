@@ -5202,6 +5202,7 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         ):
             node.decompose()
     if spec.publisher == "ft":
+        _remove_ft_body_chrome(soup)
         _remove_ft_newsletter_promos(soup)
         _strip_ft_copyright_suffixes(soup)
     if spec.publisher == "bloomberg":
@@ -5443,6 +5444,76 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             )
         ):
             node.decompose()
+
+
+def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove Next-era sharing, recirculation and follow-topic UI."""
+    for node in list(
+        soup.select(
+            "[data-toolbar='share'], "
+            ".article-info__byline, "
+            ".o-message__content-main"
+        )
+    ):
+        node.decompose()
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.match(r"(?i)^recommended\s*\*", text):
+            node.decompose()
+            continue
+        if re.match(
+            r"(?i)^the ft is offering a free \d+-day trial to "
+            r"coronavirus business update\b",
+            text,
+        ):
+            node.decompose()
+
+    tail_markers: list[Tag] = list(
+        soup.select(
+            ".instant-alert-cta__text, "
+            ".h2-promoted-content, "
+            ".concept-list__title, "
+            ".comments__disabled-message"
+        )
+    )
+    for node in soup.select("h2, h3, p"):
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        if (
+            text == "promoted content"
+            or text.startswith("follow the topics in this ")
+            or (
+                text.startswith("get alerts on ")
+                and text.endswith(" when a new story is published")
+            )
+        ):
+            tail_markers.append(node)
+    if not tail_markers:
+        return
+    top = soup.find()
+    if not isinstance(top, Tag):
+        return
+    marker_ids = {id(marker) for marker in tail_markers}
+    marker = next(
+        (
+            node
+            for node in top.descendants
+            if isinstance(node, Tag) and id(node) in marker_ids
+        ),
+        None,
+    )
+    if not isinstance(marker, Tag):
+        return
+    tail = marker
+    while isinstance(tail.parent, Tag):
+        for sibling in list(tail.next_siblings):
+            if isinstance(sibling, Tag):
+                sibling.decompose()
+            else:
+                sibling.extract()
+        if tail.parent is top:
+            break
+        tail = tail.parent
+    marker.decompose()
 
 
 def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:

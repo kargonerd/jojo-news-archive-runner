@@ -4009,7 +4009,7 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.20"
+    assert article.extraction.parser_version == "ft-parser/0.8.21"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
@@ -4101,7 +4101,7 @@ def test_ft_parser_removes_flattened_newsletter_cards():
     assert "Related stories" not in article.plain_text
     assert "Unrelated recirculated story" not in article.plain_text
     assert "Do you want to receive Lex" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.20"
+    assert article.extraction.parser_version == "ft-parser/0.8.21"
 
 
 def test_ft_parser_strips_attached_syndication_copyright_suffix():
@@ -4134,7 +4134,7 @@ def test_ft_parser_strips_attached_syndication_copyright_suffix():
     assert article.quality.status.value == "complete"
     assert "That is good for them" in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.20"
+    assert article.extraction.parser_version == "ft-parser/0.8.21"
 
 
 def test_ft_parser_strips_standalone_syndication_copyright_footer():
@@ -4164,7 +4164,7 @@ def test_ft_parser_strips_standalone_syndication_copyright_footer():
     assert article.quality.status.value == "complete"
     assert "Syndicated FT reporting sentence." in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.20"
+    assert article.extraction.parser_version == "ft-parser/0.8.21"
 
 
 def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
@@ -4328,7 +4328,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.20"
+    assert article.extraction.parser_version == "ft-parser/0.8.21"
 
 
 def test_ft_parser_recovers_images_flattened_into_json_ld_article_body():
@@ -4463,7 +4463,7 @@ def test_ft_parser_uses_photo_hint_to_split_unknown_credit_from_body():
     assert "Nippon Paint has agreed" in article.plain_text
     assert "Like the families in the original novel" in article.plain_text
     assert all(len(image.credit or "") < 100 for image in article.images)
-    assert article.extraction.parser_version == "ft-parser/0.8.20"
+    assert article.extraction.parser_version == "ft-parser/0.8.21"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -4494,7 +4494,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.20"
+    assert article.extraction.parser_version == "ft-parser/0.8.21"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -4534,7 +4534,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.20"
+    assert article.extraction.parser_version == "ft-parser/0.8.21"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -4591,7 +4591,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.20"
+    assert article.extraction.parser_version == "ft-parser/0.8.21"
 
 
 def test_ft_parser_promotes_origami_images_and_deduplicates_raw_lead():
@@ -7575,3 +7575,43 @@ def test_reuters_parser_trims_legal_read_more_recirculation():
     assert "For the plaintiff" in result.plain_text
     assert "Read more:" not in result.plain_text
     assert "Earlier related court ruling" not in result.plain_text
+
+
+def test_ft_parser_removes_share_recommendation_and_follow_topic_chrome():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A complete FT report">
+          <meta property="article:published_time"
+            content="2020-04-20T12:00:00Z">
+        </head><body><article>
+          <div class="article__content-body">
+            <ul data-toolbar="share">
+              <li>Share on Twitter (opens new window)</li>
+              <li>Share on Facebook (opens new window)</li>
+            </ul>
+            <p class="article-info__byline">Example Reporter</p>
+            <p>The opening paragraph contains substantial reporting about
+            the policy decision and explains why it matters to readers.</p>
+            <p>RECOMMENDED * An unrelated story promoted in the middle</p>
+            <p>The second paragraph must remain because the recommendation
+            module was inserted between genuine article paragraphs.</p>
+            <p>Additional reporting by Another Reporter</p>
+            <p class="instant-alert-cta__text">Get alerts on Markets when a
+            new story is published</p>
+            <h2 class="h2-promoted-content">Promoted Content</h2>
+            <h2 class="concept-list__title">Follow the topics in this article</h2>
+            <ul><li>Markets</li><li>World</li></ul>
+          </div>
+        </article></body></html>
+        """,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/complete-report",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "opening paragraph" in result.plain_text
+    assert "second paragraph must remain" in result.plain_text
+    assert "RECOMMENDED" not in result.plain_text
+    assert "Promoted Content" not in result.plain_text
+    assert "Follow the topics" not in result.plain_text
