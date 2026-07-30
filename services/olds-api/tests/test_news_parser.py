@@ -1579,7 +1579,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.21"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.22"
 
 
 def test_bloomberg_parser_keeps_listen_to_article_as_article():
@@ -1820,7 +1820,7 @@ def test_bloomberg_parser_removes_legacy_inline_newsletter_nested_in_paragraph()
     assert "Opening article paragraph." in result.plain_text
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "markets daily newsletter" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.21"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.22"
 
 
 def test_bloomberg_parser_recovers_legacy_feature_landing_page():
@@ -1983,7 +1983,7 @@ def test_bloomberg_parser_separates_explicit_figure_credit():
     assert len(result.images) == 1
     assert result.images[0].caption == "Welcome to the factory floor."
     assert result.images[0].credit == "Tesla"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.21"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.22"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -2025,7 +2025,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.21"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.22"
 
 
 def test_bloomberg_parser_rejects_explicit_teaser_body():
@@ -2057,7 +2057,80 @@ def test_bloomberg_parser_rejects_explicit_teaser_body():
 
     assert result.quality.status.value == "partial"
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.21"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.22"
+
+
+def test_bloomberg_parser_trims_professional_subscription_shell():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="An archived Bloomberg report">
+      <meta property="article:published_time"
+            content="1997-06-29T00:00:00Z">
+    </head><body><article>
+      <div class="body-copy-v2">
+        <p>The first substantial paragraph explains the report and gives
+        readers enough genuine editorial context to identify the story.</p>
+        <p>The second substantial paragraph continues the reporting with
+        additional facts, analysis, and historical background.</p>
+        <p>To continue reading this article you must be a Bloomberg
+        Professional Service Subscriber. Read this article on the Terminal
+        Request a demo to learn more.</p>
+        <p>Recommended terminal products</p>
+      </div>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/1997-06-29/"
+            "an-archived-bloomberg-report"
+        ),
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "truncated-body" in result.quality.warnings
+    assert "Professional Service Subscriber" not in result.plain_text
+    assert "Recommended terminal products" not in result.plain_text
+    assert "second substantial paragraph" in result.plain_text
+
+
+def test_bloomberg_parser_removes_legacy_subscription_promos():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Bloomberg markets report">
+      <meta property="article:published_time"
+            content="2017-05-01T00:00:00Z">
+    </head><body><article><div class="body-copy-v2">
+      <p>The opening paragraph contains substantial original reporting about
+      markets, companies, and economic policy around the world.</p>
+      <p>Good morning! This is Fly Charts, the daily charts-only newsletter
+      from Gadfly; sign up here . From an oil sands disaster, the charts
+      explain what investors need to know today.</p>
+      <p>Subscribe to Game Plan on iTunes Podcasts</p>
+      <p>Subscribe to Game Plan on Pocket Casts</p>
+      <p>Follow @Brexit for all the latest news, and sign up to our daily
+      Brexit Bulletin newsletter.</p>
+      <p>A version of this column originally appeared in Bloomberg's Fully
+      Charged technology newsletter. You can sign up here .</p>
+    </div></article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2017-05-01/"
+            "bloomberg-markets-report"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "sign up here" not in result.plain_text
+    assert "Subscribe to Game Plan" not in result.plain_text
+    assert "Follow @Brexit" not in result.plain_text
+    assert "From an oil sands disaster" in result.plain_text
 
 
 def test_bloomberg_parser_extracts_legacy_div_span_story_body():
@@ -2089,7 +2162,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.21"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.22"
 
 
 def test_bloomberg_parser_scopes_legacy_body_without_right_rail():
@@ -2160,7 +2233,7 @@ def test_bloomberg_parser_removes_share_article_control_from_body():
     assert result.quality.status.value == "complete"
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "SHARE THIS ARTICLE" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.21"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.22"
 
 
 def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
@@ -2236,7 +2309,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
         "https://omny.fm/shows/example/episode"
     ]
     assert "Unrelated navigation card" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.21"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.22"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -3117,7 +3190,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.21"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.22"
 
 
 def test_nyt_parser_trims_access_shell_after_complete_article():
@@ -7387,7 +7460,7 @@ def test_bloomberg_parser_uses_first_question_for_untitled_quiz():
     )
     assert result.content_type.value == "interactive"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.21"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.22"
 
 
 def test_nyt_parser_accepts_intentionally_short_corrections_notice():

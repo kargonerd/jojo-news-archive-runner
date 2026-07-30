@@ -385,6 +385,8 @@ def parse_article(
         _remove_ap_body_promos(clean_body)
     if spec.publisher == "reuters":
         _trim_reuters_recirculation_tail(clean_body)
+    if spec.publisher == "bloomberg":
+        _trim_bloomberg_subscription_tail(clean_body)
     if spec.publisher == "wsj":
         _trim_wsj_roadblock_tail(clean_body)
     if spec.publisher == "nyt":
@@ -5216,6 +5218,39 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         _remove_wsj_promos(soup)
 
 
+def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
+    """Drop Bloomberg Professional subscription shells after real excerpts."""
+    marker = next(
+        (
+            node
+            for node in soup.select("p, div")
+            if _clean_text(node.get_text(" ", strip=True))
+            .casefold()
+            .startswith(
+                "to continue reading this article you must be a bloomberg "
+                "professional service subscriber"
+            )
+        ),
+        None,
+    )
+    if not isinstance(marker, Tag):
+        return
+    top = soup.find()
+    if not isinstance(top, Tag):
+        return
+    tail = marker
+    while isinstance(tail.parent, Tag):
+        for sibling in list(tail.next_siblings):
+            if isinstance(sibling, Tag):
+                sibling.decompose()
+            else:
+                sibling.extract()
+        if tail.parent is top:
+            break
+        tail = tail.parent
+    marker.decompose()
+
+
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     """Remove legacy recirculation and standardized article footers."""
     footer_patterns = (
@@ -5244,8 +5279,38 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"reflect the views of bloomberg lp\.?$"
         ),
         re.compile(
-            r"(?i)^follow @\w+ for all the latest news, and sign up for "
+            r"(?i)^follow @\w+ for all the latest news, and sign up (?:for|to) "
             r"our daily .+ newsletter\.?$"
+        ),
+        re.compile(
+            r"(?i)^subscribe to .+ on "
+            r"(?:itunes|apple) podcasts(?:\s+subscribe to .+ on "
+            r"pocket casts)?\.?$"
+        ),
+        re.compile(
+            r"(?i)^subscribe to .+ on pocket casts\.?$"
+        ),
+        re.compile(
+            r"(?i)^if you(?:'|’)d like to get the daily prophet in "
+            r"e-?mail form, right in your inbox, please subscribe "
+            r"to this link\s*\.\s*thanks!?"
+        ),
+        re.compile(
+            r"(?i)^start your day with what(?:'|’)s moving markets in asia\. "
+            r"sign up here to receive our newsletter\.?$"
+        ),
+        re.compile(
+            r"(?i)^sign up to receive the brexit bulletin in your inbox, "
+            r"and follow @brexit on twitter\.?$"
+        ),
+        re.compile(
+            r"(?i)^a version of this column originally appeared in "
+            r"bloomberg(?:'|’)s fully charged technology newsletter\. "
+            r"you can sign up here\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^want to hear more\? subscribe on apple podcasts and "
+            r"pocket casts for new episodes every week\."
         ),
         re.compile(
             r"(?i)^\(?\s*sign up for the .+ newsletter, your best source "
@@ -5279,6 +5344,15 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if any(pattern.search(text) for pattern in footer_patterns):
             node.decompose()
 
+    for link in list(soup.select("a")):
+        text = _clean_text(link.get_text(" ", strip=True)).casefold()
+        href = str(link.get("href") or "").casefold()
+        if (
+            text == "sign up here"
+            and "bloombergbusiness.com/join/" in href
+        ):
+            link.decompose()
+
     disclaimer_suffix = re.compile(
         r"(?i)\s*\(?this\s+(?:column|article)\s+does\s+not\s+necessarily"
         r"\s+reflect\s+the\s+opinion\s+of\s+"
@@ -5291,6 +5365,13 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             text_node.replace_with(cleaned)
         else:
             text_node.extract()
+
+    inline_signup = re.compile(
+        r"(?i)\s*;\s*(?:sign up here)?\s*\.\s*"
+    )
+    for text_node in list(soup.find_all(string=inline_signup)):
+        cleaned = inline_signup.sub(". ", str(text_node), count=1)
+        text_node.replace_with(cleaned)
 
     for heading in soup.select("h1, h2, h3, h4"):
         text = _clean_text(heading.get_text(" ", strip=True))
@@ -6445,12 +6526,18 @@ def _ft_explicit_truncation_notice(soup: BeautifulSoup) -> bool:
 
 
 def _bloomberg_teaser_shell(soup: BeautifulSoup) -> bool:
-    return bool(
+    if bool(
         soup.select_one(
             "[class*='teaser-body'], "
             ".body-content[class*='teaser-content']"
         )
-    )
+    ):
+        return True
+    text = _clean_text(soup.get_text(" ", strip=True)).casefold()
+    return (
+        "to continue reading this article you must be a bloomberg "
+        "professional service subscriber"
+    ) in text
 
 
 def _merge_candidate_urls(

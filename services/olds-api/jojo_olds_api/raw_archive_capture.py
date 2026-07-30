@@ -201,6 +201,7 @@ _PARSED_PAYWALL_PHRASES = (
     "sign in to continue",
     "already a subscriber",
     "unlock this article",
+    "bloomberg professional service subscriber",
 )
 _PARSED_PAYWALL_MAXIMUM_BODY_CHARACTERS = 1_000
 _ARTICLE_BODY_MARKERS = (

@@ -35,6 +35,7 @@ _PAYWALL_PHRASES = (
     "sign in to continue",
     "already a subscriber",
     "unlock this article",
+    "bloomberg professional service subscriber",
 )
 _UI_NOISE_PHRASES = (
     "promoted by taboola",
