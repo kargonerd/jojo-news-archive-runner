@@ -1113,6 +1113,8 @@ def test_validation_rejects_interface_noise_inside_complete_body(
     assert summary["years"]["2020"]["issueCounts"] == {
         "interface-noise-in-body": 1
     }
+    assert summary["gates"]["minimumQaPassRate"] == 1.0
+    assert summary["ready"] is False
 
 
 def test_validation_uses_parsed_publication_year_not_capture_year(

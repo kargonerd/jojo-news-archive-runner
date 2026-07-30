@@ -116,7 +116,7 @@ def action_state(
                 validation_ready = bool(readiness_rows) and all(
                     int(evaluated) >= int(target_size)
                     and int(complete) / int(evaluated) >= 0.95
-                    and int(qa_passed) / int(evaluated) >= 0.95
+                    and int(qa_passed) / int(evaluated) >= 1.0
                     and int(parser_errors) == 0
                     for (
                         _sample_year,

@@ -24,7 +24,11 @@ SCHEMA_VERSION = "jojo-parser-validation/1"
 DEFAULT_SEED = "jojo-parser-validation-v1"
 HOLDOUT_SEED = "jojo-parser-holdout-v1"
 MINIMUM_COMPLETE_RATE = 0.95
-MINIMUM_QA_PASS_RATE = 0.95
+# Parser convergence is strict: one structural/content QA failure in a
+# 300-sample cell must keep the cohort open for investigation.  The separate
+# complete-rate gate remains below 1.0 because valid non-text interactives can
+# intentionally be classified as unsupported while still passing QA.
+MINIMUM_QA_PASS_RATE = 1.0
 _PAYWALL_PHRASES = (
     "subscribe to read",
     "subscribe to continue",
