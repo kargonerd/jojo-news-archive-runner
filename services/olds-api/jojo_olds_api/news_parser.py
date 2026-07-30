@@ -5422,6 +5422,18 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     """Remove legacy recirculation and standardized article footers."""
+    for marker in list(soup.select("p")):
+        if (
+            _clean_text(marker.get_text(" ", strip=True))
+            .casefold()
+            .rstrip(":")
+            != "related stories"
+        ):
+            continue
+        sibling = marker.find_next_sibling()
+        if isinstance(sibling, Tag) and sibling.name in {"ul", "ol"}:
+            sibling.decompose()
+            marker.decompose()
     footer_patterns = (
         re.compile(
             r"(?i)^to contact the "

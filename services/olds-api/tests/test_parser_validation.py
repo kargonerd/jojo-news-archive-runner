@@ -75,6 +75,10 @@ def test_publisher_interface_noise_detects_ap_terminal_period_block():
 def test_publisher_interface_noise_detects_bloomberg_promos():
     assert _has_publisher_interface_noise(
         "bloomberg",
+        ["article reporting", "related stories:"],
+    )
+    assert _has_publisher_interface_noise(
+        "bloomberg",
         ["watch this next"],
     )
     assert _has_publisher_interface_noise(

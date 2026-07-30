@@ -103,6 +103,7 @@ def _has_publisher_interface_noise(
     if publisher == "bloomberg":
         return any(
             text == "watch this next"
+            or text.rstrip(":") == "related stories"
             or (
                 text.startswith("sign up to receive the brexit bulletin")
                 and "departure from the eu" in text

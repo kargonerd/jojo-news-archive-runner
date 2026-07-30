@@ -1579,7 +1579,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
 
 
 def test_bloomberg_parser_keeps_listen_to_article_as_article():
@@ -1820,7 +1820,7 @@ def test_bloomberg_parser_removes_legacy_inline_newsletter_nested_in_paragraph()
     assert "Opening article paragraph." in result.plain_text
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "markets daily newsletter" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
 
 
 def test_bloomberg_parser_recovers_legacy_feature_landing_page():
@@ -2402,7 +2402,7 @@ def test_bloomberg_parser_separates_explicit_figure_credit():
     assert len(result.images) == 1
     assert result.images[0].caption == "Welcome to the factory floor."
     assert result.images[0].credit == "Tesla"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -2444,7 +2444,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
 
 
 def test_bloomberg_parser_rejects_explicit_teaser_body():
@@ -2476,7 +2476,7 @@ def test_bloomberg_parser_rejects_explicit_teaser_body():
 
     assert result.quality.status.value == "partial"
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
 
 
 def test_bloomberg_parser_trims_professional_subscription_shell():
@@ -2581,7 +2581,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
 
 
 def test_bloomberg_parser_scopes_legacy_body_without_right_rail():
@@ -2652,7 +2652,7 @@ def test_bloomberg_parser_removes_share_article_control_from_body():
     assert result.quality.status.value == "complete"
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "SHARE THIS ARTICLE" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
 
 
 def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
@@ -2728,7 +2728,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
         "https://omny.fm/shows/example/episode"
     ]
     assert "Unrelated navigation card" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -3609,7 +3609,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
 
 
 def test_nyt_parser_trims_access_shell_after_complete_article():
@@ -7879,7 +7879,7 @@ def test_bloomberg_parser_uses_first_question_for_untitled_quiz():
     )
     assert result.content_type.value == "interactive"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.24"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
 
 
 def test_nyt_parser_accepts_intentionally_short_corrections_notice():
@@ -8525,3 +8525,39 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
     assert result.blocks[-1].text != "."
     assert result.plain_text.rstrip().endswith("jury.")
     assert result.extraction.parser_version == "ap-parser/0.6.14"
+
+
+def test_bloomberg_parser_removes_legacy_related_stories_list():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A company acquisition">
+          <meta property="article:published_time"
+            content="2017-06-11T12:00:00Z">
+        </head><body><article><div class="body-copy">
+          <p>The investor said the amended acquisition offer remained
+          unfair and asked the buyer to improve the proposed price.</p>
+          <p>The company defended its recommendation after reviewing the
+          expected synergies, financing terms and alternative proposals.
+          Shareholders were scheduled to vote after receiving additional
+          information about the transaction and its valuation.</p>
+          <p>Related stories:</p>
+          <ul>
+            <li><a href="/news/related-one">Hedge Fund Pushes for a
+            Better Deal</a></li>
+            <li><a href="/news/related-two">Company Amends Offer</a></li>
+          </ul>
+        </div></article></body></html>
+        """,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2017-06-11/"
+            "oasis-says-amended-offer-is-still-unfair"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "amended acquisition offer" in result.plain_text
+    assert "Related stories" not in result.plain_text
+    assert "Hedge Fund Pushes" not in result.plain_text
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.25"
