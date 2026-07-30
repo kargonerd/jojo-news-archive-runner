@@ -2159,10 +2159,25 @@ def _wsj_subscription_truncation(
     """Reject metered WSJ previews while retaining substantial recovered copy."""
     if content_type != ContentType.ARTICLE:
         return False
-    if selected_sign_in:
-        return True
     if len(plain_text) >= 1_000:
         return False
+    declared_word_count = _wsj_declared_word_count(soup)
+    extracted_word_count = len(
+        re.findall(
+            r"[A-Za-z0-9]+(?:['’.-][A-Za-z0-9]+)*",
+            plain_text,
+        )
+    )
+    if (
+        declared_word_count is not None
+        and extracted_word_count >= max(
+            1,
+            int(declared_word_count * 0.85),
+        )
+    ):
+        return False
+    if selected_sign_in:
+        return True
     copyright_footer = any(
         (
             (text := _clean_text(node.get_text(" ", strip=True))).casefold()
@@ -2186,6 +2201,21 @@ def _wsj_subscription_truncation(
         )
     )
     return bool(has_metered_controls or len(modern_body_paragraphs) <= 3)
+
+
+def _wsj_declared_word_count(soup: BeautifulSoup) -> int | None:
+    """Read WSJ's own word count so genuine short reports are not previews."""
+    raw = _first_text(
+        _meta_content(soup, "name", "article:word_count"),
+        _meta_content(soup, "property", "article:word_count"),
+    )
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 def _wsj_unsupported_media_gallery(soup: BeautifulSoup) -> Tag | None:

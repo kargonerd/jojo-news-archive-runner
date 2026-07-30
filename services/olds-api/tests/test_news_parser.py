@@ -255,7 +255,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.15"
+    assert result.extraction.parser_version == "wsj-parser/0.8.16"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -416,7 +416,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.15"
+    assert result.extraction.parser_version == "wsj-parser/0.8.16"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -513,7 +513,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.15"
+    assert result.extraction.parser_version == "wsj-parser/0.8.16"
 
 
 def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
@@ -550,6 +550,43 @@ def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
     assert "Copyright" not in result.plain_text
     assert "Videos" not in result.plain_text
     assert "Listen" not in result.plain_text
+
+
+def test_wsj_parser_accepts_complete_short_report_matching_declared_words():
+    first = " ".join(["Northrop completed the defense system test."] * 10)
+    second = " ".join(["The two missiles were intercepted safely."] * 10)
+    html = f"""
+    <html><head>
+      <meta property="og:title"
+            content="Defense System Intercepts Two Missiles">
+      <meta property="article:published_time"
+            content="2019-12-12T19:55:00Z">
+      <meta property="article:word_count" content="120">
+    </head><body><article>
+      <div itemprop="articleBody">
+        <p>{first}</p>
+        <div class="paywall"><p>{second}</p></div>
+        <p>Copyright © 2019 Dow Jones &amp; Company, Inc.
+        All Rights Reserved.</p>
+      </div>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "defense-system-intercepts-two-missiles-11576180509"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "truncated-body" not in result.quality.warnings
+    assert "Northrop completed" in result.plain_text
+    assert "The two missiles" in result.plain_text
+    assert "Copyright" not in result.plain_text
+    assert result.extraction.parser_version == "wsj-parser/0.8.16"
 
 
 def test_wsj_parser_rejects_legacy_sign_in_snippet():
@@ -959,7 +996,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.15"
+    assert result.extraction.parser_version == "wsj-parser/0.8.16"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
