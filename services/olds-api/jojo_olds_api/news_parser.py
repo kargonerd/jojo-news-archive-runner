@@ -5875,7 +5875,9 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             "[class*='mobile-modal-author' i], .byline-wrap, "
             ".article__byline, .module.automated-news, "
             ".article-news-front, [class*='AuthoringContainer'], "
-            "[data-block='doNotPrint']"
+            "[data-block='doNotPrint'], "
+            "[data-module-zone='opinion_editors_picks'], "
+            ".opinion-editors-picks"
         )
     ):
         node.decompose()
