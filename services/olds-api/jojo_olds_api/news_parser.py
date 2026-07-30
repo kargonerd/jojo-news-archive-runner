@@ -533,6 +533,10 @@ def parse_article(
     )
     language = _document_language(soup, default=spec.default_language)
     content_type = _content_type(news_article, canonical_url)
+    ft_missing_legacy_visual = bool(
+        spec.publisher == "ft"
+        and _ft_missing_legacy_visual(soup)
+    )
     if (
         spec.publisher == "bloomberg"
         and _bloomberg_article_narration(soup)
@@ -570,6 +574,8 @@ def parse_article(
         content_type = ContentType.INTERACTIVE
     if spec.publisher == "ft" and ft_crossword_selected:
         content_type = ContentType.INTERACTIVE
+    if ft_missing_legacy_visual:
+        content_type = ContentType.GALLERY
     if (
         spec.publisher == "ft"
         and soup.select_one(
@@ -774,6 +780,15 @@ def parse_article(
         and content_type == ContentType.GALLERY
         and soup.select_one(".slideshow-article")
         and sum(image.should_archive for image in images) < 3
+    ):
+        warnings.append("incomplete-gallery")
+    if (
+        ft_missing_legacy_visual
+        and not any(image.should_archive for image in images)
+        and not any(
+            block.type in {BlockType.IMAGE, BlockType.EMBED}
+            for block in blocks
+        )
     ):
         warnings.append("incomplete-gallery")
     if (
@@ -6590,6 +6605,44 @@ def _ft_explicit_truncation_notice(soup: BeautifulSoup) -> bool:
         "您已阅读" in text
         and "剩余" in text
         and "订阅以继续探索完整内容" in text
+    )
+
+
+def _ft_missing_legacy_visual(soup: BeautifulSoup) -> bool:
+    """Detect migrated caption-only FT pages whose visual asset was lost."""
+    body = soup.select_one(
+        "article .article-body[itemprop='articleBody'], "
+        "article .article-body"
+    )
+    if not isinstance(body, Tag):
+        return False
+    paragraphs = [
+        _clean_text(node.get_text(" ", strip=True))
+        for node in body.select("p")
+        if "copyright" not in " ".join(
+            str(value).casefold()
+            for value in node.get("class", [])
+        )
+        and _clean_text(node.get_text(" ", strip=True))
+    ]
+    if len(paragraphs) != 1 or len(paragraphs[0]) >= 350:
+        return False
+    if body.select_one(
+        "img[src], amp-img[src], figure, iframe[src], video, "
+        "amp-video, amp-brightcove, object, embed"
+    ):
+        return False
+    text = paragraphs[0]
+    return bool(
+        (
+            re.search(r"\([LR]\)", text)
+            and re.search(r"\([LR]\)", text[re.search(r"\([LR]\)", text).end():])
+        )
+        or re.search(
+            r"(?i)\b(?:pictured|poses? for (?:a )?photograph|"
+            r"photographer\s*:|photo shows?|shakes? hands with)\b",
+            text,
+        )
     )
 
 

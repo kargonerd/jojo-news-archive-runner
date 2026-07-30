@@ -185,7 +185,7 @@ PUBLISHER_SPECS = {
     ),
     "ft": PublisherSpec(
         publisher="ft",
-        parser_version="ft-parser/0.8.22",
+        parser_version="ft-parser/0.8.23",
         domains=("ft.com", "www.ft.com"),
         default_language="en",
         edition="global",
@@ -194,6 +194,8 @@ PUBLISHER_SPECS = {
             "#article-body",
             "#storyContent",
             "[data-trackable='article-body']",
+            ".article-body[itemprop='articleBody']",
+            ".article-body",
             "article",
         ),
         preferred_image_hosts=("www.ft.com", "d1e00ek4ebabms.cloudfront.net"),
