@@ -5225,6 +5225,9 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
       <p>More AP college football: https://apnews.com/college-football.
       Sign up for the AP’s weekly newsletter showcasing our best
       reporting: http://apne.ws/example</p>
+      <p>•••</p>
+      <p>Sign up for “Politics in Focus,” a weekly newsletter showcasing
+      the AP’s best political reporting: http://apne.ws/example</p>
       <p>For more lottery results, go to Jackpot.com |
       Order Lottery Tickets</p>
     </article></body></html>
@@ -5239,11 +5242,13 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert result.quality.status.value == "complete"
     assert "AP reporting sentence." in result.plain_text
     assert "weekly newsletter" not in result.plain_text
+    assert "Politics in Focus" not in result.plain_text
+    assert "•••" not in result.plain_text
     assert "Jackpot.com" not in result.plain_text
     assert "___" not in result.plain_text
     assert "<button" not in result.body_html
     assert "data-ap-readmore" not in result.body_html
-    assert result.extraction.parser_version == "ap-parser/0.6.16"
+    assert result.extraction.parser_version == "ap-parser/0.6.17"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -5286,7 +5291,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.16"
+    assert article.extraction.parser_version == "ap-parser/0.6.17"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -5320,7 +5325,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.16"
+    assert result.extraction.parser_version == "ap-parser/0.6.17"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -8584,7 +8589,7 @@ def test_wsj_parser_removes_buy_side_recommendation_widget():
 
 def test_ap_parser_removes_legacy_terminal_period_paragraph():
     result = parse_article(
-        b"""
+        """
         <html><head>
           <meta property="og:title" content="A court report">
           <meta property="article:published_time"
@@ -8597,11 +8602,15 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
             described documents and testimony they planned to introduce.
             The trial was expected to continue for several weeks, with
             additional witnesses scheduled to appear before the jury.</p>
+            <p>_</p>
             <p>______</p>
+            <p>——————————</p>
+            <p>&lt;</p>
             <p>.</p>
+            <table><tr><td></td><td>—————</td></tr></table>
           </div>
         </article></body></html>
-        """,
+        """.encode(),
         publisher="ap",
         canonical_url=(
             "https://apnews.com/article/"
@@ -8616,7 +8625,49 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
         for block in result.blocks
     )
     assert result.plain_text.rstrip().endswith("jury.")
-    assert result.extraction.parser_version == "ap-parser/0.6.16"
+    assert not any(
+        block.text in {"_", "——————————", "<"}
+        for block in result.blocks
+    )
+    assert result.extraction.parser_version == "ap-parser/0.6.17"
+
+
+def test_ap_parser_deduplicates_dims_variants_by_underlying_asset():
+    underlying = (
+        "https%3A%2F%2Fstorage.googleapis.com%2Fafs-prod%2Fmedia%2F"
+        "c9878444c74a4f1a8d76031a46775c2a%2F3000.jpeg"
+    )
+    lead = (
+        "https://dims.apnews.com/dims4/default/one/2147483647/"
+        f"resize/980x653!/quality/90/?url={underlying}"
+    )
+    body = (
+        "https://dims.apnews.com/dims4/default/two/2147483647/"
+        f"resize/599x399!/quality/90/?url={underlying}"
+    )
+    html = f"""
+      <html><head>
+        <meta property="og:title" content="AP gallery report">
+        <meta property="og:image" content="{lead}">
+      </head><body><article>
+        <p>This AP report contains enough substantive text to parse.</p>
+        <figure><img src="{body}" alt="A useful image caption"></figure>
+      </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/article/example-gallery",
+    )
+
+    matching = [
+        image
+        for image in result.images
+        if "c9878444c74a4f1a8d76031a46775c2a" in image.original_url
+    ]
+    assert len(matching) == 1
+    assert body in matching[0].candidate_urls
 
 
 def test_bloomberg_parser_removes_legacy_related_stories_list():

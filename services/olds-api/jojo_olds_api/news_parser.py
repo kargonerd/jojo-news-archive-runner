@@ -6141,14 +6141,36 @@ def _remove_ap_body_promos(soup: BeautifulSoup) -> None:
             r"(?i)\bsign up for (?:the )?ap(?:'s|’s) .*newsletter\b"
         ),
         re.compile(
+            r"(?i)^sign up for .{0,120}\bnewsletter\b.{0,120}"
+            r"\b(?:the )?ap(?:'s|’s)\b"
+        ),
+        re.compile(
             r"(?i)^for more lottery results,\s*go to jackpot\.com\b"
         ),
     )
+    for row in list(soup.select("tr")):
+        cells = [
+            _clean_text(cell.get_text(" ", strip=True))
+            for cell in row.select(":scope > th, :scope > td")
+        ]
+        if cells and all(
+            not text
+            or re.fullmatch(r"[_=—–-]+", text)
+            or re.fullmatch(r"[•·]{2,}", text)
+            for text in cells
+        ):
+            row.decompose()
+    for table in list(soup.select("table")):
+        if not _clean_text(table.get_text(" ", strip=True)):
+            table.decompose()
+
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
-        if text == "." or (
-            len(text) >= 2
-            and set(text) == {"_"}
+        if (
+            text == "."
+            or re.fullmatch(r"[_=—–-]+", text)
+            or re.fullmatch(r"[•·]{2,}", text)
+            or text in {"<", ">"}
         ):
             node.decompose()
             continue
@@ -6764,6 +6786,20 @@ def _image_candidate(
 def _image_identity(url: str) -> str:
     parts = urlsplit(url)
     host = (parts.hostname or "").casefold()
+    if host == "dims.apnews.com":
+        nested_match = re.search(
+            r"(?:^|&)url=([^&]+)",
+            parts.query,
+            flags=re.IGNORECASE,
+        )
+        if nested_match is not None:
+            nested = unquote(nested_match.group(1))
+            nested_parts = urlsplit(nested)
+            if (
+                nested_parts.scheme in {"http", "https"}
+                and nested_parts.netloc
+            ):
+                return _image_identity(nested)
     if host in {"ft.com", "www.ft.com"} and "/images/raw/" in parts.path:
         nested = unquote(parts.path.split("/images/raw/", 1)[1])
         for _ in range(4):
