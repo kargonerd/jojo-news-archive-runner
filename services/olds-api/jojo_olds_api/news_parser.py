@@ -5333,6 +5333,17 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
         re.compile(r"(?i)^for more, sign up for our .+ newsletter\b"),
         re.compile(r"(?i)^ft premium subscribers can sign up here\b"),
         re.compile(r"(?i)^lex publishes two popular newsletters\b"),
+        re.compile(
+            r"(?i)^house\s*&\s*home unlocked\b.*\b"
+            r"(?:newsletter|sign up)\b"
+        ),
+        re.compile(
+            r"(?i)^ft subscribers can sign up for the email version\b"
+        ),
+        re.compile(
+            r"(?i)^coronavirus business update\s+sign up here "
+            r"for our newsletter\b"
+        ),
     )
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
