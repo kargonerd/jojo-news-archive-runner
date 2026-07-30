@@ -4931,7 +4931,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     footer_patterns = (
         re.compile(
             r"(?i)^to contact the "
-            r"(?:author of|editor responsible for|reporter on) "
+            r"(?:author of|editors? responsible for|reporter on) "
             r"this (?:story|article)\s*:"
         ),
         re.compile(
@@ -4942,6 +4942,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^this (?:column|article) does not necessarily reflect "
             r"the opinion of (?:the editorial board or )?"
             r"bloomberg lp and its owners\.?$"
+        ),
+        re.compile(
+            r"(?i)^\(?this (?:column|article) does not necessarily reflect "
+            r"the opinion of (?:the editorial board or )?"
+            r"bloomberg lp and its owners\.\)?$"
         ),
         re.compile(
             r"(?is)^this transcript may not be 100% accurate\b.*"
@@ -4968,11 +4973,33 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^sign up for our .+ weekly newsletter, follow us @\w+ "
             r"and subscribe to our podcast\.?$"
         ),
+        re.compile(
+            r"(?i)^for the best in travel, food, drinks, fashion, cars, "
+            r"and life, sign up for the pursuits newsletter\s*\.\s*"
+            r"delivered weekly\.?$"
+        ),
+        re.compile(
+            r"(?i)^want to receive this post, and more, into your inbox "
+            r"every morning\?\s*sign up here\.?$"
+        ),
     )
-    for node in list(soup.select("p, li, span")):
+    for node in list(soup.select("p, li, span, div")):
         text = _clean_text(node.get_text(" ", strip=True))
         if any(pattern.search(text) for pattern in footer_patterns):
             node.decompose()
+
+    disclaimer_suffix = re.compile(
+        r"(?i)\s*\(?this\s+(?:column|article)\s+does\s+not\s+necessarily"
+        r"\s+reflect\s+the\s+opinion\s+of\s+"
+        r"(?:(?:the\s+)?editorial\s+board\s+or\s+)?"
+        r"bloomberg\s+lp\s+and\s+its\s+owners\.\)?\s*$"
+    )
+    for text_node in list(soup.find_all(string=disclaimer_suffix)):
+        cleaned = disclaimer_suffix.sub("", str(text_node)).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
 
     for heading in soup.select("h1, h2, h3, h4"):
         text = _clean_text(heading.get_text(" ", strip=True))
