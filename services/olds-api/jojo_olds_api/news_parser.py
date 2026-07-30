@@ -5672,6 +5672,17 @@ def _remove_reuters_promos(soup: BeautifulSoup) -> None:
         else:
             button.unwrap()
 
+    for node in list(
+        soup.select(
+            "[class*='pagination-v2__container' i][role='button'], "
+            "a[role='button']"
+        )
+    ):
+        node.decompose()
+    for node in list(soup.select("[role='button']")):
+        node.attrs.pop("role", None)
+        node.attrs.pop("tabindex", None)
+
     for marker in list(soup.select("[data-testid^='paragraph-']")):
         if _clean_text(marker.get_text(" ", strip=True)).casefold() != "read more:":
             continue
