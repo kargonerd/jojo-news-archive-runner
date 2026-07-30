@@ -4082,7 +4082,7 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.21"
+    assert article.extraction.parser_version == "ft-parser/0.8.22"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
@@ -4174,7 +4174,7 @@ def test_ft_parser_removes_flattened_newsletter_cards():
     assert "Related stories" not in article.plain_text
     assert "Unrelated recirculated story" not in article.plain_text
     assert "Do you want to receive Lex" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.21"
+    assert article.extraction.parser_version == "ft-parser/0.8.22"
 
 
 def test_ft_parser_strips_attached_syndication_copyright_suffix():
@@ -4207,7 +4207,7 @@ def test_ft_parser_strips_attached_syndication_copyright_suffix():
     assert article.quality.status.value == "complete"
     assert "That is good for them" in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.21"
+    assert article.extraction.parser_version == "ft-parser/0.8.22"
 
 
 def test_ft_parser_strips_standalone_syndication_copyright_footer():
@@ -4237,7 +4237,7 @@ def test_ft_parser_strips_standalone_syndication_copyright_footer():
     assert article.quality.status.value == "complete"
     assert "Syndicated FT reporting sentence." in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.21"
+    assert article.extraction.parser_version == "ft-parser/0.8.22"
 
 
 def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
@@ -4401,7 +4401,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.21"
+    assert article.extraction.parser_version == "ft-parser/0.8.22"
 
 
 def test_ft_parser_recovers_images_flattened_into_json_ld_article_body():
@@ -4536,7 +4536,7 @@ def test_ft_parser_uses_photo_hint_to_split_unknown_credit_from_body():
     assert "Nippon Paint has agreed" in article.plain_text
     assert "Like the families in the original novel" in article.plain_text
     assert all(len(image.credit or "") < 100 for image in article.images)
-    assert article.extraction.parser_version == "ft-parser/0.8.21"
+    assert article.extraction.parser_version == "ft-parser/0.8.22"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -4567,7 +4567,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.21"
+    assert article.extraction.parser_version == "ft-parser/0.8.22"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -4607,7 +4607,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.21"
+    assert article.extraction.parser_version == "ft-parser/0.8.22"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -4664,7 +4664,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.21"
+    assert article.extraction.parser_version == "ft-parser/0.8.22"
 
 
 def test_ft_parser_promotes_origami_images_and_deduplicates_raw_lead():
@@ -7813,3 +7813,69 @@ def test_ft_parser_removes_share_recommendation_and_follow_topic_chrome():
     assert "RECOMMENDED" not in result.plain_text
     assert "Promoted Content" not in result.plain_text
     assert "Follow the topics" not in result.plain_text
+
+
+def test_ft_parser_recovers_legacy_flash_interactive():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title"
+            content="China's railway development - FT.com">
+          <meta property="article:published_time"
+            content="2010-09-22T12:46:33Z">
+          <meta name="description" content="This interactive graphic
+            explores China's ambitious rail expansion plans.">
+        </head><body><article><div id="storyContent">
+          <p>This interactive graphic explores China's ambitious rail
+          expansion plans, compared with its existing network.</p>
+          <div class="insideArticleShare">
+            <div class="story-package" data-track-comp-name="moreOn">
+              <h3>More</h3><h4>IN Rail</h4>
+              <ul><li>An unrelated rail story</li></ul>
+            </div>
+          </div>
+          <p>Use the slider to superimpose its proposed new network,
+          shown in red.</p>
+          <div class="flashcomponent">
+            <div class="flasherrors hidden">
+              <h2>Content description</h2>
+              <p class="flashdescription">China's railways</p>
+              <div class="needflash">
+                <p>This content requires an Adobe Flash plugin for your
+                browser.</p>
+                <p>Your plugin is either missing or out of date. Please
+                install the latest plugin by clicking below.</p>
+                <img alt="Install Flash Player"
+                  src="https://im.ft-static.com/m/img/logo/get_flash.png">
+              </div>
+            </div>
+            <div class="flashcontent hidden">
+              <a class="flashlink popuplink"
+                href="https://media.ft.com/cms/railways.swf?width=825">
+                China's railways
+              </a>
+            </div>
+          </div>
+        </div></article></body></html>
+        """,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "a09641c2-3117-11df-8e6f-00144feabdc0"
+        ),
+    )
+
+    assert result.headline == "China's railway development"
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+    assert result.blocks[-1].type.value == "embed"
+    assert result.blocks[-1].embed_url.startswith(
+        "https://media.ft.com/cms/railways.swf"
+    )
+    assert "An unrelated rail story" not in result.plain_text
+    assert "Adobe Flash plugin" not in result.plain_text
+    assert all(
+        "get_flash.png" not in image.original_url
+        for image in result.images
+    )
+    assert result.extraction.parser_version == "ft-parser/0.8.22"

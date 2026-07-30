@@ -455,6 +455,12 @@ def parse_article(
             else None
         ),
     )
+    if spec.publisher == "ft" and headline:
+        headline = re.sub(
+            r"(?i)\s*[-–—]\s*FT\.com\s*$",
+            "",
+            headline,
+        ).strip()
     description = _first_text(
         _string_or_none(nyt_preloaded_metadata.get("description")),
         _string_or_none(news_article.get("description")) if news_article else None,
@@ -563,6 +569,13 @@ def parse_article(
     ):
         content_type = ContentType.INTERACTIVE
     if spec.publisher == "ft" and ft_crossword_selected:
+        content_type = ContentType.INTERACTIVE
+    if (
+        spec.publisher == "ft"
+        and soup.select_one(
+            ".flashcomponent a.flashlink[href*='.swf' i]"
+        )
+    ):
         content_type = ContentType.INTERACTIVE
     if (
         content_type == ContentType.ARTICLE
@@ -5566,11 +5579,29 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
 
 def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
     """Remove Next-era sharing, recirculation and follow-topic UI."""
+    for component in list(soup.select(".flashcomponent")):
+        link = component.select_one("a.flashlink[href]")
+        if not isinstance(link, Tag):
+            continue
+        source = str(link.get("href") or "").strip()
+        if not source:
+            continue
+        iframe = soup.new_tag("iframe")
+        iframe["src"] = source
+        iframe["title"] = (
+            _clean_text(link.get_text(" ", strip=True))
+            or "Archived FT interactive"
+        )
+        iframe["data-interactive-provider"] = "ft-flash"
+        component.replace_with(iframe)
+
     for node in list(
         soup.select(
             "[data-toolbar='share'], "
             ".article-info__byline, "
-            ".o-message__content-main"
+            ".o-message__content-main, "
+            ".story-package[data-track-comp-name='moreOn'], "
+            ".insideArticleShare"
         )
     ):
         node.decompose()

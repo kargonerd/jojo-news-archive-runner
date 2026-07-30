@@ -51,6 +51,8 @@ _UI_NOISE_PHRASES = (
     "save article log in to save subscribe to wsj",
     "copyright business wire",
     "market wire, all rights reserved",
+    "this content requires an adobe flash plugin",
+    "your plugin is either missing or out of date",
 )
 _PLACEHOLDER_IMAGE_MARKERS = (
     "wsj-social-share",
