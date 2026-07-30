@@ -5487,6 +5487,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     footer_patterns = (
         re.compile(r"(?i)^©\s*\d{4}\s+bloomberg\s+l\.?p\.?$"),
         re.compile(
+            r"(?i)^for more articles like this,\s*"
+            r"please visit us at bloomberg\.com\.?$"
+        ),
+        re.compile(
             r"(?i)^to contact the "
             r"(?:authors? of|editors? responsible for|reporters? on) "
             r"this (?:story|article)\s*:"
