@@ -122,6 +122,15 @@ def _has_publisher_interface_noise(
             and text.endswith(" from the times.")
             for text in blocks
         )
+    if publisher == "ft":
+        return any(
+            "stay briefed with our coronavirus newsletter" in text
+            or (
+                text.startswith("sign up to scoreboard")
+                and "must-read weekly briefing" in text
+            )
+            for text in blocks
+        )
     return False
 
 

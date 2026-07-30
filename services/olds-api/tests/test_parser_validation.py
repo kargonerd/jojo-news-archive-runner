@@ -107,6 +107,27 @@ def test_publisher_interface_noise_detects_nyt_newsletter_embed():
     )
 
 
+def test_publisher_interface_noise_detects_ft_newsletter_promos():
+    assert _has_publisher_interface_noise(
+        "ft",
+        [
+            "how is coronavirus taking its toll on markets? stay "
+            "briefed with our coronavirus newsletter"
+        ],
+    )
+    assert _has_publisher_interface_noise(
+        "ft",
+        [
+            "sign up to scoreboard, our new must-read weekly briefing "
+            "on the business of sport."
+        ],
+    )
+    assert not _has_publisher_interface_noise(
+        "ft",
+        ["the article analysed the business of sport."],
+    )
+
+
 def _capture_candidate(year: int, suffix: int) -> CaptureCandidate:
     return CaptureCandidate(
         provider=CaptureProvider.WAYBACK,

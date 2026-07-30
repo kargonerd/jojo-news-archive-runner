@@ -5864,6 +5864,24 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
 
 def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
     """Remove newsletter cards flattened into FT syndication body paragraphs."""
+    for card in list(soup.select("experimental")):
+        if card.select_one(
+            "a[href*='ep.ft.com'][href*='newsletter'][href*='subscribe']"
+        ):
+            card.decompose()
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(
+            paragraph.get_text(" ", strip=True)
+        ).casefold()
+        if (
+            text.startswith("sign up to ")
+            and "must-read weekly briefing" in text
+            and paragraph.select_one(
+                "a[href*='ep.ft.com']"
+                "[href*='newsletter'][href*='subscribe']"
+            )
+        ):
+            paragraph.decompose()
     for heading in list(soup.select("h2, h3, h4, h5, h6")):
         if (
             _clean_text(heading.get_text(" ", strip=True)).casefold()
