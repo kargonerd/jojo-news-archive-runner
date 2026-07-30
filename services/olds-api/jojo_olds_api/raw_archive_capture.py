@@ -117,8 +117,8 @@ NYT_TRUSTED_WORDPRESS_ENDPOINTS = (
 NYT_HEADLINE_WORDPRESS_ENDPOINTS = (
     "https://dnyuz.com/wp-json/wp/v2/posts",
 )
-COMMON_CRAWL_FALLBACK_PUBLISHERS = {"ft"}
-ARQUIVO_PT_FALLBACK_PUBLISHERS = {"ft"}
+COMMON_CRAWL_FALLBACK_PUBLISHERS = {"ft", "wsj"}
+ARQUIVO_PT_FALLBACK_PUBLISHERS = {"ft", "wsj"}
 ARQUIVO_PT_CDX_ENDPOINT = "https://arquivo.pt/wayback/cdx"
 ARQUIVO_PT_REPLAY_ENDPOINT = "https://arquivo.pt/noFrame/replay"
 ARQUIVO_PT_INDEX_MAXIMUM_BYTES = 2_000_000
@@ -1060,7 +1060,7 @@ def capture_item(
         consider_ft_dynamic_syndication()
     consider_ft_ghostarchive()
 
-    if item.publisher in COMMON_CRAWL_FALLBACK_PUBLISHERS:
+    if item.publisher == "ft":
         # Exact Wayback captures have historically produced far more usable FT
         # articles than Common Crawl WARC records. Try the nearest exact
         # snapshots first and avoid three index plus Range lookups when one is
@@ -1135,6 +1135,42 @@ def capture_item(
             consider_candidates(common_crawl_candidates)
     else:
         consider_candidates(item.candidates)
+
+    if (
+        item.publisher != "ft"
+        and item.publisher in COMMON_CRAWL_FALLBACK_PUBLISHERS
+        and enable_common_crawl_fallback
+        and (best_response is None or best_response[5] < 100)
+    ):
+        try:
+            common_crawl_candidates = discover_common_crawl_candidates(
+                item.canonical_url,
+                published_at=item.published_at,
+                archive_client=archive_client,
+            )
+        except Exception as exc:
+            failures.append(f"commoncrawl-index:{type(exc).__name__}")
+            common_crawl_candidates = ()
+        existing_urls = {
+            (
+                candidate.snapshot_url,
+                candidate.warc_offset,
+                candidate.warc_length,
+            )
+            for candidate in candidates_considered
+        }
+        common_crawl_candidates = tuple(
+            candidate
+            for candidate in common_crawl_candidates
+            if (
+                candidate.snapshot_url,
+                candidate.warc_offset,
+                candidate.warc_length,
+            )
+            not in existing_urls
+        )
+        candidates_considered.extend(common_crawl_candidates)
+        consider_candidates(common_crawl_candidates)
 
     if (
         item.publisher == "ap"

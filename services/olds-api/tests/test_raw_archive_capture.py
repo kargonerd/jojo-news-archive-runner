@@ -24,11 +24,13 @@ from jojo_olds_api.raw_archive_capture import (
     AP_KNOWN_SYNDICATION_COPIES,
     BLOOMBERG_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     CAPTURE_POLICY_VERSIONS,
+    COMMON_CRAWL_FALLBACK_PUBLISHERS,
     FT_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     ManifestItem,
     NYT_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     NYT_SYNDICATION_SEARCH_ENDPOINT,
     REUTERS_SYNDICATION_SEARCH_ENDPOINT,
+    ARQUIVO_PT_FALLBACK_PUBLISHERS,
     WAYBACK_TIMEMAP_ENDPOINT,
     WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     _ap_syndication_search_urls,
@@ -71,6 +73,11 @@ from jojo_olds_api.raw_archive_capture import (
     score_raw_capture,
     store_raw_html,
 )
+
+
+def test_wsj_archive_capture_supports_secondary_archive_fallbacks():
+    assert "wsj" in COMMON_CRAWL_FALLBACK_PUBLISHERS
+    assert "wsj" in ARQUIVO_PT_FALLBACK_PUBLISHERS
 
 
 ARTICLE = b"""
