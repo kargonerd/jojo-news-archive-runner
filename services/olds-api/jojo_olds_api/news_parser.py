@@ -5872,7 +5872,7 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             "[class*='SnippetSignIn' i], .author-links, .author-info, "
             "[class*='mobile-modal-author' i], .byline-wrap, "
             ".article__byline, .module.automated-news, "
-            ".module.editors-picks, "
+            ".module.editors-picks, .share-bottom, "
             ".article-news-front, [class*='AuthoringContainer'], "
             "[data-block='doNotPrint'], "
             "[data-module-zone='opinion_editors_picks'], "
