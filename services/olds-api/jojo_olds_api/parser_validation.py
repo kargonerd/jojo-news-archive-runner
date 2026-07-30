@@ -51,6 +51,7 @@ _UI_NOISE_PHRASES = (
     "save article log in to save subscribe to wsj",
     "copyright business wire",
     "market wire, all rights reserved",
+    "copyright the financial times limited",
     "this content requires an adobe flash plugin",
     "your plugin is either missing or out of date",
     "follow @financialtimesfashion on instagram",
@@ -159,6 +160,7 @@ def _has_publisher_interface_noise(
     if publisher == "ft":
         return any(
             "stay briefed with our coronavirus newsletter" in text
+            or text == "."
             or (
                 text.startswith("sign up to scoreboard")
                 and "must-read weekly briefing" in text

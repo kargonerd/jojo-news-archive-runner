@@ -6045,6 +6045,9 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
             r"(?i)^ft subscribers can sign up for the email version\b"
         ),
         re.compile(
+            r"(?i)^ft subscribers can click here to receive .* by email\b"
+        ),
+        re.compile(
             r"(?i)^coronavirus business update\s+sign up here "
             r"for our newsletter\b"
         ),
@@ -6079,10 +6082,11 @@ def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
     pattern = re.compile(
         r"""(?ix)(?:"""
         r"""^\s*copyright\s+(?:the\s+)?financial\s+times\s+limited"""
-        r"""(?:\s+\d{4})?\s*$"""
+        r"""(?:\s+\d{4})?(?:\.\s*all\s+rights\s+reserved\.|\.)?\s*$"""
         r"""|"""
-        r"""\s*[–—-]\s*copyright\s+(?:the\s+)?"""
-        r"""financial\s+times\s+limited(?:\s+\d{4})?\s*$"""
+        r"""\s*[_–—-]\s*copyright\s+(?:the\s+)?"""
+        r"""financial\s+times\s+limited(?:\s+\d{4})?"""
+        r"""(?:\.\s*all\s+rights\s+reserved\.|\.)?\s*$"""
         r""")"""
     )
     for text_node in list(soup.find_all(string=pattern)):
@@ -6091,6 +6095,9 @@ def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
             text_node.replace_with(cleaned)
         else:
             text_node.extract()
+    for node in list(soup.select("p")):
+        if _clean_text(node.get_text(" ", strip=True)) == ".":
+            node.decompose()
 
 
 def _remove_ap_body_promos(soup: BeautifulSoup) -> None:

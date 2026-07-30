@@ -4501,7 +4501,7 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.26"
+    assert article.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
@@ -4593,7 +4593,7 @@ def test_ft_parser_removes_flattened_newsletter_cards():
     assert "Related stories" not in article.plain_text
     assert "Unrelated recirculated story" not in article.plain_text
     assert "Do you want to receive Lex" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.26"
+    assert article.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_strips_attached_syndication_copyright_suffix():
@@ -4608,7 +4608,7 @@ def test_ft_parser_strips_attached_syndication_copyright_suffix():
         <p>{reporting}</p>
         <p>
           “That is good for them,” said Chris.
-          – Copyright The Financial Times Limited 2025
+          – Copyright The Financial Times Limited 2025. All rights reserved.
         </p>
       </article>
     </body></html>
@@ -4626,7 +4626,7 @@ def test_ft_parser_strips_attached_syndication_copyright_suffix():
     assert article.quality.status.value == "complete"
     assert "That is good for them" in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.26"
+    assert article.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_strips_standalone_syndication_copyright_footer():
@@ -4639,7 +4639,8 @@ def test_ft_parser_strips_standalone_syndication_copyright_footer():
     </head><body>
       <article class="article-body-wrapper">
         <p>{reporting}</p>
-        <p>Copyright The Financial Times Limited 2019</p>
+        <p>Copyright The Financial Times Limited 2019. All rights reserved.</p>
+        <p>.</p>
       </article>
     </body></html>
     """.encode()
@@ -4656,7 +4657,8 @@ def test_ft_parser_strips_standalone_syndication_copyright_footer():
     assert article.quality.status.value == "complete"
     assert "Syndicated FT reporting sentence." in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.26"
+    assert "." not in [block.text for block in article.blocks]
+    assert article.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
@@ -4820,7 +4822,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.26"
+    assert article.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_recovers_images_flattened_into_json_ld_article_body():
@@ -4955,7 +4957,7 @@ def test_ft_parser_uses_photo_hint_to_split_unknown_credit_from_body():
     assert "Nippon Paint has agreed" in article.plain_text
     assert "Like the families in the original novel" in article.plain_text
     assert all(len(image.credit or "") < 100 for image in article.images)
-    assert article.extraction.parser_version == "ft-parser/0.8.26"
+    assert article.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -4986,7 +4988,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.26"
+    assert article.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -5026,7 +5028,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.26"
+    assert article.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -5083,7 +5085,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.26"
+    assert article.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_promotes_origami_images_and_deduplicates_raw_lead():
@@ -8313,7 +8315,7 @@ def test_ft_parser_recovers_legacy_flash_interactive():
         "get_flash.png" not in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "ft-parser/0.8.26"
+    assert result.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_marks_migrated_caption_without_visual_partial():
@@ -8354,7 +8356,7 @@ def test_ft_parser_marks_migrated_caption_without_visual_partial():
     assert result.plain_text.startswith("Japan's Prime Minister")
     assert "World" not in result.plain_text
     assert result.images == []
-    assert result.extraction.parser_version == "ft-parser/0.8.26"
+    assert result.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_removes_fashion_and_podcast_subscription_tails():
@@ -8421,7 +8423,7 @@ def test_ft_parser_removes_fashion_and_podcast_subscription_tails():
     assert "A useful employer toolkit" in podcast.plain_text
     assert "FT subscriber?" not in podcast.plain_text
     assert "acast.com/privacy" not in podcast.plain_text
-    assert podcast.extraction.parser_version == "ft-parser/0.8.26"
+    assert podcast.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_ft_parser_removes_newsletter_cards_and_scoreboard_signup():
@@ -8465,7 +8467,7 @@ def test_ft_parser_removes_newsletter_cards_and_scoreboard_signup():
     assert "Coronavirus business update" not in result.plain_text
     assert "Stay briefed with our" not in result.plain_text
     assert "Sign up to Scoreboard" not in result.plain_text
-    assert result.extraction.parser_version == "ft-parser/0.8.26"
+    assert result.extraction.parser_version == "ft-parser/0.8.27"
 
 
 def test_wsj_parser_removes_buy_side_recommendation_widget():
