@@ -5597,7 +5597,7 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     for button in list(
         soup.select(
             "button[aria-label='expand or collapse modal'], "
-            "button.ad-slide-skip"
+            "button.ad-slide-skip, button.comments-button"
         )
     ):
         button.decompose()
