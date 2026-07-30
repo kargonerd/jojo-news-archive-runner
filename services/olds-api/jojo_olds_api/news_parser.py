@@ -952,6 +952,7 @@ def _yahoo_syndication_body(
 def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
     selectors = (
         "[itemprop='articleBody']",
+        ".article-text",
         ".post-content",
         ".entry-content",
         ".article-content",
@@ -1047,6 +1048,26 @@ def _remove_generic_syndication_partner_noise(
             text = _clean_text(node.get_text(" ", strip=True)).casefold()
             if text == "latest updates on company news here":
                 node.decompose()
+    if (
+        hostname == "marketscreener.com"
+        or hostname.endswith(".marketscreener.com")
+        or hostname == "zonebourse.com"
+        or hostname.endswith(".zonebourse.com")
+    ):
+        for node in list(body.select("p")):
+            text = _clean_text(node.get_text(" ", strip=True))
+            if not re.fullmatch(r"[.,;:!?]+", text):
+                continue
+            previous = node.find_previous_sibling("p")
+            if not isinstance(previous, Tag):
+                node.decompose()
+                continue
+            previous_text = _clean_text(
+                previous.get_text(" ", strip=True)
+            ).rstrip()
+            previous.clear()
+            previous.append(f"{previous_text}{text}")
+            node.decompose()
 
 
 def _postmedia_syndication_body(soup: BeautifulSoup) -> Tag | None:
@@ -6761,6 +6782,9 @@ def _image_from_tag(
         else:
             role = ImageRole.ICON
         reasons.append("non-editorial-context")
+    elif width is not None and height is not None and max(width, height) <= 64:
+        role = ImageRole.ICON
+        reasons.append("small-dimensions")
     elif _GRAPHIC_RE.search(context):
         role = (
             ImageRole.INFOGRAPHIC
@@ -6768,9 +6792,6 @@ def _image_from_tag(
             else ImageRole.CHART
         )
         reasons.append("graphic-context")
-    elif width is not None and height is not None and max(width, height) <= 64:
-        role = ImageRole.ICON
-        reasons.append("small-dimensions")
     if caption:
         reasons.append("has-caption")
     if urlsplit(original_url).hostname in spec.preferred_image_hosts:
@@ -7195,6 +7216,8 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/defaultpromocrop.",
             "/rcom-default.png",
             "/r-generic-hdr.png",
+            "/images/reuters.jpg",
+            "twitter_ms_fdnoir.png",
             "/javelin/images/social-",
             "/javelin/public/images/social-",
             "/lightsaber/_next/static/media/social-",

@@ -2995,7 +2995,7 @@ def test_reuters_parser_removes_toolbar_licensing_ui_and_promotes_ksl_image():
     assert "Facebook Linkedin Email" not in result.plain_text
     assert "Purchase Licensing Rights" not in result.plain_text
     assert result.images[0].original_url == image_base
-    assert result.extraction.parser_version == "reuters-parser/0.7.23"
+    assert result.extraction.parser_version == "reuters-parser/0.7.24"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -3061,7 +3061,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.23"
+    assert result.extraction.parser_version == "reuters-parser/0.7.24"
 
 
 def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
@@ -3128,7 +3128,7 @@ def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
     assert "Sign In or Create" not in result.plain_text
     assert "Advertisement" not in result.plain_text
     assert "Postmedia is committed" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.23"
+    assert result.extraction.parser_version == "reuters-parser/0.7.24"
 
 
 def test_reuters_syndication_removes_registration_and_subscription_ui():
@@ -3188,7 +3188,7 @@ def test_reuters_syndication_removes_registration_and_subscription_ui():
     assert "subscriber" not in result.plain_text
     assert "Monthly Plan" not in result.plain_text
     assert "Thank you for your report" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.23"
+    assert result.extraction.parser_version == "reuters-parser/0.7.24"
 
 
 def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
@@ -3274,7 +3274,7 @@ def test_reuters_parser_promotes_and_deduplicates_legacy_lazy_image():
     assert result.images[0].original_url == lead
     assert lazy in result.images[0].candidate_urls
     assert result.images[0].alt == "A detainee holds a fence."
-    assert result.extraction.parser_version == "reuters-parser/0.7.23"
+    assert result.extraction.parser_version == "reuters-parser/0.7.24"
 
 
 def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
@@ -3320,7 +3320,7 @@ def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
     assert "Unrelated recommendation" not in result.plain_text
     assert "Capital Calls" not in result.plain_text
     assert "Another unrelated" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.23"
+    assert result.extraction.parser_version == "reuters-parser/0.7.24"
 
 
 def test_reuters_parser_trims_read_next_and_author_profile_tail():
@@ -3455,7 +3455,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.23"
+    assert result.extraction.parser_version == "reuters-parser/0.7.24"
 
 
 @pytest.mark.parametrize(
@@ -3548,7 +3548,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.23"
+    assert result.extraction.parser_version == "reuters-parser/0.7.24"
 
 
 def test_reuters_legacy_press_release_restores_nested_media_and_drops_disclaimer():
@@ -3600,7 +3600,7 @@ def test_reuters_legacy_press_release_restores_nested_media_and_drops_disclaimer
     assert result.images[0].credit == "Photo: Business Wire"
     assert result.images[0].should_archive
     assert "owner of this announcement" not in result.plain_text.casefold()
-    assert result.extraction.parser_version == "reuters-parser/0.7.23"
+    assert result.extraction.parser_version == "reuters-parser/0.7.24"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():
@@ -4116,6 +4116,66 @@ def test_reuters_generic_syndication_removes_partner_widgets():
     assert bnn_result.quality.status.value == "complete"
     assert "Latest updates" not in bnn_result.plain_text
     assert "profit outlook was unchanged" in bnn_result.plain_text
+
+
+def test_reuters_marketscreener_syndication_scopes_body_and_joins_punctuation():
+    canonical_url = (
+        "https://www.reuters.com/markets/deals/"
+        "infosys-ai-deal-terminated-2023-12-26"
+    )
+    syndicated_url = (
+        "https://www.marketscreener.com/quote/stock/"
+        "INFOSYS-LIMITED-9743342/news/example"
+    )
+    capture = raw_capture("reuters", canonical_url).model_copy(
+        update={
+            "selected_candidate": CaptureCandidate(
+                provider=CaptureProvider.OTHER,
+                snapshot_url=syndicated_url,
+            ),
+            "final_url": syndicated_url,
+        }
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Infosys AI Deal Terminated">
+      <meta property="og:url" content="{syndicated_url}">
+      <meta property="og:image"
+            content="https://www.marketscreener.com/images/twitter_MS_fdnoir.png">
+    </head><body><article>
+      <img src="https://cdn.zonebourse.com/images/membre/chart3.png"
+           class="chart" width="16" height="16">
+      <div class="txt-s4 article-text">
+        <p>Reuters reporting paragraph explains why the global company
+        ended its artificial-intelligence agreement with Infosys, how the
+        decision affects planned digital services, why technology companies
+        face uncertainty, and what investors expect during the next quarter.
+        The report also describes the original contract, its duration and
+        the artificial-intelligence platforms involved in the agreement.</p>
+        <p>The former chief financial officer</p>
+        <p>resigned</p>
+        <p>.</p>
+        <p>Shares had gained during the quarter before the announcement,
+        according to market data cited in the report.</p>
+      </div>
+      <img src="https://www.reuters.com/images/reuters.jpg">
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+        raw_capture=capture,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "resigned." in result.plain_text
+    assert "\n\n." not in result.plain_text
+    assert "chart3.png" not in result.body_html
+    assert "reuters.jpg" not in result.body_html
+    assert all(not image.should_archive for image in result.images)
+    assert result.extraction.parser_version == "reuters-parser/0.7.24"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -8384,7 +8444,7 @@ def test_reuters_parser_strips_licensed_wire_copyright_footers():
     assert "Investor Contact John Example" in business_wire.plain_text
     assert (
         market_wire.extraction.parser_version
-        == "reuters-parser/0.7.23"
+        == "reuters-parser/0.7.24"
     )
 
 
