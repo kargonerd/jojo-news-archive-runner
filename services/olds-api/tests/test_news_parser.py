@@ -1337,6 +1337,53 @@ def test_bloomberg_parser_deduplicates_image_renditions():
     ]
 
 
+def test_bloomberg_parser_removes_legacy_image_and_share_controls():
+    reporting = " ".join(["Bloomberg reporting sentence."] * 30)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Bloomberg illustrated report">
+      <meta property="article:published_time"
+            content="2018-04-25T00:00:00Z">
+    </head><body>
+      <div class="body-copy-v2">
+        <figure class="figure-expandable">
+          <div class="image" role="button" tabindex="0"
+               aria-label="Open image in viewer">
+            <img src="https://assets.bwbx.io/images/users/example/id/v0/-1x-1.jpg"
+                 alt="Editorial photograph">
+          </div>
+          <figcaption>Editorial photograph caption.</figcaption>
+        </figure>
+        <span class="SocialShare-IconWrapper SocialShare-IconWrapper_variant_button"
+              role="button" aria-label="print"></span>
+        <button class="comment-count-v2__link"
+                aria-label="Go to comments"></button>
+        <button class="disqus-v2__tout">Comments</button>
+        <p>{reporting}</p>
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/"
+            "2018-04-25/illustrated-report"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
+    assert "role=\"button\"" not in result.body_html
+    assert "tabindex=" not in result.body_html
+    assert "Open image in viewer" not in result.body_html
+    assert "SocialShare-" not in result.body_html
+    assert "Go to comments" not in result.body_html
+    assert ">Comments<" not in result.body_html
+    assert "Editorial photograph" in result.body_html
+
+
 def test_parser_supports_legacy_nyt_story_body_and_pdate():
     canonical_url = (
         "https://www.nytimes.com/2016/01/03/business/example.html"
@@ -1579,7 +1626,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_bloomberg_parser_keeps_listen_to_article_as_article():
@@ -1820,7 +1867,7 @@ def test_bloomberg_parser_removes_legacy_inline_newsletter_nested_in_paragraph()
     assert "Opening article paragraph." in result.plain_text
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "markets daily newsletter" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_bloomberg_parser_recovers_legacy_feature_landing_page():
@@ -2508,7 +2555,7 @@ def test_bloomberg_parser_separates_explicit_figure_credit():
     assert len(result.images) == 1
     assert result.images[0].caption == "Welcome to the factory floor."
     assert result.images[0].credit == "Tesla"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -2550,7 +2597,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_bloomberg_parser_rejects_explicit_teaser_body():
@@ -2582,7 +2629,7 @@ def test_bloomberg_parser_rejects_explicit_teaser_body():
 
     assert result.quality.status.value == "partial"
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_bloomberg_parser_trims_professional_subscription_shell():
@@ -2687,7 +2734,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_bloomberg_parser_scopes_legacy_body_without_right_rail():
@@ -2758,7 +2805,7 @@ def test_bloomberg_parser_removes_share_article_control_from_body():
     assert result.quality.status.value == "complete"
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "SHARE THIS ARTICLE" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
@@ -2834,7 +2881,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
         "https://omny.fm/shows/example/episode"
     ]
     assert "Unrelated navigation card" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -3715,7 +3762,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_nyt_parser_trims_access_shell_after_complete_article():
@@ -4607,7 +4654,7 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.27"
+    assert article.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
@@ -4699,7 +4746,7 @@ def test_ft_parser_removes_flattened_newsletter_cards():
     assert "Related stories" not in article.plain_text
     assert "Unrelated recirculated story" not in article.plain_text
     assert "Do you want to receive Lex" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.27"
+    assert article.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_strips_attached_syndication_copyright_suffix():
@@ -4732,7 +4779,7 @@ def test_ft_parser_strips_attached_syndication_copyright_suffix():
     assert article.quality.status.value == "complete"
     assert "That is good for them" in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.27"
+    assert article.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_strips_standalone_syndication_copyright_footer():
@@ -4764,7 +4811,7 @@ def test_ft_parser_strips_standalone_syndication_copyright_footer():
     assert "Syndicated FT reporting sentence." in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
     assert "." not in [block.text for block in article.blocks]
-    assert article.extraction.parser_version == "ft-parser/0.8.27"
+    assert article.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
@@ -4928,7 +4975,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.27"
+    assert article.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_recovers_images_flattened_into_json_ld_article_body():
@@ -5063,7 +5110,7 @@ def test_ft_parser_uses_photo_hint_to_split_unknown_credit_from_body():
     assert "Nippon Paint has agreed" in article.plain_text
     assert "Like the families in the original novel" in article.plain_text
     assert all(len(image.credit or "") < 100 for image in article.images)
-    assert article.extraction.parser_version == "ft-parser/0.8.27"
+    assert article.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -5094,7 +5141,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.27"
+    assert article.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -5134,7 +5181,7 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.27"
+    assert article.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -5191,7 +5238,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.27"
+    assert article.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_promotes_origami_images_and_deduplicates_raw_lead():
@@ -7998,7 +8045,7 @@ def test_bloomberg_parser_uses_first_question_for_untitled_quiz():
     )
     assert result.content_type.value == "interactive"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_nyt_parser_accepts_intentionally_short_corrections_notice():
@@ -8336,6 +8383,19 @@ def test_ft_parser_removes_share_recommendation_and_follow_topic_chrome():
               <li>Share on Twitter (opens new window)</li>
               <li>Share on Facebook (opens new window)</li>
             </ul>
+            <div class="ftlabsaudioplayerholder">
+              <h2>Listen to this article</h2>
+              <button class="control control__play">
+                Play audio for this article
+              </button>
+              <div class="js-feedback feedback">
+                <p>Report a mispronounced word</p>
+                <button class="js-feedback__responder">Submit</button>
+              </div>
+            </div>
+            <button class="component-share__button">
+              Share this graphic
+            </button>
             <p class="article-info__byline">Example Reporter</p>
             <p>The opening paragraph contains substantial reporting about
             the policy decision and explains why it matters to readers.</p>
@@ -8359,6 +8419,10 @@ def test_ft_parser_removes_share_recommendation_and_follow_topic_chrome():
     assert "opening paragraph" in result.plain_text
     assert "second paragraph must remain" in result.plain_text
     assert "RECOMMENDED" not in result.plain_text
+    assert "Listen to this article" not in result.plain_text
+    assert "Report a mispronounced word" not in result.plain_text
+    assert "Share this graphic" not in result.plain_text
+    assert "<button" not in result.body_html
     assert "Promoted Content" not in result.plain_text
     assert "Follow the topics" not in result.plain_text
 
@@ -8426,7 +8490,7 @@ def test_ft_parser_recovers_legacy_flash_interactive():
         "get_flash.png" not in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "ft-parser/0.8.27"
+    assert result.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_marks_migrated_caption_without_visual_partial():
@@ -8467,7 +8531,7 @@ def test_ft_parser_marks_migrated_caption_without_visual_partial():
     assert result.plain_text.startswith("Japan's Prime Minister")
     assert "World" not in result.plain_text
     assert result.images == []
-    assert result.extraction.parser_version == "ft-parser/0.8.27"
+    assert result.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_removes_fashion_and_podcast_subscription_tails():
@@ -8534,7 +8598,7 @@ def test_ft_parser_removes_fashion_and_podcast_subscription_tails():
     assert "A useful employer toolkit" in podcast.plain_text
     assert "FT subscriber?" not in podcast.plain_text
     assert "acast.com/privacy" not in podcast.plain_text
-    assert podcast.extraction.parser_version == "ft-parser/0.8.27"
+    assert podcast.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_ft_parser_removes_newsletter_cards_and_scoreboard_signup():
@@ -8578,7 +8642,42 @@ def test_ft_parser_removes_newsletter_cards_and_scoreboard_signup():
     assert "Coronavirus business update" not in result.plain_text
     assert "Stay briefed with our" not in result.plain_text
     assert "Sign up to Scoreboard" not in result.plain_text
-    assert result.extraction.parser_version == "ft-parser/0.8.27"
+    assert result.extraction.parser_version == "ft-parser/0.8.28"
+
+
+def test_ft_parser_handles_image_proxy_with_nested_fragment_url():
+    proxy = (
+        "https://www.ft.com/__origami/service/image/v2/images/raw/"
+        "https%3A%2F%2Fci5.googleusercontent.com%2Fproxy%2Fabc"
+        "%23https%3A%2F%2Fwww.ft.com%2F__origami%2Fservice%2Fimage"
+        "%2Fv2%2Fimages%2Fraw%2Fhttps%253A%252F%252Fexample.com"
+        "%252Fnewsletter.jpg%3Fsource%3Dtest?source=test"
+    )
+    html = f"""
+      <html><head>
+        <meta property="og:title" content="A Financial Times newsletter">
+      </head><body><article><div class="article-body"
+        itemprop="articleBody">
+        <p>The newsletter contains a complete report on European markets,
+        companies and economic policy for readers around the world.</p>
+        <figure><img src="{proxy}" alt="Market illustration"></figure>
+        <p>Analysts discussed the outlook and the risks facing investors
+        during the remainder of the year.</p>
+      </div></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "2d079096-5ddf-11e8-9334-2218e7146b04"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.images
+    assert result.extraction.parser_version == "ft-parser/0.8.28"
 
 
 def test_wsj_parser_removes_buy_side_recommendation_widget():
@@ -8764,7 +8863,7 @@ def test_bloomberg_parser_removes_legacy_related_stories_list():
     assert "LISTEN TO ARTICLE" not in result.plain_text
     assert "<button" not in result.body_html
     assert "read.mp3" not in result.body_html
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.26"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.27"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():

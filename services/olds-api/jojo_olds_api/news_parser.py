@@ -5591,6 +5591,28 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             sibling.decompose()
         heading.decompose()
 
+    # Legacy Bloomberg figures made the image container act like a lightbox
+    # button.  Keep the figure and image, but do not preserve browser-only
+    # interaction semantics in the archived article body.
+    for node in soup.select(
+        "figure [role='button'][aria-label='Open image in viewer']"
+    ):
+        node.attrs.pop("role", None)
+        node.attrs.pop("tabindex", None)
+        node.attrs.pop("aria-label", None)
+
+    # Some legacy pages place an otherwise empty print/share control inside
+    # the selected story body.
+    for node in list(
+        soup.select("[class*='SocialShare-'][role='button']")
+    ):
+        node.decompose()
+
+    for node in list(
+        soup.select(".comment-count-v2__link, .disqus-v2__tout")
+    ):
+        node.decompose()
+
 
 def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     """Remove NYT sponsorship, subscription and standardized engagement UI."""
@@ -5902,7 +5924,9 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             ".article-info__byline, "
             ".o-message__content-main, "
             ".story-package[data-track-comp-name='moreOn'], "
-            ".insideArticleShare"
+            ".insideArticleShare, "
+            ".ftlabsaudioplayerholder, "
+            ".component-share__button"
         )
     ):
         node.decompose()
@@ -6814,9 +6838,9 @@ def _image_identity(url: str) -> str:
     if host in {"ft.com", "www.ft.com"} and "/images/raw/" in parts.path:
         nested = unquote(parts.path.split("/images/raw/", 1)[1])
         for _ in range(4):
-            if "/images/raw/" not in nested:
-                break
             nested_parts = urlsplit(nested)
+            if "/images/raw/" not in nested_parts.path:
+                break
             nested = unquote(
                 nested_parts.path.split("/images/raw/", 1)[1]
             )

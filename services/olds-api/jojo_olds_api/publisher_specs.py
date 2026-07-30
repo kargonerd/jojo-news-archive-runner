@@ -88,7 +88,7 @@ PUBLISHER_SPECS = {
     ),
     "bloomberg": PublisherSpec(
         publisher="bloomberg",
-        parser_version="bloomberg-parser/0.10.26",
+        parser_version="bloomberg-parser/0.10.27",
         domains=("bloomberg.com", "www.bloomberg.com"),
         default_language="en",
         edition="global",
@@ -187,7 +187,7 @@ PUBLISHER_SPECS = {
     ),
     "ft": PublisherSpec(
         publisher="ft",
-        parser_version="ft-parser/0.8.27",
+        parser_version="ft-parser/0.8.28",
         domains=("ft.com", "www.ft.com"),
         default_language="en",
         edition="global",
