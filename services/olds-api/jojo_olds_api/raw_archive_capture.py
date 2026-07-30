@@ -1886,7 +1886,10 @@ def _fetch_usable_candidate(
         or not content
         or not signals["looksLikeHtml"]
         or signals["archiveErrorPage"]
-        or signals["authenticationShell"]
+        or (
+            signals["authenticationShell"]
+            and not (publisher == "wsj" and wsj_parser_usable)
+        )
         or signals["accessChallengeShell"]
         or (
             signals["subscriptionShell"]

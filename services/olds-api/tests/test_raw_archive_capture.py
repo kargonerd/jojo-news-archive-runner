@@ -80,6 +80,61 @@ def test_wsj_archive_capture_supports_secondary_archive_fallbacks():
     assert "wsj" in ARQUIVO_PT_FALLBACK_PUBLISHERS
 
 
+def test_wsj_complete_legacy_video_survives_navigation_auth_marker(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.wsj.com/article/"
+        "03BBDDAE-9165-4FC9-BC02-6F8609982191.html"
+    )
+    snapshot_url = (
+        "https://web.archive.org/web/20111215163504id_/"
+        "http://online.wsj.com/article/"
+        "03BBDDAE-9165-4FC9-BC02-6F8609982191.html"
+    )
+    html = b"""
+      <html><head><title>RIMM: Headed for Zero or a Takeover?</title>
+        <meta name="description" content="WSJ reporters examine the
+        decline of Research in Motion and its strategic options.">
+      </head><body>
+        <div class="account-navigation">Sign in to continue</div>
+        <script>var AT_VARS={articleType:'Video - WSJ',
+          publicationDate:'2011-12-15'};</script>
+        <div id="masterVideoCenter"><div id="videoPlayer"></div></div>
+      </body></html>
+    """ + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            snapshot_url: (
+                200,
+                {"content-type": "text/html"},
+                html,
+                snapshot_url,
+            )
+        }
+    )
+    item = ManifestItem(
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at="2011-12-15T00:00:00Z",
+        section=None,
+        candidates=(candidate(snapshot_url, "20111215163504"),),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    capture = result["capture"]
+    assert capture.quality_signals["authenticationShell"] is True
+    assert capture.quality_signals["wsjCaptureParserUsable"] is True
+    assert capture.quality_signals["wsjCaptureContentType"] == "video"
+
+
 ARTICLE = b"""
 <!doctype html>
 <html>
