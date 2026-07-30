@@ -1405,7 +1405,6 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Related-story navigation" not in result.plain_text
     assert result.extraction.parser_version == "nyt-parser/0.8.46"
 
-
 def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
     canonical_url = "https://www.nytimes.com/2017/06/02/example.html"
     reporting = " ".join(["Substantive NYT reporting sentence."] * 20)
@@ -2255,6 +2254,9 @@ def test_reuters_parser_removes_legacy_share_chrome_and_wire_separator():
             <p>The first substantive paragraph contains enough report text.</p>
             <p>^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</p>
             <p>The final substantive paragraph completes the report.</p>
+            <div class="Image_expand-button"
+                 aria-label="Expand Image Slideshow" role="button"></div>
+            <div class="Slideshow_expand-button" role="button"></div>
             <div class="rich-share" data-testid="rich-share">
               <svg aria-label="Save to Reading list" role="button"></svg>
               <p>Share</p>
@@ -2275,6 +2277,34 @@ def test_reuters_parser_removes_legacy_share_chrome_and_wire_separator():
     assert "^^^" not in result.plain_text
     assert "Save to Reading list" not in result.body_html
     assert 'role="button"' not in result.body_html
+
+
+def test_reuters_parser_trims_legacy_graphics_payload_tail():
+    canonical_url = "https://www.reuters.com/article/m-rkte-idDEKCN26D1S8"
+    html = b"""
+        <html><head>
+          <meta property="og:title" content="Markets recover">
+        </head><body>
+          <div class="StandardArticleBody_body">
+            <p>The complete market report has substantive reporting here.</p>
+            <p>&lt;^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</p>
+            <p>Interactive graphics and related reports</p>
+            <p>{"messageType":"graphics:graphic:1","rsf":"copyright"}</p>
+            <p>^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&gt;</p>
+          </div>
+        </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("reuters", canonical_url),
+    )
+
+    assert "complete market report" in result.plain_text
+    assert "Interactive graphics" not in result.plain_text
+    assert "messageType" not in result.plain_text
 
 
 def test_nyt_parser_removes_legacy_newsletter_embed():
@@ -2866,7 +2896,7 @@ def test_reuters_parser_removes_toolbar_licensing_ui_and_promotes_ksl_image():
     assert "Facebook Linkedin Email" not in result.plain_text
     assert "Purchase Licensing Rights" not in result.plain_text
     assert result.images[0].original_url == image_base
-    assert result.extraction.parser_version == "reuters-parser/0.7.21"
+    assert result.extraction.parser_version == "reuters-parser/0.7.22"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -2932,7 +2962,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.21"
+    assert result.extraction.parser_version == "reuters-parser/0.7.22"
 
 
 def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
@@ -2999,7 +3029,7 @@ def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
     assert "Sign In or Create" not in result.plain_text
     assert "Advertisement" not in result.plain_text
     assert "Postmedia is committed" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.21"
+    assert result.extraction.parser_version == "reuters-parser/0.7.22"
 
 
 def test_reuters_syndication_removes_registration_and_subscription_ui():
@@ -3059,7 +3089,7 @@ def test_reuters_syndication_removes_registration_and_subscription_ui():
     assert "subscriber" not in result.plain_text
     assert "Monthly Plan" not in result.plain_text
     assert "Thank you for your report" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.21"
+    assert result.extraction.parser_version == "reuters-parser/0.7.22"
 
 
 def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
@@ -3145,7 +3175,7 @@ def test_reuters_parser_promotes_and_deduplicates_legacy_lazy_image():
     assert result.images[0].original_url == lead
     assert lazy in result.images[0].candidate_urls
     assert result.images[0].alt == "A detainee holds a fence."
-    assert result.extraction.parser_version == "reuters-parser/0.7.21"
+    assert result.extraction.parser_version == "reuters-parser/0.7.22"
 
 
 def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
@@ -3191,7 +3221,7 @@ def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
     assert "Unrelated recommendation" not in result.plain_text
     assert "Capital Calls" not in result.plain_text
     assert "Another unrelated" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.21"
+    assert result.extraction.parser_version == "reuters-parser/0.7.22"
 
 
 def test_reuters_parser_trims_read_next_and_author_profile_tail():
@@ -3326,7 +3356,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.21"
+    assert result.extraction.parser_version == "reuters-parser/0.7.22"
 
 
 @pytest.mark.parametrize(
@@ -3419,7 +3449,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.21"
+    assert result.extraction.parser_version == "reuters-parser/0.7.22"
 
 
 def test_reuters_legacy_press_release_restores_nested_media_and_drops_disclaimer():
@@ -3471,7 +3501,7 @@ def test_reuters_legacy_press_release_restores_nested_media_and_drops_disclaimer
     assert result.images[0].credit == "Photo: Business Wire"
     assert result.images[0].should_archive
     assert "owner of this announcement" not in result.plain_text.casefold()
-    assert result.extraction.parser_version == "reuters-parser/0.7.21"
+    assert result.extraction.parser_version == "reuters-parser/0.7.22"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():
@@ -8242,7 +8272,7 @@ def test_reuters_parser_strips_licensed_wire_copyright_footers():
     assert "Investor Contact John Example" in business_wire.plain_text
     assert (
         market_wire.extraction.parser_version
-        == "reuters-parser/0.7.21"
+        == "reuters-parser/0.7.22"
     )
 
 
@@ -8704,3 +8734,4 @@ def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
     assert "<button" not in result.body_html
     assert "Skip advertisement" not in result.plain_text
     assert result.extraction.parser_version == "nyt-parser/0.8.46"
+

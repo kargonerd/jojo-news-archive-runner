@@ -5656,7 +5656,13 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
 
 def _remove_reuters_promos(soup: BeautifulSoup) -> None:
     """Remove Reuters registration UI and licensed-partner subscription tails."""
-    for node in list(soup.select(".rich-share, [data-testid='rich-share']")):
+    for node in list(
+        soup.select(
+            ".rich-share, [data-testid='rich-share'], "
+            ".Image_expand-button, .Slideshow_expand-button, "
+            "[aria-label='Expand Image Slideshow']"
+        )
+    ):
         node.decompose()
 
     for button in list(soup.select("button")):
@@ -6175,9 +6181,12 @@ def _trim_reuters_recirculation_tail(soup: BeautifulSoup) -> None:
         ):
             markers.append(node)
     for node in soup.select("p"):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(r"<\^{10,}", text):
+            markers.append(node)
+            continue
         if (
-            _clean_text(node.get_text(" ", strip=True)).casefold()
-            != "read more:"
+            text.casefold() != "read more:"
         ):
             continue
         following_paragraphs = [
