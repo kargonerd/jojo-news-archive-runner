@@ -5895,6 +5895,14 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             _clean_text(tagline.get_text(" ", strip=True)),
         ):
             tagline.decompose()
+    for strap in list(soup.select(".strap-container")):
+        heading = strap.select_one("h2, h3, h4, h5, h6, .strap")
+        if (
+            isinstance(heading, Tag)
+            and _clean_text(heading.get_text(" ", strip=True)).casefold()
+            == "related video"
+        ):
+            strap.decompose()
 
     for node in list(
         soup.select(
