@@ -2332,6 +2332,19 @@ def _promote_reuters_image_candidates(candidates: list[str]) -> list[str]:
             )
             if high_resolution != url and high_resolution not in promoted:
                 promoted.append(high_resolution)
+        if (
+            (parts.hostname or "").casefold() == "img.ksl.com"
+            and re.search(
+                r"(?:^|&)filter=ksl/(?:\d+x\d+|100x100)(?:&|$)",
+                parts.query,
+                re.IGNORECASE,
+            )
+        ):
+            full_size = urlunsplit(
+                (parts.scheme, parts.netloc, parts.path, "", "")
+            )
+            if full_size not in promoted:
+                promoted.append(full_size)
         if url not in promoted:
             promoted.append(url)
     return promoted
@@ -5714,6 +5727,13 @@ def _image_from_tag(
         caption, credit = _bloomberg_caption_credit(caption_container)
     else:
         caption, credit = _caption_credit(caption_container)
+    if spec.publisher == "reuters" and caption:
+        caption = re.sub(
+            r"(?i)\s*purchase\s+licensing\s+rights\s*,?\s*"
+            r"opens\s+new\s+tab\s*$",
+            "",
+            caption,
+        ).rstrip() or None
     context = " ".join(
         filter(
             None,
@@ -5869,6 +5889,16 @@ def _image_identity(url: str) -> str:
         )
         if ft_asset is not None:
             return f"ft-image:{ft_asset.group(1).casefold()}"
+    if host == "img.ksl.com":
+        return urlunsplit(
+            (
+                parts.scheme.casefold(),
+                parts.netloc.casefold(),
+                parts.path,
+                "",
+                "",
+            )
+        )
     if host == "assets.bwbx.io":
         bloomberg_asset = re.fullmatch(
             r"(.+/v\d+)/[^/]+",
@@ -6079,6 +6109,8 @@ def _lead_image_urls(
             result.append(normalized)
     if "ft.com" in (urlsplit(base_url).hostname or "").casefold():
         return _promote_ft_image_candidates(result)
+    if "reuters.com" in (urlsplit(base_url).hostname or "").casefold():
+        return _promote_reuters_image_candidates(result)
     return result
 
 
