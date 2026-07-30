@@ -133,6 +133,24 @@ def _has_publisher_interface_noise(
             and text.endswith(" from the times.")
             for text in blocks
         )
+    if publisher == "reuters":
+        return any(
+            (
+                "all rights reserved" in text
+                and any(
+                    marker in text
+                    for marker in (
+                        "copyright",
+                        "(c) reuters",
+                        "marketwire",
+                        "market wire",
+                        "business wire",
+                    )
+                )
+            )
+            or "republication or redistribution ofreuters content" in text
+            for text in blocks
+        )
     if publisher == "ft":
         return any(
             "stay briefed with our coronavirus newsletter" in text

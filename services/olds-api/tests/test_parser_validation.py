@@ -129,6 +129,25 @@ def test_publisher_interface_noise_detects_nyt_newsletter_embed():
     )
 
 
+def test_publisher_interface_noise_detects_reuters_legal_suffixes():
+    assert _has_publisher_interface_noise(
+        "reuters",
+        [
+            "article reporting",
+            "(c) reuters 2010. all rights reserved. republication or "
+            "redistribution ofreuters content is prohibited.",
+        ],
+    )
+    assert _has_publisher_interface_noise(
+        "reuters",
+        ["copyright 2013, marketwire, all rights reserved."],
+    )
+    assert not _has_publisher_interface_noise(
+        "reuters",
+        ["the court reserved all rights while considering the appeal."],
+    )
+
+
 def test_publisher_interface_noise_detects_ft_newsletter_promos():
     assert _has_publisher_interface_noise(
         "ft",
