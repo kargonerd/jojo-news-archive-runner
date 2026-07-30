@@ -5422,6 +5422,13 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     """Remove legacy recirculation and standardized article footers."""
+    for node in list(
+        soup.select(
+            ".text-to-speech, .brokerboxarticle, .terminal-tout-v2"
+        )
+    ):
+        node.decompose()
+
     for marker in list(soup.select("p")):
         if (
             _clean_text(marker.get_text(" ", strip=True))
