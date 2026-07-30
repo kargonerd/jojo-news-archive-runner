@@ -93,6 +93,20 @@ def test_publisher_interface_noise_detects_bloomberg_promos():
     )
 
 
+def test_publisher_interface_noise_detects_nyt_newsletter_embed():
+    assert _has_publisher_interface_noise(
+        "nyt",
+        [
+            "sign up for weekly updates on residential real estate news "
+            "from the times."
+        ],
+    )
+    assert not _has_publisher_interface_noise(
+        "nyt",
+        ["the article describes weekly updates on housing data."],
+    )
+
+
 def _capture_candidate(year: int, suffix: int) -> CaptureCandidate:
     return CaptureCandidate(
         provider=CaptureProvider.WAYBACK,
@@ -1057,7 +1071,7 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, updated_at
         )
-            VALUES (2020, 1, 'test', 'nyt-parser/0.8.41', 'now')
+            VALUES (2020, 1, 'test', 'nyt-parser/0.8.42', 'now')
         """
     )
     connection.execute(

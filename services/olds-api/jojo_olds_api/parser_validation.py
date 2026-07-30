@@ -116,6 +116,12 @@ def _has_publisher_interface_noise(
             )
             for text in blocks
         )
+    if publisher == "nyt":
+        return any(
+            text.startswith("sign up for weekly updates on ")
+            and text.endswith(" from the times.")
+            for text in blocks
+        )
     return False
 
 

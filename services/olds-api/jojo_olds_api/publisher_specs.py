@@ -125,7 +125,7 @@ PUBLISHER_SPECS = {
     ),
     "nyt": PublisherSpec(
         publisher="nyt",
-        parser_version="nyt-parser/0.8.41",
+        parser_version="nyt-parser/0.8.42",
         domains=("nytimes.com", "www.nytimes.com"),
         default_language="en",
         edition="us",
@@ -148,6 +148,7 @@ PUBLISHER_SPECS = {
             ".rad-series-box",
             "#newsletter-module",
             "[class*='Newsletter-wrap']",
+            "figure[id^='Newsletter-embed-']",
             ".mainTabsContainer",
         ),
         preferred_image_hosts=("static01.nyt.com", "static.nytimes.com"),
