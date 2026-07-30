@@ -5747,6 +5747,13 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
         node.decompose()
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(
+            r"(?i)see acast\.com/privacy for privacy and "
+            r"opt-out information\.?",
+            text,
+        ):
+            node.decompose()
+            continue
         if re.match(r"(?i)^recommended\s*\*", text):
             node.decompose()
             continue
