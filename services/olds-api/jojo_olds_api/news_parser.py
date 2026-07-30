@@ -3189,6 +3189,8 @@ def _nyt_preloaded_visual_story_rows(
         caption = (
             _clean_text(
                 BeautifulSoup(legacy_caption, "html.parser").get_text(" ")
+                if re.search(r"<[a-z][^>]*>", legacy_caption, re.I)
+                else legacy_caption
             )
             if legacy_caption
             else None
