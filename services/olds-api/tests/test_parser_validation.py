@@ -34,6 +34,13 @@ def test_publisher_interface_noise_detects_wsj_promo_sequences():
     assert _has_publisher_interface_noise(
         "wsj",
         [
+            "buy side from wsj expert recommendations on products "
+            "and services, independent from the wall street journal newsroom."
+        ],
+    )
+    assert _has_publisher_interface_noise(
+        "wsj",
+        [
             "article reporting",
             "stay informed",
             "get a coronavirus briefing six days a week: sign up here.",

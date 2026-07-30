@@ -75,6 +75,14 @@ def _has_publisher_interface_noise(
 ) -> bool:
     """Catch repeated publisher chrome that generic quality metrics miss."""
     if publisher == "wsj":
+        if any(
+            text.startswith(
+                "buy side from wsj expert recommendations "
+                "on products and services"
+            )
+            for text in blocks
+        ):
+            return True
         for index, text in enumerate(blocks):
             nearby = " ".join(blocks[index : index + 3])
             if (

@@ -5736,6 +5736,8 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
         ):
             node.decompose()
     for node in list(soup.select("p, h2, h3, h4, h5, h6")):
+        if node.parent is None:
+            continue
         text = _clean_text(node.get_text(" ", strip=True))
         folded = text.casefold()
         classes = " ".join(node.get("class") or []).casefold()
@@ -5750,6 +5752,15 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             or (
                 folded == "videos"
                 and "sectionlabel" in classes
+            )
+            or (
+                folded.startswith(
+                    "buy side from wsj expert recommendations "
+                    "on products and services"
+                )
+                and node.select_one(
+                    "a[href*='wsj.com/buyside']"
+                )
             )
         ):
             node.decompose()
