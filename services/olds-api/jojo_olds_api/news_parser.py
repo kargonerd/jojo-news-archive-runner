@@ -196,6 +196,13 @@ def parse_article(
         )
         if adventure_body is not None:
             body = adventure_body
+        document_card_body = _nyt_document_card_body(soup)
+        if document_card_body is not None:
+            body = document_card_body
+        comics_body = _nyt_single_image_comics_body(soup)
+        if comics_body is not None:
+            body = comics_body
+            structured_image_gallery_selected = True
     if body is None:
         body = _select_body(soup, spec)
     if spec.publisher == "nyt":
@@ -4093,6 +4100,91 @@ def _nyt_interactive_document_body(
     return article
 
 
+def _nyt_document_card_body(soup: BeautifulSoup) -> Tag | None:
+    """Preserve Oak articles whose entire body is a linked source document."""
+    card_link = soup.select_one(
+        "section[name='articleBody'] a.thumbnail-link[href*='/interactive/']"
+    )
+    if not isinstance(card_link, Tag):
+        return None
+    card = card_link.find_parent("div")
+    if not isinstance(card, Tag):
+        return None
+    read_link = card.select_one("a[href] strong")
+    if (
+        not isinstance(read_link, Tag)
+        or "read document" not in _clean_text(
+            read_link.get_text(" ", strip=True)
+        ).casefold()
+    ):
+        return None
+    href = _normalized_url(
+        card_link.get("href"),
+        base_url="https://www.nytimes.com/",
+    )
+    if not href:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    description = _first_text(
+        _meta_content(soup, "name", "description"),
+        _meta_content(soup, "property", "og:description"),
+    )
+    if description:
+        paragraph = document.new_tag("p")
+        paragraph.string = description
+        article.append(paragraph)
+    heading_text = _tag_text(card.select_one("h2"))
+    if heading_text:
+        heading = document.new_tag("h2")
+        heading.string = heading_text
+        article.append(heading)
+    iframe = document.new_tag("iframe")
+    iframe["src"] = href
+    iframe["title"] = heading_text or "Source document"
+    article.append(iframe)
+    return article
+
+
+def _nyt_single_image_comics_body(soup: BeautifulSoup) -> Tag | None:
+    """Recover intentionally image-only reviews published in comics format."""
+    description = _first_text(
+        _meta_content(soup, "name", "description"),
+        _meta_content(soup, "property", "og:description"),
+    )
+    if not description or "comics format" not in description.casefold():
+        return None
+    article_body = soup.select_one("section[name='articleBody']")
+    if not isinstance(article_body, Tag):
+        return None
+    if _clean_text(article_body.get_text(" ", strip=True)):
+        return None
+    source_image = soup.select_one(
+        "article figure img[src], article img[itemprop='url'][src]"
+    )
+    if not isinstance(source_image, Tag):
+        return None
+    source = _tag_attribute(source_image, "src")
+    if not source:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    paragraph = document.new_tag("p")
+    paragraph.string = description
+    article.append(paragraph)
+    figure = document.new_tag("figure")
+    image = document.new_tag("img")
+    image["src"] = source
+    image["alt"] = _tag_attribute(source_image, "alt") or description
+    figure.append(image)
+    article.append(figure)
+    return article
+
+
 def _nyt_interactive_redirect_body(soup: BeautifulSoup) -> Tag | None:
     """Preserve metadata and destination for NYT's intentionally blank promos."""
     description = _first_text(
@@ -4615,10 +4707,21 @@ def _is_structured_short_record(
         page_text = _clean_text(soup.get_text(" ", strip=True)).casefold()
         return bool(
             len(plain_text) >= 50
-            and "sports briefing" in page_text
             and (
-                "by the associated press" in page_text
-                or "by associated press" in page_text
+                (
+                    "sports briefing" in page_text
+                    and (
+                        "by the associated press" in page_text
+                        or "by associated press" in page_text
+                    )
+                )
+                or (
+                    headline.casefold().startswith("corrections:")
+                    and re.fullmatch(
+                        r"(?i)no corrections appeared in print on .+",
+                        plain_text,
+                    )
+                )
             )
         )
     if spec.publisher == "wsj":
@@ -5755,6 +5858,14 @@ def _has_selected_ancestor(node: Tag, body: BeautifulSoup) -> bool:
     }
     parent = node.parent
     while isinstance(parent, Tag) and parent is not body:
+        if (
+            parent.name == "figure"
+            and parent.select_one("img") is None
+        ):
+            # Modern scrollytelling packages use <figure> as a layout shell
+            # around narrative paragraphs rather than as an image container.
+            parent = parent.parent
+            continue
         if (
             node.name == "img"
             and parent.name == "p"
