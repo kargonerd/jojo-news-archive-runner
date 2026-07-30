@@ -69,6 +69,43 @@ _PLACEHOLDER_IMAGE_MARKERS = (
 )
 
 
+def _has_publisher_interface_noise(
+    publisher: str,
+    blocks: list[str],
+) -> bool:
+    """Catch repeated publisher chrome that generic quality metrics miss."""
+    if publisher == "wsj":
+        for index, text in enumerate(blocks):
+            nearby = " ".join(blocks[index : index + 3])
+            if (
+                text == "stay informed"
+                and "get a coronavirus briefing" in nearby
+                and "sign up here" in nearby
+            ):
+                return True
+        theme_navigation = {
+            "free resources",
+            "live updates",
+            "daily video briefing",
+        }
+        if theme_navigation.issubset(set(blocks)):
+            return True
+    if publisher == "bloomberg":
+        return any(
+            text == "watch this next"
+            or (
+                text.startswith("sign up to receive the brexit bulletin")
+                and "departure from the eu" in text
+            )
+            or (
+                text.startswith("subscribe to bloomberg benchmark")
+                and ("pocketcast" in text or "itunes" in text)
+            )
+            for text in blocks
+        )
+    return False
+
+
 def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(
         """
@@ -833,6 +870,9 @@ def record_parser_validation(
             )
             or any(phrase in text for phrase in _UI_NOISE_PHRASES)
             for text in normalized_blocks
+        ) or _has_publisher_interface_noise(
+            capture.publisher,
+            normalized_blocks,
         ):
             issues.append("interface-noise-in-body")
         if any(

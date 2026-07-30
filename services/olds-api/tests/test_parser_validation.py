@@ -11,6 +11,7 @@ from jojo_olds_api.news_models import (
     RawCapture,
 )
 from jojo_olds_api.parser_validation import (
+    _has_publisher_interface_noise,
     ensure_parser_validation_plan,
     failed_completed_parser_validation_files,
     initialize_parser_validation_schema,
@@ -27,6 +28,48 @@ from jojo_olds_api.raw_archive_capture import (
     record_capture_result,
     store_raw_html,
 )
+
+
+def test_publisher_interface_noise_detects_wsj_promo_sequences():
+    assert _has_publisher_interface_noise(
+        "wsj",
+        [
+            "article reporting",
+            "stay informed",
+            "get a coronavirus briefing six days a week: sign up here.",
+        ],
+    )
+    assert _has_publisher_interface_noise(
+        "wsj",
+        [
+            "article reporting",
+            "free resources",
+            "live updates",
+            "daily video briefing",
+        ],
+    )
+    assert not _has_publisher_interface_noise(
+        "wsj",
+        ["the article discussed free resources and live updates."],
+    )
+
+
+def test_publisher_interface_noise_detects_bloomberg_promos():
+    assert _has_publisher_interface_noise(
+        "bloomberg",
+        ["watch this next"],
+    )
+    assert _has_publisher_interface_noise(
+        "bloomberg",
+        [
+            "sign up to receive the brexit bulletin, a daily briefing "
+            "on britain's departure from the eu."
+        ],
+    )
+    assert not _has_publisher_interface_noise(
+        "bloomberg",
+        ["investors subscribe to several market-data services."],
+    )
 
 
 def _capture_candidate(year: int, suffix: int) -> CaptureCandidate:
