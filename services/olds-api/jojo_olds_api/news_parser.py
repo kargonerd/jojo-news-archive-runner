@@ -4955,7 +4955,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     footer_patterns = (
         re.compile(
             r"(?i)^to contact the "
-            r"(?:author of|editors? responsible for|reporter on) "
+            r"(?:authors? of|editors? responsible for|reporters? on) "
             r"this (?:story|article)\s*:"
         ),
         re.compile(
@@ -5006,6 +5006,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^want to receive this post, and more, into your inbox "
             r"every morning\?\s*sign up here\.?$"
         ),
+        re.compile(r"(?i)^for more copyright news,\s*click here\.?$"),
     )
     for node in list(soup.select("p, li, span, div")):
         text = _clean_text(node.get_text(" ", strip=True))
