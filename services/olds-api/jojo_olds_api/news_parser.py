@@ -6033,6 +6033,9 @@ def _remove_ap_body_promos(soup: BeautifulSoup) -> None:
     )
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
+        if text == ".":
+            node.decompose()
+            continue
         if not any(pattern.search(text) for pattern in patterns):
             continue
         previous = node.find_previous_sibling()

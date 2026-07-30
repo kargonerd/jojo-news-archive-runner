@@ -74,6 +74,8 @@ def _has_publisher_interface_noise(
     blocks: list[str],
 ) -> bool:
     """Catch repeated publisher chrome that generic quality metrics miss."""
+    if publisher == "ap" and "." in blocks:
+        return True
     if publisher == "wsj":
         if any(
             text.startswith(

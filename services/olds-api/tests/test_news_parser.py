@@ -5171,7 +5171,7 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert "weekly newsletter" not in result.plain_text
     assert "Jackpot.com" not in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.13"
+    assert result.extraction.parser_version == "ap-parser/0.6.14"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -5214,7 +5214,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.13"
+    assert article.extraction.parser_version == "ap-parser/0.6.14"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -5248,7 +5248,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.13"
+    assert result.extraction.parser_version == "ap-parser/0.6.14"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -8493,3 +8493,35 @@ def test_wsj_parser_removes_buy_side_recommendation_widget():
     assert "Buy Side from WSJ" not in result.plain_text
     assert "Will Filing Taxes" not in result.plain_text
     assert result.extraction.parser_version == "wsj-parser/0.8.22"
+
+
+def test_ap_parser_removes_legacy_terminal_period_paragraph():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A court report">
+          <meta property="article:published_time"
+            content="2012-02-23T12:00:00Z">
+        </head><body><article>
+          <div class="RichTextStoryBody RichTextBody">
+            <p>Lawyers presented opening arguments in federal court and
+            questioned witnesses about the evidence in the case.</p>
+            <p>The defendant denied the allegations while prosecutors
+            described documents and testimony they planned to introduce.
+            The trial was expected to continue for several weeks, with
+            additional witnesses scheduled to appear before the jury.</p>
+            <p>.</p>
+          </div>
+        </article></body></html>
+        """,
+        publisher="ap",
+        canonical_url=(
+            "https://apnews.com/article/"
+            "africa-business-genocides-rwanda-test"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.blocks[-1].text != "."
+    assert result.plain_text.rstrip().endswith("jury.")
+    assert result.extraction.parser_version == "ap-parser/0.6.14"

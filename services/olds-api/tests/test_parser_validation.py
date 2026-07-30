@@ -61,6 +61,17 @@ def test_publisher_interface_noise_detects_wsj_promo_sequences():
     )
 
 
+def test_publisher_interface_noise_detects_ap_terminal_period_block():
+    assert _has_publisher_interface_noise(
+        "ap",
+        ["substantive article reporting.", "."],
+    )
+    assert not _has_publisher_interface_noise(
+        "ap",
+        ["substantive article reporting."],
+    )
+
+
 def test_publisher_interface_noise_detects_bloomberg_promos():
     assert _has_publisher_interface_noise(
         "bloomberg",
