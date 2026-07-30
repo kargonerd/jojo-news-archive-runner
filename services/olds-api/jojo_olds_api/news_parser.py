@@ -5614,6 +5614,24 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
             r"(?i)^follow the new york times opinion section on\b"
         ),
         re.compile(r"(?i)^for newspaper delivery questions\b"),
+        re.compile(r"^_{2,}$"),
+        re.compile(r"(?i)^read more$"),
+        re.compile(
+            r"(?i)^\[?\s*(?:enjoying this article\?\s*)?"
+            r"sign up for (?:our|the) .*newsletter\b"
+        ),
+        re.compile(
+            r"(?i)^52 places and much, much more\b.*"
+            r"sign up for our travel dispatch newsletter\b"
+        ),
+        re.compile(
+            r"(?i)^want more from modern love\?.*"
+            r"sign up for the newsletter\b"
+        ),
+        re.compile(
+            r"(?i)^\[\s*like the science times page\b.*"
+            r"sign up for the science times newsletter\b"
+        ),
     )
     for node in list(soup.select("p, li, span")):
         text = _clean_text(node.get_text(" ", strip=True))
@@ -6639,6 +6657,9 @@ def _image_candidate(
     if spec.publisher == "nyt" and _nyt_generic_branding_image(url):
         role = ImageRole.LOGO
         reasons = [*reasons, "generic-publisher-branding"]
+    if spec.publisher == "nyt" and _nyt_author_avatar_image(url):
+        role = ImageRole.AUTHOR_AVATAR
+        reasons = [*reasons, "author-avatar-url"]
     identity = _image_identity(url)
     asset_id = (
         f"urlsha256:{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
@@ -6799,6 +6820,21 @@ def _nyt_generic_branding_image(url: str) -> bool:
         re.search(
             r"/vi-assets/images/share/\d+x\d+_(?:nameplate|t)\.png$|"
             r"/images/icons/t_logo_\d+_black\.png$",
+            parts.path,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _nyt_author_avatar_image(url: str) -> bool:
+    parts = urlsplit(url)
+    if (parts.hostname or "").casefold() != "static01.nyt.com":
+        return False
+    return bool(
+        re.search(
+            r"/(?:author-[^/]+|author-head-[^/]+)/"
+            r"[^/]*(?:thumb(?:large|standard)|author-head)[^/]*"
+            r"\.(?:avif|gif|jpe?g|png|webp)$",
             parts.path,
             flags=re.IGNORECASE,
         )
