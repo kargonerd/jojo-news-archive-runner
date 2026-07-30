@@ -5886,9 +5886,7 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             .startswith("more in ")
         ):
             node.decompose()
-    for control in list(
-        soup.select("a[role='button'][href='/news/magazine']")
-    ):
+    for control in list(soup.select("a[role='button']")):
         if _clean_text(control.get_text(" ", strip=True)).casefold() != "see all":
             continue
         collection = next(
