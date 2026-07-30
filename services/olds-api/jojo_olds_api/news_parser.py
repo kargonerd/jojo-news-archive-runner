@@ -682,7 +682,12 @@ def parse_article(
         plain_text=plain_text,
     )
     minimum_body_characters = (
-        500
+        _MINIMUM_BODY_CHARACTERS
+        if (
+            spec.publisher == "wsj"
+            and _wsj_is_editorial_letter(soup)
+        )
+        else 500
         if (
             spec.publisher == "wsj"
             and content_type == ContentType.ARTICLE
@@ -5686,6 +5691,19 @@ def _has_selected_ancestor(node: Tag, body: BeautifulSoup) -> bool:
             return True
         parent = parent.parent
     return False
+
+
+def _wsj_is_editorial_letter(soup: BeautifulSoup) -> bool:
+    """Identify intentionally short WSJ letters without relaxing news gates."""
+    values = (
+        _meta_content(soup, "name", "article.type"),
+        _meta_content(soup, "name", "article.type.display"),
+        _meta_content(soup, "name", "article.page"),
+    )
+    return any(
+        value and _clean_text(value).casefold() == "letters"
+        for value in values
+    )
 
 
 def _deduplicate_blocks(
