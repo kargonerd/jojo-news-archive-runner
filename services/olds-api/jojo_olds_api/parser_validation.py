@@ -49,6 +49,8 @@ _UI_NOISE_PHRASES = (
     "text size regular medium large",
     "if you are not redirected automatically",
     "save article log in to save subscribe to wsj",
+    "copyright business wire",
+    "market wire, all rights reserved",
 )
 _PLACEHOLDER_IMAGE_MARKERS = (
     "wsj-social-share",

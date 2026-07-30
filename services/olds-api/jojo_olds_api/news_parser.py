@@ -5459,6 +5459,21 @@ def _remove_reuters_promos(soup: BeautifulSoup) -> None:
         ):
             node.decompose()
 
+    wire_copyright_suffix = re.compile(
+        r"""(?ix)\s*(?:"""
+        r"""copyright\s+business\s+wire\s+\d{4}"""
+        r"""|"""
+        r"""copyright\s+\d{4},\s*market\s+wire,\s*"""
+        r"""all\s+rights\s+reserved\.\s*-0-"""
+        r""")\s*$"""
+    )
+    for text_node in list(soup.find_all(string=wire_copyright_suffix)):
+        cleaned = wire_copyright_suffix.sub("", str(text_node)).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
+
     marker = next(
         (
             node
