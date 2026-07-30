@@ -2340,7 +2340,7 @@ def test_reuters_parser_removes_toolbar_licensing_ui_and_promotes_ksl_image():
     assert "Facebook Linkedin Email" not in result.plain_text
     assert "Purchase Licensing Rights" not in result.plain_text
     assert result.images[0].original_url == image_base
-    assert result.extraction.parser_version == "reuters-parser/0.7.16"
+    assert result.extraction.parser_version == "reuters-parser/0.7.17"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -2406,7 +2406,7 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.16"
+    assert result.extraction.parser_version == "reuters-parser/0.7.17"
 
 
 def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
@@ -2473,7 +2473,7 @@ def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
     assert "Sign In or Create" not in result.plain_text
     assert "Advertisement" not in result.plain_text
     assert "Postmedia is committed" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.16"
+    assert result.extraction.parser_version == "reuters-parser/0.7.17"
 
 
 def test_reuters_syndication_removes_registration_and_subscription_ui():
@@ -2533,7 +2533,7 @@ def test_reuters_syndication_removes_registration_and_subscription_ui():
     assert "subscriber" not in result.plain_text
     assert "Monthly Plan" not in result.plain_text
     assert "Thank you for your report" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.16"
+    assert result.extraction.parser_version == "reuters-parser/0.7.17"
 
 
 def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
@@ -2619,7 +2619,7 @@ def test_reuters_parser_promotes_and_deduplicates_legacy_lazy_image():
     assert result.images[0].original_url == lead
     assert lazy in result.images[0].candidate_urls
     assert result.images[0].alt == "A detainee holds a fence."
-    assert result.extraction.parser_version == "reuters-parser/0.7.16"
+    assert result.extraction.parser_version == "reuters-parser/0.7.17"
 
 
 def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
@@ -2665,7 +2665,7 @@ def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
     assert "Unrelated recommendation" not in result.plain_text
     assert "Capital Calls" not in result.plain_text
     assert "Another unrelated" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.16"
+    assert result.extraction.parser_version == "reuters-parser/0.7.17"
 
 
 def test_reuters_parser_trims_read_next_and_author_profile_tail():
@@ -2800,7 +2800,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.16"
+    assert result.extraction.parser_version == "reuters-parser/0.7.17"
 
 
 @pytest.mark.parametrize(
@@ -2893,7 +2893,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.16"
+    assert result.extraction.parser_version == "reuters-parser/0.7.17"
 
 
 def test_reuters_legacy_press_release_restores_nested_media_and_drops_disclaimer():
@@ -2945,7 +2945,7 @@ def test_reuters_legacy_press_release_restores_nested_media_and_drops_disclaimer
     assert result.images[0].credit == "Photo: Business Wire"
     assert result.images[0].should_archive
     assert "owner of this announcement" not in result.plain_text.casefold()
-    assert result.extraction.parser_version == "reuters-parser/0.7.16"
+    assert result.extraction.parser_version == "reuters-parser/0.7.17"
 
 
 def test_reuters_legacy_parser_uses_embedded_rcom_body():
@@ -7541,3 +7541,37 @@ def test_wsj_parser_preserves_legacy_video_transcript():
     assert result.content_type.value == "video"
     assert result.quality.status.value == "complete"
     assert "complete archived transcript" in result.plain_text
+
+
+def test_reuters_parser_trims_legal_read_more_recirculation():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Court rejects damages award">
+          <meta property="article:published_time"
+            content="2023-07-18T12:00:00Z">
+        </head><body><article>
+          <div data-testid="ArticleBody">
+            <p>The court rejected the damages award after finding that the
+            evidence presented at trial was insufficient to support it.</p>
+            <p>The underlying liability verdict remains in place while the
+            parties consider further appeals and related proceedings.</p>
+            <p>For the plaintiff: Counsel at Example LLP</p>
+            <p>Read more:</p>
+            <p><a href="/legal/related-one">Earlier related court ruling</a></p>
+            <p>Another related lawsuit involving the same companies</p>
+            <p>Background coverage of the original complaint</p>
+          </div>
+        </article></body></html>
+        """,
+        publisher="reuters",
+        canonical_url=(
+            "https://www.reuters.com/legal/litigation/"
+            "court-rejects-damages-award-2023-07-18"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "For the plaintiff" in result.plain_text
+    assert "Read more:" not in result.plain_text
+    assert "Earlier related court ruling" not in result.plain_text

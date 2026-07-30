@@ -814,6 +814,7 @@ def record_parser_validation(
         ]
         if any(
             text == "0 min read"
+            or text == "read more:"
             or any(phrase in text for phrase in _UI_NOISE_PHRASES)
             for text in normalized_blocks
         ):

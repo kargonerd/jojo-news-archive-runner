@@ -5615,6 +5615,19 @@ def _trim_reuters_recirculation_tail(soup: BeautifulSoup) -> None:
             "our standards: the thomson reuters trust principles"
         ):
             markers.append(node)
+    for node in soup.select("p"):
+        if (
+            _clean_text(node.get_text(" ", strip=True)).casefold()
+            != "read more:"
+        ):
+            continue
+        following_paragraphs = [
+            sibling
+            for sibling in node.find_next_siblings("p")
+            if _clean_text(sibling.get_text(" ", strip=True))
+        ]
+        if len(following_paragraphs) >= 2:
+            markers.append(node)
     if not markers:
         return
     top = soup.find()
