@@ -332,16 +332,7 @@ jobs:
           fallback_files="$RUNNER_TEMP/source-import-fallback-files.txt"
           fallback_marker="$RUNNER_TEMP/overlap-fallback-enabled"
           if [ ! -f "$source_state" ]; then
-            if [[ "$COHORT" == holdout-v* ]] \
-              && [ -f "$LOCAL_ROOT/raw/capture.sqlite3" ]; then
-              python \
-                services/olds-api/tools/relax_parser_validation_exclusions.py \
-                --state "$LOCAL_ROOT/raw/capture.sqlite3" \
-                --year "$SAMPLE_YEAR" \
-                --target "$VALIDATION_TARGET" \
-                --marker "$fallback_marker"
-            fi
-            echo "No source capture checkpoint is available; continuing normally."
+            echo "No source capture checkpoint is available; preserving exclusions."
             exit 0
           fi
           python services/olds-api/tools/import_validation_source_captures.py \
