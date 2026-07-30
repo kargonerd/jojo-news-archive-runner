@@ -5886,6 +5886,24 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             .startswith("more in ")
         ):
             node.decompose()
+    for control in list(
+        soup.select("a[role='button'][href='/news/magazine']")
+    ):
+        if _clean_text(control.get_text(" ", strip=True)).casefold() != "see all":
+            continue
+        collection = next(
+            (
+                parent
+                for parent in control.parents
+                if isinstance(parent, Tag)
+                and len(parent.select("article")) >= 2
+            ),
+            None,
+        )
+        if isinstance(collection, Tag):
+            collection.decompose()
+        else:
+            control.decompose()
     for wrapper in list(soup.select(".theme-nav-wrapper")):
         inset = wrapper.find_parent(
             class_=lambda value: value
