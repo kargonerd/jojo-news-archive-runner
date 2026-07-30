@@ -329,8 +329,6 @@ jobs:
           set -euo pipefail
           source_state="$RUNNER_TEMP/source-capture.sqlite3"
           files_from="$RUNNER_TEMP/source-import-files.txt"
-          fallback_files="$RUNNER_TEMP/source-import-fallback-files.txt"
-          fallback_marker="$RUNNER_TEMP/overlap-fallback-enabled"
           if [ ! -f "$source_state" ]; then
             echo "No source capture checkpoint is available; preserving exclusions."
             exit 0
@@ -346,36 +344,6 @@ jobs:
             --reserve-per-year 0 \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
             --files-from "$files_from"
-          if [[ "$COHORT" == holdout-v* ]]; then
-            python \
-              services/olds-api/tools/relax_parser_validation_exclusions.py \
-              --state "$LOCAL_ROOT/raw/capture.sqlite3" \
-              --year "$SAMPLE_YEAR" \
-              --target "$VALIDATION_TARGET" \
-              --marker "$fallback_marker"
-            if [ -f "$fallback_marker" ]; then
-              python services/olds-api/tools/import_validation_source_captures.py \
-                --source-state "$source_state" \
-                --target-state "$LOCAL_ROOT/raw/capture.sqlite3" \
-                --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
-                --publisher "$PUBLISHER" \
-                --year "$SAMPLE_YEAR" \
-                --target-per-year "$VALIDATION_TARGET" \
-                --seed "$VALIDATION_SEED" \
-                --reserve-per-year 0 \
-                --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
-                --files-from "$fallback_files"
-              python \
-                services/olds-api/tools/relax_parser_validation_exclusions.py \
-                --state "$LOCAL_ROOT/raw/capture.sqlite3" \
-                --year "$SAMPLE_YEAR" \
-                --target "$VALIDATION_TARGET" \
-                --marker "$fallback_marker" \
-                --finalize
-              cat "$fallback_files" >> "$files_from"
-              sort -u "$files_from" -o "$files_from"
-            fi
-          fi
           if [ ! -s "$files_from" ]; then
             exit 0
           fi
@@ -639,30 +607,6 @@ jobs:
             --progress-every 50 \
             --force-existing \
             --summary "$LOCAL_ROOT/raw/summary.json"
-
-      - name: Finalize validation overlap audit
-        if: >-
-          ${{
-            always() &&
-            !cancelled() &&
-            hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
-          }}
-        shell: bash
-        env:
-          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
-        run: |
-          set -euo pipefail
-          fallback_marker="$RUNNER_TEMP/overlap-fallback-enabled"
-          if [ ! -f "$fallback_marker" ]; then
-            exit 0
-          fi
-          python \
-            services/olds-api/tools/relax_parser_validation_exclusions.py \
-            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
-            --year "$SAMPLE_YEAR" \
-            --target "$VALIDATION_TARGET" \
-            --marker "$fallback_marker" \
-            --finalize
 
       - name: Checkpoint validation state
         if: >-
