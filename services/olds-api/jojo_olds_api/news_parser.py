@@ -5641,6 +5641,13 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
 
 def _remove_reuters_promos(soup: BeautifulSoup) -> None:
     """Remove Reuters registration UI and licensed-partner subscription tails."""
+    for button in list(soup.select("button")):
+        classes = " ".join(button.get("class") or []).casefold()
+        if "socialtools" in classes:
+            button.decompose()
+        else:
+            button.unwrap()
+
     for marker in list(soup.select("[data-testid^='paragraph-']")):
         if _clean_text(marker.get_text(" ", strip=True)).casefold() != "read more:":
             continue
@@ -5679,6 +5686,24 @@ def _remove_reuters_promos(soup: BeautifulSoup) -> None:
     )
     for text_node in list(soup.find_all(string=wire_copyright_suffix)):
         cleaned = wire_copyright_suffix.sub("", str(text_node)).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
+
+    legacy_legal_suffix = re.compile(
+        r"""(?is)\s*(?:"""
+        r"""(?:keywords:\s*)?[^\n]{0,500}?"""
+        r"""\(c\)\s*reuters\s+(?:19|20)\d{2}\.\s*"""
+        r"""all\s+rights\s+reserved\..*$"""
+        r"""|"""
+        r"""(?:copyright(?:\s+copyright)?|©|ï¿½)\s*(?:©\s*)?"""
+        r"""(?:19|20)\d{2}[\s,.][^\n]{0,750}?"""
+        r"""all\s+rights\s+reserved\.?.*$"""
+        r""")\s*$"""
+    )
+    for text_node in list(soup.find_all(string=legacy_legal_suffix)):
+        cleaned = legacy_legal_suffix.sub("", str(text_node)).rstrip()
         if cleaned:
             text_node.replace_with(cleaned)
         else:
