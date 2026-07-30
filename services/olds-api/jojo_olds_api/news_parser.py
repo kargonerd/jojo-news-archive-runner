@@ -504,6 +504,11 @@ def parse_article(
     )
     language = _document_language(soup, default=spec.default_language)
     content_type = _content_type(news_article, canonical_url)
+    if (
+        spec.publisher == "bloomberg"
+        and _bloomberg_article_narration(soup)
+    ):
+        content_type = ContentType.ARTICLE
     if spec.publisher == "nyt":
         content_type = _nyt_media_content_type(
             soup,
@@ -2336,9 +2341,10 @@ def _wsj_unsupported_media_gallery(soup: BeautifulSoup) -> Tag | None:
 def _bloomberg_article_narration(soup: BeautifulSoup) -> bool:
     """Distinguish Bloomberg's text-to-speech player from an audio story."""
     for heading in soup.select("h1, h2, h3, h4, [role='heading']"):
-        if _clean_text(heading.get_text(" ", strip=True)).casefold() == (
-            "listen to article"
-        ):
+        if _clean_text(heading.get_text(" ", strip=True)).casefold() in {
+            "listen to article",
+            "listen to this article",
+        }:
             return True
     return bool(
         soup.select_one(
