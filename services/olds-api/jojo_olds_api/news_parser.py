@@ -5135,8 +5135,13 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
 def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
     """Remove syndication copyright footers without dropping article prose."""
     pattern = re.compile(
-        r"""(?i)\s*[–—-]\s*copyright\s+(?:the\s+)?"""
+        r"""(?ix)(?:"""
+        r"""^\s*copyright\s+(?:the\s+)?financial\s+times\s+limited"""
+        r"""(?:\s+\d{4})?\s*$"""
+        r"""|"""
+        r"""\s*[–—-]\s*copyright\s+(?:the\s+)?"""
         r"""financial\s+times\s+limited(?:\s+\d{4})?\s*$"""
+        r""")"""
     )
     for text_node in list(soup.find_all(string=pattern)):
         cleaned = pattern.sub("", str(text_node)).rstrip()
