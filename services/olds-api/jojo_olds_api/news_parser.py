@@ -5468,7 +5468,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     for node in list(
         soup.select(
             ".text-to-speech, .brokerboxarticle, .terminal-tout-v2, "
-            ".email-form, .similarstoryslide, button.read-more-button"
+            ".email-form, .similarstoryslide, button.read-more-button, "
+            ".inner-page-cta-section, .minimal-detailfull-width-section"
         )
     ):
         node.decompose()
@@ -5499,6 +5500,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^to contact the (?:senior )?editor responsible for "
             r"bloomberg view(?:'s|’s) editorials\s*:"
+        ),
+        re.compile(
+            r"(?i)^to contact the (?:senior )?editor responsible for "
+            r"bloomberg opinion(?:'s|’s) editorials\s*:"
         ),
         re.compile(
             r"(?i)^this (?:column|article) does not necessarily reflect "
@@ -5614,6 +5619,20 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"every morning\?\s*sign up here\.?$"
         ),
         re.compile(r"(?i)^for more copyright news,\s*click here\.?$"),
+        re.compile(
+            r"(?i)^to view the source of this information click here\.?$"
+        ),
+        re.compile(r"(?i)^read more\s*:\s*\S.+$"),
+        re.compile(
+            r"(?i)^get early returns every morning in your inbox\.\s*"
+            r"click here to subscribe\.\s*also subscribe to bloomberg "
+            r"all access\b.*$"
+        ),
+        re.compile(
+            r"(?i)^.{1,100}\sis\s.{1,100}\sat bloomberg\.\s*"
+            r"follow (?:him|her|them) on twitter\b.*"
+            r"(?:instagram|facebook)\b.*$"
+        ),
     )
     for node in list(soup.select("p, li, span, div")):
         text = _clean_text(node.get_text(" ", strip=True))
@@ -5631,6 +5650,20 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             and "bloombergbusiness.com/join/" in href
         ):
             link.decompose()
+
+    for listing in list(soup.select("ul")):
+        items = listing.find_all("li", recursive=False)
+        if len(items) < 2:
+            continue
+        if all(
+            item.find(
+                "a",
+                attrs={"title": re.compile(r"(?i)^click to view webpage\.?$")},
+            )
+            is not None
+            for item in items
+        ):
+            listing.decompose()
 
     disclaimer_suffix = re.compile(
         r"(?i)\s*\(?this\s+(?:column|article)\s+does\s+not\s+necessarily"
