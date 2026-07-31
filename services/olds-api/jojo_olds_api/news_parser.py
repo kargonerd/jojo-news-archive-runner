@@ -520,6 +520,11 @@ def parse_article(
                 "analyticsAttributes.articleDate",
             ),
             _meta_content(soup, "name", "sailthru.date"),
+            (
+                _bloomberg_legacy_published_at(soup)
+                if spec.publisher == "bloomberg"
+                else None
+            ),
             _nyt_visible_published_at(soup),
             _ft_legacy_published_at(soup) if spec.publisher == "ft" else None,
             (
@@ -8629,6 +8634,21 @@ def _nyt_visible_published_at(soup: BeautifulSoup) -> str | None:
             continue
         return parsed.replace(tzinfo=timezone.utc).isoformat()
     return None
+
+
+def _bloomberg_legacy_published_at(soup: BeautifulSoup) -> str | None:
+    """Recover the timestamp rendered by Bloomberg's pre-2015 story template."""
+    node = soup.select_one("#story_meta .datestamp noscript")
+    if node is None:
+        return None
+    value = node.get_text(" ", strip=True)
+    if not value:
+        return None
+    try:
+        parsed = datetime.strptime(value, "%a %b %d %H:%M:%S GMT %Y")
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=timezone.utc).isoformat()
 
 
 def _ft_legacy_published_at(soup: BeautifulSoup) -> str | None:
