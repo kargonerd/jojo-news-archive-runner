@@ -5997,11 +5997,20 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"go to the ticker\s*\.?$"
         ),
         re.compile(
+            r"(?i)^read more breaking commentary from bloomberg view "
+            r"at the ticker\.?$"
+        ),
+        re.compile(r"(?i)^muse highlights include .{2,180}\.?$"),
+        re.compile(
             r"(?i)^\(?to save a copy of the chart,\s*click here\.\)?$"
         ),
         re.compile(r"(?i)^click here for (?:the )?web link\.?$"),
         re.compile(r"(?i)^for related news and information\s*:?.*$"),
         re.compile(r"(?i)^for more on .{2,160},\s*click here\.?$"),
+        re.compile(
+            r"(?i)^for more (?:copyright|patent|trademark) news,\s*"
+            r"click here\.?$"
+        ),
         re.compile(
             r"(?i)^link to company news\s*:\s*"
             r"\{[^{}]{1,80}<equity>\s+cn\s+<go>\}\s*$"
@@ -6028,6 +6037,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^(?:(?:--|—)\s*)?editors?\s*:\s*[\w .,'’&-]+$"
+        ),
+        re.compile(r"(?i)^editors?\s*:\s*$"),
+        re.compile(
+            r"(?i)^(?:--|—)\s*[\w .,'’&-]+\.\s*"
+            r"editors?\s*:\s*[\w .,'’&-]+$"
         ),
         re.compile(r"(?i)^[a-z0-9._%+-]+@bloomberg\.net\s*[.;]?$"),
         re.compile(
