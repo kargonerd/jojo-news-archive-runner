@@ -6000,6 +6000,13 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^read more breaking commentary from bloomberg view "
             r"at the ticker\.?$"
         ),
+        re.compile(
+            r"(?i)^for more,\s*read this quicktake\s*:\s*\S.+$"
+        ),
+        re.compile(r"(?i)^\*{3}\s*end of transcript\s*\*{3}$"),
+        re.compile(
+            r"(?i)^[a-z]{2,5}\s+[a-z0-9]{8,14}\s+<go>\s+\S.+$"
+        ),
         re.compile(r"(?i)^muse highlights include .{2,180}\.?$"),
         re.compile(
             r"(?i)^\(?to save a copy of the chart,\s*click here\.\)?$"
@@ -6548,6 +6555,25 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             or text == "🫣"
         ):
             node.decompose()
+
+    for paragraph in list(soup.select("p")):
+        links = paragraph.find_all("a")
+        if len(links) != 1:
+            continue
+        link = links[0]
+        text = _clean_text(paragraph.get_text(" ", strip=True))
+        link_text = _clean_text(link.get_text(" ", strip=True))
+        href = str(link.get("href") or "")
+        if (
+            text == link_text
+            and link_text
+            and paragraph.find_next_sibling("p") is None
+            and re.search(
+                r"(?i)(?:bloomberg\.com)?/news/articles/\d{4}-\d{2}-\d{2}/",
+                href,
+            )
+        ):
+            paragraph.decompose()
 
     for link in list(soup.select("a")):
         text = _clean_text(link.get_text(" ", strip=True)).casefold()
