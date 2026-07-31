@@ -5948,7 +5948,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^to contact the "
             r"(?:writers?|authors?|reporters?|editors?) "
-            r"(?:of|on|responsible for) (?:this|the|his|her) "
+            r"(?:for|of|on|responsible for) (?:this|the|his|her) "
             r"(?:story|article|column|(?:blog )?post)\s*:?"
         ),
         re.compile(
@@ -6386,6 +6386,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if (
             text.casefold() == "watch this next"
             or any(pattern.search(text) for pattern in footer_patterns)
+            or (
+                "@bloomberg.net" in text.casefold()
+                and len(text) <= 400
+            )
             or re.fullmatch(r"[\u200b-\u200f\u2060\ufeff]+", text)
             or re.fullmatch(r"(?:\*\s*){3,}", text)
             or text == "🫣"
@@ -8197,6 +8201,9 @@ def _lead_image_urls(
 
 def _is_placeholder_image_url(url: str) -> bool:
     decoded = unquote(url).casefold()
+    path_leaf = urlsplit(decoded).path.rstrip("/").rsplit("/", 1)[-1]
+    if path_leaf in {"null", "none", "undefined"}:
+        return True
     return any(
         marker in decoded
         for marker in (
