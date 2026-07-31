@@ -54,6 +54,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--publisher", required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--skip-manifest-load",
+        action="store_true",
+        help=(
+            "Resume from an existing capture.sqlite3 without rescanning and "
+            "upserting the manifest."
+        ),
+    )
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--min-request-interval", type=float, default=0.5)
     parser.add_argument("--timeout", type=float, default=90.0)
@@ -160,11 +168,27 @@ def main() -> int:
         publisher=args.publisher,
         authorization_reference=args.authorization_reference,
     )
-    manifest_result = load_capture_manifest(
-        connection,
-        manifest_path=args.manifest,
-        publisher=args.publisher,
-    )
+    if args.skip_manifest_load:
+        capture_rows = connection.execute(
+            "SELECT COUNT(*) FROM captures WHERE publisher = ?",
+            (args.publisher,),
+        ).fetchone()[0]
+        if capture_rows == 0:
+            raise SystemExit(
+                "--skip-manifest-load requires an existing populated "
+                "capture.sqlite3"
+            )
+        manifest_result = {
+            "manifestRows": 0,
+            "inserted": 0,
+            "manifestLoadSkipped": True,
+        }
+    else:
+        manifest_result = load_capture_manifest(
+            connection,
+            manifest_path=args.manifest,
+            publisher=args.publisher,
+        )
     ft_title_index = None
     if args.ft_syndication_catalog is not None:
         if args.publisher != "ft":
