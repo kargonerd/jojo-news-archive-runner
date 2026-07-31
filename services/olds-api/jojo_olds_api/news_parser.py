@@ -6096,6 +6096,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"newsletter\s*\.?$"
         ),
         re.compile(
+            r"(?i)^want\s+more\s+personal\s+finance\s+news\?\s*"
+            r"sign\s+up\s+for\s+our\s+weekly\s+personal\s+finance\s+"
+            r"newsletter,\s*wealth\s+watch\.?\s*$"
+        ),
+        re.compile(
             r"(?i)^new to bloomberg opinion today\?\s*"
             r"(?:sign up\s+)?and follow us on twitter and facebook\s*\.?$"
         ),
@@ -6428,7 +6433,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
     )
     for node in list(
-        soup.select("p, li, span, div, h2, h3, h4, blockquote")
+        soup.select("p, li, span, em, div, h2, h3, h4, blockquote")
     ):
         text = _clean_text(node.get_text(" ", strip=True))
         if (
@@ -6467,6 +6472,22 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             for item in items
         ):
             listing.decompose()
+
+    personal_finance_newsletter_suffix = re.compile(
+        r"(?i)\s*want\s+more\s+personal\s+finance\s+news\?\s*"
+        r"sign\s+up\s+for\s+our\s+weekly\s+personal\s+finance\s+"
+        r"newsletter,\s*wealth\s+watch\.?\s*$"
+    )
+    for text_node in list(
+        soup.find_all(string=personal_finance_newsletter_suffix)
+    ):
+        cleaned = personal_finance_newsletter_suffix.sub(
+            "", str(text_node)
+        ).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
 
     disclaimer_suffix = re.compile(
         r"(?i)\s*\(?this\s+(?:column|article)\s+does\s+not\s+necessarily"
