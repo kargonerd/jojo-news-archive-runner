@@ -6140,7 +6140,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^want to receive this post, and more, into your inbox "
             r"every morning\?\s*sign up here\.?$"
         ),
-        re.compile(r"(?i)^for more copyright news,\s*click here\.?$"),
+        re.compile(
+            r"(?i)^for more (?:copyright|patent) news,\s*click here\.?$"
+        ),
         re.compile(
             r"(?i)^to view the source of this information click here\.?$"
         ),
