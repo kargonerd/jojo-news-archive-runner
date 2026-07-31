@@ -5908,6 +5908,21 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             tail = tail.parent
         marker.decompose()
 
+    for preformatted in list(soup.select("pre")):
+        raw_text = preformatted.get_text("\n", strip=False)
+        contact_match = re.search(
+            r"(?i)(?:^|\n)\s*to contact the "
+            r"(?:writers?|authors?|reporters?|editors?)\b",
+            raw_text,
+        )
+        if contact_match:
+            retained = raw_text[: contact_match.start()].rstrip()
+            if retained:
+                preformatted.clear()
+                preformatted.append(retained)
+            else:
+                preformatted.decompose()
+
     for table in list(soup.select("table")):
         table_text = _clean_text(table.get_text(" ", strip=True))
         if re.match(
