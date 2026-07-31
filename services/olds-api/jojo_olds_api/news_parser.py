@@ -5956,6 +5956,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"please visit us at bloomberg\.com\.?$"
         ),
         re.compile(
+            r"(?i)^read more opinion online from bloomberg view\.?$"
+        ),
+        re.compile(
             r"(?i)^to contact the "
             r"(?:authors? of|editors? responsible for|reporters? on) "
             r"this (?:story|article)\s*:"
