@@ -5944,6 +5944,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?:story|article)\s*:"
         ),
         re.compile(
+            r"(?i)^to contact the (?:writer|author|editor) "
+            r"(?:of|responsible for) this "
+            r"(?:story|article|column)\s*:"
+        ),
+        re.compile(
             r"(?i)^join the discussion on the bloomberg businessweek "
             r"business school forum\b"
         ),
