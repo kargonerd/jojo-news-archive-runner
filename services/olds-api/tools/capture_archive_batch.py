@@ -31,12 +31,14 @@ from jojo_olds_api.parser_validation import (
     is_parser_validation_sample,
     parser_validation_summary,
     parser_validation_target_reached,
+    pending_completed_parser_validation_files,
     record_parser_validation,
 )
 from jojo_olds_api.raw_archive_capture import (
     ManifestItem,
     capture_item,
     capture_summary,
+    completed_raw_capture,
     initialize_capture_schema,
     load_capture_manifest,
     mark_capture_downloading,
@@ -232,6 +234,23 @@ def main() -> int:
             "validation stop options require "
             "--validation-sample-per-year"
         )
+    replayed_validation_samples = 0
+    if validation_plan is not None:
+        completed_samples = pending_completed_parser_validation_files(
+            connection,
+            maximum=None,
+        )
+        for canonical_url, _raw_path in completed_samples:
+            capture = completed_raw_capture(
+                connection,
+                canonical_url=canonical_url,
+            )
+            record_parser_validation(
+                connection,
+                capture=capture,
+                archive_root=args.output_dir,
+            )
+            replayed_validation_samples += 1
     validation_target_reached = bool(
         args.stop_when_validation_target_reached
         and parser_validation_target_reached(connection)
@@ -268,6 +287,7 @@ def main() -> int:
                 ),
                 "ftInfiniDirectDiscovery": infini_direct_result,
                 "parserValidationPlan": validation_plan,
+                "replayedValidationSamples": replayed_validation_samples,
             },
             ensure_ascii=False,
         ),

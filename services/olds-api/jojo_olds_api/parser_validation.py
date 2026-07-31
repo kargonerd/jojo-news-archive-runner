@@ -672,7 +672,8 @@ def pending_parser_validation_urls(
             SELECT
                 config.sample_year,
                 config.target_size,
-                config.parser_version
+                config.parser_version,
+                COUNT(result.canonical_url) AS evaluated
             FROM parser_validation_config AS config
             LEFT JOIN parser_validation_results AS result
               ON result.sample_year=config.sample_year
@@ -759,7 +760,8 @@ def pending_completed_parser_validation_files(
             SELECT
                 config.sample_year,
                 config.target_size,
-                config.parser_version
+                config.parser_version,
+                COUNT(result.canonical_url) AS evaluated
             FROM parser_validation_config AS config
             LEFT JOIN parser_validation_results AS result
               ON result.sample_year=config.sample_year
@@ -775,6 +777,8 @@ def pending_completed_parser_validation_files(
                 sample.canonical_url,
                 capture.raw_path,
                 sample.sample_year,
+                active_years.target_size,
+                active_years.evaluated,
                 ROW_NUMBER() OVER (
                     PARTITION BY sample.sample_year
                     ORDER BY sample.sample_priority
@@ -793,6 +797,7 @@ def pending_completed_parser_validation_files(
         )
         SELECT canonical_url, raw_path
         FROM ranked
+        WHERE sample_rank <= target_size - evaluated
         ORDER BY sample_rank, sample_year
     """
     parameters: list[object] = []
