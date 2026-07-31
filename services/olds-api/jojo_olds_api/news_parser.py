@@ -5961,7 +5961,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"energy,\s*natural resources and global business\.?$"
         ),
         re.compile(
-            r"(?i)^read more opinion online from bloomberg view\.?$"
+            r"(?i)^read more (?:opinion online|online opinion) "
+            r"from bloomberg view\.?$"
         ),
         re.compile(
             r"(?i)^read more opinion online from bloomberg view\.\s*"
