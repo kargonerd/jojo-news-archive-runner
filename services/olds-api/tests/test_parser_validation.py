@@ -182,16 +182,37 @@ def _capture_candidate(year: int, suffix: int) -> CaptureCandidate:
     )
 
 
-def _state_with_years(tmp_path: Path) -> sqlite3.Connection:
+def _state_with_years(
+    tmp_path: Path,
+    *,
+    publisher: str = "ap",
+) -> sqlite3.Connection:
     manifest = tmp_path / "manifest.jsonl"
     rows = []
     for year in (2020, 2021, 2022):
         for suffix in range(10):
-            candidate = _capture_candidate(year, suffix)
+            canonical_url = (
+                f"https://apnews.com/article/{year}-{suffix}"
+                if publisher == "ap"
+                else (
+                    "https://www.bloomberg.com/news/articles/"
+                    f"{year}-01-{suffix + 1:02d}/sample-{suffix}"
+                )
+            )
+            candidate = CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=(
+                    f"https://web.archive.org/web/"
+                    f"{year}01010000{suffix:02d}id_/{canonical_url}"
+                ),
+                captured_at=datetime(year, 1, 1, tzinfo=timezone.utc),
+                mime_type="text/html",
+                status_code=200,
+            )
             rows.append(
                 {
-                    "publisher": "ap",
-                    "canonical_url": f"https://apnews.com/article/{year}-{suffix}",
+                    "publisher": publisher,
+                    "canonical_url": canonical_url,
                     "published_at": f"{year}-01-01T00:00:00Z",
                     "candidates": [
                         candidate.model_dump(
@@ -209,13 +230,13 @@ def _state_with_years(tmp_path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
     initialize_capture_schema(
         connection,
-        publisher="ap",
+        publisher=publisher,
         authorization_reference="authorization:test",
     )
     load_capture_manifest(
         connection,
         manifest_path=manifest,
-        publisher="ap",
+        publisher=publisher,
     )
     return connection
 
@@ -563,6 +584,144 @@ def test_validation_plan_is_random_reproducible_and_balanced(tmp_path: Path):
         for suffix in range(2)
         for year in (2020, 2021, 2022)
     ]
+
+
+def test_bloomberg_plan_randomly_prefers_exact_wayback_captures(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path, publisher="bloomberg")
+    exact_urls: set[str] = set()
+    for year in (2020, 2021, 2022):
+        rows = connection.execute(
+            """
+            SELECT canonical_url, candidates_json
+            FROM captures
+            WHERE published_at >= ? AND published_at < ?
+            ORDER BY canonical_url
+            LIMIT 3
+            """,
+            (f"{year}-01-01", f"{year + 1}-01-01"),
+        ).fetchall()
+        for canonical_url, candidates_json in rows:
+            candidates = json.loads(candidates_json)
+            candidates.insert(
+                0,
+                CaptureCandidate(
+                    provider=CaptureProvider.WAYBACK,
+                    snapshot_url=(
+                        f"https://web.archive.org/web/{year}0201000000id_/"
+                        f"{canonical_url}"
+                    ),
+                    captured_at=datetime(
+                        year,
+                        2,
+                        1,
+                        tzinfo=timezone.utc,
+                    ),
+                    digest=f"exact-{year}-{len(exact_urls)}",
+                    mime_type="text/html",
+                    status_code=200,
+                ).model_dump(
+                    mode="json",
+                    by_alias=True,
+                    exclude_none=True,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE captures
+                SET candidates_json=?
+                WHERE canonical_url=?
+                """,
+                (
+                    json.dumps(candidates, separators=(",", ":")),
+                    canonical_url,
+                ),
+            )
+            exact_urls.add(canonical_url)
+    connection.commit()
+
+    plan = ensure_parser_validation_plan(
+        connection,
+        publisher="bloomberg",
+        from_year=2020,
+        to_year=2022,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    selected = pending_captures(
+        connection,
+        retry_errors=False,
+        maximum=6,
+        maximum_record_attempts=3,
+        prioritize_parser_validation=True,
+    )
+
+    assert all(item.canonical_url in exact_urls for item in selected)
+    assert all(
+        plan["years"][str(year)]["addedExactWaybackToPlan"] == 2
+        for year in (2020, 2021, 2022)
+    )
+
+
+def test_parser_version_change_refreshes_every_publishers_sample(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path, publisher="bloomberg")
+    ensure_parser_validation_plan(
+        connection,
+        publisher="bloomberg",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    original = connection.execute(
+        """
+        SELECT canonical_url
+        FROM parser_validation_samples
+        WHERE sample_year=2020
+        """
+    ).fetchone()[0]
+    connection.execute(
+        """
+        UPDATE parser_validation_config
+        SET parser_version='bloomberg-parser/old'
+        WHERE sample_year=2020
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        )
+        VALUES (?, 'force-fresh-sample', ?)
+        """,
+        (original, datetime.now(timezone.utc).isoformat()),
+    )
+    connection.commit()
+
+    refreshed = ensure_parser_validation_plan(
+        connection,
+        publisher="bloomberg",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    replacement = connection.execute(
+        """
+        SELECT canonical_url
+        FROM parser_validation_samples
+        WHERE sample_year=2020
+        """
+    ).fetchone()[0]
+
+    assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 1
+    assert replacement != original
 
 
 def test_validation_plan_expands_reserve_without_replacing_samples(

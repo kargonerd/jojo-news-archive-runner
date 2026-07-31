@@ -380,8 +380,7 @@ def ensure_parser_validation_plan(
         year
         for year in range(from_year, to_year + 1)
         if (
-            publisher in {"nyt", "wsj"}
-            and year in previous_versions
+            year in previous_versions
             and previous_versions[year] != current_parser_version
         )
     }
@@ -520,6 +519,7 @@ def ensure_parser_validation_plan(
         actionable += len(completed_selected)
         desired_actionable = max(0, target_per_year - evaluated) + reserve
         direct_selected: list[tuple[str, str]] = []
+        exact_wayback_selected: list[tuple[str, str]] = []
         if publisher == "ft":
             existing_direct = int(
                 connection.execute(
@@ -560,6 +560,32 @@ def ensure_parser_validation_plan(
                 ),
             )
             actionable += len(direct_selected)
+        if publisher == "bloomberg":
+            exact_wayback_selected = _select_additional_samples(
+                connection,
+                publisher=publisher,
+                year=year,
+                limit=max(0, desired_actionable - actionable),
+                seed=seed,
+                completed_only=False,
+                direct_provider="wayback-exact",
+            )
+            connection.executemany(
+                """
+                INSERT OR IGNORE INTO parser_validation_samples(
+                    canonical_url,
+                    sample_year,
+                    sample_priority,
+                    selected_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    (canonical_url, year, priority, now)
+                    for priority, canonical_url in exact_wayback_selected
+                ),
+            )
+            actionable += len(exact_wayback_selected)
         add_count = max(0, desired_actionable - actionable)
         if publisher == "nyt" and add_count:
             direct_selected = _select_additional_samples(
@@ -615,9 +641,11 @@ def ensure_parser_validation_plan(
             "refreshedForParserVersion": int(year in refreshed_years),
             "addedCompletedToPlan": len(completed_selected),
             "addedDirectToPlan": len(direct_selected),
+            "addedExactWaybackToPlan": len(exact_wayback_selected),
             "addedToPlan": (
                 len(completed_selected)
                 + len(direct_selected)
+                + len(exact_wayback_selected)
                 + len(selected)
             ),
         }
@@ -667,6 +695,18 @@ def pending_parser_validation_urls(
                             ELSE 1
                         END,
                         CASE
+                            WHEN EXISTS (
+                                SELECT 1
+                                FROM json_each(capture.candidates_json)
+                                WHERE
+                                    json_extract(value, '$.provider')
+                                        = 'wayback'
+                                    AND json_extract(value, '$.digest')
+                                        IS NOT NULL
+                                    AND json_extract(value, '$.capturedAt')
+                                        IS NOT NULL
+                            )
+                            THEN 0
                             WHEN capture.candidates_json
                                  LIKE '%"provider":"infini-news"%'
                             THEN 0
@@ -1290,15 +1330,30 @@ def _select_additional_samples(
         if completed_only
         else ""
     )
-    if direct_provider not in {None, "other", "infini-news"}:
+    if direct_provider not in {
+        None,
+        "other",
+        "infini-news",
+        "wayback-exact",
+    }:
         raise ValueError("unsupported direct capture provider")
-    direct_filter = (
-        "AND capture.candidates_json LIKE ?"
-        if direct_provider is not None
-        else ""
-    )
+    if direct_provider == "wayback-exact":
+        direct_filter = """
+          AND EXISTS (
+            SELECT 1
+            FROM json_each(capture.candidates_json)
+            WHERE
+              json_extract(value, '$.provider')='wayback'
+              AND json_extract(value, '$.digest') IS NOT NULL
+              AND json_extract(value, '$.capturedAt') IS NOT NULL
+          )
+        """
+    elif direct_provider is not None:
+        direct_filter = "AND capture.candidates_json LIKE ?"
+    else:
+        direct_filter = ""
     parameters: list[object] = [start, end]
-    if direct_provider is not None:
+    if direct_provider not in {None, "wayback-exact"}:
         parameters.append(f'%"provider":"{direct_provider}"%')
     rows: Iterable[tuple[str]] = connection.execute(
         f"""
