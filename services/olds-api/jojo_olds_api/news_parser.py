@@ -5985,6 +5985,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^\(?to save a copy of the chart,\s*click here\.\)?$"
         ),
+        re.compile(r"(?i)^click here for (?:the )?web link\.?$"),
         re.compile(r"(?i)^(?:\*t\s*)+$"),
         re.compile(
             r"(?i)^to contact the "
