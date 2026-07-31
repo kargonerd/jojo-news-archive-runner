@@ -6432,7 +6432,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"article continues under\.?$"
         ),
         re.compile(r"(?i)^sign in or create an account$"),
-        re.compile(r"^(?:_{5,}|-{5,})$"),
+        re.compile(r"^(?:_{5,}|-{5,}|={5,})$"),
         re.compile(
             r"(?i)^.{1,100}\sis\s.{1,100}\sat bloomberg\.\s*"
             r"follow (?:him|her|them) on twitter\b.*"
