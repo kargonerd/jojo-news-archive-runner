@@ -6391,7 +6391,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             text.casefold() == "watch this next"
             or any(pattern.search(text) for pattern in footer_patterns)
             or (
-                "@bloomberg.net" in text.casefold()
+                node.name in {"p", "li", "span"}
+                and "@bloomberg.net" in text.casefold()
                 and len(text) <= 400
             )
             or re.fullmatch(r"[\u200b-\u200f\u2060\ufeff]+", text)
