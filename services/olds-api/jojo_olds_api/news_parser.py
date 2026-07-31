@@ -5940,6 +5940,18 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"this (?:story|article)\s*:"
         ),
         re.compile(
+            r"(?i)^to contact bloomberg news staff for this "
+            r"(?:story|article)\s*:"
+        ),
+        re.compile(
+            r"(?i)^join the discussion on the bloomberg businessweek "
+            r"business school forum\b"
+        ),
+        re.compile(
+            r"(?i)^©\s*\d{4}\s+trend news agency\.?\s*"
+            r"all rights reserved\.?$"
+        ),
+        re.compile(
             r"(?i)^to contact the (?:senior )?editor responsible for "
             r"bloomberg view(?:'s|’s) editorials\s*:"
         ),
