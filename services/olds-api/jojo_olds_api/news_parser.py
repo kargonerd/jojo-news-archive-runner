@@ -1012,7 +1012,10 @@ def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
                 "[class*='recommend' i], [class*='related' i], "
                 "[class*='newsletter' i], [class*='advert' i], "
                 "[class*='subscription' i], [class*='get-app' i], "
-                "[class*='whatsapp-group' i]"
+                "[class*='whatsapp-group' i], "
+                "[class*='content-loader' i], .lazy-widgets, "
+                ".watchOrListen-bottom-section-v3, .liveEventMain_widget, "
+                ".primeSWrapper, .ts-dots"
             ):
                 noise.decompose()
             for control in list(copy.select("[role='button']")):
@@ -1057,6 +1060,27 @@ def _remove_generic_syndication_partner_noise(
         if partner_url
         else ""
     )
+    if hostname == "linkedin.com" or hostname.endswith(".linkedin.com"):
+        for node in list(body.select("p, li")):
+            text = _clean_text(node.get_text(" ", strip=True))
+            if re.fullmatch(r"[\d,.]+\s+followers?", text, re.IGNORECASE):
+                node.decompose()
+                continue
+            if text.casefold() == "report this post":
+                node.decompose()
+                continue
+            hashtag = re.search(r"\s+#[\w-]+", text)
+            if hashtag is None or len(re.findall(r"#[\w-]+", text)) < 5:
+                continue
+            cleaned = text[:hashtag.start()].rstrip()
+            if cleaned.startswith('"') and '" "' in cleaned:
+                cleaned = cleaned.split('" "', 1)[0]
+            cleaned = cleaned.strip().strip('"').strip()
+            if cleaned:
+                node.clear()
+                node.string = cleaned
+            else:
+                node.decompose()
     if hostname == "benzinga.com" or hostname.endswith(".benzinga.com"):
         marker = next(
             (
@@ -1082,28 +1106,8 @@ def _remove_generic_syndication_partner_noise(
                 tail = tail.parent
             marker.decompose()
     if hostname == "biasly.com" or hostname.endswith(".biasly.com"):
-        marker = next(
-            (
-                node
-                for node in body.select("p, h2, h3, h4")
-                if _clean_text(node.get_text(" ", strip=True))
-                .casefold()
-                .startswith("want to see the in-depth bias analytics")
-            ),
-            None,
-        )
-        if isinstance(marker, Tag):
-            tail = marker
-            while isinstance(tail.parent, Tag):
-                for sibling in list(tail.next_siblings):
-                    if isinstance(sibling, Tag):
-                        sibling.decompose()
-                    else:
-                        sibling.extract()
-                if tail.parent is body:
-                    break
-                tail = tail.parent
-            marker.decompose()
+        body.clear()
+        return
     if (
         hostname == "bnnbloomberg.ca"
         or hostname.endswith(".bnnbloomberg.ca")
@@ -1423,6 +1427,53 @@ def _render_bloomberg_document(document: dict[str, Any]) -> Tag | None:
                     item_tag.string = item
                     list_tag.append(item_tag)
                 wrapper.append(list_tag)
+        elif block_type == "tabularData":
+            table = parsed.new_tag("table")
+            definitions: list[dict[str, Any]] = []
+            rows: list[dict[str, Any]] = []
+            for child in block.get("content", []):
+                if not isinstance(child, dict):
+                    continue
+                if child.get("type") == "columns":
+                    data = child.get("data")
+                    if isinstance(data, dict) and isinstance(
+                        data.get("definitions"),
+                        list,
+                    ):
+                        definitions = [
+                            value
+                            for value in data["definitions"]
+                            if isinstance(value, dict)
+                        ]
+                elif child.get("type") == "row":
+                    rows.append(child)
+            if definitions:
+                thead = parsed.new_tag("thead")
+                heading_row = parsed.new_tag("tr")
+                for definition in definitions:
+                    cell = parsed.new_tag("th")
+                    cell.string = (
+                        _string_or_none(definition.get("title")) or ""
+                    )
+                    heading_row.append(cell)
+                thead.append(heading_row)
+                table.append(thead)
+            if rows:
+                tbody = parsed.new_tag("tbody")
+                for row in rows:
+                    row_tag = parsed.new_tag("tr")
+                    for source_cell in row.get("content", []):
+                        if not isinstance(source_cell, dict):
+                            continue
+                        cell = parsed.new_tag("td")
+                        cell.string = _clean_text(text_content(source_cell))
+                        row_tag.append(cell)
+                    if row_tag.select_one("td") is not None:
+                        tbody.append(row_tag)
+                if tbody.select_one("tr") is not None:
+                    table.append(tbody)
+            if table.select_one("tr") is not None:
+                wrapper.append(table)
 
         for child in _walk_json_objects(block):
             if child.get("type") == "embed":
@@ -1447,7 +1498,9 @@ def _render_bloomberg_document(document: dict[str, Any]) -> Tag | None:
                     if source:
                         iframe = parsed.new_tag("iframe", src=source)
                         wrapper.append(iframe)
-    if wrapper.select_one("p, h2, h3, h4, h5, h6, blockquote, ul, ol, iframe"):
+    if wrapper.select_one(
+        "p, h2, h3, h4, h5, h6, blockquote, ul, ol, table, iframe"
+    ):
         return wrapper
     return None
 
@@ -5508,6 +5561,17 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    shell_text = _clean_text(soup.get_text(" ", strip=True))
+    shell_folded = shell_text.casefold()
+    if (
+        len(shell_text) < 400
+        and "bias rating" in shell_folded
+        and "reliability" in shell_folded
+        and "politician portrayal" in shell_folded
+    ):
+        soup.clear()
+        return
+
     bias_shell = next(
         (
             node
@@ -5533,6 +5597,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
                 break
             tail = tail.parent
         bias_shell.decompose()
+        remaining = _clean_text(soup.get_text(" ", strip=True))
+        if len(remaining) < 400 and "bias rating" in remaining.casefold():
+            soup.clear()
+            return
 
     """Remove legacy recirculation and standardized article footers."""
     for node in list(
@@ -5541,7 +5609,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             ".email-form, .similarstoryslide, button.read-more-button, "
             ".inner-page-cta-section, .minimal-detailfull-width-section, "
             ".commentWrapper, .youMightAlsoLike, .Pbanner, "
-            ".relatedKeywords, .waChannelCta, .b-share-bar"
+            ".relatedKeywords, .waChannelCta, .b-share-bar, "
+            ".liveEventMain_widget, .primeSWrapper, .ts-dots"
         )
     ):
         node.decompose()
@@ -5564,7 +5633,22 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if cleaned:
             text_node.replace_with(cleaned)
 
-    for marker in list(soup.select("p")):
+    australia_briefing = re.compile(
+        r"(?is)(?:and\s+)?for\s+a\s+daily\s+wrap\s+of\s+the\s+business,"
+        r"\s*finance\s+and\s+economic\s+stories\s+that\s+matter\s+to\s+"
+        r"australians,?\s*from\s+"
+        r"bloomberg(?:'s|’s)\s+reporters\s+around\s+the\s+globe,\s*"
+        r"sign\s+up\s+to\s+our\s+free\s+australia\s+briefing\s+"
+        r"newsletter\.\s*"
+    )
+    for text_node in list(soup.find_all(string=australia_briefing)):
+        cleaned = australia_briefing.sub("", str(text_node)).strip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
+
+    for marker in list(soup.select("p, h2, h3, h4")):
         marker_text = (
             _clean_text(marker.get_text(" ", strip=True))
             .casefold()
@@ -5574,12 +5658,66 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             "related stories",
             "most read from bloomberg",
             "most read from bloomberg businessweek",
+            "did you miss?",
+            "for more on equity markets",
         }:
             continue
         sibling = marker.find_next_sibling()
         if isinstance(sibling, Tag) and sibling.name in {"ul", "ol"}:
             sibling.decompose()
-            marker.decompose()
+        marker.decompose()
+
+    for marker in list(soup.select("p")):
+        text = _clean_text(marker.get_text(" ", strip=True))
+        if not re.search(
+            r"(?i)more from bloomberg(?: opinion)?:\s*$",
+            text,
+        ):
+            continue
+        sibling = marker.find_next_sibling()
+        if isinstance(sibling, Tag) and sibling.name in {"ul", "ol"}:
+            sibling.decompose()
+        for text_node in list(
+            marker.find_all(
+                string=re.compile(
+                    r"(?i)more from bloomberg(?: opinion)?:\s*$"
+                )
+            )
+        ):
+            cleaned = re.sub(
+                r"(?i)\s*more from bloomberg(?: opinion)?:\s*$",
+                "",
+                str(text_node),
+            ).rstrip()
+            if cleaned:
+                text_node.replace_with(cleaned)
+            else:
+                text_node.extract()
+
+    for marker in list(soup.select("h2, h3, h4, p")):
+        marker_text = _clean_text(marker.get_text(" ", strip=True)).casefold()
+        if marker_text not in {"more on this topic", "see more on"}:
+            continue
+        tail = marker
+        while isinstance(tail.parent, Tag):
+            for sibling in list(tail.next_siblings):
+                if isinstance(sibling, Tag):
+                    sibling.decompose()
+                else:
+                    sibling.extract()
+            if tail.parent is soup or tail.parent.name in {"article", "main"}:
+                break
+            tail = tail.parent
+        marker.decompose()
+
+    for table in list(soup.select("table")):
+        table_text = _clean_text(table.get_text(" ", strip=True))
+        if re.match(
+            r"(?i)^(?:read more(?:\s+on the topic)?\s*:?\s+\S|"
+            r"take the mliv pulse survey\b)",
+            table_text,
+        ):
+            table.decompose()
     footer_patterns = (
         re.compile(r"(?i)^©\s*\d{4}\s+bloomberg\s+l\.?p\.?$"),
         re.compile(
@@ -5727,6 +5865,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"head to opin\s*<go>\.\s*web readers click here\.?$"
         ),
         re.compile(
+            r"(?i)^for more bloomberg opinion,\s*subscribe to our "
+            r"newsletter\.?$"
+        ),
+        re.compile(
             r"(?i)^sign up for the brief,\s*a daily afternoon newsletter "
             r"showcasing bloomberg law(?:'s|’s) top stories\.?$"
         ),
@@ -5737,6 +5879,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^sign up for the equality newsletter for weekly "
             r"reporting\b.*$"
+        ),
+        re.compile(
+            r"(?i)^sign up for the washington edition newsletter to "
+            r"find out how the worlds? of money and politics intersect "
+            r"in the us capital\.?$"
         ),
         re.compile(
             r"(?i)^(?:\(bloomberg\)\s*--\s*)?sign up for the india "
@@ -5754,9 +5901,15 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"or (?:you can )?subscribe to our daily newsletter\.?$"
         ),
         re.compile(
-            r"(?i)^want more bloomberg opinion\?\s*terminal readers "
+            r"(?i)^[\u200b-\u200f\u2060\ufeff]*"
+            r"want more bloomberg opinion\?\s*terminal readers "
             r"head to opin\s*<go>\.\s*or (?:you can )?subscribe to our "
             r"daily newsletter\.?$"
+        ),
+        re.compile(
+            r"(?i)^[\u200b-\u200f\u2060\ufeff]*"
+            r"want more bloomberg opinion\?\s*head to opin\s*<go>\.\s*"
+            r"or (?:you can )?subscribe to our daily newsletter\.?$"
         ),
         re.compile(
             r"(?i)^more stories like this are available on "
@@ -5770,6 +5923,21 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^subscribe to the economic times prime and read the "
             r"et epaper online\.?$"
         ),
+        re.compile(
+            r"(?i)^\(?catch all the business news\s*,\s*breaking news "
+            r"and latest news updates on the economic times\s*\.\)?$"
+        ),
+        re.compile(r"(?i)^more on bloomberg:?$"),
+        re.compile(r"(?i)^read more\s*@\s*bloomberg\.?$"),
+        re.compile(
+            r"(?i)^you want more news on this market\?\s*click here for "
+            r"a curated first word channel\b.*$"
+        ),
+        re.compile(
+            r"(?i)^take the mliv pulse survey\b.*share your thoughts\.?$"
+        ),
+        re.compile(r"(?i)^continue for free$"),
+        re.compile(r"(?i)^source:\s*https?://(?:www\.)?bloomberg\.com/?$"),
         re.compile(r"(?i)^read:\s+.{10,200}$"),
         re.compile(r"(?i)^to view or add a comment,\s*sign in\.?$"),
         re.compile(r"(?i)^thank you for your report!?$"),
@@ -5789,7 +5957,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?:instagram|facebook)\b.*$"
         ),
     )
-    for node in list(soup.select("p, li, span, div")):
+    for node in list(soup.select("p, li, span, div, h2, h3, h4")):
         text = _clean_text(node.get_text(" ", strip=True))
         if (
             text.casefold() == "watch this next"

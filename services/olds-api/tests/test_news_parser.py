@@ -1675,7 +1675,7 @@ def test_bloomberg_parser_removes_legacy_image_and_share_controls():
     )
 
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
     assert "role=\"button\"" not in result.body_html
     assert "tabindex=" not in result.body_html
     assert "Open image in viewer" not in result.body_html
@@ -1937,7 +1937,116 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
+
+
+def test_bloomberg_embedded_document_renders_tabular_data():
+    reporting = [
+        {
+            "type": "paragraph",
+            "content": [
+                {
+                    "type": "text",
+                    "value": (
+                        f"Bloomberg report paragraph {index} contains "
+                        "substantive market analysis and context."
+                    ),
+                }
+            ],
+        }
+        for index in range(1, 7)
+    ]
+    payload = {
+        "story": {
+            "body": {
+                "type": "document",
+                "content": [
+                    *reporting,
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {
+                                "type": "text",
+                                "value": "Here are the fund returns:",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "tabularData",
+                        "content": [
+                            {
+                                "type": "columns",
+                                "data": {
+                                    "definitions": [
+                                        {"title": "Fund"},
+                                        {"title": "Strategy"},
+                                        {"title": "2023 % Return"},
+                                    ]
+                                },
+                            },
+                            {
+                                "type": "row",
+                                "content": [
+                                    {
+                                        "type": "cell",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "value": "SoMa Partners",
+                                            }
+                                        ],
+                                    },
+                                    {
+                                        "type": "cell",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "value": "Equity",
+                                            }
+                                        ],
+                                    },
+                                    {
+                                        "type": "cell",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "value": "62.1",
+                                            }
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            }
+        }
+    }
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Hedge Fund Returns">
+      <meta property="article:published_time"
+            content="2024-01-05T12:22:37Z">
+      <script id="__NEXT_DATA__" type="application/json">
+        {json.dumps(payload)}
+      </script>
+    </head><body></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2024-01-05/"
+            "hedge-fund-returns"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Here are the fund returns:" in result.plain_text
+    assert "SoMa Partners" in result.plain_text
+    assert "2023 % Return" in result.plain_text
+    assert "<table>" in result.body_html
 
 
 def test_bloomberg_generic_syndication_removes_partner_controls_and_law_cta():
@@ -1957,6 +2066,10 @@ def test_bloomberg_generic_syndication_removes_partner_controls_and_law_cta():
             content="https://www.linkedin.com/posts/example-story">
     </head><body><article>
       {reporting}
+      <p>3,463 followers</p>
+      <p>Report this post</p>
+      <p>"English Bloomberg report remains complete." "Rapport français
+      dupliqué." #markets #finance #stocks #funds #research</p>
       <a role="button" href="/article-image">
         <img src="https://media.example.com/article.jpg"
              alt="Fashion company headquarters">
@@ -1966,6 +2079,18 @@ def test_bloomberg_generic_syndication_removes_partner_controls_and_law_cta():
       </div>
       <a role="button" class="copy-link">Copy Link</a>
       <!-- <a role="button" class="comment-here">Comment Now</a> -->
+      <div class="watchOrListen-bottom-section-v3">
+        <p>Unrelated energy video recommendation</p>
+      </div>
+      <div class="content-loader --widget-container">
+        <h2>Most Discussed</h2>
+      </div>
+      <div class="liveEventMain_widget custom_ad">
+        <h3>Live Events</h3>
+      </div>
+      <div class="primeSWrapper">
+        <div class="ts-dots"><span>1</span><span>2</span><span>3</span></div>
+      </div>
       <p>Sign up for The Brief, a daily afternoon newsletter showcasing
       Bloomberg Law’s top stories.</p>
     </article></body></html>
@@ -1980,11 +2105,48 @@ def test_bloomberg_generic_syndication_removes_partner_controls_and_law_cta():
 
     assert result.quality.status.value == "complete"
     assert "paragraph 6" in result.plain_text
+    assert "3,463 followers" not in result.plain_text
+    assert "Report this post" not in result.plain_text
+    assert "English Bloomberg report remains complete." in result.plain_text
+    assert "Rapport français" not in result.plain_text
+    assert "#markets" not in result.plain_text
     assert "The Brief" not in result.plain_text
     assert "role=\"button\"" not in result.body_html
     assert "Open menu" not in result.plain_text
     assert "Copy Link" not in result.plain_text
+    assert "energy video recommendation" not in result.plain_text
+    assert "Most Discussed" not in result.plain_text
+    assert "Live Events" not in result.plain_text
+    assert "1\n2\n3" not in result.plain_text
     assert len(result.images) == 1
+
+
+def test_bloomberg_bias_rating_shell_is_not_marked_complete():
+    shell = " ".join(["Automated policy and politician portrayal score."] * 12)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Bias Analytics Shell">
+      <meta property="og:url" content="https://www.biasly.com/news/example/">
+    </head><body><article class="storyContent">
+      <p>Bias Rating -36% Somewhat Left Reliability N/A Policy Leaning N/A
+      Politician Portrayal 36% Negative</p>
+      <p>Create your free account to see the in-depth bias analytics and
+      more.</p>
+      <p>{shell}</p>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2024-11-26/example"
+        ),
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value != "complete"
+    assert "Bias Rating" not in result.plain_text
 
 
 def test_bloomberg_parser_keeps_listen_to_article_as_article():
@@ -2225,7 +2387,7 @@ def test_bloomberg_parser_removes_legacy_inline_newsletter_nested_in_paragraph()
     assert "Opening article paragraph." in result.plain_text
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "markets daily newsletter" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_bloomberg_parser_recovers_legacy_feature_landing_page():
@@ -2344,11 +2506,14 @@ def test_bloomberg_parser_removes_legacy_brexit_and_podcast_promos():
       <p>Sign up for the Equality newsletter for weekly reporting from
       Claire Suddath on how gender, race and class are shaping capitalism
       in America and beyond.</p>
+      <p>Sign up for the Washington Edition newsletter to find out how the
+      worlds of money and politics intersect in the US capital.</p>
       <p>Sign up for the India Edition newsletter by Menaka Doshi – an
       insider's guide to the emerging economic powerhouse, delivered
       weekly.</p>
       <p>Want more Bloomberg Opinion? OPIN &lt;GO&gt;. Or you can subscribe
       to our daily newsletter.</p>
+      <p>For more Bloomberg Opinion, subscribe to our newsletter.</p>
       <p>Want more from Bloomberg Opinion? OPIN &lt;GO&gt;. Web readers,
       click here. Or subscribe to our daily newsletter.</p>
       <p>​​​​​Want more Bloomberg Opinion? OPIN &lt;GO&gt;. Or you can
@@ -2357,6 +2522,33 @@ def test_bloomberg_parser_removes_legacy_brexit_and_podcast_promos():
       and Facebook.</p>
       <p>Subscribe to The Economic Times Prime and read the ET ePaper
       online.</p>
+      <p>Source: https://www.bloomberg.com</p>
+      <p>And for a daily wrap of the business, finance and economic stories
+      that matter to Australians, from Bloomberg's reporters around the
+      globe, sign up to our free Australia Briefing newsletter.This episode
+      was produced by Jojo Producer.</p>
+      <p>(Catch all the Business News , Breaking News and Latest News
+      Updates on The Economic Times .)</p>
+      <p>Legitimate closing analysis.More From Bloomberg:</p>
+      <ul><li>Unrelated opinion headline</li></ul>
+      <h3>More On Bloomberg</h3>
+      <p>Read More @ Bloomberg</p>
+      <p>You want more news on this market? Click here for a curated First
+      Word channel of actionable news from Bloomberg and select sources.
+      It can be customized to your preferences.</p>
+      <p>Take the MLIV Pulse survey Is betting on early rate cuts a winning
+      trade this year? Share your thoughts.</p>
+      <p>Continue For Free</p>
+      <h3>Did You Miss?</h3>
+      <ul><li>Unrelated private-credit headline</li></ul>
+      <p>For more on equity markets:</p>
+      <ul><li>Unrelated market-wrap headline</li></ul>
+      <table><tr><td>Read More on the Topic</td>
+      <td>Unrelated defense headline</td></tr></table>
+      <table><tr><td>Take the MLIV Pulse survey</td>
+      <td>Share your thoughts.</td></tr></table>
+      <p>Legitimate opinion conclusion.More From Bloomberg Opinion:</p>
+      <ul><li>Unrelated opinion-column headline</li></ul>
       <p>READ: Unrelated Bloomberg recommendation headline</p>
       <p>To view or add a comment, sign in</p>
       <p>Thank you for your report!</p>
@@ -2418,6 +2610,9 @@ def test_bloomberg_parser_removes_legacy_brexit_and_podcast_promos():
       </section>
       <h3 id="marketrelated-stories">Market-related stories</h3>
       <p>Unrelated market recommendation</p>
+      <h3>More on this topic</h3>
+      <h3>See more on</h3>
+      <p>United States</p>
       <p>Want to see the in-depth bias analytics and more.</p>
       <p>By creating an account, you agree to our Terms and Privacy Policy.</p>
       <p>Log In</p>
@@ -2445,10 +2640,29 @@ def test_bloomberg_parser_removes_legacy_brexit_and_podcast_promos():
     assert "daily technology newsletter" not in result.plain_text
     assert "Business of Sports newsletter" not in result.plain_text
     assert "Equality newsletter" not in result.plain_text
+    assert "Washington Edition newsletter" not in result.plain_text
     assert "India Edition newsletter" not in result.plain_text
     assert "subscribe to our daily newsletter" not in result.plain_text
+    assert "For more Bloomberg Opinion" not in result.plain_text
     assert "follow us on Threads" not in result.plain_text
     assert "Economic Times Prime" not in result.plain_text
+    assert "Source: https://www.bloomberg.com" not in result.plain_text
+    assert "Australia Briefing newsletter" not in result.plain_text
+    assert "This episode was produced by Jojo Producer." in result.plain_text
+    assert "Catch all the Business News" not in result.plain_text
+    assert "Legitimate closing analysis." in result.plain_text
+    assert "Unrelated opinion headline" not in result.plain_text
+    assert "More On Bloomberg" not in result.plain_text
+    assert "Read More @ Bloomberg" not in result.plain_text
+    assert "curated First Word channel" not in result.plain_text
+    assert "MLIV Pulse survey" not in result.plain_text
+    assert "Continue For Free" not in result.plain_text
+    assert "Unrelated private-credit headline" not in result.plain_text
+    assert "Unrelated market-wrap headline" not in result.plain_text
+    assert "Unrelated defense headline" not in result.plain_text
+    assert "MLIV Pulse survey" not in result.plain_text
+    assert "Legitimate opinion conclusion." in result.plain_text
+    assert "Unrelated opinion-column headline" not in result.plain_text
     assert "Unrelated Bloomberg recommendation headline" not in result.plain_text
     assert "To view or add a comment" not in result.plain_text
     assert "Thank you for your report" not in result.plain_text
@@ -2479,6 +2693,8 @@ def test_bloomberg_parser_removes_legacy_brexit_and_podcast_promos():
     assert "Unrelated article one" not in result.plain_text
     assert "Unrelated syndicated recommendation" not in result.plain_text
     assert "Unrelated market recommendation" not in result.plain_text
+    assert "More on this topic" not in result.plain_text
+    assert "United States" not in result.plain_text
     assert "in-depth bias analytics" not in result.plain_text
     assert "Terms and Privacy Policy" not in result.plain_text
 
@@ -3053,7 +3269,7 @@ def test_bloomberg_parser_separates_explicit_figure_credit():
     assert len(result.images) == 1
     assert result.images[0].caption == "Welcome to the factory floor."
     assert result.images[0].credit == "Tesla"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -3095,7 +3311,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_bloomberg_parser_rejects_explicit_teaser_body():
@@ -3127,7 +3343,7 @@ def test_bloomberg_parser_rejects_explicit_teaser_body():
 
     assert result.quality.status.value == "partial"
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_bloomberg_parser_trims_professional_subscription_shell():
@@ -3232,7 +3448,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_bloomberg_parser_scopes_legacy_body_without_right_rail():
@@ -3303,7 +3519,7 @@ def test_bloomberg_parser_removes_share_article_control_from_body():
     assert result.quality.status.value == "complete"
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "SHARE THIS ARTICLE" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
@@ -3379,7 +3595,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
         "https://omny.fm/shows/example/episode"
     ]
     assert "Unrelated navigation card" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -4260,7 +4476,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_bloomberg_yahoo_syndication_removes_most_read_list():
@@ -4317,7 +4533,7 @@ def test_bloomberg_yahoo_syndication_removes_most_read_list():
     assert "Closing Bloomberg reporting sentence." in result.plain_text
     assert "Most Read from Bloomberg" not in result.plain_text
     assert "Unrelated most-read headline" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_nyt_parser_trims_access_shell_after_complete_article():
@@ -8668,7 +8884,7 @@ def test_bloomberg_parser_uses_first_question_for_untitled_quiz():
     )
     assert result.content_type.value == "interactive"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_nyt_parser_accepts_intentionally_short_corrections_notice():
@@ -9540,7 +9756,7 @@ def test_bloomberg_parser_removes_legacy_related_stories_list():
     assert "LISTEN TO ARTICLE" not in result.plain_text
     assert "<button" not in result.body_html
     assert "read.mp3" not in result.body_html
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.50"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.64"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
