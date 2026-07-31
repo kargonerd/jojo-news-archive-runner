@@ -7755,6 +7755,19 @@ def _image_from_tag(
         caption, credit = _nyt_caption_credit(caption_container)
     elif spec.publisher == "bloomberg":
         caption, credit = _bloomberg_caption_credit(caption_container)
+        if (
+            caption
+            and _clean_text(caption).casefold() == "olympus digital camera"
+        ):
+            caption = None
+            caption_node = caption_container.select_one(
+                "figcaption, [class*='caption' i]"
+            )
+            if isinstance(caption_node, Tag):
+                caption_node.decompose()
+        if alt and _clean_text(alt).casefold() == "olympus digital camera":
+            alt = None
+            image_node.attrs.pop("alt", None)
     else:
         caption, credit = _caption_credit(caption_container)
     if spec.publisher == "reuters" and caption:
