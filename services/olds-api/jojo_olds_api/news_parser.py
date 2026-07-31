@@ -5467,7 +5467,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     """Remove legacy recirculation and standardized article footers."""
     for node in list(
         soup.select(
-            ".text-to-speech, .brokerboxarticle, .terminal-tout-v2"
+            ".text-to-speech, .brokerboxarticle, .terminal-tout-v2, "
+            ".email-form, .similarstoryslide, button.read-more-button"
         )
     ):
         node.decompose()
@@ -5578,6 +5579,28 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?:sign up\s+)?and follow us on twitter and facebook\s*\.?$"
         ),
         re.compile(
+            r"(?i)^(?:sign up here\s+)?and follow us on twitter "
+            r"and facebook\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^sign up for bloomberg(?:'|’)s daily technology "
+            r"newsletter here\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^subscribe now to stay ahead with the most trusted "
+            r"business news source\.?$"
+        ),
+        re.compile(
+            r"(?i)^(?:follow ht tech on\s+)?facebook\s*,\s*google news\s*,"
+            r"\s*and instagram\s*\.\s*for our latest videos,\s*"
+            r"subscribe to our youtube channel\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^catch all the latest tech news\s*,\s*mobile news\s*,"
+            r".*for our latest videos,\s*subscribe to our youtube "
+            r"channel\s*\.?$"
+        ),
+        re.compile(
             r"(?i)^sign up for our .+ weekly newsletter, follow us @\w+ "
             r"and subscribe to our podcast\.?$"
         ),
@@ -5646,6 +5669,16 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             )
         ):
             sibling.decompose()
+        heading.decompose()
+
+    for heading in list(soup.select("h2, h3, h4")):
+        if (
+            _clean_text(heading.get_text(" ", strip=True)).casefold()
+            != "market-related stories"
+        ):
+            continue
+        for sibling in list(heading.next_siblings):
+            sibling.extract()
         heading.decompose()
 
     # Legacy Bloomberg figures made the image container act like a lightbox
