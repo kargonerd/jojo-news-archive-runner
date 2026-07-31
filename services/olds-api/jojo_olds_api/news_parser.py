@@ -5959,6 +5959,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^read more opinion online from bloomberg view\.?$"
         ),
         re.compile(
+            r"(?i)^for more quick commentary from bloomberg view,\s*"
+            r"go to the ticker\s*\.?$"
+        ),
+        re.compile(
             r"(?i)^\(?to save a copy of the chart,\s*click here\.\)?$"
         ),
         re.compile(r"(?i)^(?:\*t\s*)+$"),
