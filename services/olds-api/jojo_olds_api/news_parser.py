@@ -6005,6 +6005,18 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^\*{3}\s*end of transcript\s*\*{3}$"),
         re.compile(r"(?i)^running time\s*:\s*\d{1,3}:\d{2}$"),
+        re.compile(r"(?i)^provider id\s*:\s*[0-9a-f]{32}$"),
+        re.compile(
+            r"(?i)^contributed via\s*:\s*"
+            r"bloomberg publisher web service$"
+        ),
+        re.compile(
+            r"(?i)^to see the patent,\s*click\s*:\s*[\d,]+\.?$"
+        ),
+        re.compile(
+            r"(?i)^(?:--|—)\s*[\w .,'’&-]+\s+in\s+"
+            r"[\w .,'’&-]+\s+\+?\d[\d -]{6,}$"
+        ),
         re.compile(
             r"(?i)^[a-z]{2,5}\s+[a-z0-9]{8,14}\s+<go>\s+\S.+$"
         ),
