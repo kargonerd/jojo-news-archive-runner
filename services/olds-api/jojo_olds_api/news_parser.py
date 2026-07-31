@@ -5971,7 +5971,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?:story|article|column|(?:blog )?post)\s*:?"
         ),
         re.compile(
-            r"(?i)^click on [“\"]send comment[”\"] in the sidebar display "
+            r"(?i)^click on [“\"]send comment[”\"] in (?:the )?sidebar display "
             r"to send a letter to the editor\.?$"
         ),
         re.compile(r"(?i)^editors?\s*:\s*[\w .,'’&-]+$"),
