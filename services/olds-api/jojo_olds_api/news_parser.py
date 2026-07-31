@@ -1015,6 +1015,11 @@ def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
                 "[class*='whatsapp-group' i]"
             ):
                 noise.decompose()
+            for control in list(copy.select("[role='button']")):
+                if control.name == "a" and control.select_one("img") is not None:
+                    control.unwrap()
+                else:
+                    control.decompose()
             _remove_generic_syndication_partner_noise(
                 copy,
                 source_document=soup,
@@ -5388,6 +5393,10 @@ def _wsj_inset_table_body(soup: BeautifulSoup) -> Tag | None:
 
 
 def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
+    for comment in list(
+        soup.find_all(string=lambda value: isinstance(value, Comment))
+    ):
+        comment.extract()
     for selector in (*COMMON_REMOVE_SELECTORS, *spec.remove_selectors):
         for node in soup.select(selector):
             node.decompose()
@@ -5487,6 +5496,24 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         )
     ):
         node.decompose()
+
+    for control in list(soup.select("[role='button'], button")):
+        if (
+            control.name == "a"
+            and control.select_one("img") is not None
+            and not _clean_text(control.get_text(" ", strip=True))
+        ):
+            control.unwrap()
+        else:
+            control.decompose()
+
+    embedded_most_read = re.compile(
+        r"(?is)\s*most read from bloomberg(?: businessweek)?.*$"
+    )
+    for text_node in list(soup.find_all(string=embedded_most_read)):
+        cleaned = embedded_most_read.sub("", str(text_node)).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
 
     for marker in list(soup.select("p")):
         marker_text = (
@@ -5650,6 +5677,15 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^want more bloomberg opinion\?\s*terminal readers "
             r"head to opin\s*<go>\.\s*web readers click here\.?$"
         ),
+        re.compile(
+            r"(?i)^sign up for the brief,\s*a daily afternoon newsletter "
+            r"showcasing bloomberg law(?:'s|’s) top stories\.?$"
+        ),
+        re.compile(
+            r"(?i)^sign up for bloomberg(?:'s|’s) business of sports "
+            r"newsletter\b.*$"
+        ),
+        re.compile(r"^_{5,}$"),
         re.compile(
             r"(?i)^.{1,100}\sis\s.{1,100}\sat bloomberg\.\s*"
             r"follow (?:him|her|them) on twitter\b.*"

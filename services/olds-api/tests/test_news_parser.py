@@ -1675,7 +1675,7 @@ def test_bloomberg_parser_removes_legacy_image_and_share_controls():
     )
 
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
     assert "role=\"button\"" not in result.body_html
     assert "tabindex=" not in result.body_html
     assert "Open image in viewer" not in result.body_html
@@ -1937,7 +1937,54 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
+
+
+def test_bloomberg_generic_syndication_removes_partner_controls_and_law_cta():
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2023-08-10/"
+        "fashion-antitrust-battle"
+    )
+    reporting = "".join(
+        f"<p>Bloomberg licensed report paragraph {index} explains the "
+        "antitrust dispute and court proceedings in substantive detail.</p>"
+        for index in range(1, 7)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Fashion Antitrust Battle">
+      <meta property="og:url"
+            content="https://www.linkedin.com/posts/example-story">
+    </head><body><article>
+      {reporting}
+      <a role="button" href="/article-image">
+        <img src="https://media.example.com/article.jpg"
+             alt="Fashion company headquarters">
+      </a>
+      <div class="ellipsis-menu">
+        <button aria-label="Open menu">More</button>
+      </div>
+      <a role="button" class="copy-link">Copy Link</a>
+      <!-- <a role="button" class="comment-here">Comment Now</a> -->
+      <p>Sign up for The Brief, a daily afternoon newsletter showcasing
+      Bloomberg Law’s top stories.</p>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "paragraph 6" in result.plain_text
+    assert "The Brief" not in result.plain_text
+    assert "role=\"button\"" not in result.body_html
+    assert "Open menu" not in result.plain_text
+    assert "Copy Link" not in result.plain_text
+    assert len(result.images) == 1
 
 
 def test_bloomberg_parser_keeps_listen_to_article_as_article():
@@ -2178,7 +2225,7 @@ def test_bloomberg_parser_removes_legacy_inline_newsletter_nested_in_paragraph()
     assert "Opening article paragraph." in result.plain_text
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "markets daily newsletter" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_bloomberg_parser_recovers_legacy_feature_landing_page():
@@ -2276,6 +2323,8 @@ def test_bloomberg_parser_removes_legacy_brexit_and_podcast_promos():
             content="2016-09-15T00:00:00Z">
     </head><body><article>
       <p>{reporting}</p>
+      <p>Substantive Bloomberg introduction.Most Read from BloombergNYC’s
+      Most Exciting New RestaurantMore People Call in Sick Today</p>
       <p>Sign up to receive the Brexit Bulletin, a daily briefing on the
       biggest news related to Britain's departure from the EU.</p>
       <p>Subscribe to Bloomberg Benchmark on Pocketcast</p>
@@ -2289,6 +2338,9 @@ def test_bloomberg_parser_removes_legacy_brexit_and_podcast_promos():
       <p>New to Bloomberg Opinion Today? and follow us on Twitter and
       Facebook.</p>
       <p>Sign up for Bloomberg’s daily technology newsletter here.</p>
+      <p>Sign up for Bloomberg’s Business of Sports newsletter for the
+      context you need on the collision of power, money and sports.
+      Delivered weekly.</p>
       <p>and follow us on Twitter and Facebook.</p>
       <p><a href="https://bloombergbusiness.com/join/opinion-signup">Sign up
       here</a> and follow us on Twitter and Facebook.</p>
@@ -2353,6 +2405,8 @@ def test_bloomberg_parser_removes_legacy_brexit_and_podcast_promos():
 
     assert result.quality.status.value == "complete"
     assert "Bloomberg reporting sentence." in result.plain_text
+    assert "Substantive Bloomberg introduction." in result.plain_text
+    assert "Most Exciting New Restaurant" not in result.plain_text
     assert "Brexit Bulletin" not in result.plain_text
     assert "Pocketcast" not in result.plain_text
     assert "Watch This Next" not in result.plain_text
@@ -2362,6 +2416,7 @@ def test_bloomberg_parser_removes_legacy_brexit_and_podcast_promos():
     assert "new China newsletter" not in result.plain_text
     assert "New to Bloomberg Opinion Today" not in result.plain_text
     assert "daily technology newsletter" not in result.plain_text
+    assert "Business of Sports newsletter" not in result.plain_text
     assert "follow us on Twitter" not in result.plain_text
     assert "most trusted business news source" not in result.plain_text
     assert "latest videos" not in result.plain_text
@@ -2957,7 +3012,7 @@ def test_bloomberg_parser_separates_explicit_figure_credit():
     assert len(result.images) == 1
     assert result.images[0].caption == "Welcome to the factory floor."
     assert result.images[0].credit == "Tesla"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -2999,7 +3054,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_bloomberg_parser_rejects_explicit_teaser_body():
@@ -3031,7 +3086,7 @@ def test_bloomberg_parser_rejects_explicit_teaser_body():
 
     assert result.quality.status.value == "partial"
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_bloomberg_parser_trims_professional_subscription_shell():
@@ -3136,7 +3191,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_bloomberg_parser_scopes_legacy_body_without_right_rail():
@@ -3207,7 +3262,7 @@ def test_bloomberg_parser_removes_share_article_control_from_body():
     assert result.quality.status.value == "complete"
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "SHARE THIS ARTICLE" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
@@ -3283,7 +3338,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
         "https://omny.fm/shows/example/episode"
     ]
     assert "Unrelated navigation card" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -4164,7 +4219,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_bloomberg_yahoo_syndication_removes_most_read_list():
@@ -4221,7 +4276,7 @@ def test_bloomberg_yahoo_syndication_removes_most_read_list():
     assert "Closing Bloomberg reporting sentence." in result.plain_text
     assert "Most Read from Bloomberg" not in result.plain_text
     assert "Unrelated most-read headline" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_nyt_parser_trims_access_shell_after_complete_article():
@@ -8572,7 +8627,7 @@ def test_bloomberg_parser_uses_first_question_for_untitled_quiz():
     )
     assert result.content_type.value == "interactive"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_nyt_parser_accepts_intentionally_short_corrections_notice():
@@ -9444,7 +9499,7 @@ def test_bloomberg_parser_removes_legacy_related_stories_list():
     assert "LISTEN TO ARTICLE" not in result.plain_text
     assert "<button" not in result.body_html
     assert "read.mp3" not in result.body_html
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.40"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.44"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
