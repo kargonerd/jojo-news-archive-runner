@@ -5974,7 +5974,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^click on [“\"]send comment[”\"] in (?:the )?sidebar display "
             r"to send a letter to the editor\.?$"
         ),
-        re.compile(r"(?i)^editors?\s*:\s*[\w .,'’&-]+$"),
+        re.compile(
+            r"(?i)^(?:(?:--|—)\s*)?editors?\s*:\s*[\w .,'’&-]+$"
+        ),
         re.compile(r"(?i)^[a-z0-9._%+-]+@bloomberg\.net\s*[.;]?$"),
         re.compile(
             r"(?i)^join the discussion on the bloomberg businessweek "
