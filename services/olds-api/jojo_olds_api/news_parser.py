@@ -1081,6 +1081,29 @@ def _remove_generic_syndication_partner_noise(
                     break
                 tail = tail.parent
             marker.decompose()
+    if hostname == "biasly.com" or hostname.endswith(".biasly.com"):
+        marker = next(
+            (
+                node
+                for node in body.select("p, h2, h3, h4")
+                if _clean_text(node.get_text(" ", strip=True))
+                .casefold()
+                .startswith("want to see the in-depth bias analytics")
+            ),
+            None,
+        )
+        if isinstance(marker, Tag):
+            tail = marker
+            while isinstance(tail.parent, Tag):
+                for sibling in list(tail.next_siblings):
+                    if isinstance(sibling, Tag):
+                        sibling.decompose()
+                    else:
+                        sibling.extract()
+                if tail.parent is body:
+                    break
+                tail = tail.parent
+            marker.decompose()
     if (
         hostname == "bnnbloomberg.ca"
         or hostname.endswith(".bnnbloomberg.ca")
@@ -5485,6 +5508,32 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    bias_shell = next(
+        (
+            node
+            for node in soup.select("p, h2, h3, h4, div")
+            if _clean_text(node.get_text(" ", strip=True)).casefold().startswith(
+                (
+                    "want to see the in-depth bias analytics",
+                    "create your free account to see the in-depth bias analytics",
+                )
+            )
+        ),
+        None,
+    )
+    if isinstance(bias_shell, Tag):
+        tail = bias_shell
+        while isinstance(tail.parent, Tag):
+            for sibling in list(tail.next_siblings):
+                if isinstance(sibling, Tag):
+                    sibling.decompose()
+                else:
+                    sibling.extract()
+            if tail.parent is soup or tail.parent.name in {"article", "main"}:
+                break
+            tail = tail.parent
+        bias_shell.decompose()
+
     """Remove legacy recirculation and standardized article footers."""
     for node in list(
         soup.select(
@@ -5685,6 +5734,54 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^sign up for bloomberg(?:'s|’s) business of sports "
             r"newsletter\b.*$"
         ),
+        re.compile(
+            r"(?i)^sign up for the equality newsletter for weekly "
+            r"reporting\b.*$"
+        ),
+        re.compile(
+            r"(?i)^(?:\(bloomberg\)\s*--\s*)?sign up for the india "
+            r"edition newsletter\b.*$"
+        ),
+        re.compile(
+            r"(?i)^want more bloomberg opinion\?\s*opin\s*<go>\.\s*"
+            r"or (?:you can )?subscribe to our daily newsletter\.?$"
+        ),
+        re.compile(
+            r"(?i)^[\u200b-\u200f\u2060\ufeff]*"
+            r"want more (?:from )?bloomberg opinion\?\s*"
+            r"opin\s*<go>(?:\s*on the terminal)?\.\s*"
+            r"(?:web readers,?\s*click here\.\s*)?"
+            r"or (?:you can )?subscribe to our daily newsletter\.?$"
+        ),
+        re.compile(
+            r"(?i)^want more bloomberg opinion\?\s*terminal readers "
+            r"head to opin\s*<go>\.\s*or (?:you can )?subscribe to our "
+            r"daily newsletter\.?$"
+        ),
+        re.compile(
+            r"(?i)^more stories like this are available on "
+            r"bloomberg\.com\.?$"
+        ),
+        re.compile(
+            r"(?i)^sign up here and follow us on threads,\s*tiktok,\s*"
+            r"twitter,\s*instagram and facebook\.?$"
+        ),
+        re.compile(
+            r"(?i)^subscribe to the economic times prime and read the "
+            r"et epaper online\.?$"
+        ),
+        re.compile(r"(?i)^read:\s+.{10,200}$"),
+        re.compile(r"(?i)^to view or add a comment,\s*sign in\.?$"),
+        re.compile(r"(?i)^thank you for your report!?$"),
+        re.compile(
+            r"(?i)^please enable javascript to view this content\.?$"
+        ),
+        re.compile(r"(?i)^advertisement\s*\d*$"),
+        re.compile(
+            r"(?i)^this commercial has not loaded but,?\s*however your "
+            r"article continues under\.?$"
+        ),
+        re.compile(r"(?i)^sign in or create an account$"),
         re.compile(r"^_{5,}$"),
         re.compile(
             r"(?i)^.{1,100}\sis\s.{1,100}\sat bloomberg\.\s*"
