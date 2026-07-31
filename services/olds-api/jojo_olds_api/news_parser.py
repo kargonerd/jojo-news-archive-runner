@@ -5961,6 +5961,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"energy,\s*natural resources and global business\.?$"
         ),
         re.compile(
+            r"(?i)^visit the grid for the latest about energy,\s*"
+            r"natural resources and global business\.?$"
+        ),
+        re.compile(
             r"(?i)^read more (?:opinion online|online opinion) "
             r"from bloomberg view\.?$"
         ),
@@ -6443,6 +6447,33 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?:instagram|facebook)\b.*$"
         ),
     )
+    grid_promo = re.compile(
+        r"(?i)^visit the grid for the latest about energy,\s*"
+        r"natural resources and global business\.?$"
+    )
+    more_by_author = re.compile(
+        r"(?i)^more by .{2,120}(?:\bon twitter\b.*)?:$"
+    )
+    for marker in list(soup.select("p")):
+        if not more_by_author.fullmatch(
+            _clean_text(marker.get_text(" ", strip=True))
+        ):
+            continue
+        related = marker.find_next_sibling()
+        if isinstance(related, Tag) and related.name in {"ul", "ol"}:
+            related.decompose()
+            marker.decompose()
+
+    for promo in list(soup.select("p")):
+        if not grid_promo.fullmatch(
+            _clean_text(promo.get_text(" ", strip=True))
+        ):
+            continue
+        related = promo.find_previous_sibling()
+        if isinstance(related, Tag) and related.name in {"ul", "ol"}:
+            related.decompose()
+        promo.decompose()
+
     for node in list(
         soup.select("p, li, span, em, div, h2, h3, h4, blockquote")
     ):
