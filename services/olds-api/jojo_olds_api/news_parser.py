@@ -6016,6 +6016,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"bloomberg lp and its owners\.\)?$"
         ),
         re.compile(
+            r"(?i)^\(?this (?:column|article) does not necessarily reflect "
+            r"the opinion of bloomberg (?:view|opinion)(?:'|’)s "
+            r"editorial board or bloomberg lp,\s*its owners and investors"
+            r"\.\)?$"
+        ),
+        re.compile(
             r"(?is)^this transcript may not be 100% accurate\b.*"
             r"any opinion expressed in the transcript does not necessarily "
             r"reflect the views of bloomberg lp\.?$"
