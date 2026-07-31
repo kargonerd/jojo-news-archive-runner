@@ -5768,7 +5768,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             ".text-to-speech, .brokerboxarticle, .terminal-tout-v2, "
             ".email-form, .similarstoryslide, button.read-more-button, "
             ".inner-page-cta-section, .minimal-detailfull-width-section, "
-            ".commentWrapper, .youMightAlsoLike, .Pbanner, "
+            ".commentWrapper, .comments, #story_tools_bottom, "
+            ".share_list, .entry_sharing, "
+            ".youMightAlsoLike, .Pbanner, "
             ".relatedKeywords, .waChannelCta, .b-share-bar, "
             ".liveEventMain_widget, .primeSWrapper, .ts-dots, "
             ".bottomTopics, .topicListContainer, .topicListTitle, .tags"
@@ -5939,6 +5941,18 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     footer_patterns = (
         re.compile(r"(?i)^©\s*\d{4}\s+bloomberg\s+l\.?p\.?$"),
         re.compile(r"(?i)^©\s*\d{4}\s+bloomberg$"),
+        re.compile(
+            r"(?i)^please enable javascript to view the comments "
+            r"powered by disqus\.?$"
+        ),
+        re.compile(
+            r"(?i)^tweet\s+more business exchange\s+buzz up!?\s+"
+            r"digg\s+print\s+email$"
+        ),
+        re.compile(
+            r"(?i)^-0-\s+[a-z]{3}/\d{1,2}/\d{4}\s+"
+            r"\d{2}:\d{2}\s+gmt$"
+        ),
         re.compile(r"(?i)^author$"),
         re.compile(r"(?i)^and yet equinor still\.*$"),
         re.compile(
