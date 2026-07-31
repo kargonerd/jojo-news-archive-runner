@@ -1558,7 +1558,11 @@ def capture_item(
             raw_html=raw_reference,
             dependent_resources=dependent_resources,
         )
-        record_path = store_capture_record(output_dir, capture)
+        existing_record = reusable_capture_record(output_dir, capture)
+        if existing_record is not None:
+            capture, record_path = existing_record
+        else:
+            record_path = store_capture_record(output_dir, capture)
         return {
             "canonicalUrl": item.canonical_url,
             "status": "complete",
@@ -5809,6 +5813,37 @@ def store_capture_record(output_dir: Path, capture: RawCapture) -> str:
         temporary.write_bytes(payload)
         temporary.replace(destination)
     return relative.as_posix()
+
+
+def reusable_capture_record(
+    output_dir: Path,
+    proposed: RawCapture,
+) -> tuple[RawCapture, str] | None:
+    """Reuse an orphaned immutable record when it is at least as good.
+
+    A capture database can be rebuilt independently from the content-addressed
+    object store. In that case the record may still exist even though the
+    database row no longer points to it. Re-fetching the same article changes
+    retrieval metadata and must not turn that recoverable state into an error.
+    """
+    article_hash = proposed.article_id.rsplit(":", 1)[-1]
+    relative = Path("records") / article_hash[:2] / f"{article_hash}.json"
+    source = output_dir / relative
+    if not source.exists():
+        return None
+    existing = RawCapture.model_validate_json(source.read_text(encoding="utf-8"))
+    if (
+        existing.article_id != proposed.article_id
+        or existing.publisher != proposed.publisher
+        or existing.canonical_url != proposed.canonical_url
+    ):
+        raise RuntimeError(
+            f"capture record identity mismatch: {relative}"
+        )
+    _read_capture_html(existing, archive_root=output_dir)
+    if existing.quality_score < proposed.quality_score:
+        return None
+    return existing, relative.as_posix()
 
 
 def record_capture_result(

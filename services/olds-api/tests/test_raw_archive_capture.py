@@ -4833,6 +4833,55 @@ def test_content_addressed_storage_is_deterministic(tmp_path: Path):
     assert len(list((tmp_path / "objects").rglob("*.html.gz"))) == 1
 
 
+def test_capture_item_reattaches_an_orphaned_immutable_record(
+    tmp_path: Path,
+):
+    url = (
+        "https://web.archive.org/web/20100102000000id_/"
+        "https://www.bloomberg.com/news/articles/2010-01-01/example"
+    )
+    item = ManifestItem(
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2010-01-01/example"
+        ),
+        published_at="2010-01-01T00:00:00Z",
+        section="business",
+        candidates=(candidate(url, "20100102000000"),),
+    )
+    client = StubArchiveClient(
+        {
+            url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                url,
+            ),
+        }
+    )
+
+    first = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+    second = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert first["status"] == second["status"] == "complete"
+    assert first["recordPath"] == second["recordPath"]
+    assert (
+        first["capture"].retrieved_at
+        == second["capture"].retrieved_at
+    )
+    assert first["capture"].raw_html == second["capture"].raw_html
+
+
 def test_raw_quality_rejects_archive_error_page():
     score, signals = score_raw_capture(
         b"<html>Wayback Machine doesn't have that page archived.</html>",
