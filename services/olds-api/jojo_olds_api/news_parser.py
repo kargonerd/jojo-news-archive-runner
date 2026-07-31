@@ -6552,6 +6552,13 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             )
             or re.fullmatch(r"[\u200b-\u200f\u2060\ufeff]+", text)
             or re.fullmatch(r"(?:\*\s*){2,}", text)
+            or (
+                node.name in {"h2", "h3", "h4"}
+                and re.fullmatch(
+                    r"[\s‘’“”'\"….,:;!?—–-]+",
+                    text,
+                )
+            )
             or text == "🫣"
         ):
             node.decompose()
