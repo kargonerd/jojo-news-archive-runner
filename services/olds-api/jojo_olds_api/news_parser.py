@@ -6004,6 +6004,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^for more,\s*read this quicktake\s*:\s*\S.+$"
         ),
         re.compile(r"(?i)^\*{3}\s*end of transcript\s*\*{3}$"),
+        re.compile(r"(?i)^running time\s*:\s*\d{1,3}:\d{2}$"),
         re.compile(
             r"(?i)^[a-z]{2,5}\s+[a-z0-9]{8,14}\s+<go>\s+\S.+$"
         ),
@@ -6537,6 +6538,23 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if trimmed != text:
             paragraph.clear()
             paragraph.append(trimmed)
+
+    contact_footer = re.compile(
+        r"(?i)^to contact (?:the )?"
+        r"(?:reporters?|writers?|authors?|editors?|bloomberg news staff)\b"
+    )
+    for heading in list(soup.select("h2, h3, h4")):
+        sibling = heading.find_next_sibling()
+        while isinstance(sibling, Tag) and sibling.name in {"h2", "h3", "h4"}:
+            sibling = sibling.find_next_sibling()
+        if (
+            isinstance(sibling, Tag)
+            and sibling.name == "p"
+            and contact_footer.match(
+                _clean_text(sibling.get_text(" ", strip=True))
+            )
+        ):
+            heading.decompose()
 
     for node in list(
         soup.select("p, li, span, em, div, h2, h3, h4, blockquote")
