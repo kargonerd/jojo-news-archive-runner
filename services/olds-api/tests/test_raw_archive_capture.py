@@ -4550,6 +4550,47 @@ def test_bloomberg_capture_falls_back_to_validated_syndicated_html(
     )
 
 
+def test_bloomberg_manifest_candidates_only_skips_dynamic_discovery(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2024-06-03/"
+        "manifest-candidate-only"
+    )
+    snapshot_url = (
+        "https://web.archive.org/web/20240604000000id_/" + canonical_url
+    )
+    item = ManifestItem(
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        published_at="2024-06-03T00:00:00Z",
+        section="politics",
+        candidates=(candidate(snapshot_url, "20240604000000"),),
+    )
+    client = StubArchiveClient(
+        {
+            snapshot_url: (
+                404,
+                {"content-type": "text/html"},
+                b"",
+                snapshot_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        bloomberg_manifest_candidates_only=True,
+    )
+
+    assert result["status"] == "error"
+    assert client.requests == [snapshot_url]
+    assert not (tmp_path / "objects").exists()
+
+
 def test_bloomberg_syndication_rejects_short_paywall_preview(
     tmp_path: Path,
 ):

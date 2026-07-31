@@ -570,6 +570,7 @@ def capture_item(
     maximum_html_bytes: int,
     enable_common_crawl_fallback: bool = False,
     enable_arquivo_pt_fallback: bool = False,
+    bloomberg_manifest_candidates_only: bool = False,
     ft_syndication_lookup: Callable[
         [ManifestItem, str],
         tuple[CaptureCandidate, ...],
@@ -1304,6 +1305,10 @@ def capture_item(
     if (
         best_response is None
         and item.publisher in WAYBACK_TIMEMAP_FALLBACK_PUBLISHERS
+        and not (
+            item.publisher == "bloomberg"
+            and bloomberg_manifest_candidates_only
+        )
     ):
         try:
             fallback_candidates = discover_wayback_timemap_candidates(
@@ -1339,7 +1344,11 @@ def capture_item(
             if response[5] == 100:
                 break
 
-    if best_response is None and item.publisher == "bloomberg":
+    if (
+        best_response is None
+        and item.publisher == "bloomberg"
+        and not bloomberg_manifest_candidates_only
+    ):
         try:
             fallback_candidates = discover_bloomberg_syndication_candidates(
                 item,

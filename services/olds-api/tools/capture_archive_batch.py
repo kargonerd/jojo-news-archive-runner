@@ -105,6 +105,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--bloomberg-manifest-candidates-only",
+        action="store_true",
+        help=(
+            "For Bloomberg validation, try only candidates already stored "
+            "on each manifest row; skip dynamic Wayback timemap and "
+            "syndication discovery."
+        ),
+    )
+    parser.add_argument(
         "--ft-syndication-catalog",
         type=Path,
         help=(
@@ -365,6 +374,9 @@ def main() -> int:
             ),
             enable_arquivo_pt_fallback=(
                 args.enable_arquivo_pt_fallback
+            ),
+            bloomberg_manifest_candidates_only=(
+                args.bloomberg_manifest_candidates_only
             ),
             ft_syndication_lookup=(
                 None
