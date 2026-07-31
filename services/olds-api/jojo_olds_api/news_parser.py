@@ -45,6 +45,8 @@ _GRAPHIC_RE = re.compile(r"(?i)(chart|graphic|infographic|interactive)")
 _MINIMUM_BODY_CHARACTERS = 100
 _MINIMUM_SYNDICATED_BODY_CHARACTERS = 400
 _EXACT_NOISE_TEXT = {
+    ".",
+    "##",
     "advertisement",
     "advertiser content",
     "sponsored content",
@@ -5940,14 +5942,21 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"this (?:story|article)\s*:"
         ),
         re.compile(
-            r"(?i)^to contact bloomberg news staff for this "
+            r"(?i)^to contact (?:the )?bloomberg news staff for this "
             r"(?:story|article)\s*:"
         ),
         re.compile(
-            r"(?i)^to contact the (?:writer|author|editor) "
-            r"(?:of|responsible for) this "
-            r"(?:story|article|column)\s*:"
+            r"(?i)^to contact the "
+            r"(?:writers?|authors?|reporters?|editors?) "
+            r"(?:of|on|responsible for) (?:this|the|his|her) "
+            r"(?:story|article|column|(?:blog )?post)\s*:?"
         ),
+        re.compile(
+            r"(?i)^click on [“\"]send comment[”\"] in the sidebar display "
+            r"to send a letter to the editor\.?$"
+        ),
+        re.compile(r"(?i)^editors?\s*:\s*[\w .,'’&-]+$"),
+        re.compile(r"(?i)^[a-z0-9._%+-]+@bloomberg\.net\s*[.;]?$"),
         re.compile(
             r"(?i)^join the discussion on the bloomberg businessweek "
             r"business school forum\b"
