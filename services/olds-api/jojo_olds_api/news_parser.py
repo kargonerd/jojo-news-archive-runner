@@ -5986,7 +5986,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^\(?to save a copy of the chart,\s*click here\.\)?$"
         ),
         re.compile(r"(?i)^click here for (?:the )?web link\.?$"),
-        re.compile(r"(?i)^for related news and information\s*:?\s*$"),
+        re.compile(r"(?i)^for related news and information\s*:?.*$"),
         re.compile(r"(?i)^for more on .{2,160},\s*click here\.?$"),
         re.compile(
             r"(?i)^link to company news\s*:\s*"
@@ -7554,6 +7554,28 @@ def _extract_blocks(
         name = node.name.lower()
         if name in {"p", "pre"}:
             text = _clean_text(node.get_text(" ", strip=True))
+            bloomberg_embed = (
+                node.select_one("a.bbg-embed[href]")
+                if spec.publisher == "bloomberg" and name == "p"
+                else None
+            )
+            if isinstance(bloomberg_embed, Tag) and text == _clean_text(
+                bloomberg_embed.get_text(" ", strip=True)
+            ):
+                source = _normalized_url(
+                    bloomberg_embed.get("href"),
+                    base_url=base_url,
+                )
+                if source:
+                    blocks.append(
+                        ContentBlock(
+                            type=BlockType.EMBED,
+                            position=position,
+                            embed_url=source,
+                            html=str(node),
+                        )
+                    )
+                    continue
             if text:
                 blocks.append(
                     ContentBlock(
