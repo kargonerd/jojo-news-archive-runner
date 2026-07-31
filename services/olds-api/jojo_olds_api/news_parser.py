@@ -946,7 +946,19 @@ def _yahoo_syndication_body(
     wrapper = wrapper_document.select_one("div")
     if wrapper is None:
         return None
+    skipping_bloomberg_most_read = False
     for paragraph in paragraphs:
+        paragraph_text = _clean_text(paragraph.get_text(" ", strip=True))
+        if paragraph_text.casefold() in {
+            "most read from bloomberg",
+            "most read from bloomberg businessweek",
+        }:
+            skipping_bloomberg_most_read = True
+            continue
+        if skipping_bloomberg_most_read:
+            if paragraph.find_parent(("ul", "ol")) is not None:
+                continue
+            skipping_bloomberg_most_read = False
         ancestor_classes = " ".join(
             " ".join(parent.get("class", []))
             for parent in paragraph.parents
@@ -966,7 +978,7 @@ def _yahoo_syndication_body(
             wrapper.append(copy)
         if stop_at_reporting_by and re.match(
             r"^\s*\((?:additional )?reporting by\b",
-            paragraph.get_text(" ", strip=True),
+            paragraph_text,
             re.IGNORECASE,
         ):
             break
@@ -5469,18 +5481,24 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         soup.select(
             ".text-to-speech, .brokerboxarticle, .terminal-tout-v2, "
             ".email-form, .similarstoryslide, button.read-more-button, "
-            ".inner-page-cta-section, .minimal-detailfull-width-section"
+            ".inner-page-cta-section, .minimal-detailfull-width-section, "
+            ".commentWrapper, .youMightAlsoLike, .Pbanner, "
+            ".relatedKeywords, .waChannelCta, .b-share-bar"
         )
     ):
         node.decompose()
 
     for marker in list(soup.select("p")):
-        if (
+        marker_text = (
             _clean_text(marker.get_text(" ", strip=True))
             .casefold()
             .rstrip(":")
-            != "related stories"
-        ):
+        )
+        if marker_text not in {
+            "related stories",
+            "most read from bloomberg",
+            "most read from bloomberg businessweek",
+        }:
             continue
         sibling = marker.find_next_sibling()
         if isinstance(sibling, Tag) and sibling.name in {"ul", "ol"}:
@@ -5627,6 +5645,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^get early returns every morning in your inbox\.\s*"
             r"click here to subscribe\.\s*also subscribe to bloomberg "
             r"all access\b.*$"
+        ),
+        re.compile(
+            r"(?i)^want more bloomberg opinion\?\s*terminal readers "
+            r"head to opin\s*<go>\.\s*web readers click here\.?$"
         ),
         re.compile(
             r"(?i)^.{1,100}\sis\s.{1,100}\sat bloomberg\.\s*"
