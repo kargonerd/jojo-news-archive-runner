@@ -6144,6 +6144,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^for more (?:copyright|patent) news,\s*click here\.?$"
         ),
         re.compile(
+            r"(?i)^for related stories\s+to see today(?:'|’)s top "
+            r"sports stories,\s*see:\s*\{ispo\s*<go>\}\.?$"
+        ),
+        re.compile(
             r"(?i)^to view the source of this information click here\.?$"
         ),
         re.compile(r"(?i)^read more\s*:\s*\S.+$"),
@@ -6428,7 +6432,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"article continues under\.?$"
         ),
         re.compile(r"(?i)^sign in or create an account$"),
-        re.compile(r"^_{5,}$"),
+        re.compile(r"^(?:_{5,}|-{5,})$"),
         re.compile(
             r"(?i)^.{1,100}\sis\s.{1,100}\sat bloomberg\.\s*"
             r"follow (?:him|her|them) on twitter\b.*"
