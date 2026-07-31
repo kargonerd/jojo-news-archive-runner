@@ -8073,11 +8073,29 @@ def _bloomberg_teaser_shell(soup: BeautifulSoup) -> bool:
         )
     ):
         return True
-    text = _clean_text(soup.get_text(" ", strip=True)).casefold()
-    return (
+    marker = (
         "to continue reading this article you must be a bloomberg "
         "professional service subscriber"
-    ) in text
+    )
+    for node in soup.select("p"):
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        if marker not in text:
+            continue
+        current: Tag | None = node
+        hidden = False
+        while isinstance(current, Tag):
+            style = _clean_text(str(current.get("style") or "")).casefold()
+            if (
+                current.has_attr("hidden")
+                or str(current.get("aria-hidden") or "").casefold() == "true"
+                or re.search(r"(?:^|;)\s*display\s*:\s*none\b", style)
+            ):
+                hidden = True
+                break
+            current = current.parent if isinstance(current.parent, Tag) else None
+        if not hidden:
+            return True
+    return False
 
 
 def _merge_candidate_urls(
