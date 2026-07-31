@@ -5539,6 +5539,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"sign up here to receive our newsletter\.?$"
         ),
         re.compile(
+            r"(?i)^sign up for (?:our new china newsletter|china rising)\s*,"
+            r"\s*a (?:new )?weekly dispatch(?:\s+coming soon)? on where china "
+            r"stands now and where it(?:'|’)s going next\.?$"
+        ),
+        re.compile(
             r"(?i)^sign up to receive the brexit bulletin in your inbox, "
             r"and follow @brexit on twitter\.?$"
         ),
@@ -5567,6 +5572,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^for a fresh perspective on .+, sign up for our weekly "
             r"newsletter\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^new to bloomberg opinion today\?\s*"
+            r"(?:sign up\s+)?and follow us on twitter and facebook\s*\.?$"
         ),
         re.compile(
             r"(?i)^sign up for our .+ weekly newsletter, follow us @\w+ "
