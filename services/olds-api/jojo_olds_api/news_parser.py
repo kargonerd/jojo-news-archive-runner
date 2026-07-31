@@ -5986,6 +5986,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^\(?to save a copy of the chart,\s*click here\.\)?$"
         ),
         re.compile(r"(?i)^click here for (?:the )?web link\.?$"),
+        re.compile(r"(?i)^for related news and information\s*:?\s*$"),
+        re.compile(r"(?i)^for more on .{2,160},\s*click here\.?$"),
+        re.compile(
+            r"(?i)^link to company news\s*:\s*"
+            r"\{[^{}]{1,80}<equity>\s+cn\s+<go>\}\s*$"
+        ),
         re.compile(r"(?i)^(?:\*t\s*)+$"),
         re.compile(
             r"(?i)^to contact the "
@@ -6479,6 +6485,23 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if isinstance(related, Tag) and related.name in {"ul", "ol"}:
             related.decompose()
         promo.decompose()
+
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True))
+        trimmed = re.sub(
+            r"(?i)\s+follow (?:him|her|them) on twitter\.\)$",
+            ")",
+            text,
+        )
+        trimmed = re.sub(
+            r"(?i)\s+for more dine\s*&\s*deal reviews,\s*"
+            r"click here\.\)$",
+            ")",
+            trimmed,
+        )
+        if trimmed != text:
+            paragraph.clear()
+            paragraph.append(trimmed)
 
     for node in list(
         soup.select("p, li, span, em, div, h2, h3, h4, blockquote")
