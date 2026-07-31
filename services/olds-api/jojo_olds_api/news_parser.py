@@ -137,6 +137,10 @@ def parse_article(
     if body is None and (
         generic_syndication_allowed
     ):
+        body = _newsbreak_syndication_body(soup)
+    if body is None and (
+        generic_syndication_allowed
+    ):
         body = _generic_syndication_body(soup)
     if body is None and spec.publisher == "nyt":
         body = _nyt_legacy_article_body(soup)
@@ -804,6 +808,74 @@ def parse_article(
     if spec.publisher == "bloomberg" and _bloomberg_teaser_shell(soup):
         warnings.append("truncated-body")
     if (
+        spec.publisher == "bloomberg"
+        and len(plain_text) < 500
+        and soup.select_one("article.artData.paywall") is not None
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
+        and soup.select_one(".ai-block") is not None
+        and "signalpro" in _clean_text(
+            soup.get_text(" ", strip=True)
+        ).casefold()
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
+        and "linkedin.com/" in _clean_text(
+            _first_text(
+                _meta_content(soup, "property", "og:url"),
+                _tag_attribute(
+                    soup.select_one("link[rel='canonical']"),
+                    "href",
+                ),
+            )
+            or ""
+        ).casefold()
+        and any(
+            marker in _clean_text(soup.get_text(" ", strip=True)).casefold()
+            for marker in (
+                "cut through the ai noise",
+                "full article below with no paywall",
+                "read my latest, for free",
+                "humbled to see our journey featured in bloomberg",
+                "excited to be quoted in bloomberg news",
+                "had the pleasure of joining bloomberg podcasts",
+                "always-superb editing by",
+            )
+        )
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
+        and "the practical value is the source trail" in _clean_text(
+            soup.get_text(" ", strip=True)
+        ).casefold()
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
+        and "as international investment experts report" in _clean_text(
+            soup.get_text(" ", strip=True)
+        ).casefold()
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
+        and "abitech analysis" in _clean_text(
+            soup.get_text(" ", strip=True)
+        ).casefold()
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
+        and "biggo finance appears first in google search" in _clean_text(
+            soup.get_text(" ", strip=True)
+        ).casefold()
+    ):
+        warnings.append("truncated-body")
+    if (
         spec.publisher == "wsj"
         and content_type == ContentType.ARTICLE
         and (
@@ -1065,8 +1137,16 @@ def _remove_generic_syndication_partner_noise(
         else ""
     )
     if hostname == "linkedin.com" or hostname.endswith(".linkedin.com"):
+        for node in list(body.select("section.comment, .comment__body")):
+            node.decompose()
         for node in list(body.select("p, li")):
             text = _clean_text(node.get_text(" ", strip=True))
+            if (
+                "full article below" in text.casefold()
+                and "read more from bloomberg news" in text.casefold()
+            ):
+                node.decompose()
+                continue
             if re.fullmatch(r"[\d,.]+\s+followers?", text, re.IGNORECASE):
                 node.decompose()
                 continue
@@ -1109,6 +1189,14 @@ def _remove_generic_syndication_partner_noise(
                     break
                 tail = tail.parent
             marker.decompose()
+    if hostname == "newsbreak.com" or hostname.endswith(".newsbreak.com"):
+        for card in list(body.select("section")):
+            link = card.select_one("a[href][target='_blank']")
+            if (
+                isinstance(link, Tag)
+                and card.select_one("p.textoverflow-3") is not None
+            ):
+                card.decompose()
     if hostname == "biasly.com" or hostname.endswith(".biasly.com"):
         body.clear()
         return
@@ -1170,6 +1258,38 @@ def _postmedia_syndication_body(soup: BeautifulSoup) -> Tag | None:
         if isinstance(copy, Tag):
             wrapper.append(copy)
     return wrapper
+
+
+def _newsbreak_syndication_body(soup: BeautifulSoup) -> Tag | None:
+    """Recover the licensed article payload without NewsBreak feed cards."""
+    partner_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    if not partner_url or "newsbreak.com/" not in partner_url.casefold():
+        return None
+    script = soup.select_one("script#__NEXT_DATA__")
+    if not isinstance(script, Tag):
+        return None
+    try:
+        payload = json.loads(script.string or script.get_text())
+    except (json.JSONDecodeError, TypeError):
+        return None
+    page = payload.get("props", {}).get("pageProps", {})
+    content = page.get("content")
+    authors = page.get("authors", [])
+    if (
+        not isinstance(content, str)
+        or "bloomberg" not in " ".join(map(str, authors)).casefold()
+    ):
+        return None
+    document = BeautifulSoup(content, "html.parser")
+    body = document.body or document.find()
+    if not isinstance(body, Tag):
+        return None
+    if len(_clean_text(body.get_text(" ", strip=True))) < 300:
+        return None
+    return body
 
 
 def _wsj_tovima_body(soup: BeautifulSoup) -> Tag | None:
@@ -5565,8 +5685,37 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Some Yahoo syndication captures contain provider HTML with every opening
+    # angle bracket stripped (``/pp``, ``br /``, ``nbsp;/pp``). Preserve the
+    # reporting while removing the provider upload/recirculation tail.
+    for text_node in list(soup.find_all(string=re.compile(r"(?:nbsp;)?/pp"))):
+        malformed = str(text_node)
+        malformed = re.split(
+            r"(?i)(?:nbsp;)?/ppem\s*uploaded by\b",
+            malformed,
+            maxsplit=1,
+        )[0]
+        malformed = re.sub(r"(?i)(?:^|\s)br\s*/", "\n\n", malformed)
+        malformed = re.sub(r"(?i)(?:nbsp;)?/pp", "\n\n", malformed)
+        text_node.replace_with(malformed.strip())
+
+    for text_node in list(
+        soup.find_all(string=re.compile(r"(?i)always-superb editing by"))
+    ):
+        linkedin_copy = str(text_node)
+        linkedin_copy = re.split(
+            r"(?is)\s+with\s+.{1,160}?\s+and\s+"
+            r"always-superb editing by\b",
+            linkedin_copy,
+            maxsplit=1,
+        )[0]
+        text_node.replace_with(linkedin_copy.strip())
+
     shell_text = _clean_text(soup.get_text(" ", strip=True))
     shell_folded = shell_text.casefold()
+    if "abitech analysis" in shell_folded:
+        for card in list(soup.select(".card")):
+            card.decompose()
     if (
         len(shell_text) < 400
         and "bias rating" in shell_folded
@@ -5617,6 +5766,16 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             ".liveEventMain_widget, .primeSWrapper, .ts-dots, "
             ".bottomTopics, .topicListContainer, .topicListTitle, .tags"
             ", [id^='views-bootstrap-article-node-view-block-']"
+            ", .article-share, .sharedaddy, .sd-sharing"
+            ", .ai_podcast_030825, .ai_podcast_bottom_sticky_player_241025"
+            ", .popup_ai_pb_overlay, .td_module_wrap, .td_block_wrap"
+            ", .news-detail-content-block.ai-post, #story-source-gallery"
+            ", .xenforo-comment-widget, .cbcalc-wrap, .ai-block, .lf-funnel"
+            ", .usstock_widget"
+            ", [data-testid='headline-stack-promo-liner-test-id']"
+            ", [data-testid='tags-test-id']"
+            ", [class*='GooglePreferredSource_']"
+            ", img[src*='groundnews.b-cdn.net']"
             ", [data-animation-role='button'], "
             "[data-content-field='tags']"
         )
@@ -5725,13 +5884,14 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             else:
                 text_node.extract()
 
-    for marker in list(soup.select("h2, h3, h4, p")):
+    for marker in list(soup.select("h2, h3, h4, h5, h6, p")):
         marker_text = _clean_text(marker.get_text(" ", strip=True)).casefold()
         if marker_text not in {
             "more on this topic",
             "see more on",
             "prev post",
             "source link",
+            "top tech stories",
         }:
             continue
         tail = marker
@@ -5756,6 +5916,20 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             table.decompose()
     footer_patterns = (
         re.compile(r"(?i)^©\s*\d{4}\s+bloomberg\s+l\.?p\.?$"),
+        re.compile(r"(?i)^©\s*\d{4}\s+bloomberg$"),
+        re.compile(r"(?i)^author$"),
+        re.compile(r"(?i)^and yet equinor still\.*$"),
+        re.compile(
+            r"(?i)^https?://www\.gata\.org/sites/default/files/"
+            r"gata-silver-round-front\.png$"
+        ),
+        re.compile(
+            r"(?i)^get the latest nigerian news delivered to your inbox\.?$"
+        ),
+        re.compile(
+            r"(?i)^written by:\s*.+\s+—\s+with assistance from .+"
+            r"@bloomberg$"
+        ),
         re.compile(
             r"(?i)^for more articles like this,\s*"
             r"please visit us at bloomberg\.com\.?$"
@@ -5940,8 +6114,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"all comments are subject to editorial review\..*$"
         ),
         re.compile(
-            r"(?i)^(?:\(bloomberg\)\s*--\s*)?sign up for the india "
+            r"(?i)^(?:\(bloomberg\)\s*(?:--|—)\s*)?sign up for "
+            r"(?:the\s+)?(?:daily\s+)?india "
             r"edition newsletter\b.*$"
+        ),
+        re.compile(
+            r"(?i)^sign up for the business of food newsletter\b.*$"
         ),
         re.compile(
             r"(?i)^want more bloomberg opinion\?\s*opin\s*<go>\.\s*"
@@ -6022,6 +6200,146 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^please enable javascript to view this content\.?$"
         ),
+        re.compile(r"(?i)^uploaded by .{2,100}$"),
+        re.compile(r"(?i)^top trending stocks\s*:.*share price\b.*$"),
+        re.compile(r"(?i)^get automatic alerts for this topic\.?$"),
+        re.compile(r"(?i)^about this source$"),
+        re.compile(
+            r"(?i)^⚠?\ufe0f?\s*disclaimer:\s*this content is for training "
+            r"purposes only\b.*$"
+        ),
+        re.compile(
+            r"(?i)^this article was generated from an automated news "
+            r"agency feed without modifications to text\.?$"
+        ),
+        re.compile(r"(?i)^share this\s*:$"),
+        re.compile(r"(?i)^📰\s*source$"),
+        re.compile(
+            r"(?i)^for complete coverage and additional details,\s*"
+            r"visit the original article published by bloomberg\.com\.?$"
+        ),
+        re.compile(r"(?i)^bloomberg\.com$"),
+        re.compile(
+            r"(?i)^subscribe to et prime and read the economic times "
+            r"epaper online\..*$"
+        ),
+        re.compile(
+            r"(?is)^\(?what(?:'|’)s moving sensex and nifty\b.*"
+            r"subscribe to our telegram feeds\s*\.\)?$"
+        ),
+        re.compile(r"(?i)^read the full article$"),
+        re.compile(
+            r"(?i)^get the latest insurance news sent straight to "
+            r"your inbox\.?$"
+        ),
+        re.compile(r"(?i)^maritime and shipping$"),
+        re.compile(r"(?i)^discussion$"),
+        re.compile(
+            r"(?i)^the post .+ first appeared on bloomberg\.?$"
+        ),
+        re.compile(
+            r"(?i)^©\s*\d{4}\s+the block\.\s*all rights reserved\..*$"
+        ),
+        re.compile(
+            r"(?i)^unlock full access to podcast analytics,\s*"
+            r"audience demographics\b.*$"
+        ),
+        re.compile(
+            r"(?i)^recipients will be able to read the full text of "
+            r"the article after submitting their email address\b.*$"
+        ),
+        re.compile(r"(?i)^原文標題\s*.+$"),
+        re.compile(r"(?i)^interested in profit loss\s*\?$"),
+        re.compile(r"(?i)^interested in claims\s*\?$"),
+        re.compile(r"(?i)^listen to this article in summarized format$"),
+        re.compile(r"(?i)^most popular$"),
+        re.compile(r"(?i)^want to stay up to date\?$"),
+        re.compile(r"(?i)^get more podcast analytics$"),
+        re.compile(
+            r"(?i)^ai-analyzed african market trends delivered to "
+            r"your inbox\b.*$"
+        ),
+        re.compile(r"(?i)^the source\s*:\s*bloomberg$"),
+        re.compile(
+            r"(?i)^get push alerts the moment our analysts spot setups "
+            r"around news events\b.*$"
+        ),
+        re.compile(
+            r"(?i)^sign up here for the daily next africa newsletter "
+            r"and subscribe to the next africa podcast\b.*$"
+        ),
+        re.compile(r"(?i)^advertisement\s*:\s*$"),
+        re.compile(r"(?i)^here are more articles you may enjoy\.?$"),
+        re.compile(r"(?i)^trade these moves with signalpro$"),
+        re.compile(
+            r"(?i)^related coverage:\s*.+"
+        ),
+        re.compile(
+            r"(?i)^each image keeps its publisher,\s*caption or article "
+            r"title,\s*citation text\b.*$"
+        ),
+        re.compile(r"(?i)^was this article valuable\?$"),
+        re.compile(
+            r"(?i)^estimates show your actual share of cashback\b.*"
+            r"see full vip trader hub\s*→?$"
+        ),
+        re.compile(r"(?i)^interested in ai\s*\?$"),
+        re.compile(
+            r"(?i)^want more bloomberg opinion\?\s*terminal readers,?\s*"
+            r"head\s*to\s*opin\s*<go>\.\s*or subscribe to our daily "
+            r"newsletter\.?$"
+        ),
+        re.compile(
+            r"(?i)^move the slider to your real monthly trading volume\b.*$"
+        ),
+        re.compile(
+            r"(?i)^disclaimer:\s*the block is an independent media "
+            r"outlet that delivers news,\s*research,\s*and data\b.*$"
+        ),
+        re.compile(
+            r"(?i)^previous article\s+next article\b.*$"
+        ),
+        re.compile(r"(?i)^buy gold$"),
+        re.compile(r"(?i)^trending now$"),
+        re.compile(
+            r"(?i)^build draft survey skills through practical training\b.*$"
+        ),
+        re.compile(
+            r"(?i)^written (?:by|by:)\s+.{2,100}(?:@bloomberg)?$"
+        ),
+        re.compile(r"(?i)^how much could you earn back per year\?$"),
+        re.compile(r"(?i)^related articles$"),
+        re.compile(r"(?i)^topics\s+lawsuits\s+claims\s+oklahoma$"),
+        re.compile(
+            r"(?i)^for complete coverage and additional details,\s*"
+            r"visit the original article published by bloomberg"
+            r"(?:\.com)?\.?$"
+        ),
+        re.compile(r"(?i)^cashback calculator$"),
+        re.compile(r"(?i)^advanced draft survey$"),
+        re.compile(r"(?i)^printer friendly version$"),
+        re.compile(
+            r"(?i)^trading involves risk of loss\.\s*cashback rates "
+            r"are estimates\b.*$"
+        ),
+        re.compile(r"(?i)^african reviewer\s+view all posts$"),
+        re.compile(r"(?i)^s&p 500 top losers$"),
+        re.compile(
+            r"(?is)^share on facebook \(opens in new window\).*"
+            r"share on x \(opens in new window\)\s*x$"
+        ),
+        re.compile(
+            r"(?is)^exclusive stories\s+daily epaper access\s+"
+            r"smart market tools\s+curated investment ideas\s+"
+            r"ad-lite experience\s+subscription$"
+        ),
+        re.compile(
+            r"(?is)^want to share this article\?\s*upgrade to "
+            r"all-access now\b.*$"
+        ),
+        re.compile(
+            r"(?i)^bluesky\s+x\s+threads\s+facebook\s+email$"
+        ),
         re.compile(r"(?i)^advertisement\s*\d*$"),
         re.compile(
             r"(?i)^this commercial has not loaded but,?\s*however your "
@@ -6042,6 +6360,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if (
             text.casefold() == "watch this next"
             or any(pattern.search(text) for pattern in footer_patterns)
+            or re.fullmatch(r"[\u200b-\u200f\u2060\ufeff]+", text)
+            or re.fullmatch(r"(?:\*\s*){3,}", text)
+            or text == "🫣"
         ):
             node.decompose()
 
@@ -6076,6 +6397,48 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     )
     for text_node in list(soup.find_all(string=disclaimer_suffix)):
         cleaned = disclaimer_suffix.sub("", str(text_node)).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
+
+    malformed_partner_tail = re.compile(
+        r"(?is)(?:/?p)?em\s*uploaded by .*$"
+    )
+    for text_node in list(soup.find_all(string=malformed_partner_tail)):
+        cleaned = malformed_partner_tail.sub("", str(text_node)).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
+
+    for marker in list(soup.select("p")):
+        marker_text = _clean_text(marker.get_text(" ", strip=True))
+        if not re.fullmatch(
+            r"(?i)\.{3}\s*advertisement\s*\.{3}",
+            marker_text,
+        ):
+            continue
+        previous_rule = marker.find_previous_sibling("hr")
+        next_rule = marker.find_next_sibling("hr")
+        if not isinstance(previous_rule, Tag) or not isinstance(next_rule, Tag):
+            marker.decompose()
+            continue
+        current = previous_rule
+        while current is not None:
+            following = current.next_sibling
+            current.extract()
+            if current is next_rule:
+                break
+            current = following
+
+    partner_recruiting_tail = re.compile(
+        r"(?is)\s*(?:despite the downturn,\s*trading firms still continue "
+        r"to build out their options trading capabilities|"
+        r"to discuss these opportunities confidentially)\b.*$"
+    )
+    for text_node in list(soup.find_all(string=partner_recruiting_tail)):
+        cleaned = partner_recruiting_tail.sub("", str(text_node)).rstrip()
         if cleaned:
             text_node.replace_with(cleaned)
         else:

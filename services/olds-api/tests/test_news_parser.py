@@ -1675,7 +1675,7 @@ def test_bloomberg_parser_removes_legacy_image_and_share_controls():
     )
 
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
     assert "role=\"button\"" not in result.body_html
     assert "tabindex=" not in result.body_html
     assert "Open image in viewer" not in result.body_html
@@ -1937,7 +1937,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_bloomberg_embedded_document_renders_tabular_data():
@@ -2068,6 +2068,9 @@ def test_bloomberg_generic_syndication_removes_partner_controls_and_law_cta():
       {reporting}
       <p>3,463 followers</p>
       <p>Report this post</p>
+      <section class="comment">
+        <p class="comment__text">Unrelated LinkedIn reader comment</p>
+      </section>
       <p>"English Bloomberg report remains complete." "Rapport français
       dupliqué." #markets #finance #stocks #funds #research</p>
       <a role="button" href="/article-image">
@@ -2102,6 +2105,71 @@ def test_bloomberg_generic_syndication_removes_partner_controls_and_law_cta():
       <div id="views-bootstrap-article-node-view-block-4">
         <h4>Unrelated transport-news recirculation card</h4>
       </div>
+      <p>Uploaded by Partner Site Editor</p>
+      <p>Top Trending Stocks: SBI Share Price, HDFC Bank Share Price</p>
+      <p>Get automatic alerts for this topic.</p>
+      <p>About This Source</p>
+      <p>⚠️ Disclaimer: This content is for training purposes only and
+      should not be considered financial advice.</p>
+      <p>This article was generated from an automated news agency feed
+      without modifications to text.</p>
+      <h3>Share this:</h3>
+      <p>📰 Source</p>
+      <p>For complete coverage and additional details, visit the original
+      article published by Bloomberg.com.</p>
+      <p>Subscribe to ET Prime and read the Economic Times ePaper
+      Online.and Sensex Today.</p>
+      <p>Read the Full Article</p>
+      <p>Get the latest insurance news sent straight to your inbox.</p>
+      <p>Maritime and shipping</p>
+      <p>Discussion</p>
+      <div class="ai_podcast_030825">
+        <p>Listen to this article in summarized format</p>
+      </div>
+      <p>Most Popular</p>
+      <p>Want to stay up to date?</p>
+      <p>Get More Podcast Analytics</p>
+      <p>Here are more articles you may enjoy.</p>
+      <p>Trade these moves with SignalPro</p>
+      <p>Was this article valuable?</p>
+      <p>Interested in AI?</p>
+      <p>Move the slider to your real monthly trading volume. Figures
+      shown are your earnings.</p>
+      <p>Trending Now</p>
+      <p>Build Draft Survey skills through practical training.</p>
+      <p>How much could you earn back per year?</p>
+      <p>Related Articles</p>
+      <p>Related coverage: Unrelated gold-market headline</p>
+      <div class="news-detail-content-block ai-post">
+        <p>Partner-generated AI investment summary</p>
+      </div>
+      <section id="story-source-gallery">
+        <p>Each image keeps its publisher and citation text.</p>
+      </section>
+      <div class="xenforo-comment-widget">
+        <p>Unrelated hardware-forum reader comment</p>
+      </div>
+      <div class="cbcalc-wrap"><p>Cashback Calculator</p></div>
+      <hr><p>... ADVERTISEMENT ...</p>
+      <p>Bullion dealer promotional copy</p><hr>
+      <p>Sign up for the Business of Food newsletter for food news.</p>
+      <p>and yet Equinor still....</p>
+      <p>https://www.gata.org/sites/default/files/GATA-silver-round-front.png</p>
+      <p>Get the latest Nigerian news delivered to your inbox.</p>
+      <p>Want more Bloomberg Opinion? Terminal readers head toOPIN
+      &lt;GO&gt;. Or subscribe to our daily newsletter.</p>
+      <div class="usstock_widget"><h2>S&amp;P 500 Top Gainers</h2></div>
+      <div data-testid="headline-stack-promo-liner-test-id">
+        Sign up now: Get insights on the biggest stories in Malaysia
+      </div>
+      <div data-testid="tags-test-id"><a><p>Taiwan</p></a></div>
+      <h6>More on this topic</h6>
+      <p>Top Tech Stories</p>
+      <ul><li>Unrelated technology story</li></ul>
+      <p>Written by: Reporter One and Reporter Two — With assistance from
+      Editor Three @Bloomberg</p>
+      <img src="https://www.bloomberg.com/_next/image?url=https%3A%2F%2Fgroundnews.b-cdn.net%2Finterests%2Ftiny.jpg%3Fwidth%3D24&amp;w=64"
+           alt="Unrelated low-resolution topic icon">
       <p>Sign up for The Brief, a daily afternoon newsletter showcasing
       Bloomberg Law’s top stories.</p>
     </article></body></html>
@@ -2134,7 +2202,251 @@ def test_bloomberg_generic_syndication_removes_partner_controls_and_law_cta():
     assert "Read the Article" not in result.plain_text
     assert "Unrelated Squarespace tag" not in result.plain_text
     assert "transport-news recirculation" not in result.plain_text
+    assert "Uploaded by Partner" not in result.plain_text
+    assert "Top Trending Stocks" not in result.plain_text
+    assert "automatic alerts" not in result.plain_text
+    assert "About This Source" not in result.plain_text
+    assert "training purposes" not in result.plain_text
+    assert "automated news agency feed" not in result.plain_text
+    assert "LinkedIn reader comment" not in result.plain_text
+    assert "Share this:" not in result.plain_text
+    assert "📰 Source" not in result.plain_text
+    assert "complete coverage" not in result.plain_text
+    assert "ET Prime" not in result.plain_text
+    assert "Read the Full Article" not in result.plain_text
+    assert "insurance news" not in result.plain_text
+    assert "Maritime and shipping" not in result.plain_text
+    assert "Discussion" not in result.plain_text
+    assert "summarized format" not in result.plain_text
+    assert "Most Popular" not in result.plain_text
+    assert "stay up to date" not in result.plain_text
+    assert "Podcast Analytics" not in result.plain_text
+    assert "more articles you may enjoy" not in result.plain_text
+    assert "SignalPro" not in result.plain_text
+    assert "article valuable" not in result.plain_text
+    assert "Interested in AI" not in result.plain_text
+    assert "real monthly trading volume" not in result.plain_text
+    assert "Trending Now" not in result.plain_text
+    assert "Draft Survey skills" not in result.plain_text
+    assert "earn back per year" not in result.plain_text
+    assert "Related Articles" not in result.plain_text
+    assert "Related coverage" not in result.plain_text
+    assert "AI investment summary" not in result.plain_text
+    assert "Each image keeps" not in result.plain_text
+    assert "hardware-forum reader comment" not in result.plain_text
+    assert "Cashback Calculator" not in result.plain_text
+    assert "Bullion dealer" not in result.plain_text
+    assert "Business of Food newsletter" not in result.plain_text
+    assert "Equinor still" not in result.plain_text
+    assert "GATA-silver-round-front" not in result.plain_text
+    assert "latest Nigerian news" not in result.plain_text
+    assert "head toOPIN" not in result.plain_text
+    assert "S&P 500 Top Gainers" not in result.plain_text
+    assert "stories in Malaysia" not in result.plain_text
+    assert "Taiwan" not in result.plain_text
+    assert "More on this topic" not in result.plain_text
+    assert "Top Tech Stories" not in result.plain_text
+    assert "Unrelated technology story" not in result.plain_text
+    assert "Written by: Reporter" not in result.plain_text
+    assert "groundnews" not in result.body_html
     assert len(result.images) == 1
+
+
+def test_bloomberg_signalpro_ai_summary_is_partial():
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2026-07-15/"
+        "airbus-set-to-win-a330-jet-deals"
+    )
+    reporting = "".join(
+        f"<p>Bloomberg reporting paragraph {index} describes the aircraft "
+        "orders, customers, and negotiations in substantive detail.</p>"
+        for index in range(1, 7)
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Airbus Set to Win Jet Deals">
+      <meta property="og:url"
+            content="https://signalpro.markets/news/airbus-jet-deals">
+    </head><body><article>
+      {reporting}
+      <div class="ai-block"><p>SignalPro AI analysis</p></div>
+      <div class="cbcalc-wrap"><p>Cashback Calculator</p></div>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "truncated-body" in result.quality.warnings
+    assert "SignalPro AI analysis" not in result.plain_text
+    assert "Cashback Calculator" not in result.plain_text
+
+
+def test_bloomberg_repairs_malformed_yahoo_partner_markup():
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2026-03-19/"
+        "oil-shock-sends-materials-stocks-lower"
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Oil Shock Hits Materials Stocks">
+      <meta property="og:url"
+            content="https://sg.finance.yahoo.com/news/materials-stocks.html">
+    </head><body><article>
+      <p>Opening Bloomberg paragraph contains substantive market reporting
+      about industrial companies and elevated production costs.</p>
+      <p>Investors questioned demand.<br>br /At the same time, metals stocks
+      pulled back after a record run.nbsp;/ppPrecious metals traded like risk
+      assets./ppHowever, chemical producers gained during the conflict.
+      /ppemUploaded by Partner Name/em/ppstrongSee Also:/strong</p>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        allow_generic_syndication=True,
+    )
+
+    assert "metals stocks pulled back" in result.plain_text
+    assert "chemical producers gained" in result.plain_text
+    assert "br /" not in result.plain_text
+    assert "nbsp;/pp" not in result.plain_text
+    assert "Uploaded by" not in result.plain_text
+    assert "See Also" not in result.plain_text
+
+
+def test_bloomberg_linkedin_copy_keeps_report_and_removes_social_credits():
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2026-04-01/"
+        "markets-react-to-war-developments"
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Markets React to War Developments">
+      <meta property="og:url"
+            content="https://www.linkedin.com/posts/reporter-markets">
+    </head><body><article>
+      <p>Oil prices plunged and Treasury yields declined after the
+      announcement. The market reaction showed investors expected talks to
+      reduce the immediate risk to global energy supplies. With Isabelle Lee,
+      Matthew Griffin and always-superb editing by William Selway Thanks
+      several analysts for the smart insights https://lnkd.in/example</p>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        allow_generic_syndication=True,
+    )
+
+    assert "market reaction showed investors" in result.plain_text
+    assert "always-superb editing" not in result.plain_text
+    assert "lnkd.in" not in result.plain_text
+
+
+def test_bloomberg_third_party_rewrite_is_not_marked_complete():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Argentina Cuts World Cup Flights">
+      <meta property="og:url"
+            content="https://internationalinvestment.biz/en/news/flights">
+    </head><body><article>
+      <p>Bloomberg reported that the airline cut special services because of
+      higher fuel costs and weaker demand from football fans.</p>
+      <p>As International Investment experts report, the flight cuts show the
+      limits of sports tourism when fuel and accommodation are expensive.</p>
+      <p>The publisher then provides its own extended analysis of purchasing
+      power, currencies, airline economics, and tournament attendance.</p>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2026-05-29/"
+            "fifa-world-cup-argentina-cuts-special-flights"
+        ),
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "truncated-body" in result.quality.warnings
+
+
+def test_bloomberg_abitech_analysis_is_partial_and_drops_feed_cards():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Congo Cobalt Supply">
+      <meta property="og:url"
+            content="https://example.africa/intelligence/congo-cobalt">
+    </head><body><main>
+      <span>ABITECH Analysis</span>
+      <div class="report">
+        <p>The analysis describes negotiations with cobalt producers and
+        discusses supply-chain effects for battery manufacturers.</p>
+        <p>It attributes the underlying announcement to Bloomberg Africa.</p>
+      </div>
+      <div class="card">
+        <a>Other Zambia mining intelligence</a>
+      </div>
+    </main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2026-05-14/"
+            "congo-eyes-deals-with-cobalt-producers"
+        ),
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value != "complete"
+    assert "truncated-body" in result.quality.warnings
+    assert "Other Zambia" not in result.plain_text
+
+
+def test_bloomberg_biggo_rewrite_is_partial_and_drops_google_promo():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Software Stocks and AI">
+      <meta property="og:url"
+            content="https://finance.biggo.com/news/software-stocks">
+    </head><body><article>
+      <div class="GooglePreferredSource_withDesc__example">
+        Once added, BigGo Finance appears first in Google Search Top Stories.
+      </div>
+      <p>The page summarizes a strategist report about software companies,
+      artificial intelligence, valuations, and investor positioning.</p>
+      <p>It combines that discussion with separate currency-market analysis
+      supplied by the third-party publisher.</p>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2026-02-10/"
+            "jpmorgan-strategists-say-ai-fears-overblown"
+        ),
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value != "complete"
+    assert "truncated-body" in result.quality.warnings
+    assert "BigGo Finance" not in result.plain_text
 
 
 def test_bloomberg_removes_related_read_more_and_source_link_tails():
@@ -2167,6 +2479,78 @@ def test_bloomberg_removes_related_read_more_and_source_link_tails():
     assert "weight-loss drug story" not in result.plain_text
     assert "Source link" not in result.plain_text
     assert "Online Company Registration" not in result.plain_text
+
+
+def test_bloomberg_short_partner_paywall_excerpt_is_partial():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Hotel Expansion">
+      <meta property="og:url"
+            content="https://economictimes.indiatimes.com/hotel-expansion">
+    </head><body>
+      <article class="artData paywall">
+        <div class="artText">
+          <p>Major global hotel chains are expanding in India while
+          consumer spending slows, according to people familiar with
+          the plans.</p>
+        </div>
+      </article>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url="https://www.bloomberg.com/news/articles/2026-06-09/test",
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value == "partial"
+    assert "truncated-body" in result.quality.warnings
+
+
+def test_bloomberg_newsbreak_uses_embedded_article_not_feed_cards():
+    content = "".join(
+        f"<p>Licensed Bloomberg rare-earth report paragraph {index} "
+        "contains substantive reporting and sourcing details.</p>"
+        for index in range(1, 7)
+    )
+    payload = json.dumps(
+        {
+            "props": {
+                "pageProps": {
+                    "authors": ["Bloomberg News"],
+                    "content": f"<body>{content}</body>",
+                }
+            }
+        }
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Rare Earth Producer">
+      <meta property="og:url"
+            content="https://www.newsbreak.com/news/rare-earth-producer">
+    </head><body>
+      <main>
+        <p>Visible licensed excerpt.</p>
+        <section><a href="/unrelated" target="_blank">
+          <p class="textoverflow-3">Unrelated airport charging story</p>
+        </a></section>
+      </main>
+      <script id="__NEXT_DATA__" type="application/json">{payload}</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="bloomberg",
+        canonical_url="https://www.bloomberg.com/news/articles/2026-02-05/test",
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "paragraph 6" in result.plain_text
+    assert "airport charging" not in result.plain_text
 
 
 def test_bloomberg_bias_rating_shell_is_not_marked_complete():
@@ -2435,7 +2819,7 @@ def test_bloomberg_parser_removes_legacy_inline_newsletter_nested_in_paragraph()
     assert "Opening article paragraph." in result.plain_text
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "markets daily newsletter" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_bloomberg_parser_recovers_legacy_feature_landing_page():
@@ -3367,7 +3751,7 @@ def test_bloomberg_parser_separates_explicit_figure_credit():
     assert len(result.images) == 1
     assert result.images[0].caption == "Welcome to the factory floor."
     assert result.images[0].credit == "Tesla"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
@@ -3409,7 +3793,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_bloomberg_parser_rejects_explicit_teaser_body():
@@ -3441,7 +3825,7 @@ def test_bloomberg_parser_rejects_explicit_teaser_body():
 
     assert result.quality.status.value == "partial"
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_bloomberg_parser_trims_professional_subscription_shell():
@@ -3546,7 +3930,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_bloomberg_parser_scopes_legacy_body_without_right_rail():
@@ -3617,7 +4001,7 @@ def test_bloomberg_parser_removes_share_article_control_from_body():
     assert result.quality.status.value == "complete"
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "SHARE THIS ARTICLE" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
@@ -3693,7 +4077,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
         "https://omny.fm/shows/example/episode"
     ]
     assert "Unrelated navigation card" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -4574,7 +4958,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_bloomberg_yahoo_syndication_removes_most_read_list():
@@ -4631,7 +5015,7 @@ def test_bloomberg_yahoo_syndication_removes_most_read_list():
     assert "Closing Bloomberg reporting sentence." in result.plain_text
     assert "Most Read from Bloomberg" not in result.plain_text
     assert "Unrelated most-read headline" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_nyt_parser_trims_access_shell_after_complete_article():
@@ -8982,7 +9366,7 @@ def test_bloomberg_parser_uses_first_question_for_untitled_quiz():
     )
     assert result.content_type.value == "interactive"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_nyt_parser_accepts_intentionally_short_corrections_notice():
@@ -9854,7 +10238,7 @@ def test_bloomberg_parser_removes_legacy_related_stories_list():
     assert "LISTEN TO ARTICLE" not in result.plain_text
     assert "<button" not in result.body_html
     assert "read.mp3" not in result.body_html
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.72"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.91"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
