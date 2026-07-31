@@ -88,7 +88,7 @@ PUBLISHER_SPECS = {
     ),
     "bloomberg": PublisherSpec(
         publisher="bloomberg",
-        parser_version="bloomberg-parser/0.10.94",
+        parser_version="bloomberg-parser/0.10.95",
         domains=("bloomberg.com", "www.bloomberg.com"),
         default_language="en",
         edition="global",
@@ -113,6 +113,8 @@ PUBLISHER_SPECS = {
             ".news-designed-for-consumer-media",
             ".share-article-button",
             "[class*='share-article-button']",
+            ".content-type-footer",
+            ".topic-list",
             "table:has(.news-rsf-table-string)",
         ),
         text_block_selectors=(
