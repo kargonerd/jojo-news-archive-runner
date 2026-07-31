@@ -5933,6 +5933,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"@bloomberg$"
         ),
         re.compile(
+            r"(?i)^(?:--|—)\s*with assistance from\b.+"
+            r"(?:\.\s*editors?\s*:.+)?$"
+        ),
+        re.compile(
             r"(?i)^for more articles like this,\s*"
             r"please visit us at bloomberg\.com\.?$"
         ),
