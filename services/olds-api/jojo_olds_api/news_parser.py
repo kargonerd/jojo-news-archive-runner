@@ -5913,6 +5913,23 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             else:
                 text_node.extract()
 
+    for text_node in list(
+        soup.find_all(
+            string=re.compile(
+                r"(?i)for related news and information\s*:\s*$"
+            )
+        )
+    ):
+        cleaned = re.sub(
+            r"(?i)\s*for related news and information\s*:\s*$",
+            "",
+            str(text_node),
+        ).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
+
     for marker in list(soup.select("h2, h3, h4, h5, h6, p")):
         marker_text = _clean_text(marker.get_text(" ", strip=True)).casefold()
         if marker_text not in {
