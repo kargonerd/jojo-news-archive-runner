@@ -6018,7 +6018,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^read more breaking commentary from bloomberg view "
-            r"at the ticker\.?$"
+            r"at the ticker\s*\.?$"
         ),
         re.compile(
             r"(?i)^for more,\s*read this quicktake\s*:\s*\S.+$"
@@ -6589,7 +6589,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     for paragraph in list(soup.select("p")):
         text = _clean_text(paragraph.get_text(" ", strip=True))
         trimmed = re.sub(
-            r"(?i)\s+follow (?:him|her|them) on twitter\.\)$",
+            r"(?i)\s+follow (?:him|her|them) on twitter\s*\.\s*\)$",
             ")",
             text,
         )
