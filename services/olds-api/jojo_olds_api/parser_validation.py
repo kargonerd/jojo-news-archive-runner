@@ -170,7 +170,11 @@ def _has_publisher_interface_noise(
     return False
 
 
-def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
+def initialize_parser_validation_schema(
+    connection: sqlite3.Connection,
+    *,
+    invalidate_stale_results: bool = True,
+) -> None:
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS parser_validation_config (
@@ -271,26 +275,19 @@ def initialize_parser_validation_schema(connection: sqlite3.Connection) -> None:
         WHERE type='table' AND name='captures'
         """
     ).fetchone()
-    if captures_exist is not None:
+    if captures_exist is not None and invalidate_stale_results:
         connection.execute(
             """
             DELETE FROM parser_validation_results
-            WHERE source_raw_sha256 IS NOT NULL
-              AND EXISTS (
-                SELECT 1
-                FROM captures AS current_capture
-                WHERE current_capture.canonical_url =
-                    parser_validation_results.canonical_url
-                  AND current_capture.status='complete'
-                  AND current_capture.raw_sha256 IS NOT NULL
-              )
-              AND NOT EXISTS (
-                SELECT 1
-                FROM captures AS capture
-                WHERE capture.canonical_url =
-                    parser_validation_results.canonical_url
-                  AND capture.raw_sha256 =
-                    parser_validation_results.source_raw_sha256
+            WHERE canonical_url IN (
+                SELECT result.canonical_url
+                FROM parser_validation_results AS result
+                CROSS JOIN captures AS capture
+                  ON capture.canonical_url=result.canonical_url
+                WHERE result.source_raw_sha256 IS NOT NULL
+                  AND capture.status='complete'
+                  AND capture.raw_sha256 IS NOT NULL
+                  AND capture.raw_sha256 != result.source_raw_sha256
               )
             """
         )
@@ -666,7 +663,10 @@ def pending_parser_validation_urls(
     maximum: int | None,
     maximum_record_attempts: int,
 ) -> list[str]:
-    initialize_parser_validation_schema(connection)
+    initialize_parser_validation_schema(
+        connection,
+        invalidate_stale_results=False,
+    )
     query = """
         WITH active_years AS (
             SELECT
@@ -718,10 +718,10 @@ def pending_parser_validation_urls(
                         END,
                         sample.sample_priority
                 ) AS sample_rank
-            FROM parser_validation_samples AS sample
-            JOIN active_years
-              ON active_years.sample_year=sample.sample_year
-            JOIN captures AS capture
+            FROM active_years
+            CROSS JOIN parser_validation_samples AS sample
+              ON sample.sample_year=active_years.sample_year
+            CROSS JOIN captures AS capture
               ON capture.canonical_url=sample.canonical_url
             LEFT JOIN parser_validation_results AS result
               ON result.canonical_url=sample.canonical_url
@@ -754,7 +754,10 @@ def pending_completed_parser_validation_files(
     *,
     maximum: int | None,
 ) -> list[tuple[str, str]]:
-    initialize_parser_validation_schema(connection)
+    initialize_parser_validation_schema(
+        connection,
+        invalidate_stale_results=False,
+    )
     query = """
         WITH active_years AS (
             SELECT
@@ -815,7 +818,10 @@ def failed_completed_parser_validation_files(
     *,
     maximum: int | None,
 ) -> list[tuple[str, str]]:
-    initialize_parser_validation_schema(connection)
+    initialize_parser_validation_schema(
+        connection,
+        invalidate_stale_results=False,
+    )
     query = """
         SELECT
             result.canonical_url,
@@ -864,7 +870,10 @@ def record_parser_validation(
     capture: RawCapture,
     archive_root: Path,
 ) -> dict[str, object]:
-    initialize_parser_validation_schema(connection)
+    initialize_parser_validation_schema(
+        connection,
+        invalidate_stale_results=False,
+    )
     sample_row = connection.execute(
         """
         SELECT sample_year
@@ -1129,7 +1138,10 @@ def record_parser_validation(
 def parser_validation_summary(
     connection: sqlite3.Connection,
 ) -> dict[str, object]:
-    initialize_parser_validation_schema(connection)
+    initialize_parser_validation_schema(
+        connection,
+        invalidate_stale_results=False,
+    )
     result: dict[str, object] = {
         "formatVersion": SCHEMA_VERSION,
         "ready": True,
@@ -1289,7 +1301,10 @@ def parser_validation_summary(
 def parser_validation_target_reached(
     connection: sqlite3.Connection,
 ) -> bool:
-    initialize_parser_validation_schema(connection)
+    initialize_parser_validation_schema(
+        connection,
+        invalidate_stale_results=False,
+    )
     rows = connection.execute(
         """
         SELECT
