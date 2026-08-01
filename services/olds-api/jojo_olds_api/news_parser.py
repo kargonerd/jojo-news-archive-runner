@@ -6055,7 +6055,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?is)^.*\bnsn\s+[a-z0-9]{8,14}\s*<go>\s*$"
         ),
-        re.compile(r"(?i)^muse highlights include .{2,180}\.?$"),
+        re.compile(
+            r"(?i)^(?:today(?:'|’)s\s+)?muse highlights include "
+            r".{2,180}\.?$"
+        ),
         re.compile(
             r"(?i)^\(?to save a copy of the chart,\s*click here\.\)?$"
         ),
@@ -6099,7 +6102,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^editors?\s*:\s*$"),
         re.compile(
-            r"(?i)^(?:--|—)\s*[\w .,'’&-]+\.\s*"
+            r"(?i)^(?:-{1,2}|—|–)\s*[\w .,'’&-]+\.\s*"
             r"editors?\s*:\s*[\w .,'’&-]+$"
         ),
         re.compile(r"(?i)^[a-z0-9._%+-]+@bloomberg\.net\s*[.;]?$"),
@@ -6574,6 +6577,43 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if isinstance(related, Tag) and related.name in {"ul", "ol"}:
             related.decompose()
             marker.decompose()
+
+    for marker in list(soup.select("p, h2, h3, h4")):
+        if not re.fullmatch(
+            r"(?i)more from .{2,120}\s*:",
+            _clean_text(marker.get_text(" ", strip=True)),
+        ):
+            continue
+        related = marker.find_next_sibling()
+        if isinstance(related, Tag) and related.name in {"ul", "ol"}:
+            related.decompose()
+            marker.decompose()
+
+    for marker in list(soup.select("p")):
+        if (
+            _clean_text(marker.get_text(" ", strip=True)).casefold()
+            != "daily podcast"
+        ):
+            continue
+        title = marker.find_next_sibling()
+        description = (
+            title.find_next_sibling()
+            if isinstance(title, Tag) and title.name == "p"
+            else None
+        )
+        if not (
+            isinstance(description, Tag)
+            and description.name == "p"
+            and re.search(
+                r"(?is)\bpodcast on the bloomberg terminal\b.*"
+                r"\bto listen,\s*click here\.?$",
+                _clean_text(description.get_text(" ", strip=True)),
+            )
+        ):
+            continue
+        description.decompose()
+        title.decompose()
+        marker.decompose()
 
     for module in list(soup.select("div.story_inline.assets")):
         if module.select_one("div.author") and module.select_one("div.related"):
