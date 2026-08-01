@@ -6061,12 +6061,16 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(r"(?i)^for related news and information\s*:?.*$"),
         re.compile(r"(?i)^for more on .{2,160},\s*click here\.?$"),
         re.compile(
-            r"(?i)^for more (?:copyright|patent|trademark) news,\s*"
+            r"(?i)^for (?:more )?(?:copyright|patent|trademark) news,\s*"
             r"click here\.?$"
         ),
         re.compile(
             r"(?i)^link to company news\s*:\s*"
-            r"\{[^{}]{1,80}<equity>\s+cn\s+<go>\}\s*$"
+            r"\{[^{}]{1,80}<equity>\s+cn(?:\s+<go>)?\}\s*$"
+        ),
+        re.compile(
+            r"(?i)^.{2,100}\bis (?:the )?.{2,100} for bloomberg\.\s*"
+            r"follow (?:him|her|them) on twitter\b.*$"
         ),
         re.compile(r"(?i)^(?:\*t\s*)+$"),
         re.compile(
