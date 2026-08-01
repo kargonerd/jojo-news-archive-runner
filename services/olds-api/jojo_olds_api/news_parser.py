@@ -638,10 +638,21 @@ def parse_article(
     images_by_url: dict[str, ImageCandidate] = {}
     blocks: list[ContentBlock] = []
     wsj_standalone_truncation_marker = False
+    bloomberg_lightbox_thumbnails = (
+        _bloomberg_legacy_lightbox_thumbnail_identities(
+            soup,
+            base_url=canonical_url,
+        )
+        if spec.publisher == "bloomberg"
+        else set()
+    )
     for url in _lead_image_urls(soup, news_article, canonical_url):
         if (
             spec.publisher == "bloomberg"
-            and _bloomberg_author_avatar_url(url)
+            and (
+                _bloomberg_author_avatar_url(url)
+                or _image_identity(url) in bloomberg_lightbox_thumbnails
+            )
         ):
             continue
         image = _image_candidate(
@@ -2875,6 +2886,33 @@ def _bloomberg_author_avatar_url(url: str) -> bool:
             url,
         )
     )
+
+
+def _bloomberg_legacy_lightbox_thumbnail_identities(
+    soup: BeautifulSoup,
+    *,
+    base_url: str,
+) -> set[str]:
+    identities: set[str] = set()
+    for thumbnail in soup.select(
+        ".thumbnail_container.overlay_container > a.enlarge_image"
+    ):
+        overlay = thumbnail.find_next_sibling(
+            "div",
+            class_="simple_overlay",
+        )
+        image = thumbnail.find("img")
+        if (
+            not isinstance(overlay, Tag)
+            or overlay.find("img") is None
+            or not isinstance(image, Tag)
+        ):
+            continue
+        identities.update(
+            _image_identity(url)
+            for url in _image_urls(image, base_url=base_url)
+        )
+    return identities
 
 
 def _promote_bloomberg_image_candidates(candidates: list[str]) -> list[str]:
@@ -6126,6 +6164,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^to read more from .{2,180},\s*click here\s*\.?$"
         ),
         re.compile(r"(?i)^read more echoes columns online\s*\.?$"),
+        re.compile(r"(?i)^read more from echoes online\s*\.?$"),
         re.compile(
             r"(?i)^for (?:more )?(?:copyright|patent|trademark) news,\s*"
             r"click here\.?$"
@@ -6708,6 +6747,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             text,
         )
         trimmed = re.sub(
+            r"(?i)\s+e-?mail (?:him|her|them) and\s*\)$",
+            ")",
+            trimmed,
+        )
+        trimmed = re.sub(
             r"(?i)\s+for more dine\s*&\s*deal reviews,\s*"
             r"click here\.\)$",
             ")",
@@ -6921,6 +6965,18 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     # Legacy Bloomberg figures made the image container act like a lightbox
     # button.  Keep the figure and image, but do not preserve browser-only
     # interaction semantics in the archived article body.
+    for thumbnail in list(
+        soup.select(
+            ".thumbnail_container.overlay_container > a.enlarge_image"
+        )
+    ):
+        overlay = thumbnail.find_next_sibling(
+            "div",
+            class_="simple_overlay",
+        )
+        if isinstance(overlay, Tag) and overlay.find("img"):
+            thumbnail.decompose()
+
     for node in soup.select(
         "figure [role='button'][aria-label='Open image in viewer']"
     ):
