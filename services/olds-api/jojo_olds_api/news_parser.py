@@ -5988,7 +5988,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"@bloomberg$"
         ),
         re.compile(
-            r"(?i)^(?:--|—)\s*with assistance from\b.+"
+            r"(?i)^(?:-{1,2}|—|–)\s*with assistance from\b.+"
             r"(?:\.\s*editors?\s*:.+)?$"
         ),
         re.compile(
@@ -6006,8 +6006,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^read more (?:opinion online|online opinion) "
-            r"from bloomberg view\.?$"
+            r"from bloomberg view\s*\.?$"
         ),
+        re.compile(r"(?i)^today(?:'|’)s highlights\s*:\s*.+$"),
         re.compile(
             r"(?i)^read more opinion online from bloomberg view\.\s*"
             r"subscribe to receive a daily e-?mail highlighting new view "
