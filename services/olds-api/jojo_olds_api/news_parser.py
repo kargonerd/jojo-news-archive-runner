@@ -8761,6 +8761,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/javelin/images/social-",
             "/javelin/public/images/social-",
             "/lightsaber/_next/static/media/social-",
+            "/~assets/social-default.",
             "yahoo_default_logo",
             "yahoo-finance-default-logo",
             "/m/img/social/og-ft-logo",
