@@ -6087,6 +6087,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"\s+)?at the ticker\s*\.?$"
         ),
         re.compile(
+            r"(?i)^read more breaking commentary from .{2,100} "
+            r"and other bloomberg view columnists and editors "
+            r"at the ticker\s*\.?$"
+        ),
+        re.compile(
             r"(?i)^for more,\s*read this quicktake\s*:\s*\S.+$"
         ),
         re.compile(r"(?i)^\*?\s*link to earlier story\s*:\s*\S.+$"),
@@ -6255,6 +6260,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^follow @\w+ for all the latest news, and sign up (?:for|to) "
             r"our daily .+ newsletter\.?$"
+        ),
+        re.compile(
+            r"(?i)^follow @\w+ on twitter for more on .{2,160}\.?$"
         ),
         re.compile(
             r"(?i)^subscribe to .+ on "
