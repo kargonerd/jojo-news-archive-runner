@@ -639,6 +639,11 @@ def parse_article(
     blocks: list[ContentBlock] = []
     wsj_standalone_truncation_marker = False
     for url in _lead_image_urls(soup, news_article, canonical_url):
+        if (
+            spec.publisher == "bloomberg"
+            and _bloomberg_author_avatar_url(url)
+        ):
+            continue
         image = _image_candidate(
             url=url,
             candidate_urls=[url],
@@ -661,6 +666,11 @@ def parse_article(
             starting_position=0,
         )
         for image in body_images:
+            if (
+                spec.publisher == "bloomberg"
+                and _bloomberg_author_avatar_url(image.original_url)
+            ):
+                continue
             image_key = _image_identity(image.original_url)
             existing = images_by_url.get(image_key)
             if (
@@ -2854,6 +2864,16 @@ def _bloomberg_low_resolution_image(image: ImageCandidate) -> bool:
             )
         )
         for url in image.candidate_urls
+    )
+
+
+def _bloomberg_author_avatar_url(url: str) -> bool:
+    return bool(
+        re.search(
+            r"(?i)/images/bview/columnists/"
+            r"(?:\d+x\d+/)?[^/?#]+\.(?:gif|jpe?g|png|webp)(?:[?#]|$)",
+            url,
+        )
     )
 
 
@@ -6005,7 +6025,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^\*?\s*link to earlier story\s*:\s*\S.+$"),
         re.compile(r"(?i)^\*{3}\s*end of transcript\s*\*{3}$"),
-        re.compile(r"(?i)^running time\s*:\s*\d{1,3}:\d{2}$"),
+        re.compile(r"(?i)^running time\s*:?\s*\d{1,3}:\d{2}$"),
+        re.compile(r"^_{3,}$"),
         re.compile(r"(?i)^provider id\s*:\s*[0-9a-f]{32}$"),
         re.compile(
             r"(?i)^contributed via\s*:\s*"
@@ -6546,6 +6567,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if isinstance(related, Tag) and related.name in {"ul", "ol"}:
             related.decompose()
             marker.decompose()
+
+    for module in list(soup.select("div.story_inline.assets")):
+        if module.select_one("div.author") and module.select_one("div.related"):
+            module.decompose()
 
     for promo in list(soup.select("p")):
         if not grid_promo.fullmatch(
