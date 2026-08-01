@@ -6008,6 +6008,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^read more (?:opinion online|online opinion) "
             r"from bloomberg view\s*\.?$"
         ),
+        re.compile(r"(?i)^read more bloomberg view editorials\s*\.?$"),
         re.compile(r"(?i)^today(?:'|’)s highlights\s*:\s*.+$"),
         re.compile(
             r"(?i)^read more opinion online from bloomberg view\s*\.\s*"
@@ -6081,8 +6082,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^this is a bloomberg podcast\.\s*to download,\s*"
-            r"watch or listen to this report now,\s*click here\.?$"
+            r"watch or listen (?:to this report )?now,\s*click here\.?$"
         ),
+        re.compile(r"(?i)^for more,\s*read this next\s*:\s*$"),
         re.compile(r"(?i)^for more,\s*click here\.?$"),
         re.compile(
             r"(?i)^to read more from .{2,180},\s*click here\s*\.?$"
@@ -6094,6 +6096,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^link to company news\s*:\s*"
+            r"\{[^{}]{1,80}<equity>\s+cn(?:\s+<go>)?\}\s*$"
+        ),
+        re.compile(
+            r"(?i)^link to statement\s*:\s*\{\s*https?://[^{}\s]+\s*\}\s*"
+            r"link to company news\s*:\s*"
             r"\{[^{}]{1,80}<equity>\s+cn(?:\s+<go>)?\}\s*$"
         ),
         re.compile(
@@ -6591,7 +6598,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
 
     for marker in list(soup.select("h2, h3, h4, p")):
         if not re.fullmatch(
-            r"(?i)(?:read this next\s*:?|"
+            r"(?i)(?:(?:for more,\s*)?read this next\s*:?|"
             r"for more on .{2,160},\s*check out .{2,80}\s*:)",
             _clean_text(marker.get_text(" ", strip=True)),
         ):
