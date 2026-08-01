@@ -6081,6 +6081,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"for copies of recent civil complaints,\s*click here\.?$"
         ),
         re.compile(
+            r"(?i)^for the latest litigation department news,\s*"
+            r"click here\.?$"
+        ),
+        re.compile(
             r"(?i)^this is a bloomberg podcast\.\s*to download,\s*"
             r"watch or listen (?:to this report )?now,\s*click here\.?$"
         ),
