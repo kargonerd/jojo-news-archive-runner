@@ -5938,8 +5938,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     for preformatted in list(soup.select("pre")):
         raw_text = preformatted.get_text("\n", strip=False)
         contact_match = re.search(
-            r"(?i)(?:^|\n)\s*to contact the "
-            r"(?:writers?|authors?|reporters?|editors?)\b",
+            r"(?i)(?:^|\n)\s*(?:--\s*bloomberg news\s*\n\s*)?"
+            r"to contact (?:the (?:writers?|authors?|reporters?|editors?)|"
+            r"bloomberg news)\b",
             raw_text,
         )
         if contact_match:
@@ -6094,6 +6095,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^for the video,\s*click here,\s*and for more,\s*"
             r"click here\.?$"
         ),
+        re.compile(r"(?i)^for the video,\s*click here\.?$"),
         re.compile(
             r"(?i)^to read more from .{2,180},\s*click here\s*\.?$"
         ),
