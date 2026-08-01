@@ -6010,6 +6010,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?:\.\s*editors?\s*:.+)?$"
         ),
         re.compile(
+            r"(?i)^with assistance from\b.+\s+(?:--|—|–)\s*"
+            r"editors?\s*:\s*.+$"
+        ),
+        re.compile(
             r"(?i)^for more articles like this,\s*"
             r"please visit us at bloomberg\.com\.?$"
         ),
@@ -6040,7 +6044,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^read more breaking commentary from bloomberg view "
-            r"at the ticker\s*\.?$"
+            r"(?:(?:columnists|editors)(?:\s+and\s+(?:columnists|editors))?"
+            r"\s+)?at the ticker\s*\.?$"
         ),
         re.compile(
             r"(?i)^for more,\s*read this quicktake\s*:\s*\S.+$"
