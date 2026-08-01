@@ -88,7 +88,7 @@ PUBLISHER_SPECS = {
     ),
     "bloomberg": PublisherSpec(
         publisher="bloomberg",
-        parser_version="bloomberg-parser/0.10.163",
+        parser_version="bloomberg-parser/0.10.164",
         domains=("bloomberg.com", "www.bloomberg.com"),
         default_language="en",
         edition="global",

@@ -6045,10 +6045,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"@bloomberg$"
         ),
         re.compile(
-            r"(?i)^(?:-{1,2}|—|–)\s*with assistance from\b.+"
+            r"(?i)^(?:-{1,2}|—|–)\s*with assistance (?:from|by)\b.+"
             r"(?:\.\s*editors?\s*:.+)?$"
         ),
-        re.compile(r"(?i)^with assistance from\b.+\.?$"),
+        re.compile(r"(?i)^with assistance (?:from|by)\b.+\.?$"),
         re.compile(
             r"(?i)^with assistance from\b.+\s+(?:--|—|–)\s*"
             r"editors?\s*:\s*.+$"
@@ -6160,6 +6160,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"watch or listen (?:to this report )?now,\s*click here\.?$"
         ),
         re.compile(r"(?i)^for more,\s*read this next\s*:\s*$"),
+        re.compile(r"(?i)^for more,\s*read this next\s*:\s*\S.+$"),
         re.compile(r"(?i)^for more,\s*click here\.?$"),
         re.compile(
             r"(?i)^for the video,\s*click here,\s*and for more,\s*"
@@ -6793,6 +6794,17 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if trimmed != text:
             paragraph.clear()
             paragraph.append(trimmed)
+
+    for paragraph in list(soup.select("p")):
+        paragraph_text = _clean_text(paragraph.get_text(" ", strip=True))
+        assistance_bio = re.fullmatch(
+            r"(?is)^\(\s*with assistance (?:from|by)\b.+?\.\s+"
+            r"(.+\b(?:bloomberg|muse)\b.+)\)$",
+            paragraph_text,
+        )
+        if assistance_bio is not None:
+            paragraph.clear()
+            paragraph.append(f"({assistance_bio.group(1)})")
 
     for paragraph in list(soup.select("p")):
         paragraph_text = _clean_text(paragraph.get_text(" ", strip=True))
