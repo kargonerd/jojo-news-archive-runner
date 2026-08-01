@@ -6003,6 +6003,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^for more,\s*read this quicktake\s*:\s*\S.+$"
         ),
+        re.compile(r"(?i)^\*?\s*link to earlier story\s*:\s*\S.+$"),
         re.compile(r"(?i)^\*{3}\s*end of transcript\s*\*{3}$"),
         re.compile(r"(?i)^running time\s*:\s*\d{1,3}:\d{2}$"),
         re.compile(r"(?i)^provider id\s*:\s*[0-9a-f]{32}$"),
@@ -6023,6 +6024,13 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?is)^to analyze this 13f\s*:.*<go>.*"
             r"to analyze all 13f(?:'|’)s filed,.*<go>.*$"
+        ),
+        re.compile(
+            r"(?i)^emerging-markets market view\s*:\s*\{emmv\b.*$"
+        ),
+        re.compile(r"(?is)^相關新聞和信息\s*：.*<go>.*$"),
+        re.compile(
+            r"(?is)^.*\bnsn\s+[a-z0-9]{8,14}\s*<go>\s*$"
         ),
         re.compile(r"(?i)^muse highlights include .{2,180}\.?$"),
         re.compile(
@@ -6053,7 +6061,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^to contact the "
             r"(?:writers?|authors?|reporters?|editors?) "
             r"(?:for|of|on|responsible for) (?:this|the|his|her) "
-            r"(?:story|article|column|(?:blog )?post)\s*:?"
+            r"(?:story|article|column|review|(?:blog )?post)\s*:?"
         ),
         re.compile(
             r"(?i)^click on [“\"]send comment[”\"] in (?:the )?sidebar display "
@@ -6528,6 +6536,17 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             related.decompose()
             marker.decompose()
 
+    for marker in list(soup.select("h2, h3, h4, p")):
+        if not re.fullmatch(
+            r"(?i)read this next\s*:?",
+            _clean_text(marker.get_text(" ", strip=True)),
+        ):
+            continue
+        related = marker.find_next_sibling()
+        if isinstance(related, Tag) and related.name in {"ul", "ol"}:
+            related.decompose()
+            marker.decompose()
+
     for promo in list(soup.select("p")):
         if not grid_promo.fullmatch(
             _clean_text(promo.get_text(" ", strip=True))
@@ -6549,6 +6568,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)\s+for more dine\s*&\s*deal reviews,\s*"
             r"click here\.\)$",
             ")",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s*\*?\s*link to earlier story\s*:\s*.*$",
+            "",
             trimmed,
         )
         if trimmed != text:
