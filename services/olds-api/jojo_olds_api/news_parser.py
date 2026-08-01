@@ -6216,7 +6216,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^to contact the "
             r"(?:writers?|authors?|reporters?|editors?) "
             r"(?:for|of|on|responsible for) (?:this|the|his|her) "
-            r"(?:story|article|column|review|(?:blog )?post)\s*:?"
+            r"(?:story|article|column|review|slideshow|(?:blog )?post)\s*:?"
+        ),
+        re.compile(
+            r"(?i)^to see a slideshow of photos\b.*"
+            r"\{[^{}]{1,30}<go>\}.*\{[^{}]{1,30}<go>\}\.?$"
         ),
         re.compile(
             r"(?i)^click on [“\"]send comment[”\"] in (?:the )?sidebar display "
