@@ -6048,6 +6048,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^(?:-{1,2}|—|–)\s*with assistance from\b.+"
             r"(?:\.\s*editors?\s*:.+)?$"
         ),
+        re.compile(r"(?i)^with assistance from\b.+\.?$"),
         re.compile(
             r"(?i)^with assistance from\b.+\s+(?:--|—|–)\s*"
             r"editors?\s*:\s*.+$"
@@ -6179,6 +6180,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"\{[^{}]{1,80}<equity>\s+cn(?:\s+<go>)?\}\s*$"
         ),
         re.compile(
+            r"(?i)^(?:link to company news\s*:\s*"
+            r"\{[^{}]{1,80}<equity>\s+cn(?:\s+<go>)?\}\s*){2,}$"
+        ),
+        re.compile(
             r"(?i)^link to statement\s*:\s*\{\s*https?://[^{}\s]+\s*\}\s*"
             r"link to company news\s*:\s*"
             r"\{[^{}]{1,80}<equity>\s+cn(?:\s+<go>)?\}\s*$"
@@ -6212,7 +6217,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"to send a letter to the editor\.?$"
         ),
         re.compile(
-            r"(?i)^(?:(?:--|—)\s*)?editors?\s*:\s*[\w .,'’&-]+$"
+            r"(?i)^(?:(?:-{1,2}|—|–)\s*)?"
+            r"editors?\s*:\s*[\w .,'’&-]+$"
         ),
         re.compile(r"(?i)^editors?\s*:\s*$"),
         re.compile(
@@ -6274,6 +6280,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^subscribe to .+ on pocketcasts?\.?$"
+        ),
+        re.compile(
+            r"(?i)^terminal users\s*:\s*click here to play now\.?$"
         ),
         re.compile(
             r"(?i)^if you(?:'|’)d like to get the daily prophet in "
