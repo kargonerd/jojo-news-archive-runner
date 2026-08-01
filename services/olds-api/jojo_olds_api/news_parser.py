@@ -6171,6 +6171,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^read more echoes columns online\s*\.?$"),
         re.compile(r"(?i)^read more from echoes online\s*\.?$"),
+        re.compile(r"(?i)^read more bloomberg view columns\s*\.?$"),
+        re.compile(
+            r"(?i)^read more(?:\s+from)?\s+echoes\s*,?\s*"
+            r"bloomberg view(?:'|’)s economic history blog\s*\.?$"
+        ),
         re.compile(
             r"(?i)^for (?:more )?(?:copyright|patent|trademark) news,\s*"
             r"click here\.?$"
@@ -6788,6 +6793,26 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if trimmed != text:
             paragraph.clear()
             paragraph.append(trimmed)
+
+    for paragraph in list(soup.select("p")):
+        paragraph_text = _clean_text(paragraph.get_text(" ", strip=True))
+        assistance = re.search(
+            r"\s+With assistance from\b.{2,300}\.?\s*$",
+            paragraph_text,
+        )
+        if assistance is None:
+            continue
+        retained = paragraph_text[: assistance.start()].rstrip()
+        if not retained.endswith((".", "!", "?")):
+            continue
+        for text_node in list(paragraph.find_all(string=True)):
+            match = re.search(
+                r"\s+With assistance from\b.{2,300}\.?\s*$",
+                str(text_node),
+            )
+            if match is not None:
+                text_node.replace_with(str(text_node)[: match.start()])
+                break
 
     contact_footer = re.compile(
         r"(?i)^to contact (?:the )?"
