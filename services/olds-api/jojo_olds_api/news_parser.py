@@ -6563,7 +6563,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
 
     for marker in list(soup.select("h2, h3, h4, p")):
         if not re.fullmatch(
-            r"(?i)read this next\s*:?",
+            r"(?i)(?:read this next\s*:?|"
+            r"for more on .{2,160},\s*check out .{2,80}\s*:)",
             _clean_text(marker.get_text(" ", strip=True)),
         ):
             continue
