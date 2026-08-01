@@ -5979,6 +5979,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     footer_patterns = (
         re.compile(r"(?i)^©\s*\d{4}\s+bloomberg\s+l\.?p\.?$"),
         re.compile(r"(?i)^©\s*\d{4}\s+bloomberg$"),
+        re.compile(r"(?i)^(?:--|—|–)\s*bloomberg news\.?$"),
         re.compile(
             r"(?i)^please enable javascript to view the comments "
             r"powered by disqus\.?$"
@@ -6890,7 +6891,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
 
     for heading in soup.select("h1, h2, h3, h4"):
         text = _clean_text(heading.get_text(" ", strip=True))
-        if not re.match(r"(?i)^watch this next\s*:", text):
+        if not re.match(r"(?i)^watch (?:this )?next\s*:", text):
             continue
         sibling = heading.find_next_sibling()
         if (
