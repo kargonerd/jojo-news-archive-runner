@@ -5824,6 +5824,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     for node in list(
         soup.select(
             ".text-to-speech, .brokerboxarticle, .terminal-tout-v2, "
+            ".article-audio-attachment, "
             ".email-form, .similarstoryslide, button.read-more-button, "
             ".inner-page-cta-section, .minimal-detailfull-width-section, "
             ".commentWrapper, .comments, #story_tools_bottom, "
@@ -6113,6 +6114,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^[a-z]{2,5}\s+[a-z0-9]{8,14}\s+<go>\s+\S.+$"
+        ),
+        re.compile(
+            r"(?i)^(?:[a-z]{2,5}\s+)?nsn\s+"
+            r"[a-z0-9]{8,14}\s+<go>\s+\S.+$"
         ),
         re.compile(
             r"(?is)^to analyze this 13f\s*:.*<go>.*"
