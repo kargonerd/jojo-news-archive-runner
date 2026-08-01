@@ -6103,6 +6103,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"click here\.?$"
         ),
         re.compile(
+            r"(?i)^for the latest trial and appeals news,\s*click here\.?$"
+        ),
+        re.compile(
             r"(?i)^this is a bloomberg podcast\.\s*to download,\s*"
             r"watch or listen (?:to this report )?now,\s*click here\.?$"
         ),
@@ -6129,6 +6132,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^link to statement\s*:\s*\{\s*https?://[^{}\s]+\s*\}\s*"
             r"link to company news\s*:\s*"
             r"\{[^{}]{1,80}<equity>\s+cn(?:\s+<go>)?\}\s*$"
+        ),
+        re.compile(
+            r"(?i)^link to statement\s*:\s*"
+            r"\{\s*nsn\s+[a-z0-9]{8,14}\s+<go>\s*\}\s*$"
         ),
         re.compile(
             r"(?i)^.{2,100}\bis (?:the )?.{2,100} for bloomberg\.\s*"
