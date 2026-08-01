@@ -6010,9 +6010,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^today(?:'|’)s highlights\s*:\s*.+$"),
         re.compile(
-            r"(?i)^read more opinion online from bloomberg view\.\s*"
+            r"(?i)^read more opinion online from bloomberg view\s*\.\s*"
             r"subscribe to receive a daily e-?mail highlighting new view "
-            r"columns,\s*editorials and op-ed articles\.?$"
+            r"(?:columns,\s*editorials|editorials,\s*columns) "
+            r"and op-ed articles\.?$"
         ),
         re.compile(
             r"(?i)^for more quick commentary from bloomberg view,\s*"
@@ -6065,6 +6066,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(r"(?i)^click here for (?:the )?web link\.?$"),
         re.compile(r"(?i)^for related news and information\s*:?.*$"),
         re.compile(r"(?i)^for more on .{2,160},\s*click here\.?$"),
+        re.compile(
+            r"(?i)^for the latest verdict and settlement news,\s*"
+            r"click here\.?$"
+        ),
         re.compile(
             r"(?i)^for (?:more )?(?:copyright|patent|trademark) news,\s*"
             r"click here\.?$"
