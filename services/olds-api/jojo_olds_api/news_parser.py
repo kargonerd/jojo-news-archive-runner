@@ -6020,6 +6020,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^[a-z]{2,5}\s+[a-z0-9]{8,14}\s+<go>\s+\S.+$"
         ),
+        re.compile(
+            r"(?is)^to analyze this 13f\s*:.*<go>.*"
+            r"to analyze all 13f(?:'|’)s filed,.*<go>.*$"
+        ),
         re.compile(r"(?i)^muse highlights include .{2,180}\.?$"),
         re.compile(
             r"(?i)^\(?to save a copy of the chart,\s*click here\.\)?$"
