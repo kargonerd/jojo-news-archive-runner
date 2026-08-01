@@ -5970,7 +5970,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"digg\s+print\s+email$"
         ),
         re.compile(
-            r"(?i)^-0-\s+[a-z]{3}/\d{1,2}/\d{4}\s+"
+            r"(?i)^(?:#<[^<>]{1,100}>#\s*)?-0-\s+"
+            r"[a-z]{3}/\d{1,2}/\d{4}\s+"
             r"\d{2}:\d{2}\s+gmt$"
         ),
         re.compile(r"(?i)^author$"),
@@ -6590,7 +6591,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     for paragraph in list(soup.select("p")):
         text = _clean_text(paragraph.get_text(" ", strip=True))
         trimmed = re.sub(
-            r"(?i)\s+follow (?:him|her|them) on twitter\s*\.\s*\)$",
+            r"(?i)\s+follow (?:him|her|them) on twitter"
+            r"(?:\s+at)?(?:\s+@\w+)?\s*\.\s*\)$",
             ")",
             text,
         )
@@ -6602,6 +6604,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         )
         trimmed = re.sub(
             r"(?i)\s*\*?\s*link to earlier story\s*:\s*.*$",
+            "",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s*\{[a-z]{2,8}\s+\d{5,12}\s+<go>\}\s*$",
             "",
             trimmed,
         )
