@@ -6157,6 +6157,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"[\d -]{6,}$"
         ),
         re.compile(
+            r"(?i)^(?:--|—)\s*bloomberg radio\s+\+?\d[\d -]{6,}$"
+        ),
+        re.compile(
             r"(?i)^siehe dazu auch\s*:\s*fortlaufende kurzmeldungen\s*:\s*"
             r"first\s*<go>\s*first word überschriften\s*:\s*"
             r"nh\s+bfw\s*<go>\s*$"
@@ -7039,6 +7042,23 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             text_node.replace_with(cleaned)
         else:
             text_node.extract()
+
+    view_promo_suffix = re.compile(
+        r"(?i)\s*read more opinion online from bloomberg view\s*\.\s*"
+        r"subscribe to receive a daily e-?mail highlighting new view "
+        r"(?:editorials,\s*columns|columns,\s*editorials) "
+        r"and op-ed articles\.?\s*$"
+    )
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True))
+        cleaned = view_promo_suffix.sub("", text).rstrip()
+        if cleaned == text:
+            continue
+        if cleaned:
+            paragraph.clear()
+            paragraph.append(cleaned)
+        else:
+            paragraph.decompose()
 
     disclaimer_suffix = re.compile(
         r"(?i)\s*\(?this\s+(?:column|article)\s+does\s+not\s+necessarily"
