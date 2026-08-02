@@ -842,6 +842,11 @@ def parse_article(
         warnings.append("truncated-body")
     if (
         spec.publisher == "bloomberg"
+        and _bloomberg_pv_magazine_teaser(soup)
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
         and len(plain_text) < 500
         and soup.select_one("article.artData.paywall") is not None
     ):
@@ -1368,6 +1373,14 @@ def _bloomberg_partner_body(soup: BeautifulSoup) -> Tag | None:
                 paragraph.string = teaser
                 return article
 
+    if (
+        partner_host == "pv-magazine.com"
+        or partner_host.endswith(".pv-magazine.com")
+    ):
+        pv_magazine_body = soup.select_one(".pvmagazine-post-content")
+        if isinstance(pv_magazine_body, Tag):
+            return pv_magazine_body
+
     for node in soup.select("[class*='storyContent' i]"):
         paragraphs = [
             _clean_text(paragraph.get_text(" ", strip=True))
@@ -1402,6 +1415,34 @@ def _bloomberg_parcel_industry_teaser(soup: BeautifulSoup) -> bool:
         _tag_text(anchor).casefold() == "read more"
         for anchor in soup.select(
             "article.article .fulltext-txt a, article.article #contentText a"
+        )
+    )
+
+
+def _bloomberg_pv_magazine_teaser(soup: BeautifulSoup) -> bool:
+    partner_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    hostname = (
+        (urlsplit(partner_url).hostname or "").casefold()
+        if partner_url
+        else ""
+    )
+    if not (
+        hostname == "pv-magazine.com"
+        or hostname.endswith(".pv-magazine.com")
+    ):
+        return False
+    body = soup.select_one(".pvmagazine-post-content")
+    if not isinstance(body, Tag):
+        return False
+    text = _clean_text(body.get_text(" ", strip=True))
+    return bool(
+        re.search(
+            r"\bclick\s+here\s+to\s+read\s+the\s+rest\b",
+            text,
+            re.IGNORECASE,
         )
     )
 
