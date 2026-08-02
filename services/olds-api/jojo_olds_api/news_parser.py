@@ -6269,6 +6269,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"this (?:story|article)\s*:"
         ),
         re.compile(
+            r"(?i)^to contact the (?:lead )?author of this column\s*:"
+        ),
+        re.compile(
             r"(?i)^to contact (?:the )?bloomberg news staff for this "
             r"(?:story|article)\s*:"
         ),
@@ -7052,6 +7055,20 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     for paragraph in list(soup.select("p")):
         text = _clean_text(paragraph.get_text(" ", strip=True))
         cleaned = view_promo_suffix.sub("", text).rstrip()
+        if cleaned == text:
+            continue
+        if cleaned:
+            paragraph.clear()
+            paragraph.append(cleaned)
+        else:
+            paragraph.decompose()
+
+    partner_work_suffix = re.compile(
+        r"(?i)\s+read more of (?:his|her|their) work here\s*\.?\s*$"
+    )
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True))
+        cleaned = partner_work_suffix.sub("", text).rstrip()
         if cleaned == text:
             continue
         if cleaned:
