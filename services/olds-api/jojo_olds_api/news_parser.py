@@ -5869,6 +5869,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         soup.select(".simple_overlay .image_title, .simple_overlay .details")
     ):
         node.decompose()
+    # Partner mirrors may place a five-star voting form inside the article
+    # container. It is interactive site chrome, not Bloomberg story content.
+    for node in list(soup.select("form.rating, form#articleVotesSubmit")):
+        node.decompose()
 
     # Syndicated Bloomberg forecast summaries sometimes append this provider
     # signup sentence after the source-article link.
