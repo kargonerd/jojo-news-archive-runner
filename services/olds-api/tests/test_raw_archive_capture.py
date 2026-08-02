@@ -2854,11 +2854,7 @@ def test_bloomberg_capture_discovers_legacy_news_timemap_snapshot(
     )
 
     assert result["status"] == "complete"
-    assert client.requests == [
-        canonical_timemap_url,
-        legacy_timemap_url,
-        exact_url,
-    ]
+    assert client.requests == [legacy_timemap_url, exact_url]
     capture = result["capture"]
     assert capture.selected_candidate.snapshot_url == exact_url
     assert capture.selected_candidate.digest == "LEGACY-DIGEST"

@@ -1322,14 +1322,18 @@ def capture_item(
         if item.publisher == "bloomberg":
             legacy_url, *_ = _common_crawl_discovery_urls(item)
             if legacy_url != item.canonical_url:
-                timemap_items.append(
-                    ManifestItem(
-                        publisher=item.publisher,
-                        canonical_url=legacy_url,
-                        published_at=item.published_at,
-                        section=item.section,
-                        candidates=item.candidates,
-                    )
+                legacy_item = ManifestItem(
+                    publisher=item.publisher,
+                    canonical_url=legacy_url,
+                    published_at=item.published_at,
+                    section=item.section,
+                    candidates=item.candidates,
+                )
+                published = _parse_iso_datetime(item.published_at)
+                timemap_items = (
+                    [legacy_item, item]
+                    if published is not None and published.year <= 2015
+                    else [item, legacy_item]
                 )
         for timemap_item in timemap_items:
             if best_response is not None:
