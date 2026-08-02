@@ -6930,6 +6930,26 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         source_link.decompose()
         marker.decompose()
 
+    for marker in list(soup.select("p")):
+        if (
+            _clean_text(marker.get_text(" ", strip=True)).casefold()
+            != "note to editors"
+        ):
+            continue
+        if not any(
+            isinstance(sibling, Tag)
+            and sibling.name == "p"
+            and re.fullmatch(
+                r"(?i)for further information please contact\s*:?",
+                _clean_text(sibling.get_text(" ", strip=True)),
+            )
+            for sibling in marker.next_siblings
+        ):
+            continue
+        for sibling in list(marker.next_siblings):
+            sibling.extract()
+        marker.decompose()
+
     for heading in list(soup.select("h2, h3, h4")):
         if _clean_text(heading.get_text(" ", strip=True)).casefold() != "statistics":
             continue
