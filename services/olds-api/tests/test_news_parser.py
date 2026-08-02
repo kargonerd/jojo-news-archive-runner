@@ -1677,7 +1677,7 @@ def test_bloomberg_parser_removes_legacy_image_and_share_controls():
     )
 
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
     assert "role=\"button\"" not in result.body_html
     assert "tabindex=" not in result.body_html
     assert "Open image in viewer" not in result.body_html
@@ -1980,7 +1980,7 @@ def test_bloomberg_parser_extracts_livemint_partner_story_content():
     assert result.quality.status.value == "complete"
     assert result.quality.body_characters >= 400
     assert "paragraph 6" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_embedded_document_renders_tabular_data():
@@ -2943,7 +2943,7 @@ def test_bloomberg_parser_removes_legacy_inline_newsletter_nested_in_paragraph()
     assert "Opening article paragraph." in result.plain_text
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "markets daily newsletter" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_parser_recovers_legacy_feature_landing_page():
@@ -3875,7 +3875,7 @@ def test_bloomberg_parser_separates_explicit_figure_credit():
     assert len(result.images) == 1
     assert result.images[0].caption == "Welcome to the factory floor."
     assert result.images[0].credit == "Tesla"
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_parser_removes_camera_metadata_image_captions():
@@ -3959,7 +3959,7 @@ def test_bloomberg_parser_prefers_main_story_over_header_live_cards():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "Television live programming" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_parser_rejects_explicit_teaser_body():
@@ -3991,7 +3991,7 @@ def test_bloomberg_parser_rejects_explicit_teaser_body():
 
     assert result.quality.status.value == "partial"
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_parser_trims_professional_subscription_shell():
@@ -4142,7 +4142,7 @@ def test_bloomberg_parser_extracts_legacy_div_span_story_body():
     assert len(result.blocks) == 2
     assert "first legacy paragraph" in result.plain_text
     assert "second legacy paragraph" in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_parser_extracts_pre_2015_story_content_and_date():
@@ -4258,7 +4258,7 @@ def test_bloomberg_parser_removes_share_article_control_from_body():
     assert result.quality.status.value == "complete"
     assert "Bloomberg reporting sentence." in result.plain_text
     assert "SHARE THIS ARTICLE" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
@@ -4334,7 +4334,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
         "https://omny.fm/shows/example/episode"
     ]
     assert "Unrelated navigation card" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_nyt_parser_joins_distributed_story_companion_columns():
@@ -5215,7 +5215,7 @@ def test_bloomberg_yahoo_syndication_excludes_nested_recommendations():
     assert "Generated Yahoo summary" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
     assert "Nested recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_yahoo_syndication_removes_most_read_list():
@@ -5272,7 +5272,7 @@ def test_bloomberg_yahoo_syndication_removes_most_read_list():
     assert "Closing Bloomberg reporting sentence." in result.plain_text
     assert "Most Read from Bloomberg" not in result.plain_text
     assert "Unrelated most-read headline" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_nyt_parser_trims_access_shell_after_complete_article():
@@ -9623,7 +9623,7 @@ def test_bloomberg_parser_uses_first_question_for_untitled_quiz():
     )
     assert result.content_type.value == "interactive"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_nyt_parser_accepts_intentionally_short_corrections_notice():
@@ -10495,7 +10495,7 @@ def test_bloomberg_parser_removes_legacy_related_stories_list():
     assert "LISTEN TO ARTICLE" not in result.plain_text
     assert "<button" not in result.body_html
     assert "read.mp3" not in result.body_html
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_parser_removes_legacy_contact_social_and_partner_footers():
@@ -10670,6 +10670,17 @@ def test_bloomberg_parser_removes_legacy_contact_social_and_partner_footers():
           <p>Provider ID: 671dc54518c848b7b92dcfc35e635b3a</p>
           <p>Contributed via: Bloomberg Publisher WEB Service</p>
           <p>To see the patent, click: 5,969,156.</p>
+          <p>To see the patent: 7,139,761.</p>
+          <p>“The Big Short” is published by Norton (266 pages, $27.95).
+          To buy this book in North America, click here.</p>
+          <p>To read the publisher’s Web page on the book,
+          http://books.example.com/the-big-short/</p>
+          <p>(P&amp;G executives will hold a conference call at 8:30 a.m.
+          New York time to discuss results. To listen, go to LIVE
+          &lt;GO&gt;.)</p>
+          <p><em>Watch Charlie Rose on Bloomberg TV weeknights at
+          7 p.m. and 10 p.m. ET.</em></p>
+          <p>—With Isabella Cota</p>
           <p>-- Alex Kim in Hong Kong 852-2977-6507</p>
           <p><em>Richard Vines is the chief food critic for Bloomberg.
           Follow him on Twitter @richardvines.</em></p>
@@ -10774,6 +10785,14 @@ def test_bloomberg_parser_removes_legacy_contact_social_and_partner_footers():
     assert "Wealth Watch" not in result.plain_text
     assert "quoted source material remains relevant" in result.plain_text
     assert "To contact Bloomberg" not in result.plain_text
+    assert "To see the patent:" not in result.plain_text
+    assert "To buy this book" not in result.plain_text
+    assert "published by Norton" in result.plain_text
+    assert "publisher’s Web page" not in result.plain_text
+    assert "To listen, go to LIVE" not in result.plain_text
+    assert "will hold a conference call" in result.plain_text
+    assert "Watch Charlie Rose" not in result.plain_text
+    assert "With Isabella Cota" not in result.plain_text
     assert "To contact the writer" not in result.plain_text
     assert "To contact the editor" not in result.plain_text
     assert "To contact the author" not in result.plain_text
@@ -10879,7 +10898,7 @@ def test_bloomberg_parser_removes_legacy_contact_social_and_partner_footers():
     assert "CACX 80671055" not in result.plain_text
     assert "legitimate fund classification sentence" in result.plain_text
     assert "Trend News Agency" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_parser_removes_legacy_view_author_module_and_avatar():
@@ -10930,7 +10949,7 @@ def test_bloomberg_parser_removes_legacy_view_author_module_and_avatar():
         "/bview/columnists/" not in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_parser_keeps_short_article_wrapped_with_contact_footer():
@@ -10960,7 +10979,7 @@ def test_bloomberg_parser_keeps_short_article_wrapped_with_contact_footer():
     assert "producer closed 130 wells" in result.plain_text
     assert "crews inspected equipment" in result.plain_text
     assert "@bloomberg.net" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_bloomberg_parser_trims_contacts_from_preformatted_table():
@@ -11012,7 +11031,7 @@ To contact Bloomberg News for this story:
     assert "-- Bloomberg News" not in result.plain_text
     assert "To contact" not in result.plain_text
     assert "@bloomberg.net" not in result.plain_text
-    assert result.extraction.parser_version == "bloomberg-parser/0.10.166"
+    assert result.extraction.parser_version == "bloomberg-parser/0.10.167"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():

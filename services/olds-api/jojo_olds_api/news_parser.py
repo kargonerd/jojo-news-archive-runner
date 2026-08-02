@@ -6108,6 +6108,18 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^to see the patent,\s*click\s*:\s*[\d,]+\.?$"
         ),
+        re.compile(r"(?i)^to see the patent\s*:\s*[\d,]+\.?$"),
+        re.compile(
+            r"(?i)^to read the publisher(?:'|’)s web page on the book,\s*"
+            r"https?://\S+\.?$"
+        ),
+        re.compile(
+            r"(?i)^watch charlie rose on bloomberg tv weeknights\b.*$"
+        ),
+        re.compile(
+            r"(?i)^(?:—|–|--?)\s*with\s+"
+            r"[^\W\d_][\w .,'’\-]{1,100}$"
+        ),
         re.compile(
             r"(?i)^(?:--|—)\s*[\w .,'’&-]+\s+in\s+"
             r"[\w .,'’&-]+\s+\+?\d[\d -]{6,}$"
@@ -6787,6 +6799,17 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         trimmed = re.sub(
             r"(?i)\s+for more dine\s*&\s*deal reviews,\s*"
             r"click here\.\)$",
+            ")",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s+to buy this book(?:\s+in\s+"
+            r"(?:north america|the u\.?s\.?))?,\s*click here\s*\.?$",
+            "",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s+to listen,\s*go to\s+[a-z]{2,8}\s*<go>\.\)$",
             ")",
             trimmed,
         )
