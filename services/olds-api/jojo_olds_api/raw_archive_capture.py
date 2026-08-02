@@ -598,6 +598,7 @@ def capture_item(
     ft_title_index_attempted = False
     ft_dynamic_syndication_attempted = False
     ft_ghostarchive_attempted = False
+    bloomberg_legacy_timemap_attempted = False
     ft_original_headline = next(
         (
             candidate.expected_headline
@@ -1139,7 +1140,46 @@ def capture_item(
             candidates_considered.extend(common_crawl_candidates)
             consider_candidates(common_crawl_candidates)
     else:
-        consider_candidates(item.candidates)
+        published = _parse_iso_datetime(item.published_at)
+        if (
+            item.publisher == "bloomberg"
+            and published is not None
+            and published.year <= 2015
+            and not bloomberg_manifest_candidates_only
+        ):
+            legacy_url, *_ = _common_crawl_discovery_urls(item)
+            if legacy_url != item.canonical_url:
+                bloomberg_legacy_timemap_attempted = True
+                legacy_item = ManifestItem(
+                    publisher=item.publisher,
+                    canonical_url=legacy_url,
+                    published_at=item.published_at,
+                    section=item.section,
+                    candidates=item.candidates,
+                )
+                try:
+                    legacy_candidates = discover_wayback_timemap_candidates(
+                        legacy_item,
+                        archive_client=archive_client,
+                    )
+                except Exception as exc:
+                    failures.append(
+                        f"wayback-legacy-timemap:{type(exc).__name__}"
+                    )
+                    legacy_candidates = ()
+                existing_urls = {
+                    candidate.snapshot_url
+                    for candidate in candidates_considered
+                }
+                legacy_candidates = tuple(
+                    candidate
+                    for candidate in legacy_candidates
+                    if candidate.snapshot_url not in existing_urls
+                )
+                candidates_considered.extend(legacy_candidates)
+                consider_candidates(legacy_candidates)
+        if best_response is None:
+            consider_candidates(item.candidates)
 
     if (
         item.publisher != "ft"
@@ -1331,9 +1371,13 @@ def capture_item(
                 )
                 published = _parse_iso_datetime(item.published_at)
                 timemap_items = (
-                    [legacy_item, item]
-                    if published is not None and published.year <= 2015
-                    else [item, legacy_item]
+                    [item]
+                    if bloomberg_legacy_timemap_attempted
+                    else (
+                        [legacy_item, item]
+                        if published is not None and published.year <= 2015
+                        else [item, legacy_item]
+                    )
                 )
         for timemap_item in timemap_items:
             if best_response is not None:
