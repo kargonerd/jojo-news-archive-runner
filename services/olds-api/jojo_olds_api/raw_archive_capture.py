@@ -1478,14 +1478,25 @@ def capture_item(
         and item.publisher in ARQUIVO_PT_FALLBACK_PUBLISHERS
         and (best_response is None or best_response[5] < 100)
     ):
-        try:
-            arquivo_pt_candidates = discover_arquivo_pt_candidates(
-                item,
-                archive_client=archive_client,
+        arquivo_pt_candidates: tuple[CaptureCandidate, ...] = ()
+        for discovery_url in _common_crawl_discovery_urls(item):
+            discovery_item = ManifestItem(
+                publisher=item.publisher,
+                canonical_url=discovery_url,
+                published_at=item.published_at,
+                section=item.section,
+                candidates=item.candidates,
             )
-        except Exception as exc:
-            failures.append(f"arquivo-pt-index:{type(exc).__name__}")
-            arquivo_pt_candidates = ()
+            try:
+                arquivo_pt_candidates = discover_arquivo_pt_candidates(
+                    discovery_item,
+                    archive_client=archive_client,
+                )
+            except Exception as exc:
+                failures.append(f"arquivo-pt-index:{type(exc).__name__}")
+                continue
+            if arquivo_pt_candidates:
+                break
         existing_urls = {
             candidate.snapshot_url for candidate in candidates_considered
         }
