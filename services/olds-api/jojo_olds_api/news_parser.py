@@ -5808,6 +5808,20 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Legacy Bloomberg slideshows render the first image twice and keep both a
+    # shortened ``Read More`` caption and a full ``Close`` caption in the DOM.
+    # Retain each slide's full caption and image exactly once.
+    for node in list(
+        soup.select(
+            ".slideshow_teaser, .slide_caption .cap_preview, "
+            ".slider_close, .slider_controls, .slider_nav"
+        )
+    ):
+        node.decompose()
+    for anchor in list(soup.select(".slide_caption .cap_show a")):
+        if _tag_text(anchor).casefold() == "close":
+            anchor.decompose()
+
     # Some Yahoo syndication captures contain provider HTML with every opening
     # angle bracket stripped (``/pp``, ``br /``, ``nbsp;/pp``). Preserve the
     # reporting while removing the provider upload/recirculation tail.
