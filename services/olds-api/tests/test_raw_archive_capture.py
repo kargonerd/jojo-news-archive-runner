@@ -2770,6 +2770,100 @@ def test_bloomberg_capture_falls_back_to_exact_timemap_snapshot(
     ]
 
 
+def test_bloomberg_capture_discovers_legacy_news_timemap_snapshot(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.bloomberg.com/news/articles/2014-01-09/"
+        "white-house-example"
+    )
+    legacy_url = (
+        "https://www.bloomberg.com/news/2014-01-09/"
+        "white-house-example.html"
+    )
+    canonical_timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.bloomberg.com%2Fnews%2Farticles%2F"
+        "2014-01-09%2Fwhite-house-example"
+    )
+    legacy_timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.bloomberg.com%2Fnews%2F2014-01-09%2F"
+        "white-house-example.html"
+    )
+    exact_url = (
+        "https://web.archive.org/web/20140109101704id_/" + legacy_url
+    )
+    header = [
+        "urlkey",
+        "timestamp",
+        "original",
+        "mimetype",
+        "statuscode",
+        "digest",
+        "length",
+    ]
+    canonical_timemap = json.dumps([header]).encode()
+    legacy_timemap = json.dumps(
+        [
+            header,
+            [
+                "com,bloomberg)/news/2014-01-09/white-house-example.html",
+                "20140109101704",
+                legacy_url,
+                "text/html",
+                "200",
+                "LEGACY-DIGEST",
+                str(len(ARTICLE)),
+            ],
+        ]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            canonical_timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                canonical_timemap,
+                canonical_timemap_url,
+            ),
+            legacy_timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                legacy_timemap,
+                legacy_timemap_url,
+            ),
+            exact_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                exact_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="bloomberg",
+        canonical_url=canonical_url,
+        published_at="2014-01-09T09:00:00Z",
+        section="politics",
+        candidates=(),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [
+        canonical_timemap_url,
+        legacy_timemap_url,
+        exact_url,
+    ]
+    capture = result["capture"]
+    assert capture.selected_candidate.snapshot_url == exact_url
+    assert capture.selected_candidate.digest == "LEGACY-DIGEST"
+
+
 def test_reuters_capture_falls_back_to_exact_timemap_snapshot(
     tmp_path: Path,
 ):

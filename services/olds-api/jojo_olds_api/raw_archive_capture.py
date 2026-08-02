@@ -1318,39 +1318,55 @@ def capture_item(
             and bloomberg_manifest_candidates_only
         )
     ):
-        try:
-            fallback_candidates = discover_wayback_timemap_candidates(
-                item,
-                archive_client=archive_client,
-            )
-        except Exception as exc:
-            failures.append(f"wayback-timemap:{type(exc).__name__}")
-            fallback_candidates = ()
-        existing_urls = {
-            candidate.snapshot_url for candidate in candidates_considered
-        }
-        fallback_candidates = tuple(
-            candidate
-            for candidate in fallback_candidates
-            if candidate.snapshot_url not in existing_urls
-        )
-        candidates_considered.extend(fallback_candidates)
-        for candidate in fallback_candidates:
-            response, failure = _fetch_usable_candidate(
-                candidate,
-                archive_client=archive_client,
-                maximum_html_bytes=maximum_html_bytes,
-                canonical_url=item.canonical_url,
-                publisher=item.publisher,
-            )
-            if failure:
-                failures.append(failure)
-            if response is None:
-                continue
-            if best_response is None or response[5] > best_response[5]:
-                best_response = response
-            if response[5] == 100:
+        timemap_items = [item]
+        if item.publisher == "bloomberg":
+            legacy_url, *_ = _common_crawl_discovery_urls(item)
+            if legacy_url != item.canonical_url:
+                timemap_items.append(
+                    ManifestItem(
+                        publisher=item.publisher,
+                        canonical_url=legacy_url,
+                        published_at=item.published_at,
+                        section=item.section,
+                        candidates=item.candidates,
+                    )
+                )
+        for timemap_item in timemap_items:
+            if best_response is not None:
                 break
+            try:
+                fallback_candidates = discover_wayback_timemap_candidates(
+                    timemap_item,
+                    archive_client=archive_client,
+                )
+            except Exception as exc:
+                failures.append(f"wayback-timemap:{type(exc).__name__}")
+                fallback_candidates = ()
+            existing_urls = {
+                candidate.snapshot_url for candidate in candidates_considered
+            }
+            fallback_candidates = tuple(
+                candidate
+                for candidate in fallback_candidates
+                if candidate.snapshot_url not in existing_urls
+            )
+            candidates_considered.extend(fallback_candidates)
+            for candidate in fallback_candidates:
+                response, failure = _fetch_usable_candidate(
+                    candidate,
+                    archive_client=archive_client,
+                    maximum_html_bytes=maximum_html_bytes,
+                    canonical_url=item.canonical_url,
+                    publisher=item.publisher,
+                )
+                if failure:
+                    failures.append(failure)
+                if response is None:
+                    continue
+                if best_response is None or response[5] > best_response[5]:
+                    best_response = response
+                if response[5] == 100:
+                    break
 
     if (
         best_response is None
