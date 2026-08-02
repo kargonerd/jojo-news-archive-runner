@@ -280,6 +280,27 @@ class ArchiveClient:
                 if attempt + 1 < maximum_attempts:
                     time.sleep(min(60.0, 2.0 ** (attempt + 1)))
         if last_error:
+            parsed_url = urlsplit(url)
+            if (
+                isinstance(
+                    last_error,
+                    (httpx.TransportError, httpx.TimeoutException),
+                )
+                and parsed_url.scheme.casefold() == "https"
+                and (parsed_url.hostname or "").casefold()
+                == "web.archive.org"
+            ):
+                insecure_wayback_url = parsed_url._replace(
+                    scheme="http"
+                ).geturl()
+                return self._fetch(
+                    insecure_wayback_url,
+                    maximum_bytes=maximum_bytes,
+                    request_headers=request_headers,
+                    require_partial_content=require_partial_content,
+                    maximum_attempts=maximum_attempts,
+                    request_timeout=request_timeout,
+                )
             raise last_error
         raise RuntimeError("archive fetch failed without an error")
 

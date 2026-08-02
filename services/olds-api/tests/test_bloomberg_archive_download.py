@@ -2,7 +2,10 @@ from pathlib import Path
 import gzip
 import sqlite3
 
+import httpx
+
 from jojo_olds_api.bloomberg_archive_download import (
+    ArchiveClient,
     derived_image_candidates,
     detect_image_type,
     extract_article,
@@ -53,6 +56,42 @@ ARTICLE_HTML = b"""
   </body>
 </html>
 """
+
+
+def test_archive_client_retries_wayback_over_http_after_tls_failure():
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        if request.url.scheme == "https":
+            raise httpx.ConnectError("TLS EOF", request=request)
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            content=b"<html><article>archive</article></html>",
+            request=request,
+        )
+
+    client = ArchiveClient(
+        attempts=1,
+        client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            follow_redirects=True,
+        ),
+    )
+    try:
+        status, _headers, content, final_url = client.fetch(
+            "https://web.archive.org/web/20140101000000id_/"
+            "https://www.bloomberg.com/news/articles/example",
+            maximum_bytes=10_000,
+        )
+    finally:
+        client._provided_client.close()
+
+    assert status == 200
+    assert content == b"<html><article>archive</article></html>"
+    assert final_url.startswith("http://web.archive.org/")
+    assert [url.split(":", 1)[0] for url in requests] == ["https", "http"]
 
 
 def test_extract_article_body_metadata_and_image_family():
