@@ -79,19 +79,30 @@ def test_archive_client_retries_wayback_over_http_after_tls_failure():
             follow_redirects=True,
         ),
     )
+    status, _headers, content, final_url = client.fetch(
+        "https://web.archive.org/web/20140101000000id_/"
+        "https://www.bloomberg.com/news/articles/example",
+        maximum_bytes=10_000,
+    )
+
+    assert status == 200
+    assert content == b"<html><article>archive</article></html>"
+    assert final_url.startswith("http://web.archive.org/")
+    assert [url.split(":", 1)[0] for url in requests] == ["https", "http"]
+
+    requests.clear()
     try:
-        status, _headers, content, final_url = client.fetch(
-            "https://web.archive.org/web/20140101000000id_/"
-            "https://www.bloomberg.com/news/articles/example",
+        status, _headers, _content, final_url = client.fetch(
+            "https://web.archive.org/web/20140102000000id_/"
+            "https://www.bloomberg.com/news/articles/second-example",
             maximum_bytes=10_000,
         )
     finally:
         client._provided_client.close()
 
     assert status == 200
-    assert content == b"<html><article>archive</article></html>"
     assert final_url.startswith("http://web.archive.org/")
-    assert [url.split(":", 1)[0] for url in requests] == ["https", "http"]
+    assert [url.split(":", 1)[0] for url in requests] == ["http"]
 
 
 def test_extract_article_body_metadata_and_image_family():

@@ -86,6 +86,7 @@ class ArchiveClient:
         self._circuit_lock = threading.Lock()
         self._consecutive_failures: dict[str, int] = {}
         self._blocked_until: dict[str, float] = {}
+        self._prefer_wayback_http = False
 
     def close(self) -> None:
         if self._provided_client is not None:
@@ -227,6 +228,14 @@ class ArchiveClient:
         maximum_attempts: int,
         request_timeout: float,
     ) -> tuple[int, dict[str, str], bytes, str]:
+        parsed_url = urlsplit(url)
+        if (
+            self._prefer_wayback_http
+            and parsed_url.scheme.casefold() == "https"
+            and (parsed_url.hostname or "").casefold()
+            == "web.archive.org"
+        ):
+            url = parsed_url._replace(scheme="http").geturl()
         last_error: Exception | None = None
         for attempt in range(maximum_attempts):
             self._wait_for_circuit(url)
@@ -290,6 +299,7 @@ class ArchiveClient:
                 and (parsed_url.hostname or "").casefold()
                 == "web.archive.org"
             ):
+                self._prefer_wayback_http = True
                 insecure_wayback_url = parsed_url._replace(
                     scheme="http"
                 ).geturl()
