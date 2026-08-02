@@ -837,6 +837,11 @@ def parse_article(
         warnings.append("truncated-body")
     if (
         spec.publisher == "bloomberg"
+        and _bloomberg_parcel_industry_teaser(soup)
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
         and len(plain_text) < 500
         and soup.select_one("article.artData.paywall") is not None
     ):
@@ -1333,6 +1338,36 @@ def _wsj_tovima_body(soup: BeautifulSoup) -> Tag | None:
 
 
 def _bloomberg_partner_body(soup: BeautifulSoup) -> Tag | None:
+    partner_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    partner_host = (
+        (urlsplit(partner_url).hostname or "").casefold()
+        if partner_url
+        else ""
+    )
+    if (
+        partner_host == "parcelindustry.com"
+        or partner_host.endswith(".parcelindustry.com")
+    ):
+        parcel_body = soup.select_one(
+            "article.article .fulltext-txt, article.article #contentText"
+        )
+        if isinstance(parcel_body, Tag):
+            teaser = re.sub(
+                r"\s+Read more\s*!?\s*$",
+                "",
+                _clean_text(parcel_body.get_text(" ", strip=True)),
+                flags=re.IGNORECASE,
+            )
+            document = BeautifulSoup("<article><p></p></article>", "html.parser")
+            paragraph = document.select_one("p")
+            article = document.select_one("article")
+            if isinstance(paragraph, Tag) and isinstance(article, Tag):
+                paragraph.string = teaser
+                return article
+
     for node in soup.select("[class*='storyContent' i]"):
         paragraphs = [
             _clean_text(paragraph.get_text(" ", strip=True))
@@ -1346,6 +1381,29 @@ def _bloomberg_partner_body(soup: BeautifulSoup) -> Tag | None:
         ):
             return node
     return None
+
+
+def _bloomberg_parcel_industry_teaser(soup: BeautifulSoup) -> bool:
+    partner_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    hostname = (
+        (urlsplit(partner_url).hostname or "").casefold()
+        if partner_url
+        else ""
+    )
+    if not (
+        hostname == "parcelindustry.com"
+        or hostname.endswith(".parcelindustry.com")
+    ):
+        return False
+    return any(
+        _tag_text(anchor).casefold() == "read more"
+        for anchor in soup.select(
+            "article.article .fulltext-txt a, article.article #contentText a"
+        )
+    )
 
 
 def _bloomberg_embedded_article_body(soup: BeautifulSoup) -> Tag | None:
