@@ -5862,6 +5862,21 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     for anchor in list(soup.select(".slide_caption .cap_show a")):
         if _tag_text(anchor).casefold() == "close":
             anchor.decompose()
+    # Older Bloomberg image attachments keep a hidden lightbox copy of the
+    # title, credit, and caption next to the visible caption. Keep the
+    # lightbox's larger image candidate, but discard its duplicate text.
+    for node in list(
+        soup.select(".simple_overlay .image_title, .simple_overlay .details")
+    ):
+        node.decompose()
+
+    # Syndicated Bloomberg forecast summaries sometimes append this provider
+    # signup sentence after the source-article link.
+    for node in list(soup.select("p, div, li")):
+        if _tag_text(node).casefold().startswith(
+            "click here to receive free and immediate email alerts"
+        ):
+            node.decompose()
 
     # Some Yahoo syndication captures contain provider HTML with every opening
     # angle bracket stripped (``/pp``, ``br /``, ``nbsp;/pp``). Preserve the
