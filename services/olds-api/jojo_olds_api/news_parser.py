@@ -5827,6 +5827,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             ".article-audio-attachment, "
             ".email-form, .similarstoryslide, button.read-more-button, "
             ".inner-page-cta-section, .minimal-detailfull-width-section, "
+            ".ipsEntry__signature, [data-role='memberSignature'], "
             ".commentWrapper, .comments, #story_tools_bottom, "
             ".share_list, .entry_sharing, "
             ".youMightAlsoLike, .Pbanner, "
@@ -6128,6 +6129,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^to read the publisher(?:'|’)s web page on the book,\s*"
             r"https?://\S+\.?$"
         ),
+        re.compile(
+            r"(?i)^to buy this book(?:\s+in\s+"
+            r"(?:north america|the u\.?s\.?))?,\s*click here\s*\.?$"
+        ),
+        re.compile(r"^(?:[•·]\s*){3,}$"),
         re.compile(
             r"(?i)^watch charlie rose on bloomberg tv weeknights\b.*$"
         ),
@@ -6834,6 +6840,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             trimmed,
         )
         trimmed = re.sub(
+            r"(?i)\s+for details,\s*click here\.\)$",
+            ")",
+            trimmed,
+        )
+        trimmed = re.sub(
             r"(?i)\s*\*?\s*link to earlier story\s*:\s*.*$",
             "",
             trimmed,
@@ -6877,6 +6888,22 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             if match is not None:
                 text_node.replace_with(str(text_node)[: match.start()])
                 break
+
+    for marker in list(soup.select("p")):
+        if _clean_text(marker.get_text(" ", strip=True)).casefold() != "source":
+            continue
+        source_link = marker.find_next_sibling()
+        if not isinstance(source_link, Tag) or source_link.name != "p":
+            continue
+        source_text = _clean_text(source_link.get_text(" ", strip=True))
+        if not re.fullmatch(
+            r"(?i)https?://(?:www\.)?"
+            r"(?:bloomberg\.com|businessweek\.com)/\S+",
+            source_text,
+        ):
+            continue
+        source_link.decompose()
+        marker.decompose()
 
     contact_footer = re.compile(
         r"(?i)^to contact (?:the )?"
