@@ -847,6 +847,11 @@ def parse_article(
         warnings.append("truncated-body")
     if (
         spec.publisher == "bloomberg"
+        and _bloomberg_partner_full_story_teaser(soup)
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
         and len(plain_text) < 500
         and soup.select_one("article.artData.paywall") is not None
     ):
@@ -1440,11 +1445,28 @@ def _bloomberg_pv_magazine_teaser(soup: BeautifulSoup) -> bool:
     text = _clean_text(body.get_text(" ", strip=True))
     return bool(
         re.search(
-            r"\bclick\s+here\s+to\s+read\s+the\s+rest\b",
+            r"\bclick\s+here\s+to\s+read\s+the\s+(?:rest|full\s+story)\b",
             text,
             re.IGNORECASE,
         )
     )
+
+
+def _bloomberg_partner_full_story_teaser(soup: BeautifulSoup) -> bool:
+    """Recognize partner copies that explicitly link to Bloomberg for the rest."""
+    for node in soup.select("p, div"):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if not re.match(
+            r"(?i)^click\s+here\s+to\s+read\s+the\s+full\s+story\b",
+            text,
+        ):
+            continue
+        if any(
+            "bloomberg.com/" in str(anchor.get("href") or "").casefold()
+            for anchor in node.select("a[href]")
+        ):
+            return True
+    return False
 
 
 def _bloomberg_embedded_article_body(soup: BeautifulSoup) -> Tag | None:
@@ -5873,6 +5895,37 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     # container. It is interactive site chrome, not Bloomberg story content.
     for node in list(soup.select("form.rating, form#articleVotesSubmit")):
         node.decompose()
+
+    # Some licensed partner pages append a link back to Bloomberg for the full
+    # story, followed by the partner's membership and related-content modules.
+    # The reporting before this marker is useful but necessarily partial.
+    full_story_marker = next(
+        (
+            node
+            for node in soup.select("p, div")
+            if re.match(
+                r"(?i)^click\s+here\s+to\s+read\s+the\s+full\s+story\b",
+                _tag_text(node),
+            )
+            and any(
+                "bloomberg.com/" in str(anchor.get("href") or "").casefold()
+                for anchor in node.select("a[href]")
+            )
+        ),
+        None,
+    )
+    if isinstance(full_story_marker, Tag):
+        tail = full_story_marker
+        while isinstance(tail.parent, Tag):
+            for sibling in list(tail.next_siblings):
+                if isinstance(sibling, Tag):
+                    sibling.decompose()
+                else:
+                    sibling.extract()
+            if tail.parent is soup or tail.parent.name in {"article", "main"}:
+                break
+            tail = tail.parent
+        full_story_marker.decompose()
 
     # Syndicated Bloomberg forecast summaries sometimes append this provider
     # signup sentence after the source-article link.
