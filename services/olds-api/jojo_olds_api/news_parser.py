@@ -6153,7 +6153,16 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^(?:--|—)\s*[\w .,'’&-]+\s+in\s+"
-            r"[\w .,'’&-]+\s+\+?\d[\d -]{6,}$"
+            r"[\w .,'’&-]+\s+(?:\(\+?\d{1,3}\)|\+?\d)"
+            r"[\d -]{6,}$"
+        ),
+        re.compile(
+            r"(?i)^siehe dazu auch\s*:\s*fortlaufende kurzmeldungen\s*:\s*"
+            r"first\s*<go>\s*first word überschriften\s*:\s*"
+            r"nh\s+bfw\s*<go>\s*$"
+        ),
+        re.compile(
+            r"(?i)^überschrift des artikels im original\s*:\s*\S.+$"
         ),
         re.compile(
             r"(?i)^[a-z]{2,5}\s+[a-z0-9]{8,14}\s+<go>\s+\S.+$"
