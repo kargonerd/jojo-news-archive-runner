@@ -586,6 +586,32 @@ def test_validation_plan_is_random_reproducible_and_balanced(tmp_path: Path):
     ]
 
 
+def test_pending_validation_can_focus_on_one_year(tmp_path: Path):
+    connection = _state_with_years(tmp_path)
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2022,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    selected = pending_captures(
+        connection,
+        retry_errors=False,
+        maximum=2,
+        maximum_record_attempts=3,
+        prioritize_parser_validation=True,
+        validation_from_year=2021,
+        validation_to_year=2021,
+    )
+
+    assert len(selected) == 2
+    assert {item.published_at[:4] for item in selected} == {"2021"}
+
+
 def test_bloomberg_plan_randomly_prefers_exact_wayback_captures(
     tmp_path: Path,
 ):

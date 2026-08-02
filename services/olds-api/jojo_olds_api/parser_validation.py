@@ -662,6 +662,8 @@ def pending_parser_validation_urls(
     *,
     maximum: int | None,
     maximum_record_attempts: int,
+    from_year: int | None = None,
+    to_year: int | None = None,
 ) -> list[str]:
     initialize_parser_validation_schema(
         connection,
@@ -678,6 +680,8 @@ def pending_parser_validation_urls(
             LEFT JOIN parser_validation_results AS result
               ON result.sample_year=config.sample_year
              AND result.parser_version=config.parser_version
+            WHERE (? IS NULL OR config.sample_year >= ?)
+              AND (? IS NULL OR config.sample_year <= ?)
             GROUP BY
                 config.sample_year,
                 config.target_size,
@@ -739,7 +743,13 @@ def pending_parser_validation_urls(
         FROM ranked
         ORDER BY sample_rank, sample_year
     """
-    parameters: list[object] = [maximum_record_attempts]
+    parameters: list[object] = [
+        from_year,
+        from_year,
+        to_year,
+        to_year,
+        maximum_record_attempts,
+    ]
     if maximum is not None:
         query += " LIMIT ?"
         parameters.append(maximum)

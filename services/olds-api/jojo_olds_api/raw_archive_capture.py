@@ -460,6 +460,8 @@ def pending_captures(
     maximum: int | None,
     maximum_record_attempts: int,
     prioritize_parser_validation: bool = False,
+    validation_from_year: int | None = None,
+    validation_to_year: int | None = None,
 ) -> list[ManifestItem]:
     if maximum_record_attempts < 1:
         raise ValueError("maximum_record_attempts must be positive")
@@ -471,6 +473,8 @@ def pending_captures(
             connection,
             maximum=maximum,
             maximum_record_attempts=maximum_record_attempts,
+            from_year=validation_from_year,
+            to_year=validation_to_year,
         )
     priority_rows: list[tuple] = []
     if priority_urls:

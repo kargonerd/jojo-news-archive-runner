@@ -303,6 +303,8 @@ def main() -> int:
             prioritize_parser_validation=bool(
                 args.validation_sample_per_year
             ),
+            validation_from_year=args.validation_from_year,
+            validation_to_year=args.validation_to_year,
         )
     )
     print(
