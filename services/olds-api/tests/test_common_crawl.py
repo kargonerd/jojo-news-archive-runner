@@ -16,6 +16,7 @@ from jojo_olds_api.bloomberg_archive_download import (
 from jojo_olds_api.common_crawl import (
     COLLECTION_INFO_URL,
     DATA_BASE_URL,
+    _same_article_url,
     discover_common_crawl_candidates,
     fetch_common_crawl_candidate,
 )
@@ -35,6 +36,17 @@ WARC_FILENAME = (
     "CC-MAIN-20230531-example.warc.gz"
 )
 WARC_URL = DATA_BASE_URL + WARC_FILENAME
+
+
+def test_bloomberg_legacy_and_current_article_urls_are_equivalent():
+    assert _same_article_url(
+        "http://www.bloomberg.com/news/2014-05-13/"
+        "kenya-may-reschedule-payment.html",
+        "https://www.bloomberg.com/news/articles/2014-05-13/"
+        "kenya-may-reschedule-payment",
+    )
+
+
 ARTICLE = b"""
 <!doctype html>
 <html>

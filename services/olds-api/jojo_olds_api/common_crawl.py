@@ -436,8 +436,28 @@ def _same_article_url(first: str, second: str) -> bool:
     return (
         bool(first_host)
         and first_host == second_host
-        and first_parts.path.rstrip("/") == second_parts.path.rstrip("/")
+        and _archive_article_path(first_host, first_parts.path)
+        == _archive_article_path(second_host, second_parts.path)
     )
+
+
+def _archive_article_path(host: str, path: str) -> str:
+    normalized = path.rstrip("/")
+    if host != "bloomberg.com":
+        return normalized
+    legacy = re.fullmatch(
+        r"/news/(?P<date>\d{4}-\d{2}-\d{2})/(?P<slug>[^/]+)\.html",
+        normalized,
+    )
+    if legacy is not None:
+        return f"/news/{legacy.group('date')}/{legacy.group('slug')}"
+    current = re.fullmatch(
+        r"/news/articles/(?P<date>\d{4}-\d{2}-\d{2})/(?P<slug>[^/]+)",
+        normalized,
+    )
+    if current is not None:
+        return f"/news/{current.group('date')}/{current.group('slug')}"
+    return normalized
 
 
 def _parse_datetime(value: str | None) -> datetime | None:

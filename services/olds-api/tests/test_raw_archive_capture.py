@@ -36,6 +36,7 @@ from jojo_olds_api.raw_archive_capture import (
     _ap_syndication_search_urls,
     _ap_capture_parser_evidence,
     _capture_nyt_interactive_resources,
+    _common_crawl_discovery_urls,
     _decode_archived_html_content,
     _ft_capture_parser_evidence,
     _wsj_capture_parser_evidence,
@@ -78,6 +79,25 @@ from jojo_olds_api.raw_archive_capture import (
 def test_wsj_archive_capture_supports_secondary_archive_fallbacks():
     assert "wsj" in COMMON_CRAWL_FALLBACK_PUBLISHERS
     assert "wsj" in ARQUIVO_PT_FALLBACK_PUBLISHERS
+
+
+def test_bloomberg_common_crawl_discovery_prefers_legacy_news_url():
+    item = ManifestItem(
+        publisher="bloomberg",
+        canonical_url=(
+            "https://www.bloomberg.com/news/articles/2014-05-13/"
+            "kenya-may-reschedule-payment"
+        ),
+        published_at="2014-05-13T00:00:00Z",
+        section=None,
+        candidates=(),
+    )
+
+    assert _common_crawl_discovery_urls(item) == (
+        "https://www.bloomberg.com/news/2014-05-13/"
+        "kenya-may-reschedule-payment.html",
+        item.canonical_url,
+    )
 
 
 def test_wsj_complete_legacy_video_survives_navigation_auth_marker(

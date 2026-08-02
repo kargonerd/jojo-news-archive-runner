@@ -1143,15 +1143,19 @@ def capture_item(
         and enable_common_crawl_fallback
         and (best_response is None or best_response[5] < 100)
     ):
-        try:
-            common_crawl_candidates = discover_common_crawl_candidates(
-                item.canonical_url,
-                published_at=item.published_at,
-                archive_client=archive_client,
-            )
-        except Exception as exc:
-            failures.append(f"commoncrawl-index:{type(exc).__name__}")
-            common_crawl_candidates = ()
+        common_crawl_candidates: tuple[CaptureCandidate, ...] = ()
+        for discovery_url in _common_crawl_discovery_urls(item):
+            try:
+                common_crawl_candidates = discover_common_crawl_candidates(
+                    discovery_url,
+                    published_at=item.published_at,
+                    archive_client=archive_client,
+                )
+            except Exception as exc:
+                failures.append(f"commoncrawl-index:{type(exc).__name__}")
+                continue
+            if common_crawl_candidates:
+                break
         existing_urls = {
             (
                 candidate.snapshot_url,
@@ -5124,8 +5128,45 @@ def _same_article_url(first: str, second: str) -> bool:
     return (
         first_host == second_host
         and bool(first_host)
-        and first_parts.path.rstrip("/") == second_parts.path.rstrip("/")
+        and _archive_article_path(first_host, first_parts.path)
+        == _archive_article_path(second_host, second_parts.path)
     )
+
+
+def _archive_article_path(host: str, path: str) -> str:
+    normalized = path.rstrip("/")
+    if host != "bloomberg.com":
+        return normalized
+    legacy = re.fullmatch(
+        r"/news/(?P<date>\d{4}-\d{2}-\d{2})/(?P<slug>[^/]+)\.html",
+        normalized,
+    )
+    if legacy is not None:
+        return f"/news/{legacy.group('date')}/{legacy.group('slug')}"
+    current = re.fullmatch(
+        r"/news/articles/(?P<date>\d{4}-\d{2}-\d{2})/(?P<slug>[^/]+)",
+        normalized,
+    )
+    if current is not None:
+        return f"/news/{current.group('date')}/{current.group('slug')}"
+    return normalized
+
+
+def _common_crawl_discovery_urls(item: CaptureItem) -> tuple[str, ...]:
+    if item.publisher != "bloomberg":
+        return (item.canonical_url,)
+    parsed = urlsplit(item.canonical_url)
+    match = re.fullmatch(
+        r"/news/articles/(?P<date>\d{4}-\d{2}-\d{2})/(?P<slug>[^/]+)",
+        parsed.path.rstrip("/"),
+    )
+    if match is None:
+        return (item.canonical_url,)
+    legacy = (
+        f"https://www.bloomberg.com/news/{match.group('date')}/"
+        f"{match.group('slug')}.html"
+    )
+    return legacy, item.canonical_url
 
 
 def _is_ft_origin_url(value: str | None) -> bool:
