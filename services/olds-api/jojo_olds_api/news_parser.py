@@ -6119,6 +6119,16 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^.{2,250}\bcontributed to this report\.?$"
         ),
         re.compile(
+            r"(?i)^.{2,250}\bcontributed to this story"
+            r"(?:\s+from\s+.{2,100})?\.?$"
+        ),
+        re.compile(
+            r"(?i)^to watch the video,\s*click here\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^webrep\s+currentvote\s+norating\s+noweight$"
+        ),
+        re.compile(
             r"(?i)^(?:--|—|–)\s*[^\W\d_][\w .,'’\-]{1,100}$"
         ),
         re.compile(
@@ -6904,6 +6914,22 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             continue
         source_link.decompose()
         marker.decompose()
+
+    for heading in list(soup.select("h2, h3, h4")):
+        if _clean_text(heading.get_text(" ", strip=True)).casefold() != "statistics":
+            continue
+        previous = heading.find_previous_sibling()
+        if isinstance(previous, Tag) and previous.name in {"pre", "table"}:
+            heading.decompose()
+            continue
+        if any(
+            isinstance(sibling, Tag)
+            and sibling.name in {"p", "pre", "table", "figure", "img"}
+            and _clean_text(sibling.get_text(" ", strip=True))
+            for sibling in heading.next_siblings
+        ):
+            continue
+        heading.decompose()
 
     contact_footer = re.compile(
         r"(?i)^to contact (?:the )?"
@@ -8189,6 +8215,7 @@ def _extract_blocks(
 def _has_selected_ancestor(node: Tag, body: BeautifulSoup) -> bool:
     selected_names = {
         "p",
+        "pre",
         "h2",
         "h3",
         "h4",
