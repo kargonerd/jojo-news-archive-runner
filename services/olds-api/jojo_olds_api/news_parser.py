@@ -1114,8 +1114,8 @@ def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
         "[itemprop='articleBody']",
         ".article-text",
         ".post-content",
-        ".entry-content",
         ".article-content",
+        ".entry-content",
         ".article-body",
         ".story-body",
         "[class*='article-body' i]",
@@ -9290,6 +9290,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/img/wsj_logo_black_social.",
             "/img/wsj_profile_lg.",
             "/common/imgs/wsjsection.",
+            "/img/social/opengraph/ij-social-default-",
         )
     )
 
