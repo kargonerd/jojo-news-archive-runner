@@ -34,7 +34,7 @@ from .publisher_specs import COMMON_REMOVE_SELECTORS, PublisherSpec, publisher_s
 
 _SPACE_RE = re.compile(r"\s+")
 _CREDIT_RE = re.compile(
-    r"(?i)(?:^|\s)(photographer|photo|credit|illustration|graphic)s?\s*:"
+    r"(?i)(?:^|\s)(photographer|photo|credit|illustration|graphic|source)s?\s*:"
 )
 _NOISE_RE = re.compile(
     r"(?i)(advert|sponsor|promo|recommend|related|newsletter|subscribe|"
@@ -9379,7 +9379,7 @@ def _bloomberg_caption_credit(
     credit_parts: list[str] = []
     credit_nodes = list(
         copy.select(
-            ".news-figure-credit, [class~='credit'], "
+            ".news-figure-credit, [class*='credit' i], "
             "[itemprop='copyrightHolder']"
         )
     )
