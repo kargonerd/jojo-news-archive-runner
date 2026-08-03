@@ -6593,6 +6593,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^.{2,100}\bis (?:the )?.{2,100} for bloomberg\.\s*"
             r"follow (?:him|her|them) on twitter\b.*$"
         ),
+        re.compile(
+            r"(?i)^.{2,100}\bis (?:the )?(?:co-)?author of "
+            r".{2,300}\.\s+(?:he|she|they) (?:advises?|writes?|works?)\b"
+            r".{2,300}\.\s*follow (?:him|her|them) on twitter\b.*$"
+        ),
         re.compile(r"(?i)^(?:\*t\s*)+$"),
         re.compile(
             r"(?i)^to contact the "
