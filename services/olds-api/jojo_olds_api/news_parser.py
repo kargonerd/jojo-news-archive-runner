@@ -1215,6 +1215,19 @@ def _remove_generic_syndication_partner_noise(
         # refer to the site's "circle" program, not an advertisement.
         for node in list(body.select(".eb-article__eb-circle-banner")):
             node.decompose()
+    if (
+        hostname == "insurancejournal.com"
+        or hostname.endswith(".insurancejournal.com")
+    ):
+        # Insurance Journal nests article tags and an in-content subscription
+        # card inside the same entry-content element as licensed copy.
+        for node in list(
+            body.select(
+                "p.tagtag, .subscribe-banner, "
+                "[class*='subscribe-banner' i]"
+            )
+        ):
+            node.decompose()
     if hostname == "linkedin.com" or hostname.endswith(".linkedin.com"):
         for node in list(body.select("section.comment, .comment__body")):
             node.decompose()
@@ -6142,6 +6155,17 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Insurance Journal article tags and in-content subscription cards use
+    # these structural classes. At this stage ``soup`` is the isolated body
+    # clone and no longer contains partner-host metadata.
+    for node in list(
+        soup.select(
+            "p.tagtag, .subscribe-banner, "
+            "[class*='subscribe-banner' i]"
+        )
+    ):
+        node.decompose()
+
     # WordPress partner mirrors can leak their comment form into a broadly
     # selected story container.
     for node in list(
