@@ -6604,6 +6604,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^emerging-markets market view\s*:\s*\{emmv\b.*$"
         ),
         re.compile(r"(?is)^相關新聞和信息\s*：.*<go>.*$"),
+        re.compile(r"(?is)^관련 기사 및 정보 보기\s*:.*<go>.*$"),
+        re.compile(r"(?is)^원본 기사\s*:.*$"),
+        re.compile(r"(?is)^--\s*취재보조\s*:.*$"),
+        re.compile(r"(?is)^본 기사의 번역자\s*:.*$"),
         re.compile(
             r"(?is)^.*\bnsn\s+[a-z0-9]{8,14}\s*<go>\s*$"
         ),
