@@ -5887,6 +5887,28 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # CTRM Center's advertising and recirculation widgets can be nested inside
+    # an unclosed story paragraph. Remove the widget nodes themselves so the
+    # Bloomberg reporting around them remains intact.
+    for node in list(
+        soup.select(
+            ".inPost, .gsfnura, .mostRecentPosts"
+        )
+    ):
+        node.decompose()
+    for text_node in list(
+        soup.find_all(string=re.compile(r"(?i)sponsored\s+links\s*$"))
+    ):
+        cleaned = re.sub(
+            r"(?i)\s*sponsored\s+links\s*$",
+            "",
+            str(text_node),
+        )
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
+
     # Licensed CTRM Center copies place a republication disclaimer inside the
     # selected story container. Match both halves of its distinctive wording
     # so ordinary Bloomberg references to republication are preserved.
