@@ -6842,6 +6842,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"energy,\s*natural resources and global business\.?$"
         ),
         re.compile(
+            r"(?i)^for more about bloomberg bna,\s*click here\s*\.\s*"
+            r"visit (?:https?://)?(?:www\.)?bloomberg\.com/"
+            r"sustainability/? for the latest from bloomberg news about "
+            r"energy,\s*natural resources and global business\.?$"
+        ),
+        re.compile(
             r"(?i)^visit the grid for the latest about energy,\s*"
             r"natural resources and global business\.?$"
         ),
