@@ -399,6 +399,7 @@ def parse_article(
         _trim_reuters_recirculation_tail(clean_body)
     if spec.publisher == "bloomberg":
         _trim_bloomberg_subscription_tail(clean_body)
+        _remove_bloomberg_damaged_attribution(clean_body)
     if spec.publisher == "wsj":
         _trim_wsj_roadblock_tail(clean_body)
     if spec.publisher == "nyt":
@@ -6152,6 +6153,14 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
             break
         tail = tail.parent
     marker.decompose()
+
+
+def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
+    """Drop a standalone joint byline whose contributor was lost upstream."""
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(r"Bloomberg News\s+and", text, re.IGNORECASE):
+            node.decompose()
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
