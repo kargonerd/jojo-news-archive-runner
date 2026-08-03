@@ -6809,6 +6809,17 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^\*+\s*with bloomberg\.?$"),
         re.compile(
+            r"(?i)^(?:(?:notice an issue\?\s*)?arabian post strives to "
+            r"deliver the most accurate and reliable information to its "
+            r"readers\.\s*)?if you believe you have identified an error "
+            r"or inconsistency in this article\b.*$"
+        ),
+        re.compile(r"(?i)^follow arabian post$"),
+        re.compile(
+            r"(?i)^select arabian post as your preferred source on "
+            r"google and msn news\b.*$"
+        ),
+        re.compile(
             r"(?i)^written by:\s*.+\s+—\s+with assistance from .+"
             r"@bloomberg$"
         ),
@@ -7648,6 +7659,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             "",
             trimmed,
         )
+        trimmed = re.sub(r"(?i)\s+-bloomberg\s*$", "", trimmed)
         if trimmed != text:
             paragraph.clear()
             paragraph.append(trimmed)
