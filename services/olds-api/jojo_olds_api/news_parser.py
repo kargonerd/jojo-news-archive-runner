@@ -6197,6 +6197,17 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Bloomberg View used a paragraph of tildes as a semantic section break.
+    # Preserve it as the schema's divider block instead of emitting a
+    # punctuation-only paragraph.
+    for node in list(soup.select("p")):
+        if re.fullmatch(
+            r"~{3,}",
+            _clean_text(node.get_text(" ", strip=True)),
+        ):
+            node.clear()
+            node.name = "hr"
+
     # Some licensed mirrors append a bold Bloomberg credit to the final
     # reporting paragraph. Remove the terminal credit without dropping the
     # preceding sentence.
