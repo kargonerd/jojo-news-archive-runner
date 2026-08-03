@@ -133,7 +133,10 @@ def parse_article(
         and spec.publisher == "bloomberg"
         and generic_syndication_allowed
     ):
-        body = _bloomberg_partner_body(soup)
+        body = _bloomberg_partner_body(
+            soup,
+            canonical_url=canonical_url,
+        )
     if body is None and generic_syndication_allowed:
         body = _postmedia_syndication_body(soup)
     if body is None and (
@@ -852,6 +855,11 @@ def parse_article(
         warnings.append("truncated-body")
     if (
         spec.publisher == "bloomberg"
+        and _bloomberg_john_lothian_summary(soup)
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
         and _bloomberg_short_source_link_excerpt(
             soup,
             plain_text=plain_text,
@@ -1387,7 +1395,11 @@ def _wsj_tovima_body(soup: BeautifulSoup) -> Tag | None:
     return body if isinstance(body, Tag) else None
 
 
-def _bloomberg_partner_body(soup: BeautifulSoup) -> Tag | None:
+def _bloomberg_partner_body(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
     partner_url = _first_text(
         _meta_content(soup, "property", "og:url"),
         _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
@@ -1397,6 +1409,62 @@ def _bloomberg_partner_body(soup: BeautifulSoup) -> Tag | None:
         if partner_url
         else ""
     )
+    if (
+        partner_host == "johnlothiannews.com"
+        or partner_host.endswith(".johnlothiannews.com")
+    ):
+        slug = urlsplit(canonical_url).path.rstrip("/").rsplit("/", 1)[-1]
+        target_tokens = {
+            token
+            for token in re.findall(r"[a-z0-9]+", slug.casefold())
+            if not token.isdigit()
+        }
+        best: tuple[float, Tag] | None = None
+        for paragraph in soup.select(".entry-content > p"):
+            title = paragraph.select_one(":scope > strong")
+            if not isinstance(title, Tag):
+                continue
+            title_tokens = set(
+                re.findall(
+                    r"[a-z0-9]+",
+                    _clean_text(title.get_text(" ", strip=True)).casefold(),
+                )
+            )
+            if not target_tokens or not title_tokens:
+                continue
+            score = len(target_tokens & title_tokens) / len(
+                target_tokens | title_tokens
+            )
+            if best is None or score > best[0]:
+                best = (score, paragraph)
+        if best is not None and best[0] >= 0.75:
+            paragraph = best[1]
+            title = paragraph.select_one(":scope > strong")
+            if isinstance(title, Tag):
+                title.decompose()
+            for line_break in list(paragraph.select("br")):
+                line_break.replace_with("\n")
+            lines = [
+                _clean_text(line)
+                for line in paragraph.get_text("\n", strip=True).splitlines()
+                if _clean_text(line)
+            ]
+            reporting = [
+                line
+                for line in lines
+                if line.casefold() != "bloomberg"
+                and not re.fullmatch(r"https?://\S+", line)
+            ]
+            if reporting:
+                document = BeautifulSoup(
+                    "<article><p></p></article>",
+                    "html.parser",
+                )
+                body = document.select_one("article")
+                output = document.select_one("p")
+                if isinstance(body, Tag) and isinstance(output, Tag):
+                    output.string = " ".join(reporting)
+                    return body
     if (
         partner_host == "mediapart.fr"
         or partner_host.endswith(".mediapart.fr")
@@ -2558,6 +2626,23 @@ def _wsj_is_legacy_video(soup: BeautifulSoup) -> bool:
         re.search(r"""articleType\s*:\s*["']Video\s*-\s*WSJ["']""", value)
         for script in soup.select("script")
         if (value := script.string or script.get_text())
+    )
+
+
+def _bloomberg_john_lothian_summary(soup: BeautifulSoup) -> bool:
+    """John Lothian newsletters carry short summaries, never full stories."""
+    partner_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    hostname = (
+        (urlsplit(partner_url).hostname or "").casefold()
+        if partner_url
+        else ""
+    )
+    return (
+        hostname == "johnlothiannews.com"
+        or hostname.endswith(".johnlothiannews.com")
     )
 
 
