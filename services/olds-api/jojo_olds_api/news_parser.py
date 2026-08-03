@@ -1469,7 +1469,11 @@ def _bloomberg_partner_full_story_teaser(soup: BeautifulSoup) -> bool:
     for node in soup.select("p, div"):
         text = _clean_text(node.get_text(" ", strip=True))
         if not re.match(
-            r"(?i)^click\s+here\s+to\s+read\s+the\s+full\s+story\b",
+            r"(?i)^(?:"
+            r"click\s+here\s+to\s+read\s+the\s+full\s+story|"
+            r"read\s+(?:the\s+)?full\s+article\s+here\s+"
+            r"(?:via|at|on)\s+bloomberg"
+            r")\b",
             text,
         ):
             continue
@@ -5927,7 +5931,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             node
             for node in soup.select("p, div")
             if re.match(
-                r"(?i)^click\s+here\s+to\s+read\s+the\s+full\s+story\b",
+                r"(?i)^(?:"
+                r"click\s+here\s+to\s+read\s+the\s+full\s+story|"
+                r"read\s+(?:the\s+)?full\s+article\s+here\s+"
+                r"(?:via|at|on)\s+bloomberg"
+                r")\b",
                 _tag_text(node),
             )
             and any(
