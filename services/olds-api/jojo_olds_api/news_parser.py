@@ -5453,6 +5453,38 @@ def _is_structured_short_record(
 ) -> bool:
     if not headline:
         return False
+    if spec.publisher == "bloomberg":
+        legacy_body = soup.select_one("#story_content")
+        description = _meta_content(soup, "name", "description")
+        if legacy_body is None or not description:
+            return False
+        paragraphs = [
+            _clean_text(node.get_text(" ", strip=True))
+            for node in legacy_body.find_all("p", recursive=False)
+        ]
+        paragraphs = [
+            text
+            for text in paragraphs
+            if text
+            and not re.match(
+                r"(?i)^to contact the (?:reporter|editor)\b",
+                text,
+            )
+        ]
+        description_words = set(
+            re.findall(r"[a-z0-9]+", description.casefold())
+        )
+        body_words = set(re.findall(r"[a-z0-9]+", plain_text.casefold()))
+        return bool(
+            80 <= len(plain_text) < 120
+            and len(paragraphs) == 1
+            and paragraphs[0] == plain_text
+            and len(description_words) >= 8
+            and len(description_words & body_words)
+            / len(description_words)
+            >= 0.9
+            and not re.search(r"(?:\.\.\.|…)\s*$", plain_text)
+        )
     if spec.publisher == "reuters":
         combined = f"{headline}\n{plain_text}".casefold()
         return bool(
