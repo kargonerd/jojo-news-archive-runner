@@ -1119,6 +1119,39 @@ def _yahoo_syndication_body(
 
 
 def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
+    partner_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    partner_hostname = (
+        (urlsplit(partner_url).hostname or "").casefold()
+        if partner_url
+        else ""
+    )
+    if (
+        partner_hostname == "mql5.com"
+        or partner_hostname.endswith(".mql5.com")
+    ):
+        # MQL5 wraps navigation, recommendations, and both sidebars in the
+        # outer article element. Only this nested content node is the
+        # syndicated report.
+        node = soup.select_one(
+            ".postContent.view > .container > .content"
+        )
+        if isinstance(node, Tag):
+            document = BeautifulSoup(str(node), "html.parser")
+            copy = document.select_one(".content")
+            if isinstance(copy, Tag) and len(
+                _clean_text(copy.get_text(" ", strip=True))
+            ) >= _MINIMUM_SYNDICATED_BODY_CHARACTERS:
+                for link in list(copy.select("a[href*='/signals/']")):
+                    link.decompose()
+                # MQL5 stores each prose paragraph as a direct child ``div``.
+                # Normalize those nodes so the common block extractor keeps
+                # their text and any inline article image.
+                for child in copy.find_all("div", recursive=False):
+                    child.name = "p"
+                return copy
     selectors = (
         "[itemprop='articleBody']",
         ".news__body__center__article",
