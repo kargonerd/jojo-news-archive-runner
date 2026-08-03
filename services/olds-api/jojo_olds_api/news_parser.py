@@ -1240,6 +1240,18 @@ def _remove_generic_syndication_partner_noise(
                 and card.select_one("p.textoverflow-3") is not None
             ):
                 card.decompose()
+    if hostname == "ctrmcenter.com" or hostname.endswith(".ctrmcenter.com"):
+        # CTRM Center appends its own republication disclaimer inside the
+        # article element, after the licensed Bloomberg copy. It is partner
+        # chrome rather than reporting and therefore survives generic footer
+        # selectors unless removed explicitly.
+        for node in list(body.select(".cat_postinfo, .postinfo, span.bio")):
+            text = _clean_text(node.get_text(" ", strip=True)).casefold()
+            if (
+                "republished on the ctrm center" in text
+                and "if you have any issue with this post" in text
+            ):
+                node.decompose()
     if hostname == "biasly.com" or hostname.endswith(".biasly.com"):
         body.clear()
         return
@@ -5871,6 +5883,17 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Licensed CTRM Center copies place a republication disclaimer inside the
+    # selected story container. Match both halves of its distinctive wording
+    # so ordinary Bloomberg references to republication are preserved.
+    for node in list(soup.select("p, span")):
+        text = _tag_text(node).casefold()
+        if (
+            "republished on the ctrm center" in text
+            and "if you have any issue with this post" in text
+        ):
+            node.decompose()
+
     # Legacy Bloomberg slideshows render the first image twice and keep both a
     # shortened ``Read More`` caption and a full ``Close`` caption in the DOM.
     # Retain each slide's full caption and image exactly once.
