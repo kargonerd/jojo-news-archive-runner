@@ -1198,6 +1198,15 @@ def _remove_generic_syndication_partner_noise(
                 text,
             ):
                 node.decompose()
+    if (
+        hostname == "eco-business.com"
+        or hostname.endswith(".eco-business.com")
+    ):
+        # Eco-Business places its membership CTA inside the article section,
+        # immediately after licensed Bloomberg copy. Its class names only
+        # refer to the site's "circle" program, not an advertisement.
+        for node in list(body.select(".eb-article__eb-circle-banner")):
+            node.decompose()
     if hostname == "linkedin.com" or hostname.endswith(".linkedin.com"):
         for node in list(body.select("section.comment, .comment__body")):
             node.decompose()
@@ -1443,6 +1452,26 @@ def _bloomberg_partner_body(soup: BeautifulSoup) -> Tag | None:
         pv_magazine_body = soup.select_one(".pvmagazine-post-content")
         if isinstance(pv_magazine_body, Tag):
             return pv_magazine_body
+    if (
+        partner_host == "eco-business.com"
+        or partner_host.endswith(".eco-business.com")
+    ):
+        source_body = soup.select_one(
+            ".eb-article__body-content"
+        )
+        if isinstance(source_body, Tag):
+            document = BeautifulSoup(str(source_body), "html.parser")
+            eco_business_body = document.select_one(
+                ".eb-article__body-content"
+            )
+            if isinstance(eco_business_body, Tag):
+                for node in list(
+                    eco_business_body.select(
+                        ".eb-article__eb-circle-banner"
+                    )
+                ):
+                    node.decompose()
+                return eco_business_body
 
     for node in soup.select("[class*='storyContent' i]"):
         paragraphs = [
