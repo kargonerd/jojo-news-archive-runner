@@ -6197,6 +6197,15 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(r"Bloomberg", text, re.IGNORECASE) or re.fullmatch(
+            r"bc-[a-z0-9]+(?:-[a-z0-9]+)+",
+            text,
+            re.IGNORECASE,
+        ):
+            node.decompose()
+
     # Some 2015 Bloomberg pages append an unlabelled related-story paragraph
     # inside the story section. It contains only multiple Bloomberg article
     # links and no prose outside those anchors.
