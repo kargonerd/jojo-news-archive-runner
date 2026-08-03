@@ -6197,6 +6197,17 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Some licensed mirrors append a bold Bloomberg credit to the final
+    # reporting paragraph. Remove the terminal credit without dropping the
+    # preceding sentence.
+    for credit in list(soup.select("p > b:last-child, p > strong:last-child")):
+        if re.fullmatch(
+            r"Bloomberg",
+            _clean_text(credit.get_text(" ", strip=True)),
+            re.IGNORECASE,
+        ):
+            credit.decompose()
+
     # Legacy Bloomberg pages can insert a labelled recirculation list in the
     # middle of the reporting. Remove only the heading and its immediately
     # following all-link list; later reporting must remain intact.
@@ -6275,7 +6286,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     for node in list(
         soup.select(
             "p.tagtag, .subscribe-banner, "
-            "[class*='subscribe-banner' i]"
+            "[class*='subscribe-banner' i], .story-tags"
         )
     ):
         node.decompose()
