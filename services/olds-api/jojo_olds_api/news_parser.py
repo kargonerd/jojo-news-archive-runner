@@ -6953,6 +6953,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^emerging-markets market view\s*:\s*\{emmv\b.*$"
         ),
         re.compile(r"(?is)^相關新聞和信息\s*：.*<go>.*$"),
+        re.compile(r"(?is)^相关新闻和信息\s*[：:].*<go>.*$"),
+        re.compile(r"(?is)^原文标题\s+\S.+$"),
         re.compile(r"(?is)^관련 기사 및 정보 보기\s*:.*<go>.*$"),
         re.compile(r"(?is)^원본 기사\s*:.*$"),
         re.compile(r"(?is)^--\s*취재보조\s*:.*$"),
@@ -6986,6 +6988,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^for the latest litigation department news,\s*"
             r"click here\.?$"
+        ),
+        re.compile(
+            r"(?i)^for the latest lawsuits news,\s*click here\.?$"
         ),
         re.compile(
             r"(?i)^for the latest trial and appeals news,\s*click here\.?$"
