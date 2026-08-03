@@ -6197,6 +6197,38 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Legacy Bloomberg pages can insert a labelled recirculation list in the
+    # middle of the reporting. Remove only the heading and its immediately
+    # following all-link list; later reporting must remain intact.
+    for heading in list(soup.select("h1, h2, h3, h4, h5, h6")):
+        heading_text = _clean_text(heading.get_text(" ", strip=True))
+        if not re.fullmatch(
+            r"For more on .{1,120},\s*read this next:?",
+            heading_text,
+            re.IGNORECASE,
+        ):
+            continue
+        related_list = heading.find_next_sibling()
+        if related_list is None or related_list.name not in {"ul", "ol"}:
+            continue
+        items = list(related_list.find_all("li", recursive=False))
+        if not items:
+            continue
+        if not all(
+            item.select_one("a[href]")
+            and _clean_text(item.get_text(" ", strip=True))
+            == _clean_text(
+                " ".join(
+                    link.get_text(" ", strip=True)
+                    for link in item.select("a[href]")
+                )
+            )
+            for item in items
+        ):
+            continue
+        related_list.decompose()
+        heading.decompose()
+
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
         if (
