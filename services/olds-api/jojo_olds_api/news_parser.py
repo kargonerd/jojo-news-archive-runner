@@ -6280,6 +6280,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if (
             re.fullmatch(r"Bloomberg", text, re.IGNORECASE)
             or re.fullmatch(
+                r"(?:FIFW\s+)?NSN\s+[A-Z0-9]{10,14}\s*"
+                r"<\s*GO\s*>\s+.+",
+                text,
+                re.IGNORECASE,
+            )
+            or re.fullmatch(
                 r"bc-[a-z0-9]+(?:-[a-z0-9]+)+",
                 text,
                 re.IGNORECASE,
