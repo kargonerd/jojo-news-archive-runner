@@ -6197,6 +6197,29 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Some 2015 Bloomberg pages append an unlabelled related-story paragraph
+    # inside the story section. It contains only multiple Bloomberg article
+    # links and no prose outside those anchors.
+    for node in list(soup.select("p")):
+        links = list(node.select("a[href]"))
+        if len(links) < 2:
+            continue
+        if not all(
+            re.search(
+                r"(?:bloomberg(?:view)?\.com/)?(?:news/)?articles/",
+                str(link.get("href") or ""),
+                re.IGNORECASE,
+            )
+            for link in links
+        ):
+            continue
+        paragraph_text = _clean_text(node.get_text(" ", strip=True))
+        linked_text = _clean_text(
+            " ".join(link.get_text(" ", strip=True) for link in links)
+        )
+        if paragraph_text == linked_text:
+            node.decompose()
+
     # Insurance Journal article tags and in-content subscription cards use
     # these structural classes. At this stage ``soup`` is the isolated body
     # clone and no longer contains partner-host metadata.
