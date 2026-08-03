@@ -6799,6 +6799,16 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^get the latest nigerian news delivered to your inbox\.?$"
         ),
         re.compile(
+            r"(?i)^follow .{1,100}(?:'|’)s business section "
+            r"on twitter\.?$"
+        ),
+        re.compile(
+            r"(?i)^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+            r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+            r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
+        ),
+        re.compile(r"(?i)^\*+\s*with bloomberg\.?$"),
+        re.compile(
             r"(?i)^written by:\s*.+\s+—\s+with assistance from .+"
             r"@bloomberg$"
         ),
