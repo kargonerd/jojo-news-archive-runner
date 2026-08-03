@@ -6295,8 +6295,32 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
                 text,
                 re.IGNORECASE,
             )
+            or re.fullmatch(
+                r"For other Bloomberg coverage,\s*click here\s*\.?",
+                text,
+                re.IGNORECASE,
+            )
         ):
             node.decompose()
+
+    for text_node in list(
+        soup.find_all(
+            string=re.compile(
+                r"For other Bloomberg coverage,\s*click here\s*\.?",
+                re.IGNORECASE,
+            )
+        )
+    ):
+        cleaned = re.sub(
+            r"\s*For other Bloomberg coverage,\s*click here\s*\.?",
+            "",
+            str(text_node),
+            flags=re.IGNORECASE,
+        )
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
 
     # Some 2015 Bloomberg pages append an unlabelled related-story paragraph
     # inside the story section. It contains only multiple Bloomberg article
