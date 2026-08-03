@@ -1112,6 +1112,7 @@ def _yahoo_syndication_body(
 def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
     selectors = (
         "[itemprop='articleBody']",
+        ".news__body__center__article",
         ".article-text",
         ".post-content",
         ".article-content",
@@ -1188,6 +1189,15 @@ def _remove_generic_syndication_partner_noise(
         if partner_url
         else ""
     )
+    if hostname == "mediapart.fr" or hostname.endswith(".mediapart.fr"):
+        for node in list(body.select("p")):
+            text = _clean_text(node.get_text(" ", strip=True))
+            if re.match(
+                r"(?i)^read more of this bloomberg report "
+                r"published by the\b",
+                text,
+            ):
+                node.decompose()
     if hostname == "linkedin.com" or hostname.endswith(".linkedin.com"):
         for node in list(body.select("section.comment, .comment__body")):
             node.decompose()
@@ -1379,6 +1389,33 @@ def _bloomberg_partner_body(soup: BeautifulSoup) -> Tag | None:
         else ""
     )
     if (
+        partner_host == "mediapart.fr"
+        or partner_host.endswith(".mediapart.fr")
+    ):
+        source_body = soup.select_one(".news__body__center__article")
+        if isinstance(source_body, Tag):
+            document = BeautifulSoup(str(source_body), "html.parser")
+            mediapart_body = document.select_one(
+                ".news__body__center__article"
+            )
+            if isinstance(mediapart_body, Tag):
+                for duplicate_visual_text in list(
+                    mediapart_body.select(
+                        ".dropcap-wrapper > [aria-hidden='true']"
+                    )
+                ):
+                    duplicate_visual_text.decompose()
+                for node in list(mediapart_body.select("p")):
+                    text = _clean_text(node.get_text(" ", strip=True))
+                    if re.match(
+                        r"(?i)^read more of this bloomberg report "
+                        r"published by the\b",
+                        text,
+                    ):
+                        node.decompose()
+                if len(mediapart_body.select("p")) >= 2:
+                    return mediapart_body
+    if (
         partner_host == "parcelindustry.com"
         or partner_host.endswith(".parcelindustry.com")
     ):
@@ -1475,6 +1512,28 @@ def _bloomberg_pv_magazine_teaser(soup: BeautifulSoup) -> bool:
 
 def _bloomberg_partner_full_story_teaser(soup: BeautifulSoup) -> bool:
     """Recognize partner copies that explicitly link to Bloomberg for the rest."""
+    partner_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    hostname = (
+        (urlsplit(partner_url).hostname or "").casefold()
+        if partner_url
+        else ""
+    )
+    if hostname == "mediapart.fr" or hostname.endswith(".mediapart.fr"):
+        if any(
+            re.match(
+                r"(?i)^read more of this bloomberg report "
+                r"published by the\b",
+                _clean_text(node.get_text(" ", strip=True)),
+            )
+            for node in soup.select(
+                ".news__body__center__article p, "
+                "[itemprop='articleBody'] p"
+            )
+        ):
+            return True
     for node in soup.select("p, div"):
         text = _clean_text(node.get_text(" ", strip=True))
         explicit_full_story = re.match(
