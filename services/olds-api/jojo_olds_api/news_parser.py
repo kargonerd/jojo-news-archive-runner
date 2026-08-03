@@ -852,6 +852,14 @@ def parse_article(
         warnings.append("truncated-body")
     if (
         spec.publisher == "bloomberg"
+        and _bloomberg_short_source_link_excerpt(
+            soup,
+            plain_text=plain_text,
+        )
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
         and len(plain_text) < 500
         and soup.select_one("article.artData.paywall") is not None
     ):
@@ -969,6 +977,7 @@ def parse_article(
     if body is None:
         warnings.append("article-body-not-found")
 
+    warnings = list(dict.fromkeys(warnings))
     status = ArticleStatus.COMPLETE
     if "article-body-not-found" in warnings:
         status = ArticleStatus.UNSUPPORTED
@@ -1468,14 +1477,19 @@ def _bloomberg_partner_full_story_teaser(soup: BeautifulSoup) -> bool:
     """Recognize partner copies that explicitly link to Bloomberg for the rest."""
     for node in soup.select("p, div"):
         text = _clean_text(node.get_text(" ", strip=True))
-        if not re.match(
+        explicit_full_story = re.match(
             r"(?i)^(?:"
             r"click\s+here\s+to\s+read\s+the\s+full\s+story|"
             r"read\s+(?:the\s+)?full\s+article\s+here\s+"
             r"(?:via|at|on)\s+bloomberg"
             r")\b",
             text,
-        ):
+        )
+        excerpt_read_more = re.search(
+            r"(?i)\bread\s+more\s+at\s+bloomberg\s*\.?\s*$",
+            text,
+        )
+        if not explicit_full_story and not excerpt_read_more:
             continue
         if any(
             "bloomberg.com/" in str(anchor.get("href") or "").casefold()
@@ -1483,6 +1497,42 @@ def _bloomberg_partner_full_story_teaser(soup: BeautifulSoup) -> bool:
         ):
             return True
     return False
+
+
+def _bloomberg_short_source_link_excerpt(
+    soup: BeautifulSoup,
+    *,
+    plain_text: str,
+) -> bool:
+    """Recognize short partner summaries that only point to Bloomberg."""
+    if len(plain_text) >= 1_000:
+        return False
+    partner_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    hostname = (
+        (urlsplit(partner_url).hostname or "").casefold()
+        if partner_url
+        else ""
+    )
+    if hostname == "bloomberg.com" or hostname.endswith(".bloomberg.com"):
+        return False
+    if any(
+        re.search(
+            r"(?i)bloomberg\.com/(?:news/)?(?:articles/)?\d{4}-\d{2}-\d{2}/",
+            str(anchor.get("href") or ""),
+        )
+        for anchor in soup.select("a[href]")
+    ):
+        return True
+    return bool(
+        re.search(
+            r"(?im)^https?://(?:www\.)?bloomberg\.com/"
+            r"(?:news/)?(?:articles/)?\d{4}-\d{2}-\d{2}/\S+\s*$",
+            plain_text,
+        )
+    )
 
 
 def _bloomberg_embedded_article_body(soup: BeautifulSoup) -> Tag | None:
@@ -5887,6 +5937,16 @@ def _trim_bloomberg_subscription_tail(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # WordPress partner mirrors can leak their comment form into a broadly
+    # selected story container.
+    for node in list(
+        soup.select(
+            "#comments, #respond, .comment-respond, .comment-reply-title, "
+            ".left_sidebar, .widget-area, section.widget, .post-navigation"
+        )
+    ):
+        node.decompose()
+
     # CTRM Center's advertising and recirculation widgets can be nested inside
     # an unclosed story paragraph. Remove the widget nodes themselves so the
     # Bloomberg reporting around them remains intact.
@@ -5908,6 +5968,39 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             text_node.replace_with(cleaned)
         else:
             text_node.extract()
+
+    # Some partner excerpts append ``Read more at Bloomberg`` to the final
+    # reporting paragraph rather than placing the link in its own node. Keep
+    # the useful excerpt, but remove the recirculation phrase.
+    for node in list(soup.select("p")):
+        text = _tag_text(node)
+        if not re.search(
+            r"(?i)\bread\s+more\s+at\s+bloomberg\s*\.?\s*$",
+            text,
+        ):
+            continue
+        if not any(
+            "bloomberg.com/" in str(anchor.get("href") or "").casefold()
+            for anchor in node.select("a[href]")
+        ):
+            continue
+        for anchor in list(node.select("a[href]")):
+            if "bloomberg.com/" in str(anchor.get("href") or "").casefold():
+                anchor.decompose()
+        for text_node in list(node.find_all(string=True)):
+            cleaned = re.sub(
+                r"(?i)\s*read\s+more\s+at\s*$",
+                "",
+                str(text_node),
+            )
+            if cleaned != str(text_node):
+                if cleaned:
+                    text_node.replace_with(cleaned)
+                else:
+                    text_node.extract()
+        for text_node in list(node.find_all(string=True)):
+            if re.fullmatch(r"\s*\.\s*", str(text_node)):
+                text_node.extract()
 
     # Licensed CTRM Center copies place a republication disclaimer inside the
     # selected story container. Match both halves of its distinctive wording
