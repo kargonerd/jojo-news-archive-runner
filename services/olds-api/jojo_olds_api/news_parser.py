@@ -6197,6 +6197,30 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Zillow guest articles can append a home-search CTA, a labelled related
+    # list, and an author recirculation bio inside Bloomberg's story body.
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(
+            r"To find mid-size homes for sale near you, .{1,240}",
+            text,
+            re.IGNORECASE,
+        ):
+            node.decompose()
+            continue
+        if re.fullmatch(
+            r"Related items from Zillow Blog\s*:?",
+            text,
+            re.IGNORECASE,
+        ):
+            related_list = node.find_next_sibling()
+            if (
+                related_list is not None
+                and related_list.name in {"ul", "ol"}
+            ):
+                related_list.decompose()
+            node.decompose()
+
     # Bloomberg View used a paragraph of tildes as a semantic section break.
     # Preserve it as the schema's divider block instead of emitting a
     # punctuation-only paragraph.
