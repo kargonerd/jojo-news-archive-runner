@@ -6739,6 +6739,18 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         else:
             text_node.extract()
 
+    publisher_service_suffix = re.compile(
+        r"(?is)\s+\*\s*t\s+contributed via\s*:\s*"
+        r"bloomberg publisher web service\s+provider id\s*:\s*"
+        r"[0-9a-f]{32}\s*$"
+    )
+    for text_node in list(soup.find_all(string=publisher_service_suffix)):
+        cleaned = publisher_service_suffix.sub("", str(text_node)).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
+
     # Bloomberg Sports product releases append a promotional link followed
     # by ``About`` profiles and press contacts as sibling blocks. Preserve
     # the preceding product announcement, but discard that standardized tail.
@@ -7848,6 +7860,13 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         trimmed = re.sub(
             r"(?i)\s+\*?\s*for change in stock futures oi,\s*"
             r"see fmon\s*<go>\s*$",
+            "",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s+\*\s*t\s+contributed via\s*:\s*"
+            r"bloomberg publisher web service\s+provider id\s*:\s*"
+            r"[0-9a-f]{32}\s*$",
             "",
             trimmed,
         )
