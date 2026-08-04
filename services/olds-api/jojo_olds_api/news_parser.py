@@ -7104,6 +7104,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"click here\.?$"
         ),
         re.compile(r"(?i)^for the video,\s*click here\.?$"),
+        re.compile(r"(?i)^for the audio,\s*click here\.?$"),
         re.compile(
             r"(?i)^to read more from .{2,180},\s*click here\s*\.?$"
         ),
@@ -7796,6 +7797,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         trimmed = re.sub(
             r"(?i)\s+see\s+\{?\s*live\s*<go>\s*\}?\s*\.\)$",
             ")",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s+can be accessed at\s+\{?\s*live\s*<go>\s*\}?"
+            r"\s*\.\s*",
+            ". ",
             trimmed,
         )
         trimmed = re.sub(
