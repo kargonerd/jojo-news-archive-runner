@@ -7049,6 +7049,17 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"\{\s*nsn\s+[a-z0-9]{8,14}\s*<go>\s*\}\s*$"
         ),
         re.compile(
+            r"(?i)^bi airm\s*<go>\s+for commercial aircraft "
+            r"manufacturers(?:'|’) dashboard\s+bi airl eu\s*<go>\s+"
+            r"european airline dashboard\s+bi airmg indd\s*<go>\s+"
+            r"monthly orders for new aircraft,\s*parked fleet "
+            r"statistics\.?$"
+        ),
+        re.compile(
+            r"(?i)^\(to be sent this nordic credit column,\s*click here\.\s*"
+            r"for more credit market news,\s*top cm\.\)$"
+        ),
+        re.compile(
             r"(?i)^to see the methodology and exact wording of the poll "
             r"questions,\s*click on the attachment tab at the top of "
             r"the story\.?$"
@@ -7680,6 +7691,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             trimmed,
         )
         trimmed = re.sub(r"(?i)\s+-bloomberg\s*$", "", trimmed)
+        trimmed = re.sub(
+            r"(?i),\s*accessible on live\s*<go>\s*\.\)$",
+            ".)",
+            trimmed,
+        )
         if trimmed != text:
             paragraph.clear()
             paragraph.append(trimmed)
