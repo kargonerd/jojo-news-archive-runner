@@ -7681,6 +7681,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(r"(?i)^read more echoes columns online\s*\.?$"),
         re.compile(r"(?i)^read more from echoes online\s*\.?$"),
         re.compile(r"(?i)^read more bloomberg view columns\s*\.?$"),
+        re.compile(r"(?i)^read more in our full story\s*\.?$"),
         re.compile(
             r"(?i)^read more(?:\s+from)?\s+echoes\s*,?\s*"
             r"bloomberg view(?:'|’)s economic history blog\s*\.?$"
