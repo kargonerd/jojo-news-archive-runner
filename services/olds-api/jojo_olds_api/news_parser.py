@@ -10,7 +10,7 @@ import re
 from typing import Any, Iterable
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
-from bs4 import BeautifulSoup, Comment, Tag
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from dateutil.parser import isoparse
 
 from .news_models import (
@@ -1230,6 +1230,37 @@ def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
                 for child in copy.find_all("div", recursive=False):
                     child.name = "p"
                 return copy
+    if (
+        partner_hostname == "investinglive.com"
+        or partner_hostname.endswith(".investinglive.com")
+    ):
+        # Migrated InvestingLive URLs can retain the historical headline and
+        # publication date while omitting the old article body entirely. The
+        # remaining ``article`` element is then only current "Most Popular"
+        # and broker-advertising chrome, which must not be accepted as the
+        # Bloomberg report.
+        for node in soup.select(
+            "[class*='articleContent' i], [class*='expandedContent' i]"
+        ):
+            document = BeautifulSoup(str(node), "html.parser")
+            copy = document.find(node.name)
+            if not isinstance(copy, Tag):
+                continue
+            paragraphs = [
+                _clean_text(paragraph.get_text(" ", strip=True))
+                for paragraph in copy.select("p")
+            ]
+            if (
+                len([value for value in paragraphs if value]) >= 2
+                and sum(len(value) for value in paragraphs)
+                >= _MINIMUM_SYNDICATED_BODY_CHARACTERS
+            ):
+                return copy
+        placeholder = BeautifulSoup(
+            "<div data-jojo-source='investinglive-empty-migration'></div>",
+            "html.parser",
+        )
+        return placeholder.div
     selectors = (
         "[itemprop='articleBody']",
         ".news__body__center__article",
@@ -1252,6 +1283,21 @@ def _generic_syndication_body(soup: BeautifulSoup) -> Tag | None:
                 copy = document.find(node.name)
             if not isinstance(copy, Tag):
                 continue
+            if (
+                partner_hostname == "blogspot.com"
+                or partner_hostname.endswith(".blogspot.com")
+            ):
+                # Blogger permits substantive prose as a direct text node
+                # after a blockquote. The common block extractor intentionally
+                # ignores loose text, so normalize only substantial direct
+                # nodes into paragraphs before extracting the licensed copy.
+                for child in list(copy.children):
+                    if not isinstance(child, NavigableString):
+                        continue
+                    if len(_clean_text(str(child))) < 40:
+                        continue
+                    paragraph = document.new_tag("p")
+                    child.wrap(paragraph)
             for noise in copy.select(
                 "aside, header, nav, footer, form, button, "
                 "[class*='recommend' i], [class*='related' i], "
