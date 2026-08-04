@@ -7998,6 +7998,15 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             text,
         )
         trimmed = re.sub(
+            r"(?i)\s+follow (?:him|her|them) on tumblr at\s+"
+            r"(?:https?://)?(?:www\.)?[\w.-]+\.[a-z]{2,}"
+            r"(?:/[^\s)]*)?(?:\s+or\s+(?:https?://)?"
+            r"(?:www\.)?[\w.-]+\.[a-z]{2,}(?:/[^\s)]*)?)?"
+            r"\s*\.?\s*\)$",
+            ")",
+            trimmed,
+        )
+        trimmed = re.sub(
             r"(?i)\s+e-?mail (?:him|her|them) and\s*\)$",
             ")",
             trimmed,
