@@ -7394,6 +7394,29 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             )
         )
     ):
+        parent = text_node.parent
+        if (
+            isinstance(parent, Tag)
+            and parent.name == "p"
+            and parent.find(
+                "meta",
+                attrs={
+                    "itemprop": "type",
+                    "content": "StoryLink",
+                },
+            )
+            is not None
+            and parent.find(
+                "meta",
+                attrs={
+                    "itemprop": "type",
+                    "content": "FunctionLink",
+                },
+            )
+            is not None
+        ):
+            parent.decompose()
+            continue
         cleaned = re.sub(
             r"(?i)\s*for related news and information\s*:\s*$",
             "",
