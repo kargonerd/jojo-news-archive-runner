@@ -863,6 +863,11 @@ def parse_article(
         warnings.append("truncated-body")
     if (
         spec.publisher == "bloomberg"
+        and _bloomberg_macdailynews_excerpt(soup)
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
         and _bloomberg_john_lothian_summary(soup)
     ):
         warnings.append("truncated-body")
@@ -1544,6 +1549,31 @@ def _bloomberg_partner_body(
                 if len(arabamerica_body.select("p")) >= 2:
                     return arabamerica_body
     if (
+        partner_host == "macdailynews.com"
+        or partner_host.endswith(".macdailynews.com")
+    ):
+        source_body = soup.select_one(".entry-content")
+        if isinstance(source_body, Tag):
+            document = BeautifulSoup(str(source_body), "html.parser")
+            macdailynews_body = document.select_one(".entry-content")
+            if isinstance(macdailynews_body, Tag):
+                truncate = False
+                for child in list(macdailynews_body.children):
+                    if not isinstance(child, Tag):
+                        continue
+                    if truncate:
+                        child.decompose()
+                        continue
+                    text = _clean_text(child.get_text(" ", strip=True))
+                    if re.match(
+                        r"(?i)^read more in the full article here\b",
+                        text,
+                    ):
+                        truncate = True
+                        child.decompose()
+                if len(macdailynews_body.select("p")) >= 2:
+                    return macdailynews_body
+    if (
         partner_host == "mediapart.fr"
         or partner_host.endswith(".mediapart.fr")
     ):
@@ -1731,6 +1761,30 @@ def _bloomberg_partner_full_story_teaser(soup: BeautifulSoup) -> bool:
         ):
             return True
     return False
+
+
+def _bloomberg_macdailynews_excerpt(soup: BeautifulSoup) -> bool:
+    partner_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    hostname = (
+        (urlsplit(partner_url).hostname or "").casefold()
+        if partner_url
+        else ""
+    )
+    if not (
+        hostname == "macdailynews.com"
+        or hostname.endswith(".macdailynews.com")
+    ):
+        return False
+    return any(
+        re.match(
+            r"(?i)^read more in the full article here\b",
+            _clean_text(node.get_text(" ", strip=True)),
+        )
+        for node in soup.select(".entry-content > p")
+    )
 
 
 def _bloomberg_short_source_link_excerpt(
