@@ -8196,6 +8196,17 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             continue
         heading.decompose()
 
+    for marker in list(soup.select("p, h2, h3, h4")):
+        if not re.fullmatch(
+            r"(?i)more stories by .{2,120}:?",
+            _clean_text(marker.get_text(" ", strip=True)),
+        ):
+            continue
+        sibling = marker.find_next_sibling()
+        if isinstance(sibling, Tag) and sibling.name in {"ul", "ol"}:
+            sibling.decompose()
+            marker.decompose()
+
     contact_footer = re.compile(
         r"(?i)^to contact (?:the )?"
         r"(?:reporters?|writers?|authors?|editors?|bloomberg news staff)\b"
