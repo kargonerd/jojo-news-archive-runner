@@ -7667,8 +7667,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"https?://\S+\.?$"
         ),
         re.compile(
-            r"(?i)^to buy this book(?:\s+in\s+"
-            r"(?:north america|the u\.?s\.?))?\s*,\s*click here\s*\.?$"
+            r"(?i)^(?:to buy this book(?:\s+in\s+"
+            r"(?:north america|the u\.?s\.?))?|"
+            r"to order(?: this book)?\s+in\s+"
+            r"(?:north america|the u\.?s\.?))\s*,\s*"
+            r"click here\s*\.?$"
         ),
         re.compile(r"^(?:[•·]\s*){3,}$"),
         re.compile(
@@ -8470,8 +8473,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             trimmed,
         )
         trimmed = re.sub(
-            r"(?i)\s+to buy this book(?:\s+in\s+"
-            r"(?:north america|the u\.?s\.?))?\s*,\s*"
+            r"(?i)\s+(?:to buy this book(?:\s+in\s+"
+            r"(?:north america|the u\.?s\.?))?|"
+            r"to order(?: this book)?\s+in\s+"
+            r"(?:north america|the u\.?s\.?))\s*,\s*"
             r"click here\s*\.?\s*$",
             "",
             trimmed,
