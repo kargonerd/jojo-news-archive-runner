@@ -6937,7 +6937,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"natural resources and global business\.?$"
         ),
         re.compile(
-            r"(?i)^read more (?:opinion online|online opinion) "
+            r"(?i)^read more (?:opinion online|online opinion|online) "
             r"from bloomberg view\s*\.?$"
         ),
         re.compile(r"(?i)^read more bloomberg view editorials\s*\.?$"),
@@ -7003,7 +7003,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^to buy this book(?:\s+in\s+"
-            r"(?:north america|the u\.?s\.?))?,\s*click here\s*\.?$"
+            r"(?:north america|the u\.?s\.?))?\s*,\s*click here\s*\.?$"
         ),
         re.compile(r"^(?:[•·]\s*){3,}$"),
         re.compile(
@@ -7796,6 +7796,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         trimmed = re.sub(
             r"(?i)\s+see\s+\{?\s*live\s*<go>\s*\}?\s*\.\)$",
             ")",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s+\*?\s*for change in stock futures oi,\s*"
+            r"see fmon\s*<go>\s*$",
+            "",
             trimmed,
         )
         trimmed = re.sub(
