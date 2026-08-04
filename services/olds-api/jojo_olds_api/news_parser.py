@@ -7090,6 +7090,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^this is a bloomberg podcast\.\s*to download,\s*"
             r"watch or listen (?:to this report )?now,\s*click here\.?$"
         ),
+        re.compile(
+            r"(?i)^\(?to listen to the podcast,\s*click here\s*\.?\)?$"
+        ),
         re.compile(r"(?i)^for more,\s*read this next\s*:\s*$"),
         re.compile(r"(?i)^for more,\s*read this next\s*:\s*\S.+$"),
         re.compile(
