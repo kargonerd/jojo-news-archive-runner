@@ -8411,7 +8411,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         )
         trimmed = re.sub(
             r"(?i)\s+to buy this book(?:\s+in\s+"
-            r"(?:north america|the u\.?s\.?))?,\s*click here\s*\.?$",
+            r"(?:north america|the u\.?s\.?))?\s*,\s*"
+            r"click here\s*\.?\s*$",
             "",
             trimmed,
         )
