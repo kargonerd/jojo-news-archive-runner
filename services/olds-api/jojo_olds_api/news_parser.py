@@ -6632,7 +6632,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
                 re.IGNORECASE,
             )
             or re.fullmatch(
-                r"bc-[a-z0-9]+(?:-[a-z0-9]+)+",
+                r"bc-[a-z0-9]+(?:-[a-z0-9]+)+"
+                r"(?:\s+\([A-Z]{2,10}\))?",
                 text,
                 re.IGNORECASE,
             )
