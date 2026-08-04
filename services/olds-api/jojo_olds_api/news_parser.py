@@ -6432,7 +6432,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
         if re.fullmatch(
-            r"For Related News & Information\s*:\s*.+"
+            r"For Related (?:News\s*&\s*)?Information\s*:\s*.+"
             r"(?:<\s*GO\s*>|\{\s*[A-Z0-9 ]{2,80}\s*\})"
             r".*",
             text,
@@ -8264,6 +8264,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         trimmed = re.sub(
             r"(?i)^([^.]{1,180}\.)\s+follow (?:him|her|them) on twitter"
             r"(?:\s+at)?\s+@\w+\s*\.?$",
+            r"\1",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)^(.{2,240}\.)\s+follow (?:him|her|them) on twitter"
+            r"\s*\.\s*this post originally appeared here\s*\.?$",
             r"\1",
             trimmed,
         )
