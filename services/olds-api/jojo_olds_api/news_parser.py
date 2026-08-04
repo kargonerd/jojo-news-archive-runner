@@ -868,6 +868,11 @@ def parse_article(
         warnings.append("truncated-body")
     if (
         spec.publisher == "bloomberg"
+        and _bloomberg_origin_abrupt_quote_truncation(soup)
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
         and _bloomberg_john_lothian_summary(soup)
     ):
         warnings.append("truncated-body")
@@ -1825,6 +1830,43 @@ def _bloomberg_macdailynews_excerpt(soup: BeautifulSoup) -> bool:
         )
         for node in soup.select(".entry-content > p")
     )
+
+
+def _bloomberg_origin_abrupt_quote_truncation(
+    soup: BeautifulSoup,
+) -> bool:
+    """Detect archived Bloomberg bodies cut off inside their final quote."""
+    page_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    hostname = (
+        (urlsplit(page_url).hostname or "").casefold()
+        if page_url
+        else ""
+    )
+    if not (
+        hostname == "bloomberg.com"
+        or hostname.endswith(".bloomberg.com")
+    ):
+        return False
+    for body in soup.select(
+        ".body-copy-v2, .body-copy, .article-body__content, "
+        "[data-component='article-body']"
+    ):
+        if body.select_one(".terminal-tout, .terminal-tout-v2") is None:
+            continue
+        paragraphs = body.select("p")
+        if not paragraphs:
+            continue
+        tail = _clean_text(paragraphs[-1].get_text(" ", strip=True))
+        if (
+            len(tail) >= 80
+            and tail.startswith("“")
+            and tail.count("“") > tail.count("”")
+        ):
+            return True
+    return False
 
 
 def _bloomberg_short_source_link_excerpt(
