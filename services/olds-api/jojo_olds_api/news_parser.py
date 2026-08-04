@@ -7050,6 +7050,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"[a-z]{3}/\d{1,2}/\d{4}\s+"
             r"\d{2}:\d{2}\s+gmt$"
         ),
+        re.compile(r"^#<[\d.]{3,100}>#$"),
+        re.compile(
+            r"(?i)^for more bloomberg multimedia see\s*"
+            r"\{\s*av\s*<go>\s*\}\s*$"
+        ),
         re.compile(r"(?i)^author$"),
         re.compile(r"(?i)^and yet equinor still\.*$"),
         re.compile(
