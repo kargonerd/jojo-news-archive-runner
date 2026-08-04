@@ -7631,6 +7631,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^read more (?:opinion online|online opinion|online) "
             r"from bloomberg view\s*[:.]?$"
         ),
+        re.compile(r"(?i)^read more bloomberg view op-eds\s*\.?$"),
         re.compile(r"(?i)^read more bloomberg view editorials\s*\.?$"),
         re.compile(r"(?i)^today(?:'|’)s highlights\s*:\s*.+$"),
         re.compile(
@@ -8591,6 +8592,19 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         trimmed = re.sub(
             r"(?i)\s+to listen,\s*click on\s+\{?\s*live\s*<go>\s*\}?"
             r"\s*\.\)$",
+            ")",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s+to listen,\s*visit\s+"
+            r"[a-z0-9.]{1,16}\s+(?:us\s+)?<equity>\s+"
+            r"evt\s*<go>\s*\.\)$",
+            ")",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s+for more bloomberg view,\s*"
+            r"click on view\s*<go>\s*\.\)$",
             ")",
             trimmed,
         )
