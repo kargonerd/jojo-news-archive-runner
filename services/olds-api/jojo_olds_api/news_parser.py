@@ -7778,7 +7778,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^for the latest new suits news,\s*click here\.\s*"
-            r"for copies of recent civil complaints,\s*click here\.?$"
+            r"for copies of recent civil complaints,\s*click here\."
+            r"(?:\s*for the latest lawsuits news,\s*click here\.)?$"
         ),
         re.compile(
             r"(?i)^for the latest litigation department news,\s*"
@@ -8548,6 +8549,13 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         trimmed = re.sub(
             r"(?i)\s+for details,\s*click here\.\)$",
             ")",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s+for full details on greece(?:'|’)s funding "
+            r"commitments,\s*click here\.\s*"
+            r"see ext4 for more on the european debt crisis\.\s*$",
+            "",
             trimmed,
         )
         trimmed = re.sub(
