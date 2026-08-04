@@ -6697,6 +6697,28 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         else:
             text_node.extract()
 
+    # Legacy Bloomberg product press releases keep the substantive release
+    # and a standardized Professional-service sales pitch in one ``pre``
+    # text node. Truncate only at Bloomberg's distinctive boilerplate opener;
+    # the following company profile and media contacts belong to the footer.
+    professional_service_footer = re.compile(
+        r"(?is)\s+the\s+bloomberg\s+professional(?:\^)?®\s+service\s+"
+        r"delivers\s+reliable\s+access\s+to\s+the\s+latest\s+market\s+"
+        r"data,\s+financial\s+news,\s+and\s+economic\s+information\s+"
+        r"critical\s+to\s+the\s+investment\s+decision\s+process\..*$"
+    )
+    for text_node in list(
+        soup.find_all(string=professional_service_footer)
+    ):
+        cleaned = professional_service_footer.sub(
+            "",
+            str(text_node),
+        ).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
+
     embedded_recommendation = re.compile(
         r"(?is)\s*read (?:next:\s*\S.+|also:)\s*$"
     )
