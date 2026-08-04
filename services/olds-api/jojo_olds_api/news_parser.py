@@ -7590,6 +7590,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r".*\{[^{}]{1,30}<go>\}.*\{[^{}]{1,30}<go>\}.*$"
         ),
         re.compile(
+            r"(?is)^stories related to the ecb\s*:\s*"
+            r".*\{[^{}]{1,30}<go>\}.*\{[^{}]{1,30}<go>\}.*$"
+        ),
+        re.compile(
             r"(?i)^to view the source of this information click here\.?$"
         ),
         re.compile(r"(?i)^read more\s*:\s*\S.+$"),
@@ -8016,6 +8020,22 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         trimmed = re.sub(
             r"(?i)\s*\{[a-z]{2,8}\s+\d{5,12}\s+<go>\}\s*$",
             "",
+            trimmed,
+        )
+        if (
+            re.match(r"(?i)^stories related to the ecb\s*:", trimmed)
+            and len(
+                re.findall(
+                    r"(?i)\{[a-z][a-z0-9 ]{1,30}<go>\}",
+                    trimmed,
+                )
+            )
+            >= 2
+        ):
+            trimmed = ""
+        trimmed = re.sub(
+            r"(?i)\s*\{\s*osch\s*<go>\s*\}\s*",
+            " ",
             trimmed,
         )
         trimmed = re.sub(r"(?i)\s+-bloomberg\s*$", "", trimmed)
