@@ -8799,6 +8799,21 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         else:
             paragraph.decompose()
 
+    legacy_coverage_clickthrough_suffix = re.compile(
+        r"(?i)\s+to read more coverage about .{2,180},\s*"
+        r"click here and click here\s*\.?\s*$"
+    )
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True))
+        cleaned = legacy_coverage_clickthrough_suffix.sub("", text).rstrip()
+        if cleaned == text:
+            continue
+        if cleaned:
+            paragraph.clear()
+            paragraph.append(cleaned)
+        else:
+            paragraph.decompose()
+
     social_follow_suffix = re.compile(
         r"(?i)\s+follow (?:him|her|them) on "
         r"(?:instagram and twitter|twitter and instagram)\s*\.?\s*$"
