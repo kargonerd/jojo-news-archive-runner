@@ -1574,6 +1574,25 @@ def _bloomberg_partner_body(
                 if len(macdailynews_body.select("p")) >= 2:
                     return macdailynews_body
     if (
+        partner_host == "moneyweb.co.za"
+        or partner_host.endswith(".moneyweb.co.za")
+    ):
+        source_body = soup.select_one("#storybody")
+        if isinstance(source_body, Tag):
+            document = BeautifulSoup(str(source_body), "html.parser")
+            moneyweb_body = document.select_one("#storybody")
+            if isinstance(moneyweb_body, Tag):
+                for node in list(moneyweb_body.select("p")):
+                    text = _clean_text(node.get_text(" ", strip=True))
+                    if re.fullmatch(
+                        r"(?i)(?:©|\(c\)|copyright)\s*\d{4}\s+"
+                        r"bloomberg(?:\s+news|\s+l\.?p\.?)?\.?",
+                        text,
+                    ):
+                        node.decompose()
+                if len(moneyweb_body.select("p")) >= 2:
+                    return moneyweb_body
+    if (
         partner_host == "mediapart.fr"
         or partner_host.endswith(".mediapart.fr")
     ):
