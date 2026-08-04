@@ -7676,6 +7676,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             trimmed,
         )
         trimmed = re.sub(
+            r"(?i)\s+click here for other college football "
+            r"game schedules\.?$",
+            "",
+            trimmed,
+        )
+        trimmed = re.sub(
             r"(?i)\s+for details,\s*click here\.\)$",
             ")",
             trimmed,
