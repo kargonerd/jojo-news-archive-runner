@@ -6553,6 +6553,43 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if paragraph_text == linked_text:
             node.decompose()
 
+    # A malformed 2015 recirculation paragraph can lose the anchor around its
+    # second headline, leaving one Bloomberg story link followed by another
+    # headline as plain text.  Restrict this repair to the terminal paragraph
+    # and headline-shaped residual text so linked reporting prose is kept.
+    for node in list(soup.select("p")):
+        links = list(node.select("a[href]"))
+        if len(links) != 1 or not re.search(
+            r"(?:bloomberg(?:view)?\.com/)?(?:news/)?articles/",
+            str(links[0].get("href") or ""),
+            re.IGNORECASE,
+        ):
+            continue
+        following = [
+            sibling
+            for sibling in node.find_next_siblings()
+            if isinstance(sibling, Tag) and _tag_text(sibling)
+        ]
+        if following:
+            continue
+        clone = BeautifulSoup(str(node), "html.parser")
+        for link in clone.select("a"):
+            link.decompose()
+        residual = _clean_text(clone.get_text(" ", strip=True))
+        words = re.findall(r"[A-Za-z][A-Za-z’'-]*", residual)
+        title_words = sum(
+            word[0].isupper()
+            for word in words
+            if word.casefold() not in {"a", "an", "and", "at", "for", "in",
+                                       "of", "on", "the", "to", "with"}
+        )
+        if (
+            4 <= len(words) <= 20
+            and not re.search(r"[.!?]($|\s)", residual)
+            and title_words >= max(3, len(words) // 2)
+        ):
+            node.decompose()
+
     # Some 2014 personal-finance stories append a topic recirculation heading
     # and a sibling list of Bloomberg links after the final reporting block.
     for heading in list(soup.select("p")):
