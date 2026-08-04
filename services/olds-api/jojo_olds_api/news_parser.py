@@ -7007,7 +7007,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^for more,\s*read this next\s*:\s*$"),
         re.compile(r"(?i)^for more,\s*read this next\s*:\s*\S.+$"),
-        re.compile(r"(?i)^for more,\s*click here\.?$"),
+        re.compile(r"(?i)^for more,\s*click here\s*\.?$"),
         re.compile(
             r"(?i)^for the video,\s*click here,\s*and for more,\s*"
             r"click here\.?$"
@@ -7644,7 +7644,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         text = _clean_text(paragraph.get_text(" ", strip=True))
         trimmed = re.sub(
             r"(?i)\s+follow (?:him|her|them) on twitter"
-            r"(?:\s+at)?(?:\s+@\w+)?\s*\.\s*\)$",
+            r"(?:\s+at)?(?:\s+@\w+)?\s*\.?\s*\)$",
             ")",
             text,
         )
