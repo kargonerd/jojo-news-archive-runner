@@ -7160,7 +7160,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^link to company news\s*:\s*"
-            r"\{[^{}]{1,80}<equity>\s+cn(?:\s+<go>)?\}\s*$"
+            r"\{[^{}]{1,80}<equity>\s+cn(?:\s+<go>)?\}"
+            r"(?:\s*\{[^{}]{1,80}<equity>\s+cn(?:\s+<go>)?\})*\s*$"
         ),
         re.compile(
             r"(?i)^(?:link to company news\s*:\s*"
