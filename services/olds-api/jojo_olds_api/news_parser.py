@@ -8446,7 +8446,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         )
         trimmed = re.sub(
             r"(?i)\s+follow (?:him|her|them) on twitter"
-            r"(?:\s+at)?\s+@\w+\s*\.\s+"
+            r"(?:(?:\s+at)?\s+@\w+)?\s*\.\s+"
             r"(?=(?:the )?opinions? expressed\b)",
             " ",
             trimmed,
