@@ -7303,6 +7303,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^link to statement\s*:\s*link\s*$"),
         re.compile(
+            r"(?i)^hedge[- ]fund rankings\s*:\s*\{\s*hfnd"
+            r"(?:\s*<go>)?\s*\}?\s*$"
+        ),
+        re.compile(
             r"(?i)^story link\s*:\s*"
             r"\{\s*nsn\s+[a-z0-9]{8,14}\s*<go>\s*\}\s*$"
         ),
