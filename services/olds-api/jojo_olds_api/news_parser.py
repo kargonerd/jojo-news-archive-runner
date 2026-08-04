@@ -6702,6 +6702,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
                 re.IGNORECASE,
             )
             or re.fullmatch(
+                r"[A-Za-z][A-Za-z &'-]{2,100}\s*:\s*"
+                r"NI\s+[A-Z0-9]{4,16}",
+                text,
+                re.IGNORECASE,
+            )
+            or re.fullmatch(
                 r"Read more posts from .{1,100}\.",
                 text,
                 re.IGNORECASE,
