@@ -7495,8 +7495,9 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"our daily .+ newsletter\.?$"
         ),
         re.compile(
-            r"(?i)^follow @\w+ on twitter for more on .{2,160}\.?$"
+            r"(?i)^follow @\w+ on twitter for more(?: on)? .{2,160}\.?$"
         ),
+        re.compile(r"(?i)^\*\s*bloomberg\.?$"),
         re.compile(
             r"(?i)^subscribe to .+ on "
             r"(?:itunes|apple) podcasts(?:\s+subscribe to .+ on "
