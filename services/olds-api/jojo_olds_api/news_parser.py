@@ -6381,6 +6381,30 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Partner mirrors sometimes end an excerpt with a provenance link back to
+    # the Bloomberg URL.  The canonical source is already retained in the
+    # record, so do not leak this mirror wrapper into article text.
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(
+            r"Read the full article at\s+https?://(?:www\.)?"
+            r"bloomberg\.com/(?:news/)?(?:articles?/)?\S+",
+            text,
+            re.IGNORECASE,
+        ):
+            node.decompose()
+
+    # Stem-cell partner captures append a large accordion of unrelated posts
+    # inside the broadly selected content container.
+    for node in list(soup.select(".accordion.ddop")):
+        node.decompose()
+    for node in list(soup.select(".relatedposttitle")):
+        parent = node.parent
+        if parent is not None and parent.name in {"div", "section", "aside"}:
+            parent.decompose()
+        else:
+            node.decompose()
+
     # Zillow guest articles can append a home-search CTA, a labelled related
     # list, and an author recirculation bio inside Bloomberg's story body.
     for node in list(soup.select("p")):
