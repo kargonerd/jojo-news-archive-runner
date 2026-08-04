@@ -6030,33 +6030,59 @@ def _is_structured_short_record(
     if spec.publisher == "bloomberg":
         legacy_body = soup.select_one("#story_content")
         description = _meta_content(soup, "name", "description")
-        if legacy_body is None or not description:
-            return False
-        paragraphs = [
-            _clean_text(node.get_text(" ", strip=True))
-            for node in legacy_body.find_all("p", recursive=False)
-        ]
-        paragraphs = [
-            text
-            for text in paragraphs
-            if text
-            and not re.match(
-                r"(?i)^to contact the (?:reporter|editor)\b",
-                text,
+        if legacy_body is not None and description:
+            paragraphs = [
+                _clean_text(node.get_text(" ", strip=True))
+                for node in legacy_body.find_all("p", recursive=False)
+            ]
+            paragraphs = [
+                text
+                for text in paragraphs
+                if text
+                and not re.match(
+                    r"(?i)^to contact the (?:reporter|editor)\b",
+                    text,
+                )
+            ]
+            description_words = set(
+                re.findall(r"[a-z0-9]+", description.casefold())
             )
-        ]
-        description_words = set(
-            re.findall(r"[a-z0-9]+", description.casefold())
+            body_words = set(
+                re.findall(r"[a-z0-9]+", plain_text.casefold())
+            )
+            if (
+                80 <= len(plain_text) < 120
+                and len(paragraphs) == 1
+                and paragraphs[0] == plain_text
+                and len(description_words) >= 8
+                and len(description_words & body_words)
+                / len(description_words)
+                >= 0.9
+                and not re.search(r"(?:\.\.\.|…)\s*$", plain_text)
+            ):
+                return True
+        modern_body = soup.select_one(
+            "article.businessweek[itemtype$='/Article'] "
+            ".article-body__content"
         )
-        body_words = set(re.findall(r"[a-z0-9]+", plain_text.casefold()))
+        primary_category = soup.select_one(
+            "article.businessweek meta.primary-category"
+            "[content='businessweek-magazine']"
+        )
+        modern_paragraphs = (
+            [
+                _clean_text(node.get_text(" ", strip=True))
+                for node in modern_body.find_all("p", recursive=False)
+                if _clean_text(node.get_text(" ", strip=True))
+            ]
+            if isinstance(modern_body, Tag)
+            else []
+        )
         return bool(
-            80 <= len(plain_text) < 120
-            and len(paragraphs) == 1
-            and paragraphs[0] == plain_text
-            and len(description_words) >= 8
-            and len(description_words & body_words)
-            / len(description_words)
-            >= 0.9
+            80 <= len(plain_text) < 150
+            and primary_category is not None
+            and len(modern_paragraphs) == 1
+            and modern_paragraphs[0] == plain_text
             and not re.search(r"(?:\.\.\.|…)\s*$", plain_text)
         )
     if spec.publisher == "reuters":
@@ -7288,7 +7314,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             text_node.extract()
 
     publisher_service_suffix = re.compile(
-        r"(?is)\s+\*\s*t\s+contributed via\s*:\s*"
+        r"(?is)\s+(?:\*\s*t\s+)?contributed via\s*:\s*"
         r"bloomberg publisher web service\s+provider id\s*:\s*"
         r"[0-9a-f]{32}\s*$"
     )
@@ -8575,7 +8601,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             trimmed,
         )
         trimmed = re.sub(
-            r"(?i)\s+\*\s*t\s+contributed via\s*:\s*"
+            r"(?i)\s+(?:\*\s*t\s+)?contributed via\s*:\s*"
             r"bloomberg publisher web service\s+provider id\s*:\s*"
             r"[0-9a-f]{32}\s*$",
             "",
