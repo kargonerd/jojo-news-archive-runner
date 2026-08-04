@@ -752,6 +752,8 @@ def parse_article(
         blocks = _deduplicate_blocks(
             blocks,
             deduplicate_contained_pull_quotes=spec.publisher == "ft",
+            deduplicate_bloomberg_dateline_variants=spec.publisher
+            == "bloomberg",
         )
         if spec.publisher == "wsj":
             trailing_text = (
@@ -9580,6 +9582,7 @@ def _deduplicate_blocks(
     blocks: list[ContentBlock],
     *,
     deduplicate_contained_pull_quotes: bool = False,
+    deduplicate_bloomberg_dateline_variants: bool = False,
 ) -> list[ContentBlock]:
     contained_pull_quotes: set[int] = set()
     textual_types = {
@@ -9626,8 +9629,27 @@ def _deduplicate_blocks(
             normalized = _normalize_block_text(block.text)
             if normalized and normalized in seen_text:
                 continue
+            dateline_stripped = ""
+            if (
+                deduplicate_bloomberg_dateline_variants
+                and block.type in textual_types
+                and len(normalized) >= 80
+            ):
+                dateline_stripped = re.sub(
+                    r"(?i)^[a-z]{3,9}\.?\s+\d{1,2}"
+                    r"(?:,\s*\d{4})?\s+\(bloomberg\)\s*--\s*",
+                    "",
+                    normalized,
+                )
+                if (
+                    dateline_stripped != normalized
+                    and dateline_stripped in seen_text
+                ):
+                    continue
             if normalized:
                 seen_text.add(normalized)
+                if dateline_stripped and dateline_stripped != normalized:
+                    seen_text.add(dateline_stripped)
         if block.type == BlockType.IMAGE and block.asset_id:
             if block.asset_id in seen_assets:
                 continue
