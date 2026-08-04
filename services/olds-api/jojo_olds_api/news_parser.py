@@ -6381,6 +6381,18 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Bloomberg Businessweek occasionally published contributed education
+    # tips with a final partner trial CTA inside the article container.
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(
+            r"Plan on taking the SAT soon\?\s*Sign-?up for a trial "
+            r"of Veritas Prep SAT 2400 on Demand\.?",
+            text,
+            re.IGNORECASE,
+        ):
+            node.decompose()
+
     # Legacy terminal editions can pack a complete related-news navigation
     # module into one paragraph instead of separating its heading and links.
     for node in list(soup.select("p")):
