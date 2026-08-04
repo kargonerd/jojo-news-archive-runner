@@ -6522,6 +6522,24 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     for node in list(soup.select(".no-print")):
         node.decompose()
 
+    # Some 2015 article bodies append a single paragraph labelled
+    # ``Related Story`` with several Bloomberg headlines and no reporting.
+    for node in list(soup.select("p")):
+        links = list(node.select("a[href]"))
+        if (
+            len(links) >= 2
+            and re.match(
+                r"Related Stor(?:y|ies)\s*:",
+                _clean_text(node.get_text(" ", strip=True)),
+                re.IGNORECASE,
+            )
+            and all(
+                "bloomberg" in str(link.get("href") or "").casefold()
+                for link in links
+            )
+        ):
+            node.decompose()
+
     # WallStreetPit mirrors place their own affiliate disclosure inside the
     # same content column as the licensed Bloomberg copy.  Prefer the
     # structural class, with a narrowly worded text fallback for captures
@@ -8449,6 +8467,17 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?:(?:\s+at)?\s+@\w+)?\s*\.\s+"
             r"(?=(?:the )?opinions? expressed\b)",
             " ",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)\s+follow (?:him|her|them) on instagram"
+            r"(?:\s+at)?\s*:?\s*@\w+\s*\.?",
+            "",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)^read more echoes online\s*\.\s*(?=\()",
+            "",
             trimmed,
         )
         if trimmed != text:
