@@ -7990,6 +7990,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"sports stories,\s*see:\s*\{ispo\s*<go>\}\.?$"
         ),
         re.compile(
+            r"(?i)^all the .{2,80}\b(?:news|results)"
+            r"(?:\s+and\s+(?:news|results))?\s+can be found at\s+"
+            r"[a-z]{2,8}\s*<go>\s*\.?$"
+        ),
+        re.compile(
             r"(?is)^related news and information:\s*"
             r".*\{[^{}]{1,30}<go>\}.*\{[^{}]{1,30}<go>\}.*$"
         ),
