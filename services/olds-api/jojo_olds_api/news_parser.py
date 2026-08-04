@@ -634,7 +634,14 @@ def parse_article(
         )
         and not (
             spec.publisher == "bloomberg"
-            and _bloomberg_article_narration(soup)
+            and (
+                _bloomberg_article_narration(soup)
+                or (
+                    isinstance(body, Tag)
+                    and body.get("data-jojo-source")
+                    == "bloomberg-arabamerica-syndication"
+                )
+            )
         )
     ):
         content_type = ContentType.AUDIO
@@ -1512,6 +1519,30 @@ def _bloomberg_partner_body(
                 if isinstance(body, Tag) and isinstance(output, Tag):
                     output.string = " ".join(reporting)
                     return body
+    if (
+        partner_host == "arabamerica.com"
+        or partner_host.endswith(".arabamerica.com")
+    ):
+        # Arab America places its navigation, audio player, trivia, poll, and
+        # footer before the licensed article inside the page-level ``main``.
+        # The print node contains only the syndicated report and its byline.
+        source_body = soup.select_one(".content.single .content-in > .print")
+        if isinstance(source_body, Tag):
+            document = BeautifulSoup(str(source_body), "html.parser")
+            arabamerica_body = document.select_one(".print")
+            if isinstance(arabamerica_body, Tag):
+                arabamerica_body["data-jojo-source"] = (
+                    "bloomberg-arabamerica-syndication"
+                )
+                for noise in list(
+                    arabamerica_body.select(
+                        ".mailmunch-forms-before-post, "
+                        ".mailmunch-forms-after-post, .paginationx"
+                    )
+                ):
+                    noise.decompose()
+                if len(arabamerica_body.select("p")) >= 2:
+                    return arabamerica_body
     if (
         partner_host == "mediapart.fr"
         or partner_host.endswith(".mediapart.fr")
