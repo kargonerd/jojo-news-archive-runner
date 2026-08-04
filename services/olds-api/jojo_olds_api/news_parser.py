@@ -7635,6 +7635,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(r"(?i)^read more bloomberg view editorials\s*\.?$"),
         re.compile(r"(?i)^today(?:'|’)s highlights\s*:\s*.+$"),
         re.compile(
+            r"(?i)^also,\s*the editors on\b.{1,800}"
+            r"(?:;\s*.{1,200}){1,12}\.?$"
+        ),
+        re.compile(
             r"(?i)^read more opinion online from bloomberg view\s*\.\s*"
             r"subscribe to receive a daily e-?mail highlighting new view "
             r"(?:columns,\s*editorials|editorials,\s*columns) "
