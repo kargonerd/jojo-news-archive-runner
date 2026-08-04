@@ -924,6 +924,11 @@ def parse_article(
         warnings.append("truncated-body")
     if (
         spec.publisher == "bloomberg"
+        and _bloomberg_origin_incomplete_for_more_tail(soup)
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
         and _bloomberg_john_lothian_summary(soup)
     ):
         warnings.append("truncated-body")
@@ -1915,6 +1920,44 @@ def _bloomberg_origin_abrupt_quote_truncation(
             len(tail) >= 80
             and tail.startswith("“")
             and tail.count("“") > tail.count("”")
+        ):
+            return True
+    return False
+
+
+def _bloomberg_origin_incomplete_for_more_tail(
+    soup: BeautifulSoup,
+) -> bool:
+    """Detect legacy Bloomberg pages cut mid-sentence before a nav link."""
+    page_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    hostname = (
+        (urlsplit(page_url).hostname or "").casefold()
+        if page_url
+        else ""
+    )
+    if not (
+        hostname == "bloomberg.com"
+        or hostname.endswith(".bloomberg.com")
+    ):
+        return False
+    for marker in soup.select("p"):
+        if not re.fullmatch(
+            r"For more,\s*click here\s*\.?",
+            _clean_text(marker.get_text(" ", strip=True)),
+            re.IGNORECASE,
+        ):
+            continue
+        previous = marker.find_previous_sibling("p")
+        if not isinstance(previous, Tag):
+            continue
+        tail = _clean_text(previous.get_text(" ", strip=True))
+        if (
+            len(tail) >= 30
+            and len(re.findall(r"\b[\w’'-]+\b", tail)) >= 6
+            and not re.search(r"""[.!?…:;)"'’”\]]$""", tail)
         ):
             return True
     return False
