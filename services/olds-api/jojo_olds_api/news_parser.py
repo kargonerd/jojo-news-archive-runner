@@ -6226,7 +6226,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     # punctuation-only paragraph.
     for node in list(soup.select("p")):
         if re.fullmatch(
-            r"~{3,}",
+            r"(?:~{3,}|-{3,})",
             _clean_text(node.get_text(" ", strip=True)),
         ):
             node.clear()
