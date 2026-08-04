@@ -9849,6 +9849,12 @@ def _bloomberg_caption_credit(
         credit_node.decompose()
     caption = _clean_text(copy.get_text(" ", strip=True)) or None
     credit = _dedupe_lines("\n".join(credit_parts)) or None
+    if (
+        caption
+        and credit
+        and caption.casefold() == credit.casefold()
+    ):
+        caption = None
     return caption, credit
 
 
