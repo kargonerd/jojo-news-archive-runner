@@ -7976,6 +7976,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             trimmed,
         )
         trimmed = re.sub(
+            r"(?i)\s+to listen,\s*click on\s+\{?\s*live\s*<go>\s*\}?"
+            r"\s*\.\)$",
+            ")",
+            trimmed,
+        )
+        trimmed = re.sub(
             r"(?i)\s+\*?\s*for change in stock futures oi,\s*"
             r"see fmon\s*<go>\s*$",
             "",
