@@ -7052,7 +7052,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^for more,\s*read this next\s*:\s*$"),
         re.compile(r"(?i)^for more,\s*read this next\s*:\s*\S.+$"),
-        re.compile(r"(?i)^for more,\s*click here\s*\.?$"),
+        re.compile(
+            r"(?i)^for more,\s*click here"
+            r"(?:,\s*and\s*click here)?\s*\.?$"
+        ),
         re.compile(
             r"(?i)^for the video,\s*click here,\s*and for more,\s*"
             r"click here\.?$"
