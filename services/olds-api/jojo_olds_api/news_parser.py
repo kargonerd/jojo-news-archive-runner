@@ -6719,6 +6719,25 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         else:
             text_node.extract()
 
+    # Bloomberg Sports product releases append a promotional link followed
+    # by ``About`` profiles and press contacts as sibling blocks. Preserve
+    # the preceding product announcement, but discard that standardized tail.
+    for marker in list(soup.select("p")):
+        if not re.fullmatch(
+            r"For more information on Bloomberg Sports,\s*please visit "
+            r"\S+ and follow us on Twitter\s*\(@BloombergSports\)\s*"
+            r"and Facebook\.",
+            _tag_text(marker),
+            re.IGNORECASE,
+        ):
+            continue
+        for sibling in list(marker.next_siblings):
+            if isinstance(sibling, Tag):
+                sibling.decompose()
+            else:
+                sibling.extract()
+        marker.decompose()
+
     embedded_recommendation = re.compile(
         r"(?is)\s*read (?:next:\s*\S.+|also:)\s*$"
     )
