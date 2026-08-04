@@ -8178,6 +8178,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             trimmed,
         )
         trimmed = re.sub(
+            r"(?i)\s+to be sent this column daily,\s*click\s+"
+            r"[a-z]{2,8}(?:\s+[a-z]{2,8})?\s*<go>\s*\.?\s*\)$",
+            ")",
+            trimmed,
+        )
+        trimmed = re.sub(
             r"(?i)\s+click here for (?:the )?playoff schedule\.?$",
             "",
             trimmed,
