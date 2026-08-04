@@ -929,6 +929,11 @@ def parse_article(
         warnings.append("truncated-body")
     if (
         spec.publisher == "bloomberg"
+        and _bloomberg_origin_trailing_heading_truncation(soup)
+    ):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "bloomberg"
         and _bloomberg_john_lothian_summary(soup)
     ):
         warnings.append("truncated-body")
@@ -1959,6 +1964,48 @@ def _bloomberg_origin_incomplete_for_more_tail(
             and len(re.findall(r"\b[\w’'-]+\b", tail)) >= 6
             and not re.search(r"""[.!?…:;)"'’”\]]$""", tail)
         ):
+            return True
+    return False
+
+
+def _bloomberg_origin_trailing_heading_truncation(
+    soup: BeautifulSoup,
+) -> bool:
+    """Detect an archived Bloomberg body ending at a section heading."""
+    page_url = _first_text(
+        _meta_content(soup, "property", "og:url"),
+        _tag_attribute(soup.select_one("link[rel='canonical']"), "href"),
+    )
+    hostname = (
+        (urlsplit(page_url).hostname or "").casefold()
+        if page_url
+        else ""
+    )
+    if not (
+        hostname == "bloomberg.com"
+        or hostname.endswith(".bloomberg.com")
+    ):
+        return False
+    for body in soup.select(
+        ".body-copy-v2, .body-copy, .article-body__content, "
+        "[data-component='article-body']"
+    ):
+        meaningful = [
+            child
+            for child in body.find_all(recursive=False)
+            if isinstance(child, Tag)
+            and _clean_text(child.get_text(" ", strip=True))
+        ]
+        if not meaningful:
+            continue
+        while meaningful and (
+            "terminal-tout" in (meaningful[-1].get("class") or [])
+            or "terminal-tout-v2" in (meaningful[-1].get("class") or [])
+        ):
+            meaningful.pop()
+        if meaningful and meaningful[-1].name in {
+            "h1", "h2", "h3", "h4", "h5", "h6"
+        }:
             return True
     return False
 
@@ -6458,6 +6505,17 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    for heading in list(soup.select("h1, h2, h3, h4, h5, h6")):
+        next_tag = heading.find_next_sibling()
+        if (
+            isinstance(next_tag, Tag)
+            and (
+                "terminal-tout" in (next_tag.get("class") or [])
+                or "terminal-tout-v2" in (next_tag.get("class") or [])
+            )
+        ):
+            heading.decompose()
+
     # Business Times syndication pages place newsletter cards, feedback
     # prompts, and related-story grids inside the broad article wrapper. They
     # consistently mark these screen-only modules as ``no-print``.
@@ -7057,7 +7115,8 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     """Remove legacy recirculation and standardized article footers."""
     for node in list(
         soup.select(
-            ".text-to-speech, .brokerboxarticle, .terminal-tout-v2, "
+            ".text-to-speech, .brokerboxarticle, .terminal-tout, "
+            ".terminal-tout-v2, "
             ".article-audio-attachment, "
             ".email-form, .similarstoryslide, button.read-more-button, "
             ".inner-page-cta-section, .minimal-detailfull-width-section, "
