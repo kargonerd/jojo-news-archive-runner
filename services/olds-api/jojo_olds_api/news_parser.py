@@ -1593,6 +1593,15 @@ def _bloomberg_partner_body(
                 if len(moneyweb_body.select("p")) >= 2:
                     return moneyweb_body
     if (
+        partner_host == "esmmagazine.com"
+        or partner_host.endswith(".esmmagazine.com")
+    ):
+        # The outer ESM ``article`` also contains tags and a recommended
+        # reading rail. The nested article is the licensed Bloomberg copy.
+        esm_body = soup.select_one(".article__content > article")
+        if isinstance(esm_body, Tag) and len(esm_body.select("p")) >= 2:
+            return esm_body
+    if (
         partner_host == "mediapart.fr"
         or partner_host.endswith(".mediapart.fr")
     ):
@@ -7292,6 +7301,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^link to statement\s*:\s*"
             r"\{\s*nsn\s+[a-z0-9]{8,14}\s+<go>\s*\}\s*$"
         ),
+        re.compile(r"(?i)^link to statement\s*:\s*link\s*$"),
         re.compile(
             r"(?i)^story link\s*:\s*"
             r"\{\s*nsn\s+[a-z0-9]{8,14}\s*<go>\s*\}\s*$"
