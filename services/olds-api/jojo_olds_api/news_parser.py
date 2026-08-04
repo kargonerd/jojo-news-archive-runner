@@ -6381,6 +6381,19 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Legacy terminal editions can pack a complete related-news navigation
+    # module into one paragraph instead of separating its heading and links.
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(
+            r"For Related News & Information\s*:\s*.+"
+            r"(?:<\s*GO\s*>|\{\s*[A-Z0-9 ]{2,80}\s*\})"
+            r".*",
+            text,
+            re.IGNORECASE,
+        ):
+            node.decompose()
+
     # Partner mirrors sometimes end an excerpt with a provenance link back to
     # the Bloomberg URL.  The canonical source is already retained in the
     # record, so do not leak this mirror wrapper into article text.
