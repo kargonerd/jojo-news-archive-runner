@@ -7045,6 +7045,15 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"\{\s*nsn\s+[a-z0-9]{8,14}\s+<go>\s*\}\s*$"
         ),
         re.compile(
+            r"(?i)^story link\s*:\s*"
+            r"\{\s*nsn\s+[a-z0-9]{8,14}\s*<go>\s*\}\s*$"
+        ),
+        re.compile(
+            r"(?i)^to see the methodology and exact wording of the poll "
+            r"questions,\s*click on the attachment tab at the top of "
+            r"the story\.?$"
+        ),
+        re.compile(
             r"(?i)^.{2,100}\bis (?:the )?.{2,100} for bloomberg\.\s*"
             r"follow (?:him|her|them) on twitter\b.*$"
         ),
