@@ -7423,6 +7423,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"to send a letter to the editor\.?$"
         ),
         re.compile(
+            r"(?i)^click on\s*\{\s*lett\s*<go>\s*\}\s*"
+            r"to send a letter to the editor\.?$"
+        ),
+        re.compile(
             r"(?i)^(?:(?:-{1,2}|—|–)\s*)?"
             r"editors?\s*:\s*[\w .,'’&-]+$"
         ),
@@ -8291,11 +8295,30 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             paragraph.decompose()
 
     partner_work_suffix = re.compile(
-        r"(?i)\s+read more of (?:his|her|their) work here\s*\.?\s*$"
+        r"(?i)\s+(?:read more of (?:his|her|their) work here|"
+        r"read more here)\s*\.?\s*\)?$"
     )
     for paragraph in list(soup.select("p")):
         text = _clean_text(paragraph.get_text(" ", strip=True))
+        parenthetical = text.startswith("(") and text.endswith(")")
         cleaned = partner_work_suffix.sub("", text).rstrip()
+        if cleaned == text:
+            continue
+        if parenthetical and cleaned.startswith("(") and not cleaned.endswith(")"):
+            cleaned += ")"
+        if cleaned:
+            paragraph.clear()
+            paragraph.append(cleaned)
+        else:
+            paragraph.decompose()
+
+    social_follow_suffix = re.compile(
+        r"(?i)\s+follow (?:him|her|them) on "
+        r"(?:instagram and twitter|twitter and instagram)\s*\.?\s*$"
+    )
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True))
+        cleaned = social_follow_suffix.sub("", text).rstrip()
         if cleaned == text:
             continue
         if cleaned:
