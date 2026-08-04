@@ -6458,6 +6458,12 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Business Times syndication pages place newsletter cards, feedback
+    # prompts, and related-story grids inside the broad article wrapper. They
+    # consistently mark these screen-only modules as ``no-print``.
+    for node in list(soup.select(".no-print")):
+        node.decompose()
+
     # WallStreetPit mirrors place their own affiliate disclosure inside the
     # same content column as the licensed Bloomberg copy.  Prefer the
     # structural class, with a narrowly worded text fallback for captures
