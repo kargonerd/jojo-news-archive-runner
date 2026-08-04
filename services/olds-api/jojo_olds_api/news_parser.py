@@ -7336,6 +7336,17 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             ):
                 tail_start = previous
                 break
+            if (
+                previous.name == "p"
+                and re.match(
+                    r"(?i)^about\s+bloomberg\s+bloomberg,\s+"
+                    r"the global business and financial information "
+                    r"and news leader\b",
+                    _tag_text(previous),
+                )
+            ):
+                tail_start = previous
+                break
             previous = previous.find_previous_sibling()
         for sibling in list(tail_start.next_siblings):
             if isinstance(sibling, Tag):
