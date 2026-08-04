@@ -8470,6 +8470,36 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
     ):
         node.decompose()
 
+    # Older Bloomberg pages wrap real inline images in generic thumbnail
+    # ``div`` elements.  Promote those wrappers to figures so the adjacent
+    # caption is attached to the image rather than emitted as body text.
+    # Video thumbnails are excluded because their "caption" is a story
+    # synopsis that is also represented by the article's text paragraphs.
+    for container in list(soup.select("div.image.thumbnail:has(p.caption)")):
+        classes = {
+            str(value).casefold()
+            for value in container.get("class", [])
+        }
+        if "video" in classes or container.find("img") is None:
+            continue
+        thumbnail = container.find(
+            "a",
+            class_="enlarge_image",
+            recursive=False,
+        )
+        overlay = container.find(
+            "div",
+            class_="simple_overlay",
+            recursive=False,
+        )
+        if (
+            isinstance(thumbnail, Tag)
+            and isinstance(overlay, Tag)
+            and overlay.find("img") is not None
+        ):
+            thumbnail.decompose()
+        container.name = "figure"
+
 
 def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     """Remove NYT sponsorship, subscription and standardized engagement UI."""
@@ -9585,6 +9615,7 @@ def _deduplicate_blocks(
     deduplicate_bloomberg_dateline_variants: bool = False,
 ) -> list[ContentBlock]:
     contained_pull_quotes: set[int] = set()
+    bloomberg_dateline_sequence_duplicates: set[int] = set()
     textual_types = {
         BlockType.PARAGRAPH,
         BlockType.QUOTE,
@@ -9619,11 +9650,43 @@ def _deduplicate_blocks(
             ):
                 contained_pull_quotes.add(index)
                 break
+    if deduplicate_bloomberg_dateline_variants:
+        for index, block in enumerate(blocks):
+            if block.type not in textual_types or not block.text:
+                continue
+            normalized = _normalize_block_text(block.text)
+            dateline_stripped = re.sub(
+                r"(?i)^[a-z]{3,9}\.?\s+\d{1,2}"
+                r"(?:,\s*\d{4})?\s+\(bloomberg\)\s*--\s*",
+                "",
+                normalized,
+            )
+            if dateline_stripped == normalized or len(dateline_stripped) < 80:
+                continue
+            pieces: list[str] = []
+            candidate_indexes: list[int] = []
+            for other_index in range(index + 1, min(len(blocks), index + 4)):
+                other = blocks[other_index]
+                if other.type not in textual_types or not other.text:
+                    break
+                pieces.append(_normalize_block_text(other.text))
+                candidate_indexes.append(other_index)
+                combined = " ".join(pieces)
+                if combined == dateline_stripped:
+                    bloomberg_dateline_sequence_duplicates.update(
+                        candidate_indexes
+                    )
+                    break
+                if len(combined) >= len(dateline_stripped):
+                    break
     seen_text: set[str] = set()
     seen_assets: set[str] = set()
     unique: list[ContentBlock] = []
     for index, block in enumerate(blocks):
-        if index in contained_pull_quotes:
+        if (
+            index in contained_pull_quotes
+            or index in bloomberg_dateline_sequence_duplicates
+        ):
             continue
         if block.text:
             normalized = _normalize_block_text(block.text)
