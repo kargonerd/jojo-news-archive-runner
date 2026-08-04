@@ -7564,6 +7564,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^for more bloomberg multimedia see\s*"
             r"\{\s*av\s*<go>\s*\}\s*$"
         ),
+        re.compile(
+            r"(?i)^top stories\s*:\s*top\s+"
+            r"top bond stories\s*:\s*top bon\s+"
+            r"bloomberg billionaires index\s*:\s*rich\s*$"
+        ),
         re.compile(r"(?i)^related tickers\s*:\s*.+$"),
         re.compile(r"(?i)^author$"),
         re.compile(r"(?i)^and yet equinor still\.*$"),
