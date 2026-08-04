@@ -6553,6 +6553,35 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         if paragraph_text == linked_text:
             node.decompose()
 
+    # Some 2014 personal-finance stories append a topic recirculation heading
+    # and a sibling list of Bloomberg links after the final reporting block.
+    for heading in list(soup.select("p")):
+        heading_text = _clean_text(heading.get_text(" ", strip=True))
+        if not re.fullmatch(
+            r"More on .{2,160}\s*:",
+            heading_text,
+            re.IGNORECASE,
+        ):
+            continue
+        related_list = heading.find_next_sibling()
+        if related_list is None or related_list.name not in {"ul", "ol"}:
+            continue
+        items = list(related_list.find_all("li", recursive=False))
+        if not items or not all(
+            item.select_one("a[href]")
+            and _clean_text(item.get_text(" ", strip=True))
+            == _clean_text(
+                " ".join(
+                    link.get_text(" ", strip=True)
+                    for link in item.select("a[href]")
+                )
+            )
+            for item in items
+        ):
+            continue
+        related_list.decompose()
+        heading.decompose()
+
     # Insurance Journal article tags and in-content subscription cards use
     # these structural classes. At this stage ``soup`` is the isolated body
     # clone and no longer contains partner-host metadata.
