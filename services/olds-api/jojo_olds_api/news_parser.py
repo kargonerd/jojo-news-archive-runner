@@ -7696,6 +7696,18 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             ".)",
             trimmed,
         )
+        trimmed = re.sub(
+            r"(?i)\s+click\s+[a-z]{1,8}(?:\s+[a-z]{1,8})?\s*"
+            r"<equity>\s+evts\s*<go>\s+to listen\.\)$",
+            ")",
+            trimmed,
+        )
+        trimmed = re.sub(
+            r"(?i)^([^.]{1,180}\.)\s+follow (?:him|her|them) on twitter"
+            r"(?:\s+at)?\s+@\w+\s*\.?$",
+            r"\1",
+            trimmed,
+        )
         if trimmed != text:
             paragraph.clear()
             paragraph.append(trimmed)
