@@ -8016,6 +8016,10 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^for more bloomberg view columns\.?$"),
         re.compile(
+            r"(?i)^read more bloomberg sustainability news and "
+            r"follow us on twitter\s*\.?$"
+        ),
+        re.compile(
             r"(?i)^sign up for the brief,\s*a daily afternoon newsletter "
             r"showcasing bloomberg law(?:'s|’s) top stories\.?$"
         ),
