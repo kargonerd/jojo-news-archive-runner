@@ -6497,6 +6497,26 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         soup.select(".simple_overlay .image_title, .simple_overlay .details")
     ):
         node.decompose()
+
+    # Businessweek inline illustrations sometimes use the caption and image
+    # alt text solely for issue promotion. Keep the illustration and its
+    # credit, but do not expose the issue date or subscription call as a
+    # descriptive caption.
+    businessweek_image_promo = re.compile(
+        r"Featured in Bloomberg Businessweek\s*,?\s*"
+        r"[A-Z][a-z]{2,8}\.?\s+\d{1,2},\s+\d{4}\.\s*"
+        r"Subscribe now\s*\.?",
+        re.IGNORECASE,
+    )
+    for caption in list(soup.select(".inline-media__caption")):
+        if businessweek_image_promo.fullmatch(_tag_text(caption)):
+            caption.decompose()
+    for image in list(soup.select("img[alt]")):
+        if businessweek_image_promo.fullmatch(
+            _clean_text(str(image.get("alt") or ""))
+        ):
+            image["alt"] = ""
+
     # Partner mirrors may place a five-star voting form inside the article
     # container. It is interactive site chrome, not Bloomberg story content.
     for node in list(soup.select("form.rating, form#articleVotesSubmit")):
