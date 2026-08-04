@@ -8330,6 +8330,26 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         r"(?i)^to contact (?:the )?"
         r"(?:reporters?|writers?|authors?|editors?|bloomberg news staff)\b"
     )
+    # A small number of legacy Bloomberg terminal pages contain a stray
+    # one-letter paragraph immediately before the reporter contact footer.
+    # Scope the repair to that exact boundary so legitimate short paragraphs
+    # elsewhere in an article remain untouched.
+    for contact in list(soup.select("p")):
+        if not contact_footer.match(
+            _clean_text(contact.get_text(" ", strip=True))
+        ):
+            continue
+        previous = contact.find_previous_sibling()
+        if (
+            isinstance(previous, Tag)
+            and previous.name == "p"
+            and re.fullmatch(
+                r"[A-Za-z]",
+                _clean_text(previous.get_text(" ", strip=True)),
+            )
+        ):
+            previous.decompose()
+
     for heading in list(soup.select("h2, h3, h4")):
         sibling = heading.find_next_sibling()
         while isinstance(sibling, Tag) and sibling.name in {"h2", "h3", "h4"}:
