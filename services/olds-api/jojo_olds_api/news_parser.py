@@ -6415,6 +6415,42 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # WallStreetPit mirrors place their own affiliate disclosure inside the
+    # same content column as the licensed Bloomberg copy.  Prefer the
+    # structural class, with a narrowly worded text fallback for captures
+    # where the wrapper was flattened.
+    for node in list(soup.select(".entry-content > ul")):
+        next_tag = node.find_next_sibling()
+        if (
+            isinstance(next_tag, Tag)
+            and "adblock" in (next_tag.get("class") or [])
+        ):
+            node.decompose()
+    for node in list(soup.select(".adblock")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(
+            r"Disclaimer:\s*This page contains affiliate links\s*\.?\s*"
+            r"If you choose to make a purchase after clicking a link,\s*"
+            r"we may receive a commission at no additional cost to you\.\s*"
+            r"Thank you for your support!",
+            text,
+            re.IGNORECASE,
+        ):
+            node.decompose()
+    for node in list(soup.select(".entry-tags")):
+        node.decompose()
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(
+            r"Disclaimer:\s*This page contains affiliate links\s*\.?\s*"
+            r"If you choose to make a purchase after clicking a link,\s*"
+            r"we may receive a commission at no additional cost to you\.\s*"
+            r"Thank you for your support!",
+            text,
+            re.IGNORECASE,
+        ):
+            node.decompose()
+
     # Bloomberg Businessweek occasionally published contributed education
     # tips with a final partner trial CTA inside the article container.
     for node in list(soup.select("p")):
