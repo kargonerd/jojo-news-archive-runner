@@ -7294,7 +7294,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(
             r"(?i)^read more (?:opinion online|online opinion|online) "
-            r"from bloomberg view\s*\.?$"
+            r"from bloomberg view\s*[:.]?$"
         ),
         re.compile(r"(?i)^read more bloomberg view editorials\s*\.?$"),
         re.compile(r"(?i)^today(?:'|’)s highlights\s*:\s*.+$"),
