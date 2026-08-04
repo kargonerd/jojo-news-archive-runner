@@ -6421,6 +6421,51 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             if re.fullmatch(r"\s*\.\s*", str(text_node)):
                 text_node.extract()
 
+    # The Daily Economy's older licensed copies append a Bloomberg source
+    # link, a duplicate headline/byline/date, and an unrelated stock-image
+    # credit after the final reporting sentence. The source marker shares the
+    # paragraph with useful prose, so trim from its linked ``Read more`` text
+    # onward instead of dropping the whole paragraph.
+    for source_link in list(soup.select("p a[href]")):
+        if not re.fullmatch(
+            r"Read more",
+            _tag_text(source_link),
+            re.IGNORECASE,
+        ):
+            continue
+        if "bloomberg.com/" not in str(
+            source_link.get("href") or ""
+        ).casefold():
+            continue
+        paragraph = source_link.find_parent("p")
+        if not isinstance(paragraph, Tag):
+            continue
+        prior_text = _clean_text(
+            "".join(str(item) for item in paragraph.contents).split(
+                str(source_link),
+                1,
+            )[0]
+        )
+        if len(prior_text) < 120:
+            continue
+        for item in list(paragraph.contents)[
+            list(paragraph.contents).index(source_link) :
+        ]:
+            if isinstance(item, Tag):
+                item.decompose()
+            else:
+                item.extract()
+        next_paragraph = paragraph.find_next_sibling("p")
+        if (
+            isinstance(next_paragraph, Tag)
+            and re.fullmatch(
+                r"Image by .{2,160}",
+                _tag_text(next_paragraph),
+                re.IGNORECASE,
+            )
+        ):
+            next_paragraph.decompose()
+
     # Licensed CTRM Center copies place a republication disclaimer inside the
     # selected story container. Match both halves of its distinctive wording
     # so ordinary Bloomberg references to republication are preserved.
