@@ -7318,6 +7318,32 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
                 sibling.extract()
         marker.decompose()
 
+    for marker in list(soup.select("h2, h3, h4, p")):
+        if not re.fullmatch(
+            r"(?i)contacts?\s+for\s+bloomberg\s*:?",
+            _tag_text(marker),
+        ):
+            continue
+        tail_start = marker
+        previous = marker.find_previous_sibling()
+        while isinstance(previous, Tag):
+            if (
+                previous.name in {"h2", "h3", "h4"}
+                and re.fullmatch(
+                    r"(?i)about\s+bloomberg",
+                    _tag_text(previous),
+                )
+            ):
+                tail_start = previous
+                break
+            previous = previous.find_previous_sibling()
+        for sibling in list(tail_start.next_siblings):
+            if isinstance(sibling, Tag):
+                sibling.decompose()
+            else:
+                sibling.extract()
+        tail_start.decompose()
+
     embedded_recommendation = re.compile(
         r"(?is)\s*read (?:next:\s*\S.+|also:)\s*$"
     )
