@@ -7614,6 +7614,7 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?i)^for more bloomberg opinion,\s*subscribe to our "
             r"newsletter\.?$"
         ),
+        re.compile(r"(?i)^for more bloomberg view columns\.?$"),
         re.compile(
             r"(?i)^sign up for the brief,\s*a daily afternoon newsletter "
             r"showcasing bloomberg law(?:'s|’s) top stories\.?$"
