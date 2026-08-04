@@ -72,7 +72,22 @@ def parse_article(
     allow_generic_syndication: bool = False,
 ) -> JojoArticle:
     spec = publisher_spec(publisher)
-    soup = BeautifulSoup(html_bytes, "html.parser")
+    declared_latin1 = re.search(
+        rb"(?i)charset\s*=\s*[\"']?(?:iso-8859-1|latin-?1)\b",
+        html_bytes[:8192],
+    )
+    has_windows_1252_punctuation = any(
+        byte in html_bytes for byte in range(0x80, 0xA0)
+    )
+    soup = BeautifulSoup(
+        html_bytes,
+        "html.parser",
+        from_encoding=(
+            "windows-1252"
+            if declared_latin1 and has_windows_1252_punctuation
+            else None
+        ),
+    )
     news_article = _find_news_article_json(soup)
     nyt_preloaded_metadata = (
         _nyt_preloaded_article_metadata(soup, canonical_url=canonical_url)
