@@ -6679,6 +6679,24 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         else:
             text_node.extract()
 
+    inside_canada_subscription = re.compile(
+        r"(?is)\s*to\s+subscribe\s+to\s+inside\s+canada,\s*"
+        r"click\s+here,\s*"
+        r"hit\s+[“\"]display\s*&\s*edit[”\"]\s+and\s+then\s+"
+        r"[“\"]set alert delivery[”\"]\s*$"
+    )
+    for text_node in list(
+        soup.find_all(string=inside_canada_subscription)
+    ):
+        cleaned = inside_canada_subscription.sub(
+            "",
+            str(text_node),
+        ).rstrip()
+        if cleaned:
+            text_node.replace_with(cleaned)
+        else:
+            text_node.extract()
+
     embedded_recommendation = re.compile(
         r"(?is)\s*read (?:next:\s*\S.+|also:)\s*$"
     )
