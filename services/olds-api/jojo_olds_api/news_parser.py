@@ -1598,9 +1598,21 @@ def _bloomberg_partner_body(
     ):
         # The outer ESM ``article`` also contains tags and a recommended
         # reading rail. The nested article is the licensed Bloomberg copy.
-        esm_body = soup.select_one(".article__content > article")
-        if isinstance(esm_body, Tag) and len(esm_body.select("p")) >= 2:
-            return esm_body
+        source_body = soup.select_one(".article__content > article")
+        if isinstance(source_body, Tag):
+            document = BeautifulSoup(str(source_body), "html.parser")
+            esm_body = document.select_one("article")
+            if isinstance(esm_body, Tag):
+                for node in list(esm_body.select("p")):
+                    text = _clean_text(node.get_text(" ", strip=True))
+                    if re.match(
+                        r"(?i)^(?:news by bloomberg|bloomberg news)\s*,?\s*"
+                        r"edited by esm\b",
+                        text,
+                    ):
+                        node.decompose()
+                if len(esm_body.select("p")) >= 2:
+                    return esm_body
     if (
         partner_host == "mediapart.fr"
         or partner_host.endswith(".mediapart.fr")
