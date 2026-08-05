@@ -6673,6 +6673,32 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         ):
             node.decompose()
 
+    # Gasgoo's current article template appends its supplier-services card,
+    # copyright notice, and current-news grid inside the same article element
+    # as licensed Bloomberg copy.  The paired service addresses and the two
+    # distinct card titles make these safe, structural removals.
+    for node in list(soup.select("div")):
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        if (
+            "buyer-support@gasgoo.com" in text
+            and "seller-support@gasgoo.com" in text
+        ) or (
+            "weekly highlights" in text
+            and "[gasgoo express]" in text
+            and "gasgoo.com" not in text
+        ):
+            node.decompose()
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if re.fullmatch(
+            r"All Rights Reserved\. Do not reproduce, copy and use the "
+            r"editorial content without permission\. Contact us: "
+            r"autonews@gasgoo\.com",
+            text,
+            re.IGNORECASE,
+        ):
+            node.decompose()
+
     # Legacy terminal editions can pack a complete related-news navigation
     # module into one paragraph instead of separating its heading and links.
     # A few captured editions put the navigation after legitimate text (and
