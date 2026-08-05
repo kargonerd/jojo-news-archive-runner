@@ -6898,6 +6898,11 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             r"(?:\s+for\s+[^.]{1,240})?\.?",
             re.IGNORECASE,
         ),
+        re.compile(
+            r"\s*See\s+[A-Z0-9]{1,24}(?:\s+[A-Z0-9]{1,24})?\s*"
+            r"<\s*Index\s*>\s*(?:[A-Z]{1,8}\s*){0,4}<\s*GO\s*>\.?",
+            re.IGNORECASE,
+        ),
     )
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
