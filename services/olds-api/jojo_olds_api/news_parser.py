@@ -6577,6 +6577,19 @@ def _remove_bloomberg_damaged_attribution(soup: BeautifulSoup) -> None:
 
 
 def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
+    # Food Safety News embeds a donation card after licensed Bloomberg
+    # reporting. Its nested heading can survive text-level footer cleanup, so
+    # remove the card as a unit.
+    for node in list(soup.select("div")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if (
+            "bg-blue-primary" in (node.get("class") or [])
+            and
+            "food safety news is nonprofit and reader-funded" in text.casefold()
+            and "donate today" in text.casefold()
+        ):
+            node.decompose()
+
     for heading in list(soup.select("h1, h2, h3, h4, h5, h6")):
         next_tag = heading.find_next_sibling()
         if (
@@ -7608,6 +7621,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^get the latest nigerian news delivered to your inbox\.?$"
         ),
+        re.compile(
+            r"(?i)^food safety news is nonprofit and reader-funded\.\s*"
+            r"your tax-free gift ensures ongoing coverage of outbreaks,\s*"
+            r"recalls, and regulations for everyone\.?$"
+        ),
+        re.compile(r"(?i)^your support protects public health$"),
         re.compile(
             r"(?i)^follow .{1,100}(?:'|’)s business section "
             r"on twitter\.?$"
