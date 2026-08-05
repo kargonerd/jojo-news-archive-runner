@@ -6662,15 +6662,31 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
 
     # Legacy terminal editions can pack a complete related-news navigation
     # module into one paragraph instead of separating its heading and links.
+    # A few captured editions put the navigation after legitimate text (and
+    # sometimes HTML escaped list markup), so retain that lead-in instead of
+    # discarding the entire paragraph.
+    terminal_related_news = re.compile(
+        r"For Related (?:News\s*(?:&|and)\s*)?Information\s*:\s*.+"
+        r"(?:<\s*GO\s*>|\{\s*[A-Z0-9 ]{2,80}\s*\})"
+        r".*",
+        re.IGNORECASE,
+    )
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
-        if re.fullmatch(
-            r"For Related (?:News\s*&\s*)?Information\s*:\s*.+"
-            r"(?:<\s*GO\s*>|\{\s*[A-Z0-9 ]{2,80}\s*\})"
-            r".*",
-            text,
-            re.IGNORECASE,
-        ):
+        match = terminal_related_news.search(text)
+        if match is None:
+            continue
+        retained = re.sub(
+            r"</?(?:ul|ol|li)\b[^>]*>",
+            " ",
+            text[: match.start()],
+            flags=re.IGNORECASE,
+        )
+        retained = _clean_text(retained)
+        if retained:
+            node.clear()
+            node.append(retained)
+        else:
             node.decompose()
 
     # Partner mirrors sometimes end an excerpt with a provenance link back to
