@@ -6853,6 +6853,13 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
                 re.IGNORECASE,
             )
             or re.fullmatch(
+                r"Bill Rochelle is away\. For today['’]s U\.S\. bankruptcy "
+                r"column and any updates, see \{\s*TNI\s+BCY\s+US\s+BN\s*"
+                r"<\s*GO\s*>\s*\}\.?",
+                text,
+                re.IGNORECASE,
+            )
+            or re.fullmatch(
                 r"Read more posts from .{1,100}\.",
                 text,
                 re.IGNORECASE,
