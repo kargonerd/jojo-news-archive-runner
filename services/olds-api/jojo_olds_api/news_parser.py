@@ -6858,6 +6858,38 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         else:
             text_node.extract()
 
+    # Legacy Bloomberg pages sometimes append a Terminal command inside an
+    # otherwise useful reporting paragraph.  Keep the conference-call detail
+    # or article introduction, but remove only the machine navigation.
+    terminal_inline_commands = (
+        re.compile(
+            r"\s*See\s+[A-Z0-9]{1,12}(?:\s+[A-Z0-9]{1,16})?\s*"
+            r"<\s*Equity\s*>\s+EVTS?\s*<\s*GO\s*>",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"\s*See\s+NI\s+[A-Z0-9]{2,20}\s*<\s*GO\s*>"
+            r"(?:\s+for\s+[^.]{1,240})?\.?",
+            re.IGNORECASE,
+        ),
+    )
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        cleaned = text
+        for command in terminal_inline_commands:
+            cleaned = command.sub("", cleaned)
+        cleaned = _clean_text(cleaned)
+        # The command itself can end in a period after a sentence that already
+        # ended before ``See``; preserve the closing parenthesis, not ``..``.
+        cleaned = re.sub(r"\.\s*\.(?=\))", ".", cleaned)
+        if cleaned == text:
+            continue
+        if cleaned:
+            node.clear()
+            node.append(cleaned)
+        else:
+            node.decompose()
+
     # Some 2015 Bloomberg pages append an unlabelled related-story paragraph
     # inside the story section. It contains only multiple Bloomberg article
     # links and no prose outside those anchors.
