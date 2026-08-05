@@ -6865,6 +6865,12 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
                 re.IGNORECASE,
             )
             or re.fullmatch(
+                r"-0-\s+(?:[A-Za-z]{3}/\d{1,2}/\d{4}|\d{1,2}/\d{1,2}/\d{4})"
+                r"\s+\d{1,2}:\d{2}\s+(?:GMT|UTC)\.?",
+                text,
+                re.IGNORECASE,
+            )
+            or re.fullmatch(
                 r"For other Bloomberg coverage,\s*click here\s*\.?",
                 text,
                 re.IGNORECASE,
