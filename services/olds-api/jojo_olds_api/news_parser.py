@@ -6728,6 +6728,23 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
         else:
             node.decompose()
 
+    # Some terminal table editions append a Bloomberg command code after an
+    # otherwise useful source attribution.  Preserve the agency name while
+    # dropping only the non-reader-facing command suffix.
+    for node in list(soup.select("p")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        if not re.match(r"SOURCE\s*:", text, re.IGNORECASE):
+            continue
+        retained = re.sub(
+            r"\s+\{\s*[A-Z0-9 ]{2,80}<\s*GO\s*>\s*\}\s*$",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if retained != text:
+            node.clear()
+            node.append(retained)
+
     # Partner mirrors sometimes end an excerpt with a provenance link back to
     # the Bloomberg URL.  The canonical source is already retained in the
     # record, so do not leak this mirror wrapper into article text.
