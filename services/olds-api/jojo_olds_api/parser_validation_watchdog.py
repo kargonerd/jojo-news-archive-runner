@@ -234,9 +234,10 @@ def _task(
             publisher,
             year,
         ),
-        "runnerOs": (
-            "macos-15-intel" if publisher == "nyt" else "ubuntu-latest"
-        ),
+        # macOS 15 hosted runners currently do not ship the pinned 3.12.13
+        # interpreter used by the archive workflow.  NYT capture already
+        # applies its own slower request cadence on Ubuntu.
+        "runnerOs": "ubuntu-latest",
         "currentEvaluated": evaluated,
         "replayableEvaluated": replayable_evaluated,
         "parserVersion": parser_version,
