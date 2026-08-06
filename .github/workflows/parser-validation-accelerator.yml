@@ -172,8 +172,13 @@ jobs:
             echo "unsupported cohort" >&2
             exit 2
           fi
+          # A parser-validation cohort is execution state, not a second archive.
+          # Keep only its compact manifest/checkpoint/summary under v2; every raw
+          # object and capture record is read from or written to the canonical
+          # source archive below.  In particular, never create holdout-v*/raw
+          # copies in B2.
           local_root="${ARCHIVE_ROOT}/${COHORT}/${PUBLISHER}/${SAMPLE_YEAR}"
-          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${COHORT}/${PUBLISHER}/${SAMPLE_YEAR}"
+          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v2/validation-state/${COHORT}/${PUBLISHER}/${SAMPLE_YEAR}"
           source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${SOURCE_MANIFEST_SHARD}"
           mkdir -p "$local_root/catalog" "$local_root/raw"
           {
@@ -374,7 +379,7 @@ jobs:
             --stats 30s
           rclone copy \
             "$LOCAL_ROOT/raw" \
-            "${REMOTE_ROOT}/raw" \
+            "${SOURCE_ROOT}/raw" \
             --files-from "$files_from" \
             --checksum --immutable \
             --transfers 16 --checkers 32 \
@@ -407,10 +412,10 @@ jobs:
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
-          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+          SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
         run: |
           rclone copy \
-            "${REMOTE_ROOT}/raw" \
+            "${SOURCE_ROOT}/raw" \
             "$LOCAL_ROOT/raw" \
             --files-from "$RUNNER_TEMP/parser-validation-files.txt" \
             --transfers 16 --checkers 32 \
@@ -481,6 +486,7 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
           REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+          SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
         run: |
           set -uo pipefail
           live_checkpoint() {
@@ -495,7 +501,7 @@ jobs:
             if [ -d "$LOCAL_ROOT/raw/objects" ]; then
               if ! rclone copy \
                   "$LOCAL_ROOT/raw/objects" \
-                  "${REMOTE_ROOT}/raw/objects" \
+                  "${SOURCE_ROOT}/raw/objects" \
                   --exclude '*.tmp' \
                   --checksum --immutable --fast-list \
                   --transfers 32 --checkers 64 \
@@ -507,9 +513,9 @@ jobs:
             if [ -d "$LOCAL_ROOT/raw/records" ]; then
               if ! rclone copy \
                   "$LOCAL_ROOT/raw/records" \
-                  "${REMOTE_ROOT}/raw/records" \
+                  "${SOURCE_ROOT}/raw/records" \
                   --exclude '*.tmp' \
-                  --checksum --fast-list \
+                  --checksum --immutable --fast-list \
                   --transfers 32 --checkers 64 \
                   --retries 8 --low-level-retries 20; then
                 echo "::warning::Live record upload failed; state withheld."
@@ -654,11 +660,11 @@ jobs:
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
-          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+          SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
         run: |
           if [ -s "$RUNNER_TEMP/parser-validation-all-files.txt" ]; then
             rclone copy \
-              "${REMOTE_ROOT}/raw" \
+              "${SOURCE_ROOT}/raw" \
               "$LOCAL_ROOT/raw" \
               --files-from \
                 "$RUNNER_TEMP/parser-validation-all-files.txt" \
@@ -702,12 +708,13 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
           REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+          SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
         run: |
           set -euo pipefail
           if [ -d "$LOCAL_ROOT/raw/objects" ]; then
             rclone copy \
               "$LOCAL_ROOT/raw/objects" \
-              "${REMOTE_ROOT}/raw/objects" \
+              "${SOURCE_ROOT}/raw/objects" \
               --exclude '*.tmp' \
               --checksum --immutable --fast-list \
               --transfers 32 --checkers 64 \
@@ -717,9 +724,9 @@ jobs:
           if [ -d "$LOCAL_ROOT/raw/records" ]; then
             rclone copy \
               "$LOCAL_ROOT/raw/records" \
-              "${REMOTE_ROOT}/raw/records" \
+              "${SOURCE_ROOT}/raw/records" \
               --exclude '*.tmp' \
-              --checksum --fast-list \
+              --checksum --immutable --fast-list \
               --transfers 32 --checkers 64 \
               --retries 8 --low-level-retries 20 \
               --stats 30s
