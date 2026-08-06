@@ -6,10 +6,11 @@ import re
 from typing import Iterable
 
 from .publisher_specs import publisher_spec
+from .parser_source_shards import parser_source_manifest_shard
 
 
 FORMAT_VERSION = "jojo-parser-validation-watchdog/1"
-TARGET_YEARS = tuple(range(2016, 2027))
+TARGET_YEARS = tuple(range(2010, 2027))
 MINIMUM_SAMPLES = 800
 MINIMUM_COMPLETE_RATE = 0.95
 MINIMUM_QA_PASS_RATE = 0.95
@@ -21,13 +22,6 @@ PUBLISHER_ORDER = (
     "nyt",
     "ap",
 )
-SOURCE_SHARDS = {
-    "ap": "ap/2016-2026/sitemap-wayback",
-    "bloomberg": "bloomberg/2016-2026/sitemap-wayback",
-    "ft": "ft/2016-2026/sitemap-wayback",
-    "nyt": "nyt/2016-2026/sitemap-wayback",
-    "wsj": "wsj/2016-2026/wayback-urlkey",
-}
 ACTIVE_TITLE_RE = re.compile(
     r"^parser-qa-(ap|bloomberg|ft|nyt|reuters|wsj)-(20\d{2})$"
 )
@@ -233,18 +227,13 @@ def _task(
     replayable_evaluated: int,
     parser_version: str,
 ) -> dict[str, object]:
-    if publisher == "reuters":
-        shard = (
-            "reuters/2016-2020/wayback-urlkey"
-            if year <= 2020
-            else "reuters/2021-2026/reuters-sitemap-wayback"
-        )
-    else:
-        shard = SOURCE_SHARDS[publisher]
     return {
         "publisher": publisher,
         "year": year,
-        "sourceManifestShard": shard,
+        "sourceManifestShard": parser_source_manifest_shard(
+            publisher,
+            year,
+        ),
         "runnerOs": (
             "macos-15-intel" if publisher == "nyt" else "ubuntu-latest"
         ),
