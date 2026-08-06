@@ -785,7 +785,7 @@ def pending_completed_parser_validation_files(
                 config.sample_year,
                 config.target_size,
                 config.parser_version,
-                COUNT(result.canonical_url) AS evaluated
+                COALESCE(SUM(result.qa_pass), 0) AS qa_passed
             FROM parser_validation_config AS config
             LEFT JOIN parser_validation_results AS result
               ON result.sample_year=config.sample_year
@@ -794,7 +794,7 @@ def pending_completed_parser_validation_files(
                 config.sample_year,
                 config.target_size,
                 config.parser_version
-            HAVING COUNT(result.canonical_url) < config.target_size
+            HAVING COALESCE(SUM(result.qa_pass), 0) < config.target_size
         ),
         ranked AS (
             SELECT
@@ -802,7 +802,7 @@ def pending_completed_parser_validation_files(
                 capture.raw_path,
                 sample.sample_year,
                 active_years.target_size,
-                active_years.evaluated,
+                active_years.qa_passed,
                 ROW_NUMBER() OVER (
                     PARTITION BY sample.sample_year
                     ORDER BY sample.sample_priority
@@ -821,7 +821,7 @@ def pending_completed_parser_validation_files(
         )
         SELECT canonical_url, raw_path
         FROM ranked
-        WHERE sample_rank <= target_size - evaluated
+        WHERE sample_rank <= target_size - qa_passed
         ORDER BY sample_rank, sample_year
     """
     parameters: list[object] = []
