@@ -146,8 +146,13 @@ ARCHIVE_SOURCE_SPECS = {
     "axios": ArchiveSourceSpec(
         publisher="axios",
         canonical_host="www.axios.com",
-        wayback_patterns=("axios.com/{year}/*", "www.axios.com/{year}/*"),
-        accepted_path_patterns=_patterns(r"^/20\d{2}/"),
+        wayback_patterns=(
+            "axios.com/{year}/*",
+            "www.axios.com/{year}/*",
+            "axios.com/*/{year}/*",
+            "www.axios.com/*/{year}/*",
+        ),
+        accepted_path_patterns=_patterns(r"^/(?:[^/]+/)?20\d{2}/"),
         rejected_path_patterns=_patterns(r"^/(?:newsletters?|signup|about)(?:/|$)"),
     ),
     "npr": ArchiveSourceSpec(
