@@ -595,6 +595,55 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
+      - name: Diagnose Axios legacy smoke markup
+        if: ${{ inputs.publisher == 'axios' && inputs.cohort == 'smoke-v4' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          import gzip
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import sqlite3
+
+          from bs4 import BeautifulSoup
+
+          root = Path(os.environ["LOCAL_ROOT"]) / "raw"
+          connection = sqlite3.connect(root / "capture.sqlite3")
+          rows = connection.execute(
+              "SELECT canonical_url, raw_path FROM captures "
+              "WHERE status='complete' AND raw_path IS NOT NULL "
+              "ORDER BY canonical_url LIMIT 3"
+          ).fetchall()
+          for url, raw_path in rows:
+              html = gzip.decompress((root / raw_path).read_bytes()).decode(
+                  "utf-8", errors="replace"
+              )
+              soup = BeautifulSoup(html, "html.parser")
+              classes = Counter(
+                  value
+                  for node in soup.find_all(True)
+                  for value in node.get("class", [])
+              )
+              ids = Counter(
+                  str(node.get("id"))
+                  for node in soup.find_all(id=True)
+              )
+              json_keys = Counter(re.findall(r'"([A-Za-z][A-Za-z0-9_]{2,})"\\s*:', html))
+              print(json.dumps({
+                  "url": url,
+                  "htmlBytes": len(html),
+                  "tags": Counter(node.name for node in soup.find_all(True)).most_common(20),
+                  "classes": classes.most_common(40),
+                  "ids": ids.most_common(30),
+                  "jsonKeys": json_keys.most_common(40),
+              }, ensure_ascii=False))
+          PY
+
       - name: Verify saved parser results are reproducible
         if: >-
           ${{
