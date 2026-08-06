@@ -28,12 +28,12 @@ separate validated page supplies them.
 
 Parser readiness is measured on a reproducible, publisher-and-year-stratified
 random sample. The archive workflow uses a stable SHA-256 pseudo-random
-priority, captures years in round-robin order, and evaluates at least 500
+priority, captures years in round-robin order, and evaluates at least 800
 articles for every configured year. The stable priority prevents resumptions
 from changing the selected sample while keeping selection independent of URL
 order. Already stored raw captures are sampled and replayed first; uncaptured
 URLs fill only the remaining shortfall. Validation stores metrics and issue
-codes, never article body text. A publisher/year is not ready until it has 500
+codes, never article body text. A publisher/year is not ready until it has 800
 evaluated samples, no parser exceptions, at least a 95% complete-extraction
 rate, and at least a 95% QA-pass rate.
 
@@ -60,33 +60,28 @@ year under `parserValidation`.
 
 When a full publisher shard is progressing too slowly to exercise every year,
 the `Parser validation accelerator` workflow filters that shard's existing
-manifest to one year and uses an independent checkpoint:
+manifest to one year and uses an independent checkpoint. It never creates a
+second raw corpus: canonical raw objects and records remain in the publisher
+shard above.
 
 ```text
-news-archive/v1/validation/{publisher}/{year}/
+news-archive/v2/validation-state/{cohort}/{publisher}/{year}/
   catalog/manifest.jsonl.gz
-  raw/objects/html/...
-  raw/records/...
   state/capture.sqlite3.gz
   state/summary.json
 ```
 
 The filtered manifest is cached in B2 after its first use. Sampling uses the
-same publisher, year, seed, parser version, 500-article target, and QA gates as
+same publisher, year, seed, parser version, 800-article target, and QA gates as
 the full shard, so the result is directly comparable. The independent prefix
-allows multiple years to run concurrently without two Actions jobs writing
-the same SQLite checkpoint. It is an acceleration and validation corpus, not
-a replacement for the full archive shard, which continues downloading in the
-background.
+allows multiple years to run concurrently without two Actions jobs writing the
+same SQLite checkpoint. It is an accelerator, not a second archive or a
+replacement for the full archive shard.
 
-`Parser validation watchdog` keeps the complete 6-publisher by 11-year matrix
-moving. Every 15 minutes, and whenever an accelerator finishes, it reads only
-the small B2 summary files from the full and per-year shards. A cell counts as
-ready only when its summary uses the publisher's current parser version and
-passes all four gates above. It skips an already active publisher/year,
-prioritizes the closest incomplete cells, and fills a conservative maximum of
-20 concurrent standard-runner jobs. Failed or interrupted cells are therefore
-restarted without treating an older parser result as current evidence.
+The watchdog workflows are intentionally manual while the archive is under
+cost review. Before automatic scheduling is re-enabled, B2 must have a
+lifecycle policy that removes hidden object versions and the validation
+workflow must remain raw-copy-free.
 
 HTML objects are addressed by the SHA-256 of the uncompressed response or
 explicitly derived representation. Gzip is deterministic (`mtime=0`), so
@@ -106,9 +101,9 @@ so one unhealthy archive cannot stall every source. The raw record retains the
 Common Crawl object URL, WARC filename, offset, and length.
 
 Wayback URL-key discovery may begin capture before every query is exhausted
-once every requested year has at least 750 unique article candidates. Discovery
-continues in later resumable runs, while the 250-article buffer allows the
-500-sample parser gate to tolerate unusable archive responses.
+once every requested year has at least 1,100 unique article candidates. Discovery
+continues in later resumable runs, while the 300-article buffer allows the
+800-sample parser gate to tolerate unusable archive responses.
 
 Objects and records are uploaded before the capture checkpoint. A restored
 checkpoint therefore never references data that has not reached B2.
@@ -225,7 +220,7 @@ across every matching shard, and accepts only normalized official `wsj.com`
 article URLs with matching-year metadata. Infini-News supplies URL discovery
 metadata only; its extracted text is never used as the raw article. Each
 official URL still goes through the normal publication-near Wayback capture and
-the same 500-article parser gate. This avoids treating other Dow Jones
+the same 800-article parser gate. This avoids treating other Dow Jones
 publications that share the copyright template as WSJ articles.
 
 For WSJ articles from 2023 onward, the same shard also enumerates the public
@@ -296,7 +291,6 @@ Reuters uses two catalog shards because its URL design changed:
   discovery provenance and try Wayback before a live-origin fallback; urlscan
   metadata is never treated as article content.
 
-`News archive watchdog` checks all configured shards every hour. It skips
-shards that already have a queued or running workflow and restarts only stopped
-chains. The target workflow's per-shard concurrency lock remains a second guard
-against simultaneous writers.
+`News archive watchdog` is currently manual-only during the storage cost
+review. When it is re-enabled, it must retain its per-shard concurrency lock
+and only dispatch a run after the B2 lifecycle and storage guard checks pass.
