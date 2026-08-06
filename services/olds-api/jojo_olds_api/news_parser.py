@@ -9259,6 +9259,26 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
             thumbnail.decompose()
         container.name = "figure"
 
+    # Calendar and market-monitor stories may mention Terminal navigation
+    # codes inline (for example, ``{ECO JN <GO>}``).  This must run last:
+    # several stricter removals above use the command as their structural
+    # signal.  Remove only the braced command and retain its explanation.
+    for node in list(soup.select("p, li, td, th")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        retained = re.sub(
+            r"\{\s*[A-Z0-9][A-Z0-9 .:/&'_-]{1,79}<\s*GO\s*>\s*\}",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+        retained = _clean_text(retained)
+        if retained != text:
+            node.clear()
+            if retained:
+                node.append(retained)
+            else:
+                node.decompose()
+
 
 def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     """Remove NYT sponsorship, subscription and standardized engagement UI."""
