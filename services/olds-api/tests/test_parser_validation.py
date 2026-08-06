@@ -297,6 +297,18 @@ def test_validation_target_requires_qa_passes_and_keeps_replacement_pending(
         maximum_record_attempts=3,
     ) == [second_url]
 
+    replacement = ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=1,
+        maximum_record_attempts=3,
+    )
+    assert replacement["years"]["2020"]["qaPassed"] == 0
+    assert replacement["years"]["2020"]["addedToPlan"] == 1
+
 
 def test_holdout_plan_excludes_every_prior_cohort_url(tmp_path: Path):
     connection = _state_with_years(tmp_path)

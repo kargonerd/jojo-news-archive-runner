@@ -438,6 +438,16 @@ def ensure_parser_validation_plan(
                 (year, current_parser_version),
             ).fetchone()[0]
         )
+        qa_passed = int(
+            connection.execute(
+                """
+                SELECT COALESCE(SUM(qa_pass), 0)
+                FROM parser_validation_results
+                WHERE sample_year=? AND parser_version=?
+                """,
+                (year, current_parser_version),
+            ).fetchone()[0]
+        )
         actionable = int(
             connection.execute(
                 """
@@ -491,7 +501,7 @@ def ensure_parser_validation_plan(
         )
         completed_needed = max(
             0,
-            target_per_year - evaluated - completed_actionable,
+            target_per_year - qa_passed - completed_actionable,
         )
         completed_selected = _select_additional_samples(
             connection,
@@ -514,7 +524,7 @@ def ensure_parser_validation_plan(
             ),
         )
         actionable += len(completed_selected)
-        desired_actionable = max(0, target_per_year - evaluated) + reserve
+        desired_actionable = max(0, target_per_year - qa_passed) + reserve
         direct_selected: list[tuple[str, str]] = []
         exact_wayback_selected: list[tuple[str, str]] = []
         if publisher == "ft":
@@ -634,6 +644,7 @@ def ensure_parser_validation_plan(
         years[str(year)] = {
             "available": available,
             "evaluated": evaluated,
+            "qaPassed": qa_passed,
             "actionableBeforePlanning": actionable_before_planning,
             "refreshedForParserVersion": int(year in refreshed_years),
             "addedCompletedToPlan": len(completed_selected),
