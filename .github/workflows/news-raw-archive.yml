@@ -417,7 +417,7 @@ jobs:
             --state "$LOCAL_ROOT/raw/capture.sqlite3" \
             --from-year "$FROM_YEAR" \
             --to-year "$TO_YEAR" \
-            --target-per-year 500 \
+            --target-per-year 800 \
             --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
             --max-replays 2000 \
             --files-from "$RUNNER_TEMP/parser-validation-files.txt" \
@@ -561,7 +561,7 @@ jobs:
             --max-captures "$MAX_CAPTURES"
             --max-runtime-minutes "$MAX_RUNTIME_MINUTES"
             --max-record-attempts "$MAX_RECORD_ATTEMPTS"
-            --validation-sample-per-year 500
+            --validation-sample-per-year 800
             --validation-from-year "$FROM_YEAR"
             --validation-to-year "$TO_YEAR"
             --progress-every 25

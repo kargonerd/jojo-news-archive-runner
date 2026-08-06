@@ -29,7 +29,7 @@ def _write_summary(
                 "parserValidation": {
                     "years": {
                         str(year): {
-                            "target": 500,
+                            "target": 800,
                             "parserVersion": (
                                 parser_version
                                 or publisher_spec(publisher).parser_version
@@ -55,14 +55,14 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "ap/2016-2026/sitemap-wayback/state/summary.json",
         publisher="ap",
         year=2016,
-        evaluated=500,
+        evaluated=800,
     )
     _write_summary(
         tmp_path,
         "validation/bloomberg/2017/state/summary.json",
         publisher="bloomberg",
         year=2017,
-        evaluated=500,
+        evaluated=800,
     )
 
     plan = plan_validation_dispatch(
@@ -87,9 +87,9 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
     assert ap_2016 == {
         "publisher": "ap",
         "year": 2016,
-        "target": 500,
-        "evaluated": 500,
-        "replayableEvaluated": 500,
+        "target": 800,
+        "evaluated": 800,
+        "replayableEvaluated": 800,
         "completeRate": 1.0,
         "qaPassRate": 1.0,
         "errors": 0,

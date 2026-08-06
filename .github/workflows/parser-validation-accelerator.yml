@@ -87,7 +87,10 @@ env:
   DOWNLOAD_WORKERS: ${{ inputs.workers }}
   MAX_RUNTIME_MINUTES: ${{ inputs.max_runtime_minutes }}
   MAX_RECORD_ATTEMPTS: "3"
-  VALIDATION_TARGET: ${{ startsWith(inputs.cohort, 'holdout-v') && '300' || '500' }}
+  # Every independently sampled cohort must meet the project-wide 800 article
+  # gate.  A smaller holdout can expose regressions, but cannot establish
+  # parser convergence.
+  VALIDATION_TARGET: "800"
   VALIDATION_SEED: >-
     ${{ startsWith(inputs.cohort, 'holdout-v') && format('jojo-parser-{0}', inputs.cohort) || 'jojo-parser-validation-v1' }}
   ENABLE_FT_INFINI_DIRECT_DISCOVERY: >-

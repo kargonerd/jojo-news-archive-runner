@@ -10,7 +10,7 @@ from .publisher_specs import publisher_spec
 
 FORMAT_VERSION = "jojo-parser-validation-watchdog/1"
 TARGET_YEARS = tuple(range(2016, 2027))
-MINIMUM_SAMPLES = 500
+MINIMUM_SAMPLES = 800
 MINIMUM_COMPLETE_RATE = 0.95
 MINIMUM_QA_PASS_RATE = 0.95
 PUBLISHER_ORDER = (
