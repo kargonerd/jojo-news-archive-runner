@@ -67,7 +67,7 @@ CASES = [
     (
         "axios",
         "https://www.axios.com/2017/12/10/example-1512927854",
-        "<div class='story-body'>",
+        "<main id='main-content'>",
         "</div>",
         "https://images.axios.com/example.jpg",
     ),

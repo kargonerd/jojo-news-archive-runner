@@ -211,7 +211,7 @@ PUBLISHER_SPECS = {
     ),
     "axios": PublisherSpec(
         publisher="axios",
-        parser_version="axios-parser/0.1.2",
+        parser_version="axios-parser/0.1.3",
         domains=("axios.com", "www.axios.com"),
         default_language="en",
         edition="us",
@@ -223,6 +223,7 @@ PUBLISHER_SPECS = {
             ".story-content",
             "[itemprop='articleBody']",
             ".article-body",
+            "#main-content",
             "article",
         ),
         preferred_image_hosts=("images.axios.com",),
