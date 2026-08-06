@@ -160,8 +160,8 @@ jobs:
             exit 2
           fi
           if [ "$MANIFEST_MODE" = "wayback-urlkey" ] &&
-             [[ ! "$PUBLISHER" =~ ^(wsj|reuters)$ ]]; then
-            echo "wayback-urlkey supports WSJ and Reuters." >&2
+             [[ ! "$PUBLISHER" =~ ^(wsj|reuters|axios|npr|nikkei|zaobao|aljazeera|scmp|caixin)$ ]]; then
+            echo "wayback-urlkey does not support this publisher." >&2
             exit 2
           fi
           if [ "$MANIFEST_MODE" = "sitemap-wayback" ] &&
