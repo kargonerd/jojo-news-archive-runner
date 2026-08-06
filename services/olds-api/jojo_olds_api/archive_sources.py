@@ -160,7 +160,10 @@ ARCHIVE_SOURCE_SPECS = {
         canonical_host="www.npr.org",
         wayback_patterns=("www.npr.org/{year}/*",),
         accepted_path_patterns=_patterns(r"^/20\d{2}/"),
-        rejected_path_patterns=_patterns(r"^/(?:programs|podcasts?|music)(?:/|$)"),
+        rejected_path_patterns=_patterns(
+            r"^/(?:programs|podcasts?|music)(?:/|$)",
+            r"/(?:election-\d{4}-.+-results|excerpt-[a-z0-9-]+|nprs?-toy-stories|makeover-photos)(?:/|$)",
+        ),
     ),
     "nikkei": ArchiveSourceSpec(
         publisher="nikkei",
