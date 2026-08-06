@@ -9418,6 +9418,11 @@ def _remove_reuters_promos(soup: BeautifulSoup) -> None:
 
     wire_copyright_suffix = re.compile(
         r"""(?ix)\s*(?:"""
+        r"""copyright(?:\s+(?:19|20)\d{2})?\s*,?\s*"""
+        r"""business\s+wire(?:\s+(?:19|20)\d{2})?"""
+        r"""(?:\s*[,.:;-]\s*|\s+)"""
+        r"""all\s+rights\s+reserved\.?\s*(?:-0-)?"""
+        r"""|"""
         r"""copyright\s+business\s+wire\s+\d{4}"""
         r"""|"""
         r"""copyright\s+\d{4},\s*market\s+wire,\s*"""
