@@ -515,12 +515,12 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
     ) == "https://www.aljazeera.com/news/2020/1/2/example"
     assert normalize_article_url(
         archive_source_spec("scmp"),
-        "https://www.scmp.com/news/hong-kong/article/1234567/example",
-    ) == "https://www.scmp.com/news/hong-kong/article/1234567/example"
+        "https://www.scmp.com/article/721725/corrections-clarifications",
+    ) == "https://www.scmp.com/article/721725/corrections-clarifications"
     assert normalize_article_url(
         archive_source_spec("caixin"),
-        "https://www.caixin.com/2020-01-02/101500000.html?utm=1",
-    ) == "https://www.caixin.com/2020-01-02/101500000.html"
+        "https://magazine.caixin.com/2010/cw385/?utm=1",
+    ) == "https://magazine.caixin.com/2010/cw385"
 
 
 def test_date_inference_and_candidate_ranking_prefers_after_publication():

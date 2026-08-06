@@ -12,6 +12,8 @@ class ArchiveSourceSpec:
     wayback_patterns: tuple[str, ...]
     accepted_path_patterns: tuple[re.Pattern[str], ...]
     rejected_path_patterns: tuple[re.Pattern[str], ...] = ()
+    alternate_hosts: tuple[str, ...] = ()
+    preserve_normalized_hosts: tuple[str, ...] = ()
 
     def expanded_wayback_patterns(
         self,
@@ -178,15 +180,17 @@ ARCHIVE_SOURCE_SPECS = {
     "scmp": ArchiveSourceSpec(
         publisher="scmp",
         canonical_host="www.scmp.com",
-        wayback_patterns=("www.scmp.com/*/article/*",),
-        accepted_path_patterns=_patterns(r"^/.+/article/\d+"),
+        wayback_patterns=("www.scmp.com/article/*", "www.scmp.com/*/article/*"),
+        accepted_path_patterns=_patterns(r"^/article/\d+", r"^/.+/article/\d+"),
         rejected_path_patterns=_patterns(r"^/(?:video|magazines)(?:/|$)"),
     ),
     "caixin": ArchiveSourceSpec(
         publisher="caixin",
         canonical_host="www.caixin.com",
-        wayback_patterns=("www.caixin.com/20*/*.html",),
-        accepted_path_patterns=_patterns(r"^/20\d{2}-\d{2}-\d{2}/\d+\.html$"),
+        wayback_patterns=("www.caixin.com/*", "magazine.caixin.com/{year}/*"),
+        accepted_path_patterns=_patterns(r"^/20\d{2}(?:[-/]|$)"),
+        alternate_hosts=("magazine.caixin.com",),
+        preserve_normalized_hosts=("magazine.caixin.com",),
     ),
 }
 
@@ -214,6 +218,7 @@ def normalize_article_url(
         spec.canonical_host.removeprefix("www."),
         f"www.{spec.canonical_host.removeprefix('www.')}",
     }
+    allowed_hosts.update(spec.alternate_hosts)
     if spec.publisher == "wsj":
         allowed_hosts.add("online.wsj.com")
     if hostname not in allowed_hosts:
@@ -233,7 +238,12 @@ def normalize_article_url(
         return None
     if path != "/":
         path = path.rstrip("/")
-    return urlunsplit(("https", spec.canonical_host, path, "", ""))
+    normalized_host = (
+        hostname
+        if hostname in spec.preserve_normalized_hosts
+        else spec.canonical_host
+    )
+    return urlunsplit(("https", normalized_host, path, "", ""))
 
 
 def article_url_publication_year(
