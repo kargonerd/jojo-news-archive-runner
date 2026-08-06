@@ -174,7 +174,10 @@ ARCHIVE_SOURCE_SPECS = {
     "zaobao": ArchiveSourceSpec(
         publisher="zaobao",
         canonical_host="www.zaobao.com.sg",
-        wayback_patterns=("www.zaobao.com.sg/*/story*",),
+        # CDX treats the URL argument as a prefix; an infix wildcard such as
+        # `* /story*` is not a recursive path glob and returns no captures.
+        # Historical articles are published below /news/<section>/storyYYYY….
+        wayback_patterns=("www.zaobao.com.sg/news/*",),
         accepted_path_patterns=_patterns(r"^/[a-z-]+/[a-z-]+/story\d+"),
         rejected_path_patterns=_patterns(r"^/(?:zvideos|podcast|special)(?:/|$)"),
     ),
