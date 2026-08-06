@@ -763,18 +763,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run parser-validation-accelerator.yml \
-            --ref "$GITHUB_REF_NAME" \
-            -f publisher="$PUBLISHER" \
-            -f cohort="$COHORT" \
-            -f year="$SAMPLE_YEAR" \
-            -f source_manifest_shard="$SOURCE_MANIFEST_SHARD" \
-            -f max_captures="$MAX_CAPTURES" \
-            -f workers="$DOWNLOAD_WORKERS" \
-            -f max_runtime_minutes="$MAX_RUNTIME_MINUTES" \
-            -f auto_continue=true \
-            -f enable_ft_infini_direct_discovery="$ENABLE_FT_INFINI_DIRECT_DISCOVERY" \
-            -f runner_os="${{ inputs.runner_os }}"
+          for attempt in 1 2 3 4 5; do
+            if gh workflow run parser-validation-accelerator.yml \
+              --ref "$GITHUB_REF_NAME" \
+              -f publisher="$PUBLISHER" \
+              -f cohort="$COHORT" \
+              -f year="$SAMPLE_YEAR" \
+              -f source_manifest_shard="$SOURCE_MANIFEST_SHARD" \
+              -f max_captures="$MAX_CAPTURES" \
+              -f workers="$DOWNLOAD_WORKERS" \
+              -f max_runtime_minutes="$MAX_RUNTIME_MINUTES" \
+              -f auto_continue=true \
+              -f enable_ft_infini_direct_discovery="$ENABLE_FT_INFINI_DIRECT_DISCOVERY" \
+              -f runner_os="${{ inputs.runner_os }}"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              echo "::warning::Validation dispatch failed; retrying ($attempt/5)."
+              sleep $((attempt * 5))
+            fi
+          done
+          echo "Unable to dispatch the next validation batch after 5 attempts." >&2
+          exit 1
 
       - name: Propagate capture failure after checkpoint
         if: ${{ steps.capture.outputs.exit_code != '0' }}
