@@ -211,7 +211,7 @@ PUBLISHER_SPECS = {
     ),
     "axios": PublisherSpec(
         publisher="axios",
-        parser_version="axios-parser/0.1.1",
+        parser_version="axios-parser/0.1.2",
         domains=("axios.com", "www.axios.com"),
         default_language="en",
         edition="us",
@@ -227,6 +227,7 @@ PUBLISHER_SPECS = {
         ),
         preferred_image_hosts=("images.axios.com",),
         use_structured_article_body=True,
+        embedded_html_body_keys=("articleBody", "body", "content"),
     ),
     "npr": PublisherSpec(
         publisher="npr",
