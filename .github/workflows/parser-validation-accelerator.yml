@@ -16,6 +16,13 @@ on:
           - nyt
           - reuters
           - ft
+          - axios
+          - npr
+          - nikkei
+          - zaobao
+          - aljazeera
+          - scmp
+          - caixin
       cohort:
         description: "Independent parser-QA cohort: validation or holdout-vN."
         required: true
@@ -33,7 +40,7 @@ on:
       max_captures:
         description: "Maximum raw captures in this bounded run."
         required: true
-        default: "500"
+        default: "800"
         type: string
       workers:
         description: "Concurrent archive replay downloads."

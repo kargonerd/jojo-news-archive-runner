@@ -17,6 +17,13 @@ on:
           - nyt
           - reuters
           - ft
+          - axios
+          - npr
+          - nikkei
+          - zaobao
+          - aljazeera
+          - scmp
+          - caixin
       from_year:
         description: "First discovery/capture year."
         required: true

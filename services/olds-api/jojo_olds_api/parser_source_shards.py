@@ -19,4 +19,7 @@ def parser_source_manifest_shard(publisher: str, year: int) -> str:
     if publisher == "wsj":
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return f"wsj/{window}/wayback-urlkey"
+    if publisher in {"axios", "npr", "nikkei", "zaobao", "aljazeera", "scmp", "caixin"}:
+        window = "2010-2015" if year <= 2015 else "2016-2026"
+        return f"{publisher}/{window}/wayback"
     raise ValueError(f"unsupported parser publisher: {publisher}")

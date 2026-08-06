@@ -141,6 +141,53 @@ ARCHIVE_SOURCE_SPECS = {
             r"^/content/[0-9a-f-]{20,}$",
         ),
     ),
+    "axios": ArchiveSourceSpec(
+        publisher="axios",
+        canonical_host="www.axios.com",
+        wayback_patterns=("www.axios.com/{year}/*",),
+        accepted_path_patterns=_patterns(r"^/20\d{2}/"),
+        rejected_path_patterns=_patterns(r"^/(?:newsletters?|signup|about)(?:/|$)"),
+    ),
+    "npr": ArchiveSourceSpec(
+        publisher="npr",
+        canonical_host="www.npr.org",
+        wayback_patterns=("www.npr.org/{year}/*",),
+        accepted_path_patterns=_patterns(r"^/20\d{2}/"),
+        rejected_path_patterns=_patterns(r"^/(?:programs|podcasts?|music)(?:/|$)"),
+    ),
+    "nikkei": ArchiveSourceSpec(
+        publisher="nikkei",
+        canonical_host="www.nikkei.com",
+        wayback_patterns=("www.nikkei.com/article/*",),
+        accepted_path_patterns=_patterns(r"^/article/"),
+    ),
+    "zaobao": ArchiveSourceSpec(
+        publisher="zaobao",
+        canonical_host="www.zaobao.com.sg",
+        wayback_patterns=("www.zaobao.com.sg/*/story*",),
+        accepted_path_patterns=_patterns(r"^/[a-z-]+/[a-z-]+/story\d+"),
+        rejected_path_patterns=_patterns(r"^/(?:zvideos|podcast|special)(?:/|$)"),
+    ),
+    "aljazeera": ArchiveSourceSpec(
+        publisher="aljazeera",
+        canonical_host="www.aljazeera.com",
+        wayback_patterns=("www.aljazeera.com/{year}/*",),
+        accepted_path_patterns=_patterns(r"^/(?:news|features|opinions)/20\d{2}/"),
+        rejected_path_patterns=_patterns(r"^/(?:video|program|podcasts?)(?:/|$)"),
+    ),
+    "scmp": ArchiveSourceSpec(
+        publisher="scmp",
+        canonical_host="www.scmp.com",
+        wayback_patterns=("www.scmp.com/*/article/*",),
+        accepted_path_patterns=_patterns(r"^/.+/article/\d+"),
+        rejected_path_patterns=_patterns(r"^/(?:video|magazines)(?:/|$)"),
+    ),
+    "caixin": ArchiveSourceSpec(
+        publisher="caixin",
+        canonical_host="www.caixin.com",
+        wayback_patterns=("www.caixin.com/20*/*.html",),
+        accepted_path_patterns=_patterns(r"^/20\d{2}-\d{2}-\d{2}/\d+\.html$"),
+    ),
 }
 
 

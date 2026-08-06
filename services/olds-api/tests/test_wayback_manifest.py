@@ -493,6 +493,35 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "12345678-1234-1234-1234-123456789abc"
     )
 
+    assert normalize_article_url(
+        archive_source_spec("axios"),
+        "https://www.axios.com/2020/01/02/example?utm_source=test",
+    ) == "https://www.axios.com/2020/01/02/example"
+    assert normalize_article_url(
+        archive_source_spec("npr"),
+        "https://www.npr.org/2018/02/03/123456789/example",
+    ) == "https://www.npr.org/2018/02/03/123456789/example"
+    assert normalize_article_url(
+        archive_source_spec("nikkei"),
+        "https://www.nikkei.com/article/DGXZQOCD00001/",
+    ) == "https://www.nikkei.com/article/DGXZQOCD00001"
+    assert normalize_article_url(
+        archive_source_spec("zaobao"),
+        "https://www.zaobao.com.sg/news/singapore/story20240102-1234567",
+    ) == "https://www.zaobao.com.sg/news/singapore/story20240102-1234567"
+    assert normalize_article_url(
+        archive_source_spec("aljazeera"),
+        "https://www.aljazeera.com/news/2020/1/2/example",
+    ) == "https://www.aljazeera.com/news/2020/1/2/example"
+    assert normalize_article_url(
+        archive_source_spec("scmp"),
+        "https://www.scmp.com/news/hong-kong/article/1234567/example",
+    ) == "https://www.scmp.com/news/hong-kong/article/1234567/example"
+    assert normalize_article_url(
+        archive_source_spec("caixin"),
+        "https://www.caixin.com/2020-01-02/101500000.html?utm=1",
+    ) == "https://www.caixin.com/2020-01-02/101500000.html"
+
 
 def test_date_inference_and_candidate_ranking_prefers_after_publication():
     published = infer_published_at(

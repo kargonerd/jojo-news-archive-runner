@@ -19,6 +19,13 @@ from jojo_olds_api.parser_source_shards import parser_source_manifest_shard
             2021,
             "reuters/2021-2026/reuters-sitemap-wayback",
         ),
+        ("axios", 2014, "axios/2010-2015/wayback"),
+        ("npr", 2020, "npr/2016-2026/wayback"),
+        ("nikkei", 2012, "nikkei/2010-2015/wayback"),
+        ("zaobao", 2024, "zaobao/2016-2026/wayback"),
+        ("aljazeera", 2018, "aljazeera/2016-2026/wayback"),
+        ("scmp", 2015, "scmp/2010-2015/wayback"),
+        ("caixin", 2021, "caixin/2016-2026/wayback"),
     ],
 )
 def test_parser_source_manifest_shard(publisher, year, expected):
