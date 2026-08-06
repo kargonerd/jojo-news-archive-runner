@@ -68,6 +68,14 @@ def parse_args() -> argparse.Namespace:
         default="digest",
         help="CDX deduplication key; urlkey is the fast unique-URL mode.",
     )
+    parser.add_argument(
+        "--reset-incompatible-state",
+        action="store_true",
+        help=(
+            "Rebuild only the derived discovery catalog when its source "
+            "fingerprint no longer matches the requested publisher window."
+        ),
+    )
     parser.add_argument("--github-output", type=Path)
     return parser.parse_args()
 
@@ -82,13 +90,37 @@ def main() -> int:
     state = args.state or args.output.with_suffix(".sqlite3")
     state.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(state, timeout=60)
-    initialize_discovery_schema(
-        connection,
-        spec=spec,
-        from_year=args.from_year,
-        to_year=args.to_year,
-        collapse=args.collapse,
-    )
+    try:
+        initialize_discovery_schema(
+            connection,
+            spec=spec,
+            from_year=args.from_year,
+            to_year=args.to_year,
+            collapse=args.collapse,
+        )
+    except ValueError as exc:
+        if not args.reset_incompatible_state or "different publisher" not in str(exc):
+            raise
+        connection.close()
+        state.unlink(missing_ok=True)
+        connection = sqlite3.connect(state, timeout=60)
+        initialize_discovery_schema(
+            connection,
+            spec=spec,
+            from_year=args.from_year,
+            to_year=args.to_year,
+            collapse=args.collapse,
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "discovery-state-reset",
+                    "publisher": args.publisher,
+                    "reason": "source-fingerprint-changed",
+                }
+            ),
+            flush=True,
+        )
     bluesky_pages_this_run = 0
     google_news_items_this_run = 0
     wsj_syndication_pages_this_run = 0

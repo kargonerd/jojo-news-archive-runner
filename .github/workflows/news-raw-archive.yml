@@ -308,6 +308,7 @@ jobs:
                 --max-pages "$MAX_DISCOVERY_PAGES" \
                 --min-request-interval 1.0 \
                 --collapse urlkey \
+                --reset-incompatible-state \
                 --github-output "$GITHUB_OUTPUT"
             else
               python services/olds-api/tools/build_wayback_manifest.py \
@@ -319,6 +320,7 @@ jobs:
                 --page-limit 2000 \
                 --max-pages "$MAX_DISCOVERY_PAGES" \
                 --min-request-interval 1.0 \
+                --reset-incompatible-state \
                 --github-output "$GITHUB_OUTPUT"
             fi
           }
