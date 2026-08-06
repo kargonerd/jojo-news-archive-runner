@@ -34,7 +34,12 @@ def test_parser_source_manifest_shard(publisher, year, expected):
 
 @pytest.mark.parametrize(
     ("publisher", "year"),
-    [("unknown", 2020), ("nyt", 2009), ("nyt", 2027)],
+    [
+        ("unknown", 2020),
+        ("nyt", 2009),
+        ("nyt", 2027),
+        ("axios", 2010),
+    ],
 )
 def test_parser_source_manifest_shard_rejects_unsupported_cells(
     publisher,

@@ -3,10 +3,21 @@ from __future__ import annotations
 
 SUPPORTED_YEARS = range(2010, 2027)
 
+# A source shard is only a validation candidate when the publisher existed
+# and the configured public archive can plausibly contain its own articles.
+_PUBLISHER_MINIMUM_YEARS = {
+    "axios": 2017,
+}
+
 
 def parser_source_manifest_shard(publisher: str, year: int) -> str:
     if year not in SUPPORTED_YEARS:
         raise ValueError("parser validation year must be between 2010 and 2026")
+    minimum_year = _PUBLISHER_MINIMUM_YEARS.get(publisher)
+    if minimum_year is not None and year < minimum_year:
+        raise ValueError(
+            f"{publisher} validation is unavailable before {minimum_year}"
+        )
     if publisher == "reuters":
         if year <= 2015:
             return "reuters/2010-2015/wayback-urlkey"
