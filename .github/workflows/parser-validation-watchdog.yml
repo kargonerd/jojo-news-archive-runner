@@ -151,12 +151,14 @@ jobs:
             if [ "$publisher" = "ft" ]; then
               enable_ft_infini_direct_discovery=true
             fi
-            gh workflow run parser-validation-accelerator.yml \
+          # Each dispatched validation run starts with an 800-article budget,
+          # matching the project's independent-sample acceptance gate.
+          gh workflow run parser-validation-accelerator.yml \
               --ref "$DEFAULT_BRANCH" \
               -f publisher="$publisher" \
               -f year="$year" \
               -f source_manifest_shard="$shard" \
-              -f max_captures=500 \
+              -f max_captures=800 \
               -f workers=8 \
               -f max_runtime_minutes=300 \
               -f auto_continue=true \
