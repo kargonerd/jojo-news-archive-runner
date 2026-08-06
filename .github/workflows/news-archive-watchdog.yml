@@ -62,6 +62,18 @@ jobs:
             manifest_mode: reuters-sitemap-wayback
             discovery_units: "25"
             runner_os: ubuntu-latest
+          - publisher: npr
+            from_year: "2010"
+            to_year: "2015"
+            manifest_mode: wayback-urlkey
+            discovery_units: "5"
+            runner_os: ubuntu-latest
+          - publisher: axios
+            from_year: "2017"
+            to_year: "2026"
+            manifest_mode: wayback-urlkey
+            discovery_units: "5"
+            runner_os: ubuntu-latest
     steps:
       - name: Advance archive shard
         env:
