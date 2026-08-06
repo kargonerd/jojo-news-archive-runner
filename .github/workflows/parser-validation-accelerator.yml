@@ -99,7 +99,7 @@ env:
   # parser convergence.
   VALIDATION_TARGET: "800"
   VALIDATION_SEED: >-
-    ${{ startsWith(inputs.cohort, 'holdout-v') && format('jojo-parser-{0}', inputs.cohort) || 'jojo-parser-validation-v1' }}
+    ${{ (startsWith(inputs.cohort, 'holdout-v') || startsWith(inputs.cohort, 'smoke-v')) && format('jojo-parser-{0}', inputs.cohort) || 'jojo-parser-validation-v1' }}
   ENABLE_FT_INFINI_DIRECT_DISCOVERY: >-
     ${{ inputs.enable_ft_infini_direct_discovery }}
 
@@ -165,7 +165,10 @@ jobs:
             echo "source_manifest_shard must be ${expected_source_shard}." >&2
             exit 2
           fi
-          if [[ ! "$COHORT" =~ ^(validation|holdout-v[1-9][0-9]*)$ ]]; then
+          # Smoke cohorts are intentionally isolated from formal validation
+          # and holdout cohorts; they only qualify a new source/parser for
+          # the later independent 800-article gates.
+          if [[ ! "$COHORT" =~ ^(validation|holdout-v[1-9][0-9]*|smoke-v[1-9][0-9]*)$ ]]; then
             echo "unsupported cohort" >&2
             exit 2
           fi
