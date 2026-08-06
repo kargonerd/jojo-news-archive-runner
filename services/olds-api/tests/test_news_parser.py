@@ -195,6 +195,40 @@ def test_six_publishers_emit_jojo_article_v1(
     assert result.source_capture.raw_html is not None
 
 
+def test_axios_iframe_only_player_is_preserved_as_video():
+    canonical_url = (
+        "https://www.axios.com/2017/12/15/"
+        "bob-gates-leadership-advice-1513300657"
+    )
+    html = b"""
+    <html><head>
+      <script type="application/ld+json">{
+        "@type":"NewsArticle",
+        "headline":"Bob Gates' leadership advice",
+        "datePublished":"2017-12-15T12:00:00Z"
+      }</script>
+    </head><body><main id="main-content">
+      <div class="DraftjsBlocks_draftjs__example">
+        <iframe src="https://content.jwplatform.com/players/example.html"
+                title="Axios video"></iframe>
+        <p>WATCH: More from Smarter Faster</p>
+      </div>
+    </main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.content_type.value == "video"
+    assert result.quality.status.value == "complete"
+    assert "body-too-short" not in result.quality.warnings
+    assert any(block.type.value == "embed" for block in result.blocks)
+
+
 def test_wsj_parser_extracts_structured_image_gallery_in_order():
     html = b"""
     <!doctype html><html><head>

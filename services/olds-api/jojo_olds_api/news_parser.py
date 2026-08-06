@@ -664,6 +664,10 @@ def parse_article(
         and _is_ap_data_bulletin(news_article, canonical_url)
     ):
         content_type = ContentType.INTERACTIVE
+    if spec.publisher == "axios":
+        axios_embedded_content_type = _axios_embedded_content_type(clean_body)
+        if axios_embedded_content_type is not None:
+            content_type = axios_embedded_content_type
     if spec.publisher == "ft" and ft_crossword_selected:
         content_type = ContentType.INTERACTIVE
     if ft_missing_legacy_visual:
@@ -5813,6 +5817,46 @@ def _nyt_preloaded_article_metadata(
             _string_or_none(target.get("lastMajorModification")),
         ),
     }
+
+
+def _axios_embedded_content_type(body: Tag) -> ContentType | None:
+    """Classify Axios pages whose entire editorial payload is an embed.
+
+    Old Axios URLs are now served by a newer Next.js shell.  Some of them are
+    nevertheless genuine, deliberately non-text pieces: their selected
+    Draft.js body contains a player/chart iframe and, at most, a short CTA.
+    Treating those as truncated articles discards the useful embed and makes
+    an article-only quality heuristic report a false parser failure.
+    """
+    iframes = body.select("iframe[src]")
+    if not iframes:
+        return None
+    text = _clean_text(
+        " ".join(
+            node.get_text(" ", strip=True)
+            for node in body.select("p, li, blockquote, h2, h3, h4")
+        )
+    )
+    # A normal reported article may include a player.  Only classify a page
+    # as embed-led when there is no substantive surrounding editorial text.
+    if len(text) > 220:
+        return None
+    sources = " ".join(
+        str(iframe.get("src") or "").casefold()
+        for iframe in iframes
+    )
+    if any(
+        marker in sources
+        for marker in (
+            "jwplatform.",
+            "youtube.com/",
+            "youtu.be/",
+            "vimeo.com/",
+            "brightcove.",
+        )
+    ):
+        return ContentType.VIDEO
+    return ContentType.INTERACTIVE
 
 
 def _nyt_media_content_type(
