@@ -15,6 +15,7 @@ from jojo_olds_api.parser_validation import (
     ensure_parser_validation_plan,
     failed_completed_parser_validation_files,
     initialize_parser_validation_schema,
+    parser_validation_target_reached,
     parser_validation_summary,
     pending_completed_parser_validation_files,
     pending_parser_validation_urls,
@@ -239,6 +240,62 @@ def _state_with_years(
         publisher=publisher,
     )
     return connection
+
+
+def test_validation_target_requires_qa_passes_and_keeps_replacement_pending(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=1,
+        maximum_record_attempts=3,
+    )
+    first_url, second_url = [
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT canonical_url
+            FROM parser_validation_samples
+            WHERE sample_year=2020
+            ORDER BY sample_priority
+            """
+        ).fetchall()
+    ]
+    parser_version = str(
+        connection.execute(
+            "SELECT parser_version FROM parser_validation_config "
+            "WHERE sample_year=2020"
+        ).fetchone()[0]
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_results(
+            canonical_url, publisher, sample_year, parser_version,
+            extraction_status, qa_pass, body_characters, block_count,
+            images_referenced, images_selected, duplicate_text_blocks,
+            headline_present, published_at_present, source_link_preserved,
+            warnings_json, issues_json, error, parsed_at, content_type,
+            source_raw_sha256, source_capture_sha256
+        ) VALUES (?, 'ap', 2020, ?, 'partial', 0,
+                  100, 1, 0, 0, 0, 1, 1, 1, '[]',
+                  '["extraction-partial"]', NULL, '2026-01-01T00:00:00+00:00',
+                  'article', ?, ?)
+        """,
+        (first_url, parser_version, "a" * 64, "b" * 64),
+    )
+    connection.commit()
+
+    assert not parser_validation_target_reached(connection)
+    assert pending_parser_validation_urls(
+        connection,
+        maximum=10,
+        maximum_record_attempts=3,
+    ) == [second_url]
 
 
 def test_holdout_plan_excludes_every_prior_cohort_url(tmp_path: Path):

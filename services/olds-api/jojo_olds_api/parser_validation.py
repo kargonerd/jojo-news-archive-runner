@@ -675,7 +675,7 @@ def pending_parser_validation_urls(
                 config.sample_year,
                 config.target_size,
                 config.parser_version,
-                COUNT(result.canonical_url) AS evaluated
+                COALESCE(SUM(result.qa_pass), 0) AS qa_passed
             FROM parser_validation_config AS config
             LEFT JOIN parser_validation_results AS result
               ON result.sample_year=config.sample_year
@@ -686,7 +686,7 @@ def pending_parser_validation_urls(
                 config.sample_year,
                 config.target_size,
                 config.parser_version
-            HAVING COUNT(result.canonical_url) < config.target_size
+            HAVING COALESCE(SUM(result.qa_pass), 0) < config.target_size
         ),
         ranked AS (
             SELECT
@@ -1319,7 +1319,7 @@ def parser_validation_target_reached(
         """
         SELECT
             config.target_size,
-            COUNT(result.canonical_url)
+            COALESCE(SUM(result.qa_pass), 0)
         FROM parser_validation_config AS config
         LEFT JOIN parser_validation_results AS result
           ON result.sample_year=config.sample_year
@@ -1332,8 +1332,8 @@ def parser_validation_target_reached(
         """
     ).fetchall()
     return bool(rows) and all(
-        int(evaluated) >= int(target_size)
-        for target_size, evaluated in rows
+        int(qa_passed) >= int(target_size)
+        for target_size, qa_passed in rows
     )
 
 
