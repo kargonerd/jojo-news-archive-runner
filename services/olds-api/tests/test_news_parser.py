@@ -209,7 +209,7 @@ def test_axios_iframe_only_player_is_preserved_as_video():
       }</script>
     </head><body><main id="main-content">
       <div class="DraftjsBlocks_draftjs__example">
-        <iframe src="https://content.jwplatform.com/players/example.html"
+        <iframe data-src="https://content.jwplatform.com/players/example.html"
                 title="Axios video"></iframe>
         <p>WATCH: More from Smarter Faster</p>
       </div>

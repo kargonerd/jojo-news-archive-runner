@@ -5828,6 +5828,11 @@ def _axios_embedded_content_type(body: Tag) -> ContentType | None:
     Treating those as truncated articles discards the useful embed and makes
     an article-only quality heuristic report a false parser failure.
     """
+    # Axios's historical React markup often keeps iframe URLs in a lazy-load
+    # data attribute.  Restore that attribute before block extraction so the
+    # archived article keeps a usable embed rather than an empty shell.
+    for iframe in body.select("iframe[data-src]:not([src])"):
+        iframe["src"] = iframe.get("data-src")
     iframes = body.select("iframe[src]")
     if not iframes:
         return None

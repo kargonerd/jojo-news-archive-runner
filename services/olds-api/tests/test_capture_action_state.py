@@ -184,7 +184,7 @@ def test_ready_parser_validation_stops_pending_capture_chain(
     assert result["shouldContinue"] is False
 
 
-def test_failed_qa_stops_at_exact_validation_target_when_requested(
+def test_failed_qa_continues_past_captured_target_when_requested(
     tmp_path: Path,
 ):
     state = tmp_path / "capture.sqlite3"
@@ -235,7 +235,7 @@ def test_failed_qa_stops_at_exact_validation_target_when_requested(
         stop_at_validation_target=True,
     )
 
-    assert exact["validationTargetReached"] is True
+    assert exact["validationTargetReached"] is False
     assert exact["validationReady"] is False
     assert normal["shouldContinue"] is True
-    assert exact["shouldContinue"] is False
+    assert exact["shouldContinue"] is True

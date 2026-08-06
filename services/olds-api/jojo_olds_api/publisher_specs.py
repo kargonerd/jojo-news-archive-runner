@@ -211,7 +211,7 @@ PUBLISHER_SPECS = {
     ),
     "axios": PublisherSpec(
         publisher="axios",
-        parser_version="axios-parser/0.1.4",
+        parser_version="axios-parser/0.1.5",
         domains=("axios.com", "www.axios.com"),
         default_language="en",
         edition="us",
@@ -223,6 +223,7 @@ PUBLISHER_SPECS = {
             ".story-content",
             "[itemprop='articleBody']",
             ".article-body",
+            "[class*='DraftjsBlocks_draftjs']",
             "#main-content",
             "article",
         ),

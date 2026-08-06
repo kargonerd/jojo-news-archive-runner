@@ -128,12 +128,12 @@ def action_state(
                     ) in readiness_rows
                 )
                 validation_target_reached = bool(readiness_rows) and all(
-                    int(evaluated) >= int(target_size)
+                    int(qa_passed) >= int(target_size)
                     for (
                         _sample_year,
                         target_size,
                         evaluated,
-                        _qa_passed,
+                        qa_passed,
                         _complete,
                         _parser_errors,
                     ) in readiness_rows
