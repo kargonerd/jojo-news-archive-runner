@@ -2,13 +2,6 @@ name: Parser validation watchdog
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "7,22,37,52 * * * *"
-  workflow_run:
-    workflows:
-      - Parser validation accelerator
-    types:
-      - completed
 
 permissions:
   actions: write
