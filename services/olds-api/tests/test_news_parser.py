@@ -64,6 +64,13 @@ CASES = [
         "</div>",
         "https://d1e00ek4ebabms.cloudfront.net/example.jpg",
     ),
+    (
+        "axios",
+        "https://www.axios.com/2017/12/10/example-1512927854",
+        "<div class='story-body'>",
+        "</div>",
+        "https://images.axios.com/example.jpg",
+    ),
 ]
 
 
