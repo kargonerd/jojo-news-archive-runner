@@ -561,11 +561,13 @@ jobs:
           if [ "${{ steps.before.outputs.retry_errors }}" = "true" ]; then
             args+=(--retry-errors)
           fi
-          if [ "$PUBLISHER" = "ft" ]; then
+          if [ "$PUBLISHER" = "ft" ] || [ "$PUBLISHER" = "wsj" ]; then
             args+=(
               --enable-arquivo-pt-fallback
               --enable-common-crawl-fallback
             )
+          fi
+          if [ "$PUBLISHER" = "ft" ]; then
             # Infini-News begins in 2016. Keep the opt-in enabled across
             # auto-continuations, but do not pass an unsupported year to the
             # direct catalog scanner.

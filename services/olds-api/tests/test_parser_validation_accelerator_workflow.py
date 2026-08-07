@@ -39,3 +39,11 @@ def test_accelerator_does_not_silently_relax_exclusions() -> None:
     workflow = _workflow_text()
 
     assert "relax_parser_validation_exclusions" not in workflow
+
+
+def test_accelerator_enables_archive_fallbacks_for_wsj() -> None:
+    workflow = _workflow_text()
+
+    assert 'if [ "$PUBLISHER" = "ft" ] || [ "$PUBLISHER" = "wsj" ]; then' in workflow
+    assert "--enable-arquivo-pt-fallback" in workflow
+    assert "--enable-common-crawl-fallback" in workflow
