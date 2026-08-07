@@ -870,6 +870,19 @@ def parse_article(
                 )
                 is not None
             )
+            # Legacy NYT interactive packages often place their rendered
+            # experience in external scripts. Their archived document still
+            # proves the item is a non-text interactive and preserves the
+            # source URL/HTML for later replay, rather than being a short
+            # Opinion article.
+            or (
+                spec.publisher == "nyt"
+                and content_type == ContentType.INTERACTIVE
+                and _nyt_legacy_interactive_shell_document(
+                    soup,
+                    canonical_url=canonical_url,
+                )
+            )
         )
     )
     publisher_notice = _is_publisher_notice(
@@ -6001,6 +6014,11 @@ def _nyt_media_content_type(
         and _nyt_interactive_redirect_destination(soup) is not None
     ):
         return ContentType.INTERACTIVE
+    if _nyt_legacy_interactive_shell_document(
+        soup,
+        canonical_url=canonical_url,
+    ):
+        return ContentType.INTERACTIVE
     if soup.select_one(
         "figure.interactive-embedded .interactive-graphic"
     ):
@@ -6074,6 +6092,20 @@ def _nyt_unhydrated_interactive_shell(
         block.type in {BlockType.IMAGE, BlockType.EMBED, BlockType.TABLE}
         for block in blocks
     )
+
+
+def _nyt_legacy_interactive_shell_document(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> bool:
+    """Recognize archived NYT packages whose experience is external JS."""
+    if "/interactive/" not in canonical_url.casefold():
+        return False
+    root = soup.select_one("html.page-interactive, article.theme-interactive")
+    return isinstance(root, Tag) and soup.select_one(
+        ".interactive-headline, .interactive-header, #story.theme-interactive"
+    ) is not None
 
 
 def _is_publisher_notice(
