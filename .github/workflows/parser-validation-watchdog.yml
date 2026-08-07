@@ -16,8 +16,11 @@ env:
   B2_ARCHIVE_APPLICATION_KEY: ${{ secrets.B2_ARCHIVE_APPLICATION_KEY }}
   B2_ARCHIVE_BUCKET: ${{ secrets.B2_ARCHIVE_BUCKET }}
   B2_REMOTE: jojo-b2
-  MAX_STANDARD_CONCURRENCY: "20"
-  MAX_DISPATCH_PER_RUN: "6"
+  # Keep background acquisition within the explicitly approved controlled
+  # concurrency budget. Operators can raise this deliberately when capacity
+  # and storage cost have been reviewed.
+  MAX_STANDARD_CONCURRENCY: "2"
+  MAX_DISPATCH_PER_RUN: "2"
   DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
 jobs:
