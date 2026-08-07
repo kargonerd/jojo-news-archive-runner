@@ -5510,16 +5510,7 @@ def _nyt_interactive_redirect_body(soup: BeautifulSoup) -> Tag | None:
         _meta_content(soup, "name", "lp"),
         _meta_content(soup, "property", "og:description"),
     )
-    destination: str | None = None
-    for script in soup.select("script"):
-        value = script.string or script.get_text()
-        match = re.search(
-            r"""(?i)\bdestUrl\s*=\s*["']\s*(?P<url>https?://[^"']+)""",
-            value,
-        )
-        if match:
-            destination = match.group("url").strip()
-            break
+    destination = _nyt_interactive_redirect_destination(soup)
     if not destination:
         return None
     document = BeautifulSoup("<article></article>", "html.parser")
@@ -5536,6 +5527,19 @@ def _nyt_interactive_redirect_body(soup: BeautifulSoup) -> Tag | None:
         iframe["title"] = "Interactive destination"
         article.append(iframe)
     return article
+
+
+def _nyt_interactive_redirect_destination(soup: BeautifulSoup) -> str | None:
+    """Return the target embedded by an intentionally blank legacy shell."""
+    for script in soup.select("script"):
+        value = script.string or script.get_text()
+        match = re.search(
+            r"""(?i)\b(?:destUrl|page_url)\s*=\s*["']\s*(?P<url>https?://[^"']+)""",
+            value,
+        )
+        if match:
+            return match.group("url").strip()
+    return None
 
 
 def _nyt_preloaded_slideshow_rows(
@@ -5990,6 +5994,11 @@ def _nyt_media_content_type(
             )
             for script in soup.select(".interactive-graphic script")
         )
+    ):
+        return ContentType.INTERACTIVE
+    if (
+        "/interactive/" in url
+        and _nyt_interactive_redirect_destination(soup) is not None
     ):
         return ContentType.INTERACTIVE
     if soup.select_one(
