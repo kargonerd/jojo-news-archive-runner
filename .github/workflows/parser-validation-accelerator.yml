@@ -269,7 +269,7 @@ jobs:
           if [[ "$COHORT" =~ ^holdout-v([1-9][0-9]*)$ ]]; then
             cohort_number="${BASH_REMATCH[1]}"
             restore_if_present \
-              "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/validation/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
+              "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v2/validation-state/validation/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
               "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz"
             if [ -f "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" ]; then
               gzip -dc "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" \
@@ -292,7 +292,7 @@ jobs:
                 previous_gzip="$RUNNER_TEMP/exclusion-${previous_cohort}.sqlite3.gz"
                 previous_state="$RUNNER_TEMP/exclusion-${previous_cohort}.sqlite3"
                 restore_if_present \
-                  "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${previous_cohort}/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
+                  "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v2/validation-state/${previous_cohort}/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
                   "$previous_gzip"
                 if [ -f "$previous_gzip" ]; then
                   gzip -dc "$previous_gzip" > "$previous_state"
