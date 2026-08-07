@@ -9395,6 +9395,13 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         }:
             button.decompose()
 
+    # Archived legacy articles use many otherwise unrecognizable class names
+    # for share, slideshow and recirculation controls. Buttons do not carry
+    # article prose, and retaining any one of them makes a normal article look
+    # like an interactive extraction to downstream QA.
+    for button in list(soup.select("button")):
+        button.decompose()
+
     for node in list(
         soup.select("figure.byline, figure[data-testid='byline']")
     ):
