@@ -9448,6 +9448,9 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
             r"(?i)^.+ today goes live at .+ were you forwarded this email\? "
             r"sign up for .+ here and read every edition online here\.?$"
         ),
+        re.compile(
+            r"(?i)^sign up for weekly updates on .+ from the times\.?$"
+        ),
     )
     for node in list(soup.select("p, li, span")):
         text = _clean_text(node.get_text(" ", strip=True))
