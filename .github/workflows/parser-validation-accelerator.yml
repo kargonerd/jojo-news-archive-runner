@@ -378,7 +378,11 @@ jobs:
             "$LOCAL_ROOT/raw" \
             "${SOURCE_ROOT}/raw" \
             --files-from "$files_from" \
-            --checksum --immutable \
+              # Raw objects are addressed by the SHA-256 of uncompressed
+              # HTML.  Old clients can encode identical gzip payloads with a
+              # different header, so retain an existing addressed object
+              # instead of rejecting an otherwise identical source document.
+              --checksum --ignore-existing \
             --transfers 16 --checkers 32 \
             --retries 8 --low-level-retries 20 \
             --stats 30s
@@ -500,7 +504,7 @@ jobs:
                   "$LOCAL_ROOT/raw/objects" \
                   "${SOURCE_ROOT}/raw/objects" \
                   --exclude '*.tmp' \
-                  --checksum --immutable --fast-list \
+                  --checksum --ignore-existing --fast-list \
                   --transfers 32 --checkers 64 \
                   --retries 8 --low-level-retries 20; then
                 echo "::warning::Live object upload failed; state withheld."
@@ -715,7 +719,7 @@ jobs:
               "$LOCAL_ROOT/raw/objects" \
               "${SOURCE_ROOT}/raw/objects" \
               --exclude '*.tmp' \
-              --checksum --immutable --fast-list \
+              --checksum --ignore-existing --fast-list \
               --transfers 32 --checkers 64 \
               --retries 8 --low-level-retries 20 \
               --stats 30s

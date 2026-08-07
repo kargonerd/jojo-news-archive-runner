@@ -47,3 +47,10 @@ def test_accelerator_enables_archive_fallbacks_for_wsj() -> None:
     assert 'if [ "$PUBLISHER" = "ft" ] || [ "$PUBLISHER" = "wsj" ]; then' in workflow
     assert "--enable-arquivo-pt-fallback" in workflow
     assert "--enable-common-crawl-fallback" in workflow
+
+
+def test_accelerator_retains_existing_content_addressed_raw_objects() -> None:
+    workflow = _workflow_text()
+
+    assert "--checksum --ignore-existing" in workflow
+    assert "--checksum --immutable" not in workflow

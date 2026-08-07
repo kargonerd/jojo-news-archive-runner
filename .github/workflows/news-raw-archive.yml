@@ -507,7 +507,7 @@ jobs:
                   "$LOCAL_ROOT/raw/objects" \
                   "${REMOTE_ROOT}/raw/objects" \
                   --exclude '*.tmp' \
-                  --checksum --immutable --fast-list \
+                  --checksum --ignore-existing --fast-list \
                   --transfers 32 --checkers 64 \
                   --retries 8 --low-level-retries 20; then
                 echo "::warning::Live object upload failed; state withheld."
@@ -661,7 +661,7 @@ jobs:
               "$LOCAL_ROOT/raw/objects" \
               "${REMOTE_ROOT}/raw/objects" \
               --exclude '*.tmp' \
-              --checksum --immutable --fast-list \
+              --checksum --ignore-existing --fast-list \
               --transfers 32 --checkers 64 \
               --retries 8 --low-level-retries 20 \
               --stats 30s

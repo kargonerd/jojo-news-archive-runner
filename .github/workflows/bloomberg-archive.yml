@@ -164,7 +164,7 @@ jobs:
             rclone copy \
               "$ARCHIVE_OUTPUT/objects" \
               "${remote_root}/objects" \
-              --checksum --immutable \
+              --checksum --ignore-existing \
               --transfers 8 --checkers 16 \
               --retries 8 --low-level-retries 20 \
               --stats 30s
