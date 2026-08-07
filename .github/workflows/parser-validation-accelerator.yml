@@ -515,7 +515,7 @@ jobs:
                   "$LOCAL_ROOT/raw/records" \
                   "${SOURCE_ROOT}/raw/records" \
                   --exclude '*.tmp' \
-                  --checksum --immutable --fast-list \
+                  --checksum --fast-list \
                   --transfers 32 --checkers 64 \
                   --retries 8 --low-level-retries 20; then
                 echo "::warning::Live record upload failed; state withheld."
@@ -726,7 +726,7 @@ jobs:
               "$LOCAL_ROOT/raw/records" \
               "${SOURCE_ROOT}/raw/records" \
               --exclude '*.tmp' \
-              --checksum --immutable --fast-list \
+              --checksum --fast-list \
               --transfers 32 --checkers 64 \
               --retries 8 --low-level-retries 20 \
               --stats 30s
