@@ -229,6 +229,31 @@ def test_axios_iframe_only_player_is_preserved_as_video():
     assert any(block.type.value == "embed" for block in result.blocks)
 
 
+def test_axios_visual_fallback_is_classified_as_interactive():
+    canonical_url = "https://www.axios.com/2017/12/15/example-chart"
+    html = b"""
+    <html><head><script type="application/ld+json">{
+      "@type":"NewsArticle", "headline":"A chart",
+      "datePublished":"2017-12-15T12:00:00Z"
+    }</script></head><body><main id="main-content">
+      <div class="DraftjsBlocks_draftjs__example">
+        <figure class="axios-visual-apple-fallback-image"><svg></svg></figure>
+        <p>Data: Example; Chart: Axios</p>
+      </div>
+    </main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+
+
 def test_wsj_parser_extracts_structured_image_gallery_in_order():
     html = b"""
     <!doctype html><html><head>

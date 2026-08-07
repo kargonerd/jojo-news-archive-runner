@@ -855,9 +855,21 @@ def parse_article(
             ContentType.AUDIO,
             ContentType.TRANSCRIPT,
         }
-        and any(
-            block.type in {BlockType.EMBED, BlockType.IMAGE}
-            for block in blocks
+        and (
+            any(
+                block.type in {BlockType.EMBED, BlockType.IMAGE}
+                for block in blocks
+            )
+            # Axios visual fallback SVGs are interaction payloads but do not
+            # always expose an <img> or iframe block in archived markup.
+            or (
+                spec.publisher == "axios"
+                and clean_body.select_one(
+                    ".axios-visual-apple-fallback-image, "
+                    ".axios-visual-newsletter-fallback-image"
+                )
+                is not None
+            )
         )
     )
     publisher_notice = _is_publisher_notice(
@@ -5833,9 +5845,6 @@ def _axios_embedded_content_type(body: Tag) -> ContentType | None:
     # archived article keeps a usable embed rather than an empty shell.
     for iframe in body.select("iframe[data-src]:not([src])"):
         iframe["src"] = iframe.get("data-src")
-    iframes = body.select("iframe[src]")
-    if not iframes:
-        return None
     text = _clean_text(
         " ".join(
             node.get_text(" ", strip=True)
@@ -5845,6 +5854,18 @@ def _axios_embedded_content_type(body: Tag) -> ContentType | None:
     # A normal reported article may include a player.  Only classify a page
     # as embed-led when there is no substantive surrounding editorial text.
     if len(text) > 220:
+        return None
+    # Axios also publishes chart-led visual explainers as server-rendered SVG
+    # rather than an iframe.  Their legacy archive shell exposes the visual
+    # through these fallback classes and contains only a chart credit/caption;
+    # it is an interactive item, not a truncated text article.
+    if body.select_one(
+        ".axios-visual-apple-fallback-image, "
+        ".axios-visual-newsletter-fallback-image"
+    ):
+        return ContentType.INTERACTIVE
+    iframes = body.select("iframe[src]")
+    if not iframes:
         return None
     sources = " ".join(
         str(iframe.get("src") or "").casefold()
