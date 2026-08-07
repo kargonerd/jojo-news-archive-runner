@@ -254,6 +254,30 @@ def test_axios_visual_fallback_is_classified_as_interactive():
     assert result.quality.status.value == "complete"
 
 
+def test_axios_legacy_short_news_card_is_not_treated_as_truncated():
+    canonical_url = "https://www.axios.com/2017/01/21/example-card"
+    html = b"""
+    <html><head><script type="application/ld+json">{
+      "@type":"NewsArticle", "headline":"A short update",
+      "datePublished":"2017-01-21T12:00:00Z"
+    }</script></head><body><main id="main-content">
+      <h1>A short update</h1><p>Source: Example</p>
+      <a>Axios on facebook</a><a>Axios on facebook</a>
+      <a>Go deeper</a>
+    </main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "structured-short-record" in result.quality.warnings
+
+
 def test_wsj_parser_extracts_structured_image_gallery_in_order():
     html = b"""
     <!doctype html><html><head>

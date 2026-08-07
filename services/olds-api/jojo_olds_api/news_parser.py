@@ -6155,6 +6155,20 @@ def _is_structured_short_record(
             and modern_paragraphs[0] == plain_text
             and not re.search(r"(?:\.\.\.|…)\s*$", plain_text)
         )
+    if spec.publisher == "axios":
+        # The earliest Axios archive includes legitimate news cards that only
+        # retain a headline, an image caption/source and a "Go deeper" link.
+        # They have complete NewsArticle metadata plus the legacy share chrome
+        # repeated above and below the card; that combination distinguishes
+        # them from a generic empty shell or paywall.
+        page_text = _clean_text(soup.get_text(" ", strip=True)).casefold()
+        return bool(
+            15 <= len(plain_text) < _MINIMUM_BODY_CHARACTERS
+            and news_article
+            and page_text.count("axios on facebook") >= 2
+            and "go deeper" in page_text
+            and not re.search(r"(?:\.\.\.|…)\s*$", plain_text)
+        )
     if spec.publisher == "reuters":
         combined = f"{headline}\n{plain_text}".casefold()
         return bool(
