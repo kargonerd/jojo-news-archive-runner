@@ -374,15 +374,15 @@ jobs:
             --transfers 16 --checkers 32 \
             --retries 8 --low-level-retries 20 \
             --stats 30s
+          # Raw objects are addressed by the SHA-256 of uncompressed HTML.
+          # Old clients can encode identical gzip payloads with a different
+          # header, so retain an existing addressed object instead of rejecting
+          # an otherwise identical source document.
           rclone copy \
             "$LOCAL_ROOT/raw" \
             "${SOURCE_ROOT}/raw" \
             --files-from "$files_from" \
-              # Raw objects are addressed by the SHA-256 of uncompressed
-              # HTML.  Old clients can encode identical gzip payloads with a
-              # different header, so retain an existing addressed object
-              # instead of rejecting an otherwise identical source document.
-              --checksum --ignore-existing \
+            --checksum --ignore-existing \
             --transfers 16 --checkers 32 \
             --retries 8 --low-level-retries 20 \
             --stats 30s
