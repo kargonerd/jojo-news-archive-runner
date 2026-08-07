@@ -13,7 +13,10 @@ FORMAT_VERSION = "jojo-parser-validation-watchdog/1"
 TARGET_YEARS = tuple(range(2010, 2027))
 MINIMUM_SAMPLES = 800
 MINIMUM_COMPLETE_RATE = 0.95
-MINIMUM_QA_PASS_RATE = 0.95
+# A single QA finding requires a parser fix and a fresh holdout. Keep the
+# scheduler aligned with parser_validation.py rather than treating a merely
+# high pass rate as convergence.
+MINIMUM_QA_PASS_RATE = 1.0
 PUBLISHER_ORDER = (
     "reuters",
     "bloomberg",

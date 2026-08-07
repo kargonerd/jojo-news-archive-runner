@@ -35,7 +35,7 @@ order. Already stored raw captures are sampled and replayed first; uncaptured
 URLs fill only the remaining shortfall. Validation stores metrics and issue
 codes, never article body text. A publisher/year is not ready until it has 800
 evaluated samples, no parser exceptions, at least a 95% complete-extraction
-rate, and at least a 95% QA-pass rate.
+rate, and a 100% QA-pass rate.
 
 ## B2 layout
 
