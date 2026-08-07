@@ -145,8 +145,8 @@ python tools/build_wayback_manifest.py \
   --max-pages 5
 ```
 
-Supported publisher IDs are `ap`, `wsj`, `bloomberg`, `nyt`, `reuters`, and
-`ft`.
+Supported publisher IDs are `ap`, `wsj`, `bloomberg`, `nyt`, `reuters`, `ft`,
+`axios`, `npr`, `nikkei`, `zaobao`, `aljazeera`, `scmp`, and `caixin`.
 
 ## Local raw capture
 

@@ -16,6 +16,13 @@ The generic pipeline supports these publisher adapters:
 - The New York Times
 - Reuters
 - Financial Times
+- Axios
+- NPR
+- Nikkei
+- Lianhe Zaobao
+- Al Jazeera
+- South China Morning Post
+- Caixin
 
 The archive is intentionally split into two independent stages:
 
