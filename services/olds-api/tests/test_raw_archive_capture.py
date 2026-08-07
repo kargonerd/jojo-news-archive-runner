@@ -100,6 +100,24 @@ def test_bloomberg_common_crawl_discovery_prefers_legacy_news_url():
     )
 
 
+def test_wsj_common_crawl_discovery_includes_http_archive_key():
+    item = ManifestItem(
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/"
+            "a-1945-harley-wla-back-together-again-1473779995"
+        ),
+        published_at="2016-09-13T00:00:00Z",
+        section=None,
+        candidates=(),
+    )
+
+    assert _common_crawl_discovery_urls(item) == (
+        item.canonical_url,
+        item.canonical_url.replace("https://", "http://", 1),
+    )
+
+
 def test_wsj_complete_legacy_video_survives_navigation_auth_marker(
     tmp_path: Path,
 ):

@@ -5232,6 +5232,21 @@ def _archive_article_path(host: str, path: str) -> str:
 
 
 def _common_crawl_discovery_urls(item: CaptureItem) -> tuple[str, ...]:
+    if item.publisher == "wsj":
+        # The 2016 WSJ URL-key manifest is normalized to HTTPS, whereas many
+        # of the corresponding Wayback, Arquivo.pt, and Common Crawl records
+        # were indexed under HTTP.  These archives match exact URL keys, so a
+        # scheme-only variant is a distinct lookup rather than a duplicate.
+        parsed = urlsplit(item.canonical_url)
+        hostname = (parsed.hostname or "").casefold()
+        if parsed.scheme == "https" and (
+            hostname == "wsj.com" or hostname.endswith(".wsj.com")
+        ):
+            return (
+                item.canonical_url,
+                urlunsplit(("http", parsed.netloc, parsed.path, parsed.query, "")),
+            )
+        return (item.canonical_url,)
     if item.publisher != "bloomberg":
         return (item.canonical_url,)
     parsed = urlsplit(item.canonical_url)
