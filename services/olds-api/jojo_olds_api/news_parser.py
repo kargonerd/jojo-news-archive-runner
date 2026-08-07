@@ -9440,6 +9440,14 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
             r"(?i)^\[\s*like the science times page\b.*"
             r"sign up for the science times newsletter\b"
         ),
+        re.compile(
+            r"(?i)^\(?this article is part of the .+ newsletter\. "
+            r"sign up to get it delivered to your inbox\.\)?$"
+        ),
+        re.compile(
+            r"(?i)^.+ today goes live at .+ were you forwarded this email\? "
+            r"sign up for .+ here and read every edition online here\.?$"
+        ),
     )
     for node in list(soup.select("p, li, span")):
         text = _clean_text(node.get_text(" ", strip=True))
