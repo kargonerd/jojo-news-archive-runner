@@ -281,12 +281,10 @@ jobs:
               echo "::notice::No original validation state exists for this pre-2016 cell."
             fi
             if [ "$cohort_number" -gt 1 ]; then
-              # A finite publisher/year catalog cannot support indefinitely many
-              # globally-disjoint 300-article cohorts. Keep every new cohort
-              # disjoint from the original validation baseline and from the most
-              # recent available holdout. Older cohorts may overlap naturally,
-              # which keeps the rolling audit sustainable without silently
-              # shrinking it below the requested target.
+              # A revalidation cohort must be disjoint from every earlier
+              # cohort, not merely the latest one. If a finite publisher/year
+              # catalog cannot supply 800 unseen articles, report that fact
+              # rather than silently reusing an older validation sample.
               for previous_number in $(seq $((cohort_number - 1)) -1 1); do
                 previous_cohort="holdout-v${previous_number}"
                 previous_gzip="$RUNNER_TEMP/exclusion-${previous_cohort}.sqlite3.gz"
@@ -296,8 +294,7 @@ jobs:
                   "$previous_gzip"
                 if [ -f "$previous_gzip" ]; then
                   gzip -dc "$previous_gzip" > "$previous_state"
-                  echo "Using ${previous_cohort} as the rolling holdout exclusion."
-                  break
+                  echo "Using ${previous_cohort} as a holdout exclusion."
                 else
                   echo "::notice::No ${previous_cohort} state exists; skipping it."
                 fi
