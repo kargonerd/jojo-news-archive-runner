@@ -58,6 +58,19 @@ jobs:
             --include "reuters/2021-2026/reuters-sitemap-wayback/state/summary.json" \
             --include "wsj/2016-2026/wayback-urlkey/state/summary.json" \
             --include "validation/*/*/state/summary.json" \
+            --include "axios/2017-2026/wayback-urlkey/state/summary.json" \
+            --include "npr/2010-2015/wayback-urlkey/state/summary.json" \
+            --include "npr/2016-2026/wayback-urlkey/state/summary.json" \
+            --include "nikkei/2010-2015/wayback-urlkey/state/summary.json" \
+            --include "nikkei/2016-2026/wayback-urlkey/state/summary.json" \
+            --include "zaobao/2010-2015/wayback-urlkey/state/summary.json" \
+            --include "zaobao/2016-2026/wayback-urlkey/state/summary.json" \
+            --include "aljazeera/2010-2015/wayback-urlkey/state/summary.json" \
+            --include "aljazeera/2016-2026/wayback-urlkey/state/summary.json" \
+            --include "scmp/2010-2015/wayback-urlkey/state/summary.json" \
+            --include "scmp/2016-2026/wayback-urlkey/state/summary.json" \
+            --include "caixin/2010-2015/wayback-urlkey/state/summary.json" \
+            --include "caixin/2016-2026/wayback-urlkey/state/summary.json" \
             --transfers 16 --checkers 32 \
             --retries 8 --low-level-retries 20
 

@@ -24,10 +24,25 @@ PUBLISHER_ORDER = (
     "wsj",
     "nyt",
     "ap",
+    "axios",
+    "npr",
+    "nikkei",
+    "zaobao",
+    "aljazeera",
+    "scmp",
+    "caixin",
 )
 ACTIVE_TITLE_RE = re.compile(
-    r"^parser-qa-(ap|bloomberg|ft|nyt|reuters|wsj)-(20\d{2})$"
+    r"^parser-qa-(aljazeera|ap|axios|bloomberg|caixin|ft|nikkei|npr|nyt|reuters|scmp|wsj|zaobao)-(20\d{2})$"
 )
+
+
+def _source_year_is_available(publisher: str, year: int) -> bool:
+    try:
+        parser_source_manifest_shard(publisher, year)
+    except ValueError:
+        return False
+    return True
 
 
 def plan_validation_dispatch(
@@ -56,6 +71,7 @@ def plan_validation_dispatch(
         }
         for publisher in PUBLISHER_ORDER
         for year in TARGET_YEARS
+        if _source_year_is_available(publisher, year)
     }
     summaries_read = 0
     invalid_summaries: list[str] = []
@@ -81,10 +97,13 @@ def plan_validation_dispatch(
         if not isinstance(years, dict):
             continue
         for year in TARGET_YEARS:
+            cell_key = (publisher, year)
+            if cell_key not in progress:
+                continue
             row = years.get(str(year))
             if not isinstance(row, dict):
                 continue
-            cell = progress[(publisher, year)]
+            cell = progress[cell_key]
             cell["replayableEvaluated"] = max(
                 int(cell["replayableEvaluated"]),
                 _integer(row.get("evaluated")),
@@ -118,7 +137,7 @@ def plan_validation_dispatch(
             continue
         publisher, year = match.groups()
         parsed_year = int(year)
-        if parsed_year in TARGET_YEARS:
+        if (publisher, parsed_year) in progress:
             active_cells.add((publisher, parsed_year))
 
     ready_cells = {
@@ -173,6 +192,7 @@ def plan_validation_dispatch(
         }
         for publisher in PUBLISHER_ORDER
         for year in TARGET_YEARS
+        if (publisher, year) in progress
     ]
     return {
         "formatVersion": FORMAT_VERSION,

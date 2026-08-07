@@ -75,7 +75,15 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         for task in plan["tasks"]
     }
 
-    assert plan["targetCells"] == 102
+    assert plan["targetCells"] == 214
+    assert ("axios", 2016) not in {
+        (row["publisher"], row["year"])
+        for row in plan["cellProgress"]
+    }
+    assert ("axios", 2017) in {
+        (row["publisher"], row["year"])
+        for row in plan["cellProgress"]
+    }
     assert plan["readyCells"] == 2
     assert ("ap", 2016) not in cells
     assert ("bloomberg", 2017) not in cells
