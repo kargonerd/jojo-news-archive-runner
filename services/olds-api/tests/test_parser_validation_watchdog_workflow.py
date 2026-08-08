@@ -1,0 +1,22 @@
+from pathlib import Path
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+WORKFLOW = (
+    REPOSITORY_ROOT / ".github" / "workflows" / "parser-validation-watchdog.yml"
+)
+
+
+def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert 'cron: "17,47 * * * *"' in workflow
+    assert "news-archive/v2/validation-state" in workflow
+    assert '--include "validation/*/*/state/summary.json"' in workflow
+
+
+def test_watchdog_dispatches_two_workers_per_validation_job() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "-f workers=2" in workflow
+    assert "-f workers=8" not in workflow

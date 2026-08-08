@@ -1,6 +1,10 @@
 name: Parser validation watchdog
 
 on:
+  schedule:
+    # Periodically fill free validation slots. Accelerator jobs also chain
+    # their own batches, so this is a conservative recovery/backfill cadence.
+    - cron: "17,47 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -71,6 +75,16 @@ jobs:
             --include "scmp/2016-2026/wayback-urlkey/state/summary.json" \
             --include "caixin/2010-2015/wayback-urlkey/state/summary.json" \
             --include "caixin/2016-2026/wayback-urlkey/state/summary.json" \
+            --transfers 16 --checkers 32 \
+            --retries 8 --low-level-retries 20
+          # Formal parser-validation summaries are execution state under v2,
+          # not part of a publisher's v1 canonical raw source tree. Map this
+          # prefix to the planner's expected validation/<publisher>/<year>
+          # layout so finished cells are never dispatched again.
+          rclone copy \
+            "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v2/validation-state" \
+            "$RUNNER_TEMP/archive-state" \
+            --include "validation/*/*/state/summary.json" \
             --transfers 16 --checkers 32 \
             --retries 8 --low-level-retries 20
 
@@ -168,7 +182,7 @@ jobs:
               -f year="$year" \
               -f source_manifest_shard="$shard" \
               -f max_captures=800 \
-              -f workers=8 \
+              -f workers=2 \
               -f max_runtime_minutes=300 \
               -f auto_continue=true \
               -f enable_ft_infini_direct_discovery="$enable_ft_infini_direct_discovery" \
