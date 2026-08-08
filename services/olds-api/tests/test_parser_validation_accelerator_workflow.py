@@ -56,6 +56,19 @@ def test_accelerator_retains_existing_content_addressed_raw_objects() -> None:
     assert "--checksum --immutable" not in workflow
 
 
+def test_live_checkpoint_uploads_are_bounded() -> None:
+    workflow = _workflow_text()
+    checkpoint_section = workflow[
+        workflow.index("live_checkpoint() {")
+        : workflow.index("request_interval=0.5")
+    ]
+
+    assert checkpoint_section.count("timeout 120 rclone copy") == 2
+    assert checkpoint_section.count("timeout 30 rclone copyto") == 2
+    assert "--timeout 30s --contimeout 10s" in checkpoint_section
+    assert "Live object upload failed; state withheld." in checkpoint_section
+
+
 def test_accelerator_reads_wsj_legacy_raw_without_copying_it() -> None:
     workflow = _workflow_text()
 

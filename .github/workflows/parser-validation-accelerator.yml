@@ -526,39 +526,52 @@ jobs:
               echo "::warning::Could not refresh live validation summary."
             fi
             if [ -d "$LOCAL_ROOT/raw/objects" ]; then
-              if ! rclone copy \
+              # A live checkpoint must never hold the capture process hostage
+              # when B2 temporarily stalls.  The final publish step retains
+              # its full retry budget; this periodic recovery checkpoint is
+              # deliberately bounded and best-effort.
+              if ! timeout 120 rclone copy \
                   "$LOCAL_ROOT/raw/objects" \
                   "${SOURCE_ROOT}/raw/objects" \
                   --exclude '*.tmp' \
                   --checksum --ignore-existing --fast-list \
                   --transfers 32 --checkers 64 \
-                  --retries 8 --low-level-retries 20; then
+                  --timeout 30s --contimeout 10s \
+                  --retries 2 --low-level-retries 2; then
                 echo "::warning::Live object upload failed; state withheld."
                 return 0
               fi
             fi
             if [ -d "$LOCAL_ROOT/raw/records" ]; then
-              if ! rclone copy \
+              if ! timeout 120 rclone copy \
                   "$LOCAL_ROOT/raw/records" \
                   "${SOURCE_ROOT}/raw/records" \
                   --exclude '*.tmp' \
                   --checksum --fast-list \
                   --transfers 32 --checkers 64 \
-                  --retries 8 --low-level-retries 20; then
+                  --timeout 30s --contimeout 10s \
+                  --retries 2 --low-level-retries 2; then
                 echo "::warning::Live record upload failed; state withheld."
                 return 0
               fi
             fi
             if [ -f "$LOCAL_ROOT/raw/summary.json" ]; then
-              rclone copyto \
-                "$LOCAL_ROOT/raw/summary.json" \
-                "${REMOTE_ROOT}/state/summary.json" \
-                --retries 8 --low-level-retries 20
+              if ! timeout 30 rclone copyto \
+                  "$LOCAL_ROOT/raw/summary.json" \
+                  "${REMOTE_ROOT}/state/summary.json" \
+                  --timeout 20s --contimeout 10s \
+                  --retries 2 --low-level-retries 2; then
+                echo "::warning::Live validation summary upload timed out."
+              fi
             fi
-            rclone copyto \
-              "$checkpoint" \
-              "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
-              --retries 8 --low-level-retries 20
+            if ! timeout 30 rclone copyto \
+                "$checkpoint" \
+                "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
+                --timeout 20s --contimeout 10s \
+                --retries 2 --low-level-retries 2; then
+              echo "::warning::Live validation-state upload timed out."
+              return 0
+            fi
             echo "Published live validation checkpoint."
           }
 
