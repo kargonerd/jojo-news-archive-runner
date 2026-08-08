@@ -15259,7 +15259,70 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.2"
+    assert result.extraction.parser_version == "npr-parser/0.1.3"
+
+
+def test_npr_parser_preserves_short_audio_story_mp3():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="NPR audio story">
+          <meta property="article:published_time"
+                content="2021-01-20T12:00:00Z">
+        </head><body class="no-transcript">
+          <div id="storytext"><p>A short audio introduction.</p></div>
+          <article class="bucketwrap resaudio">
+            <div class="audio-module">
+              <a class="audio-module-listen"
+                 href="https://ondemand.npr.org/example.mp3?dl=1">
+                Listen
+              </a>
+            </div>
+          </article>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2021/01/20/958689598/audio-story"
+        ),
+    )
+
+    assert result.content_type.value == "audio"
+    assert result.quality.status.value == "complete"
+    assert result.plain_text == "A short audio introduction."
+    assert [
+        block.embed_url for block in result.blocks if block.type.value == "embed"
+    ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
+    assert result.extraction.parser_version == "npr-parser/0.1.3"
+
+
+def test_npr_parser_classifies_unavailable_short_audio_story():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="NPR upcoming audio story">
+          <meta property="article:published_time"
+                content="2026-01-18T12:00:00Z">
+        </head><body class="no-transcript">
+          <div id="storytext"><p>A short audio introduction.</p></div>
+          <div id="headlineaudio">
+            <article class="bucketwrap resaudio unavailable">
+              <div class="audio-module">Audio will be available later today.</div>
+            </article>
+          </div>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2026/01/18/nx-s1-5668490/audio-story"
+        ),
+    )
+
+    assert result.content_type.value == "audio"
+    assert result.quality.status.value == "partial"
+    assert result.plain_text == "A short audio introduction."
+    assert not any(block.type.value == "embed" for block in result.blocks)
+    assert result.extraction.parser_version == "npr-parser/0.1.3"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():

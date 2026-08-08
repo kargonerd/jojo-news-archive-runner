@@ -620,6 +620,7 @@ def parse_article(
     )
     language = _document_language(soup, default=spec.default_language)
     content_type = _content_type(news_article, canonical_url)
+    npr_audio_url: str | None = None
     if any(
         value.get("@type") == "LiveBlogPosting"
         for value in _json_ld_objects(soup)
@@ -668,6 +669,15 @@ def parse_article(
         axios_embedded_content_type = _axios_embedded_content_type(clean_body)
         if axios_embedded_content_type is not None:
             content_type = axios_embedded_content_type
+    if spec.publisher == "npr" and _npr_short_audio_story(
+        soup,
+        body=clean_body,
+    ):
+        content_type = ContentType.AUDIO
+        npr_audio_url = _npr_story_audio_url(
+            soup,
+            base_url=canonical_url,
+        )
     if spec.publisher == "ft" and ft_crossword_selected:
         content_type = ContentType.INTERACTIVE
     if ft_missing_legacy_visual:
@@ -808,6 +818,20 @@ def parse_article(
             )
             if wsj_standalone_truncation_marker:
                 blocks.pop()
+
+    if npr_audio_url and not any(
+        block.type == BlockType.EMBED
+        and block.embed_url == npr_audio_url
+        for block in blocks
+    ):
+        blocks.append(
+            ContentBlock(
+                type=BlockType.EMBED,
+                position=max((block.position for block in blocks), default=-1)
+                + 1,
+                embed_url=npr_audio_url,
+            )
+        )
 
     if content_type == ContentType.ARTICLE and (
         structured_image_gallery_selected
@@ -5900,6 +5924,62 @@ def _axios_embedded_content_type(body: Tag) -> ContentType | None:
     ):
         return ContentType.VIDEO
     return ContentType.INTERACTIVE
+
+
+def _npr_audio_story_nodes(soup: BeautifulSoup) -> list[Tag]:
+    """Return story-level players without matching NPR's global live audio."""
+    return [
+        node
+        for node in soup.select(
+            "#primaryaudio, #headlineaudio, article.resaudio, .audio-module"
+        )
+        if isinstance(node, Tag)
+    ]
+
+
+def _npr_short_audio_story(
+    soup: BeautifulSoup,
+    *,
+    body: Tag | None,
+) -> bool:
+    body_characters = len(
+        _clean_text(body.get_text(" ", strip=True)) if body is not None else ""
+    )
+    return body_characters < _MINIMUM_BODY_CHARACTERS and bool(
+        _npr_audio_story_nodes(soup)
+    )
+
+
+def _npr_story_audio_url(
+    soup: BeautifulSoup,
+    *,
+    base_url: str,
+) -> str | None:
+    nodes = _npr_audio_story_nodes(soup)
+    for container in nodes:
+        for link in container.select("a[href]"):
+            url = _normalized_url(link.get("href"), base_url=base_url)
+            if url and re.search(
+                r"(?i)\.(?:aac|m4a|mp3|wav)(?:[?#]|$)",
+                url,
+            ):
+                return url
+        for player in container.select("[data-audio]"):
+            payload = player.get("data-audio")
+            if not isinstance(payload, str):
+                continue
+            try:
+                decoded = json.loads(payload)
+            except json.JSONDecodeError:
+                decoded = None
+            if isinstance(decoded, dict):
+                url = _normalized_url(
+                    decoded.get("audioUrl"),
+                    base_url=base_url,
+                )
+                if url:
+                    return url
+    return None
 
 
 def _nyt_media_content_type(
