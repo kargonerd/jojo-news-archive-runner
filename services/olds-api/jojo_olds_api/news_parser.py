@@ -5945,8 +5945,16 @@ def _npr_short_audio_story(
     body_characters = len(
         _clean_text(body.get_text(" ", strip=True)) if body is not None else ""
     )
-    return body_characters < _MINIMUM_BODY_CHARACTERS and bool(
-        _npr_audio_story_nodes(soup)
+    body_classes = {
+        str(value).casefold()
+        for value in (soup.body.get("class") or [])
+    } if soup.body is not None else set()
+    dacs_audio_only = {
+        "is-dacs-only",
+        "no-transcript",
+    }.issubset(body_classes)
+    return body_characters < 200 and (
+        bool(_npr_audio_story_nodes(soup)) or dacs_audio_only
     )
 
 
