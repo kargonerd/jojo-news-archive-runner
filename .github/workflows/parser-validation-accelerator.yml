@@ -499,6 +499,13 @@ jobs:
               echo "::warning::Could not snapshot live validation state."
               return 0
             fi
+            if ! python \
+              services/olds-api/tools/write_capture_summary.py \
+              --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+              --archive-root "$LOCAL_ROOT/raw" \
+              --output "$LOCAL_ROOT/raw/summary.json"; then
+              echo "::warning::Could not refresh live validation summary."
+            fi
             if [ -d "$LOCAL_ROOT/raw/objects" ]; then
               if ! rclone copy \
                   "$LOCAL_ROOT/raw/objects" \
