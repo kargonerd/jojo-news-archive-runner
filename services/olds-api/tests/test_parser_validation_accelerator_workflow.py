@@ -54,3 +54,11 @@ def test_accelerator_retains_existing_content_addressed_raw_objects() -> None:
 
     assert "--checksum --ignore-existing" in workflow
     assert "--checksum --immutable" not in workflow
+
+
+def test_accelerator_reads_wsj_legacy_raw_without_copying_it() -> None:
+    workflow = _workflow_text()
+
+    assert 'legacy_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/wsj/2016-2026/wayback-urlkey"' in workflow
+    assert 'LEGACY_SOURCE_ROOT: ${{ steps.paths.outputs.legacy_source_root }}' in workflow
+    assert '"${LEGACY_SOURCE_ROOT}/raw"' in workflow

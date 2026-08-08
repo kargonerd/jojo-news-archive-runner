@@ -180,11 +180,20 @@ jobs:
           local_root="${ARCHIVE_ROOT}/${COHORT}/${PUBLISHER}/${SAMPLE_YEAR}"
           remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v2/validation-state/${COHORT}/${PUBLISHER}/${SAMPLE_YEAR}"
           source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${SOURCE_MANIFEST_SHARD}"
+          # WSJ 2016+ validation migrated to the broader replay manifest.
+          # Existing verified captures remain in the prior URL-key root and
+          # must stay readable for later parser revalidation without copying
+          # content-addressed raw objects into a second B2 prefix.
+          legacy_source_root=""
+          if [ "$PUBLISHER" = "wsj" ] && [ "$SAMPLE_YEAR" -ge 2016 ]; then
+            legacy_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/wsj/2016-2026/wayback-urlkey"
+          fi
           mkdir -p "$local_root/catalog" "$local_root/raw"
           {
             echo "local_root=$local_root"
             echo "remote_root=$remote_root"
             echo "source_root=$source_root"
+            echo "legacy_source_root=$legacy_source_root"
           } >> "$GITHUB_OUTPUT"
 
       - name: Restore filtered manifest and validation checkpoint
@@ -414,6 +423,7 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
           SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
+          LEGACY_SOURCE_ROOT: ${{ steps.paths.outputs.legacy_source_root }}
         run: |
           rclone copy \
             "${SOURCE_ROOT}/raw" \
@@ -422,6 +432,15 @@ jobs:
             --transfers 16 --checkers 32 \
             --retries 8 --low-level-retries 20 \
             --stats 30s
+          if [ -n "$LEGACY_SOURCE_ROOT" ]; then
+            rclone copy \
+              "${LEGACY_SOURCE_ROOT}/raw" \
+              "$LOCAL_ROOT/raw" \
+              --files-from "$RUNNER_TEMP/parser-validation-files.txt" \
+              --transfers 16 --checkers 32 \
+              --retries 8 --low-level-retries 20 \
+              --stats 30s
+          fi
 
       - name: Replay current parser
         if: ${{ steps.replay.outputs.replays != '0' }}
@@ -671,6 +690,7 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
           SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
+          LEGACY_SOURCE_ROOT: ${{ steps.paths.outputs.legacy_source_root }}
         run: |
           if [ -s "$RUNNER_TEMP/parser-validation-all-files.txt" ]; then
             rclone copy \
@@ -681,6 +701,16 @@ jobs:
               --transfers 16 --checkers 32 \
               --retries 8 --low-level-retries 20 \
               --stats 30s
+            if [ -n "$LEGACY_SOURCE_ROOT" ]; then
+              rclone copy \
+                "${LEGACY_SOURCE_ROOT}/raw" \
+                "$LOCAL_ROOT/raw" \
+                --files-from \
+                  "$RUNNER_TEMP/parser-validation-all-files.txt" \
+                --transfers 16 --checkers 32 \
+                --retries 8 --low-level-retries 20 \
+                --stats 30s
+            fi
           fi
           python services/olds-api/tools/revalidate_parser_samples.py \
             --publisher "$PUBLISHER" \
