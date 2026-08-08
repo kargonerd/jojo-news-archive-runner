@@ -261,13 +261,40 @@ def initialize_discovery_schema(
         to_year=to_year,
         collapse=collapse,
     )
+    patterns = spec.expanded_wayback_patterns(
+        from_year=from_year,
+        to_year=to_year,
+    )
     existing = connection.execute(
         "SELECT value FROM discovery_metadata WHERE key='fingerprint'"
     ).fetchone()
     if existing and existing[0] != fingerprint:
-        raise ValueError(
-            "discovery state belongs to a different publisher, date window, or spec"
+        previous_metadata = dict(
+            connection.execute(
+                """
+                SELECT key, value
+                FROM discovery_metadata
+                WHERE key IN ('publisher', 'from_year', 'to_year', 'collapse')
+                """
+            ).fetchall()
         )
+        previous_patterns = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT pattern FROM discovery_queries"
+            )
+        }
+        current_patterns = set(patterns)
+        same_scope = previous_metadata == {
+            "publisher": spec.publisher,
+            "from_year": str(from_year),
+            "to_year": str(to_year),
+            "collapse": collapse,
+        }
+        if not same_scope or not previous_patterns < current_patterns:
+            raise ValueError(
+                "discovery state belongs to a different publisher, date window, or spec"
+            )
     metadata = {
         "schema_version": DISCOVERY_SCHEMA_VERSION,
         "publisher": spec.publisher,
@@ -283,10 +310,6 @@ def initialize_discovery_schema(
         ON CONFLICT(key) DO UPDATE SET value=excluded.value
         """,
         metadata.items(),
-    )
-    patterns = spec.expanded_wayback_patterns(
-        from_year=from_year,
-        to_year=to_year,
     )
     connection.executemany(
         """

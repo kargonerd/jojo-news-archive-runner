@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import gzip
 import json
 from pathlib import Path
@@ -56,6 +57,98 @@ def test_extract_wsj_legacy_published_at_from_json_ld():
     assert extract_wsj_legacy_published_at(
         """<script>{"datePublished":"2014-06-03T12:34:56Z"}</script>"""
     ) == "2014-06-03T12:34:56+00:00"
+
+
+def test_discovery_schema_accepts_additive_wayback_patterns():
+    connection = sqlite3.connect(":memory:")
+    current = archive_source_spec("npr")
+    original = replace(
+        current,
+        wayback_patterns=("www.npr.org/{year}/*",),
+    )
+    initialize_discovery_schema(
+        connection,
+        spec=original,
+        from_year=2010,
+        to_year=2010,
+        collapse="urlkey",
+    )
+    connection.execute(
+        "UPDATE discovery_queries SET status='complete'"
+    )
+
+    initialize_discovery_schema(
+        connection,
+        spec=current,
+        from_year=2010,
+        to_year=2010,
+        collapse="urlkey",
+    )
+
+    assert connection.execute(
+        "SELECT pattern, status FROM discovery_queries ORDER BY rowid"
+    ).fetchall() == [
+        ("www.npr.org/2010/*", "complete"),
+        ("npr.org/2010/*", "pending"),
+    ]
+
+
+def test_discovery_schema_rejects_replaced_wayback_patterns():
+    connection = sqlite3.connect(":memory:")
+    current = archive_source_spec("npr")
+    original = replace(
+        current,
+        wayback_patterns=("legacy.npr.org/{year}/*",),
+    )
+    initialize_discovery_schema(
+        connection,
+        spec=original,
+        from_year=2010,
+        to_year=2010,
+        collapse="urlkey",
+    )
+
+    try:
+        initialize_discovery_schema(
+            connection,
+            spec=current,
+            from_year=2010,
+            to_year=2010,
+            collapse="urlkey",
+        )
+    except ValueError as exc:
+        assert "different publisher, date window, or spec" in str(exc)
+    else:
+        raise AssertionError("replaced patterns must invalidate discovery state")
+
+
+def test_discovery_schema_rejects_additive_patterns_from_another_scope():
+    connection = sqlite3.connect(":memory:")
+    current = archive_source_spec("npr")
+    original = replace(
+        current,
+        wayback_patterns=("www.npr.org/{year}/*",),
+    )
+    initialize_discovery_schema(
+        connection,
+        spec=original,
+        from_year=2010,
+        to_year=2010,
+        collapse="urlkey",
+    )
+
+    try:
+        initialize_discovery_schema(
+            connection,
+            spec=replace(current, publisher="not-npr"),
+            from_year=2010,
+            to_year=2010,
+            collapse="urlkey",
+        )
+    except ValueError as exc:
+        assert "different publisher, date window, or spec" in str(exc)
+    else:
+        raise AssertionError("different publisher must invalidate discovery state")
 
 
 def test_wsj_legacy_no_date_candidate_is_removed_from_year_pool():

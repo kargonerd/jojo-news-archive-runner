@@ -159,7 +159,13 @@ ARCHIVE_SOURCE_SPECS = {
     "npr": ArchiveSourceSpec(
         publisher="npr",
         canonical_host="www.npr.org",
-        wayback_patterns=("www.npr.org/{year}/*",),
+        # Internet Archive indexes the bare and www hosts as distinct URL
+        # keys.  Normalize both to www below, but query both so articles that
+        # were only captured under npr.org are not omitted from discovery.
+        wayback_patterns=(
+            "www.npr.org/{year}/*",
+            "npr.org/{year}/*",
+        ),
         accepted_path_patterns=_patterns(r"^/20\d{2}/"),
         rejected_path_patterns=_patterns(
             r"^/(?:programs|podcasts?|music)(?:/|$)",
