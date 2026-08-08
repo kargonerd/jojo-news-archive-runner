@@ -120,7 +120,7 @@ def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
     plan = plan_validation_dispatch(
         state_root=tmp_path,
         active_titles=[
-            "parser-qa-ft-2018",
+            "parser-validation-ft-2018",
             "unrelated workflow title",
         ],
         max_dispatch=66,

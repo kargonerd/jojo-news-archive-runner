@@ -33,7 +33,7 @@ PUBLISHER_ORDER = (
     "caixin",
 )
 ACTIVE_TITLE_RE = re.compile(
-    r"^parser-qa-(aljazeera|ap|axios|bloomberg|caixin|ft|nikkei|npr|nyt|reuters|scmp|wsj|zaobao)-(20\d{2})$"
+    r"^parser-(?:qa|validation)-(aljazeera|ap|axios|bloomberg|caixin|ft|nikkei|npr|nyt|reuters|scmp|wsj|zaobao)-(20\d{2})$"
 )
 
 
