@@ -59,7 +59,7 @@ CAPTURE_POLICY_VERSIONS = {
     "ft": "ft-capture/0.20.2",
     "nyt": "nyt-capture/0.9.0",
     "reuters": "reuters-capture/0.7.2",
-    "wsj": "wsj-capture/0.8.6",
+    "wsj": "wsj-capture/0.8.7",
 }
 ACCEPTED_HTTP_STATUSES = {200, 206}
 WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"
@@ -5507,7 +5507,7 @@ def _wsj_capture_parser_evidence(
             content,
             publisher="wsj",
             canonical_url=canonical_url,
-            allow_generic_syndication=True,
+            allow_generic_syndication=False,
         )
     except Exception as exc:
         return False, {

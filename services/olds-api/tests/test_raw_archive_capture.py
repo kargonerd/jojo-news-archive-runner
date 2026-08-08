@@ -6,6 +6,7 @@ import gzip
 import json
 from pathlib import Path
 import sqlite3
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import brotli
@@ -13,9 +14,11 @@ import pytest
 
 from jojo_olds_api.ghostarchive import ghostarchive_search_url
 from jojo_olds_api.news_models import (
+    ArticleStatus,
     CaptureCandidate,
     CaptureProvider,
     CaptureRepresentation,
+    ContentType,
     RawCapture,
 )
 from jojo_olds_api.news_parser import parse_article
@@ -5682,6 +5685,38 @@ def test_wsj_capture_parser_evidence_rejects_empty_legacy_article_shell():
 
     assert usable is False
     assert signals["wsjCaptureExtractionStatus"] == "unsupported"
+
+
+def test_wsj_capture_parser_evidence_uses_formal_validation_mode(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[bool] = []
+
+    def fake_parse_article(*args, **kwargs):
+        calls.append(bool(kwargs.get("allow_generic_syndication")))
+        return SimpleNamespace(
+            content_type=ContentType.ARTICLE,
+            quality=SimpleNamespace(
+                status=ArticleStatus.COMPLETE,
+                body_characters=1_000,
+                images_selected=0,
+            ),
+        )
+
+    monkeypatch.setattr(
+        "jojo_olds_api.news_parser.parse_article",
+        fake_parse_article,
+    )
+
+    usable, _ = _wsj_capture_parser_evidence(
+        b"<html><body><article>complete</article></body></html>",
+        canonical_url=(
+            "https://www.wsj.com/articles/formal-validation-1590000000"
+        ),
+    )
+
+    assert usable is True
+    assert calls == [False]
 
 
 def test_wsj_capture_parser_evidence_rejects_one_image_gallery_shell():
