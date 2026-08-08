@@ -16,7 +16,11 @@ from xml.etree import ElementTree
 
 import httpx
 
-from .archive_sources import ArchiveSourceSpec, normalize_article_url
+from .archive_sources import (
+    ArchiveSourceSpec,
+    normalize_article_url,
+    wsj_article_publication_datetime,
+)
 from .bloomberg_archive_download import GlobalRateLimiter
 from .wsj_infini_catalog import (
     wsj_infini_articles,
@@ -2019,22 +2023,9 @@ def infer_published_at(canonical_url: str) -> str | None:
         (parsed.hostname or "").casefold().removeprefix("www.")
         == "wsj.com"
     ):
-        epoch_match = re.search(
-            r"/articles/[^/?#]+-((?:1[2-9]|2[0-1])\d{8})(?:$|[/?#])",
-            canonical_url,
-        )
-        if epoch_match:
-            value = datetime.fromtimestamp(
-                int(epoch_match.group(1)),
-                tz=timezone.utc,
-            )
-            if 2008 <= value.year <= 2038:
-                return value.replace(
-                    hour=0,
-                    minute=0,
-                    second=0,
-                    microsecond=0,
-                ).isoformat()
+        published = wsj_article_publication_datetime(canonical_url)
+        if published is not None:
+            return published.isoformat()
     return None
 
 

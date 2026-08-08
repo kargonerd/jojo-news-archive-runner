@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import re
 from urllib.parse import urlsplit, urlunsplit
 
@@ -262,9 +263,14 @@ def article_url_publication_year(
     value: str,
 ) -> int | None:
     normalized = normalize_article_url(spec, value)
-    if normalized is None or spec.publisher != "reuters":
+    if normalized is None:
         return None
     path = urlsplit(normalized).path
+    if spec.publisher == "wsj":
+        published = wsj_article_publication_datetime(normalized)
+        return published.year if published is not None else None
+    if spec.publisher != "reuters":
+        return None
     if not path.startswith("/article/"):
         return None
     matches = re.findall(
@@ -272,3 +278,28 @@ def article_url_publication_year(
         path,
     )
     return int(matches[-1]) if matches else None
+
+
+def wsj_article_publication_datetime(value: str) -> datetime | None:
+    normalized = normalize_article_url(archive_source_spec("wsj"), value)
+    if normalized is None:
+        return None
+    match = re.search(
+        r"/articles/[^/?#]+-(\d{10,12})$",
+        urlsplit(normalized).path,
+    )
+    if match is None:
+        return None
+    raw_identifier = match.group(1)
+    if len(raw_identifier) == 10:
+        raw_epoch = raw_identifier
+    elif len(raw_identifier) == 11 and raw_identifier.startswith("1"):
+        raw_epoch = raw_identifier[1:]
+    elif len(raw_identifier) == 12:
+        raw_epoch = raw_identifier[2:]
+    else:
+        return None
+    published = datetime.fromtimestamp(int(raw_epoch), tz=timezone.utc)
+    if not 2008 <= published.year <= 2038:
+        return None
+    return published.replace(hour=0, minute=0, second=0, microsecond=0)

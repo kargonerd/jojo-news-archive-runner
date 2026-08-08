@@ -106,3 +106,66 @@ def test_filter_manifest_infers_date_and_rejects_wrong_publisher(
             from_year=2026,
             to_year=2026,
         )
+
+
+def test_filter_manifest_corrects_stale_wsj_capture_dates(
+    tmp_path: Path,
+):
+    source = tmp_path / "stale-wsj.jsonl"
+    destination = tmp_path / "wsj-2020.jsonl"
+    rows = [
+        {
+            "publisher": "wsj",
+            "canonicalUrl": (
+                "https://www.wsj.com/articles/"
+                "afghans-mourn-for-bombing-victims-1416846693"
+            ),
+            "publishedAt": "2020-11-13T04:30:06+00:00",
+            "candidates": [],
+        },
+        {
+            "publisher": "wsj",
+            "canonicalUrl": (
+                "https://www.wsj.com/articles/"
+                "accenture-looks-to-boost-ai-capabilities-through-"
+                "mergers-11592818200"
+            ),
+            "publishedAt": "2019-06-22T14:00:00+00:00",
+            "candidates": [],
+        },
+        {
+            "publisher": "wsj",
+            "canonicalUrl": (
+                "https://www.wsj.com/articles/"
+                "abbott-beats-forecasts-on-strong-covid-19-testing-"
+                "business-151594900170"
+            ),
+            "publishedAt": "2020-07-17T14:00:00+00:00",
+            "candidates": [],
+        },
+    ]
+    source.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    result = filter_archive_manifest(
+        source,
+        destination,
+        publisher="wsj",
+        from_year=2020,
+        to_year=2020,
+    )
+    selected = [
+        json.loads(line)
+        for line in destination.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert result["rowsSeen"] == 3
+    assert result["rowsSelected"] == 2
+    assert result["rowsPublicationDateCorrected"] == 2
+    assert {row["canonicalUrl"] for row in selected} == {
+        rows[1]["canonicalUrl"],
+        rows[2]["canonicalUrl"],
+    }
+    assert all(row["publishedAt"].startswith("2020-") for row in selected)

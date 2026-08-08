@@ -50,6 +50,7 @@ def filter_archive_manifest(
     seen = 0
     selected = 0
     missing_publication_date = 0
+    corrected_publication_date = 0
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     opener = gzip.open if destination.suffix == ".gz" else open
@@ -70,18 +71,35 @@ def filter_archive_manifest(
                 or row.get("url")
                 or ""
             ).strip()
-            published_at = str(
+            manifest_published_at = str(
                 row.get("published_at")
                 or row.get("publishedAt")
                 or row.get("catalog_date")
-                or infer_published_at(canonical_url)
                 or ""
+            ).strip()
+            inferred_published_at = infer_published_at(canonical_url)
+            published_at = str(
+                inferred_published_at
+                if (
+                    publisher.casefold() in {"reuters", "wsj"}
+                    and inferred_published_at is not None
+                )
+                else manifest_published_at or inferred_published_at or ""
             ).strip()
             if not published_at:
                 missing_publication_date += 1
                 continue
             if not start <= published_at < end:
                 continue
+            if published_at != manifest_published_at:
+                row = dict(row)
+                if "published_at" in row:
+                    row["published_at"] = published_at
+                elif "catalog_date" in row:
+                    row["catalog_date"] = published_at
+                else:
+                    row["publishedAt"] = published_at
+                corrected_publication_date += 1
             handle.write(
                 json.dumps(
                     row,
@@ -104,6 +122,7 @@ def filter_archive_manifest(
         "rowsSeen": seen,
         "rowsSelected": selected,
         "rowsMissingPublicationDate": missing_publication_date,
+        "rowsPublicationDateCorrected": corrected_publication_date,
         "output": str(destination),
     }
 

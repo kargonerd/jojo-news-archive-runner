@@ -1027,6 +1027,201 @@ def test_validation_plan_prioritizes_high_yield_wsj_snapshots(
     assert selected == [urls["full"], urls["small"], urls["tpl"]]
 
 
+def test_validation_plan_prioritizes_large_modern_wsj_snapshots(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "wsj-modern-manifest.jsonl"
+    sizes = {
+        "largest": 250_000,
+        "large": 150_000,
+        "tesla": 80_000,
+        "medium": 75_000,
+        "legacy_shell": 40_000,
+        "tpl": 250_000,
+    }
+    urls = {
+        name: f"https://www.wsj.com/articles/{name}-modern-1580000000"
+        for name in sizes
+    }
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "publisher": "wsj",
+                    "canonicalUrl": urls[name],
+                    "publishedAt": "2020-08-30T00:00:00Z",
+                    "candidates": [
+                        CaptureCandidate(
+                            provider=CaptureProvider.WAYBACK,
+                            snapshot_url=(
+                                "https://web.archive.org/web/"
+                                f"2020083019000{index}id_/{urls[name]}"
+                                + (
+                                    "?tesla=y"
+                                    if name == "tesla"
+                                    else (
+                                        "?tpl=centralbanking"
+                                        if name == "tpl"
+                                        else ""
+                                    )
+                                )
+                            ),
+                            captured_at=datetime(
+                                2020,
+                                8,
+                                30,
+                                tzinfo=timezone.utc,
+                            ),
+                            mime_type="text/html",
+                            status_code=200,
+                            byte_count=sizes[name],
+                        ).model_dump(
+                            mode="json",
+                            by_alias=True,
+                            exclude_none=True,
+                        )
+                    ],
+                },
+                default=str,
+            )
+            + "\n"
+            for index, name in enumerate(sizes)
+        ),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="wsj",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=len(sizes),
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    selected = pending_parser_validation_urls(
+        connection,
+        maximum=len(sizes),
+        maximum_record_attempts=3,
+    )
+
+    assert selected == [
+        urls["largest"],
+        urls["large"],
+        urls["tesla"],
+        urls["medium"],
+        urls["legacy_shell"],
+        urls["tpl"],
+    ]
+
+
+def test_validation_plan_removes_misdated_wsj_samples(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "wsj-misdated-manifest.jsonl"
+    wrong_year_url = (
+        "https://www.wsj.com/articles/"
+        "afghans-mourn-for-bombing-victims-1416846693"
+    )
+    current_year_url = (
+        "https://www.wsj.com/articles/"
+        "accenture-looks-to-boost-ai-capabilities-through-"
+        "mergers-11592818200"
+    )
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "publisher": "wsj",
+                    "canonicalUrl": url,
+                    "publishedAt": "2020-06-22T00:00:00+00:00",
+                    "candidates": [
+                        CaptureCandidate(
+                            provider=CaptureProvider.WAYBACK,
+                            snapshot_url=(
+                                "https://web.archive.org/web/"
+                                f"20200622120000id_/{url}"
+                            ),
+                            captured_at=datetime(
+                                2020,
+                                6,
+                                22,
+                                tzinfo=timezone.utc,
+                            ),
+                            mime_type="text/html",
+                            status_code=200,
+                            byte_count=40_000,
+                        ).model_dump(
+                            mode="json",
+                            by_alias=True,
+                            exclude_none=True,
+                        )
+                    ],
+                },
+                default=str,
+            )
+            + "\n"
+            for url in (wrong_year_url, current_year_url)
+        ),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2020, '0000', '2020-01-01T00:00:00+00:00')
+        """,
+        (wrong_year_url,),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="wsj",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    selected = {
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT canonical_url
+            FROM parser_validation_samples
+            WHERE sample_year=2020
+            """
+        )
+    }
+
+    assert wrong_year_url not in selected
+    assert selected == {current_year_url}
+
+
 def test_validation_plan_can_add_previously_completed_raw_captures(
     tmp_path: Path,
 ):

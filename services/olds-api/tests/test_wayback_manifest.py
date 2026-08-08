@@ -483,6 +483,24 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         reuters,
         "https://www.reuters.com/article/idUSTRES57D23Q20090816",
     ) == 2009
+    wsj = archive_source_spec("wsj")
+    assert article_url_publication_year(
+        wsj,
+        "https://www.wsj.com/articles/"
+        "afghans-mourn-for-bombing-victims-1416846693",
+    ) == 2014
+    assert article_url_publication_year(
+        wsj,
+        "https://www.wsj.com/articles/"
+        "accenture-looks-to-boost-ai-capabilities-through-"
+        "mergers-11592818200",
+    ) == 2020
+    assert article_url_publication_year(
+        wsj,
+        "https://www.wsj.com/articles/"
+        "abbott-beats-forecasts-on-strong-covid-19-testing-"
+        "business-151594900170",
+    ) == 2020
 
     ft = archive_source_spec("ft")
     assert normalize_article_url(
@@ -547,6 +565,16 @@ def test_date_inference_and_candidate_ranking_prefers_after_publication():
         "https://www.wsj.com/articles/"
         "a-19th-century-island-home-in-south-carolina-1472740999"
     ) == "2016-09-01T00:00:00+00:00"
+    assert infer_published_at(
+        "https://www.wsj.com/articles/"
+        "accenture-looks-to-boost-ai-capabilities-through-"
+        "mergers-11592818200"
+    ) == "2020-06-22T00:00:00+00:00"
+    assert infer_published_at(
+        "https://www.wsj.com/articles/"
+        "abbott-beats-forecasts-on-strong-covid-19-testing-"
+        "business-151594900170"
+    ) == "2020-07-16T00:00:00+00:00"
 
 
 def test_reuters_discovery_reclassifies_legacy_ids_by_publication_date():

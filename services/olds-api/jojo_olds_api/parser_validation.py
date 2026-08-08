@@ -731,11 +731,63 @@ def pending_parser_validation_urls(
                         END,
                         CASE
                             WHEN capture.publisher != 'wsj' THEN 0
+                            -- WSJ changed its archived page shape after the
+                            -- legacy 2016 cohort.  In 2018+ cohorts, prefer
+                            -- the larger CDX responses before the 30-50 KiB
+                            -- shells that were high-yield only in 2016.
+                            WHEN capture.candidates_json LIKE '%tpl=%'
+                                THEN CASE
+                                    WHEN sample.sample_year >= 2018 THEN 7
+                                    ELSE 5
+                                END
+                            WHEN sample.sample_year >= 2018
+                              AND COALESCE((
+                                SELECT MAX(CAST(
+                                    json_extract(value, '$.byteCount')
+                                    AS INTEGER
+                                ))
+                                FROM json_each(capture.candidates_json)
+                            ), 0) >= 200000 THEN 0
+                            WHEN sample.sample_year >= 2018
+                              AND COALESCE((
+                                SELECT MAX(CAST(
+                                    json_extract(value, '$.byteCount')
+                                    AS INTEGER
+                                ))
+                                FROM json_each(capture.candidates_json)
+                            ), 0) >= 100000 THEN 1
+                            WHEN sample.sample_year >= 2018
+                              AND capture.candidates_json LIKE '%tesla=y%'
+                                THEN 2
+                            WHEN sample.sample_year >= 2018
+                              AND COALESCE((
+                                SELECT MAX(CAST(
+                                    json_extract(value, '$.byteCount')
+                                    AS INTEGER
+                                ))
+                                FROM json_each(capture.candidates_json)
+                            ), 0) >= 50000 THEN 3
+                            WHEN sample.sample_year >= 2018
+                              AND COALESCE((
+                                SELECT MAX(CAST(
+                                    json_extract(value, '$.byteCount')
+                                    AS INTEGER
+                                ))
+                                FROM json_each(capture.candidates_json)
+                            ), 0) >= 30000 THEN 4
+                            WHEN sample.sample_year >= 2018
+                              AND COALESCE((
+                                SELECT MAX(CAST(
+                                    json_extract(value, '$.byteCount')
+                                    AS INTEGER
+                                ))
+                                FROM json_each(capture.candidates_json)
+                            ), 0) >= 20000 THEN 5
+                            WHEN sample.sample_year >= 2018 THEN 6
                             -- In the 2016 WSJ validation cohort, every
                             -- attempted capture whose largest CDX response
                             -- was 30-50 KiB produced usable full text.  The
                             -- smaller shells were overwhelmingly paywalls.
-                            WHEN capture.candidates_json LIKE '%tpl=%' THEN 5
                             WHEN COALESCE((
                                 SELECT MAX(CAST(
                                     json_extract(value, '$.byteCount')
@@ -1480,6 +1532,12 @@ def _select_additional_samples(
     source_spec = archive_source_spec(publisher)
     for (canonical_url,) in rows:
         if normalize_article_url(source_spec, str(canonical_url)) is None:
+            continue
+        embedded_year = article_url_publication_year(
+            source_spec,
+            str(canonical_url),
+        )
+        if embedded_year is not None and embedded_year != year:
             continue
         priority = hashlib.sha256(
             f"{seed}\0{publisher}\0{year}\0{canonical_url}".encode("utf-8")
