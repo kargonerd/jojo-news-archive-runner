@@ -15261,7 +15261,7 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.7"
+    assert result.extraction.parser_version == "npr-parser/0.1.8"
 
 
 def test_npr_parser_preserves_short_audio_story_mp3():
@@ -15301,7 +15301,7 @@ def test_npr_parser_preserves_short_audio_story_mp3():
     assert [
         block.embed_url for block in result.blocks if block.type.value == "embed"
     ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.7"
+    assert result.extraction.parser_version == "npr-parser/0.1.8"
 
 
 def test_npr_parser_classifies_unavailable_short_audio_story():
@@ -15325,7 +15325,7 @@ def test_npr_parser_classifies_unavailable_short_audio_story():
     assert result.quality.status.value == "partial"
     assert result.plain_text == "A short audio introduction."
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.7"
+    assert result.extraction.parser_version == "npr-parser/0.1.8"
 
 
 def test_npr_parser_accepts_legacy_metadata_only_audio_story():
@@ -15363,7 +15363,7 @@ def test_npr_parser_accepts_legacy_metadata_only_audio_story():
     assert "Unrelated recommended story" not in result.plain_text
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.7"
+    assert result.extraction.parser_version == "npr-parser/0.1.8"
 
 
 def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
@@ -15400,7 +15400,7 @@ def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
     assert "A short introduction to the segment." not in result.plain_text
     assert "noncommercial use" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "npr-parser/0.1.7"
+    assert result.extraction.parser_version == "npr-parser/0.1.8"
 
 
 def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
@@ -15434,7 +15434,7 @@ def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
     assert result.images[0].should_archive is True
     assert "onthetrail_01.jpg" in result.images[0].original_url
     assert "promo.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.7"
+    assert result.extraction.parser_version == "npr-parser/0.1.8"
 
 
 def test_npr_parser_recovers_image_led_double_take_cartoon():
@@ -15481,7 +15481,61 @@ def test_npr_parser_recovers_image_led_double_take_cartoon():
     ]
     assert all(image.should_archive for image in result.images)
     assert "related-cartoon.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.7"
+    assert result.extraction.parser_version == "npr-parser/0.1.8"
+
+
+def test_npr_parser_recovers_legacy_music_flash_interactive():
+    result = parse_article(
+        b"""
+        <html><head>
+          <title>In Memoriam: Musicians We Lost In 2010 : NPR</title>
+          <meta name="date" content="Mon, 27 Dec 2010 10:00:00 -0500">
+          <meta name="description" content="NPR Music remembers the singers,
+          instrumentalists, songwriters and producers who died in 2010.">
+        </head><body class="tmplMusicMultimedia type1 id132134464">
+          <div class="storytitle"><h1>In Memoriam: Musicians We Lost In 2010</h1></div>
+          <div id="storyspan03" class="storylocation">
+            <div class="bucketwrap graphic948"><div class="bucket">
+              <h3>In Memoriam: Musicians We Lost In 2010</h3>
+              <p>NPR Music remembers the singers, instrumentalists,
+              songwriters and producers who died in 2010.</p>
+              <div class="graphicwrapper"><div id="slideshow132207675">
+                <p><img src="http://media.npr.org/music/memoriam_2009/alt-img.jpg"
+                        alt="Interactive: In Memoriam"></p>
+                <p>This graphic requires the Adobe Flash Player.</p>
+              </div></div>
+              <script>
+                var so = new SWFObject("/preloader.swf", "soundslider");
+                so.addVariable("theswf",
+                  "http://www.npr.org/music/memoriam_2010/memoriam.swf");
+              </script>
+              <div class="footer"><p>Credit: NPR Music Visuals</p></div>
+            </div></div>
+          </div>
+          <aside><p>Unrelated recommended story.</p></aside>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2010/12/28/132134464/"
+            "in-memoriam-musicians-we-lost-in-2010"
+        ),
+    )
+
+    assert result.content_type == ContentType.INTERACTIVE
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "NPR Music remembers the singers" in result.plain_text
+    assert "Credit: NPR Music Visuals" in result.plain_text
+    assert "Unrelated recommended story" not in result.plain_text
+    assert [image.original_url for image in result.images] == [
+        "http://media.npr.org/music/memoriam_2009/alt-img.jpg"
+    ]
+    assert [
+        block.embed_url
+        for block in result.blocks
+        if block.type.value == "embed"
+    ] == ["http://www.npr.org/music/memoriam_2010/memoriam.swf"]
+    assert result.extraction.parser_version == "npr-parser/0.1.8"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():

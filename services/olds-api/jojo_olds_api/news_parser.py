@@ -134,6 +134,7 @@ def parse_article(
     ft_crossword_selected = False
     npr_legacy_transcript_selected = False
     npr_legacy_gallery_selected = False
+    npr_legacy_interactive_selected = False
     if spec.publisher == "ap":
         gallery_body = _ap_carousel_gallery(soup)
         if gallery_body is not None:
@@ -272,26 +273,34 @@ def parse_article(
     if body is None:
         body = _select_body(soup, spec)
     if spec.publisher == "npr":
-        legacy_gallery = _npr_legacy_gallery_body(soup)
-        if legacy_gallery is not None:
-            body = legacy_gallery
-            npr_legacy_gallery_selected = True
+        legacy_interactive = _npr_legacy_flash_interactive_body(
+            soup,
+            canonical_url=canonical_url,
+        )
+        if legacy_interactive is not None:
+            body = legacy_interactive
+            npr_legacy_interactive_selected = True
         else:
-            legacy_cartoon = _npr_legacy_cartoon_body(
-                soup,
-                selected_body=body,
-            )
-            if legacy_cartoon is not None:
-                body = legacy_cartoon
+            legacy_gallery = _npr_legacy_gallery_body(soup)
+            if legacy_gallery is not None:
+                body = legacy_gallery
                 npr_legacy_gallery_selected = True
             else:
-                legacy_transcript = _npr_legacy_transcript_body(
+                legacy_cartoon = _npr_legacy_cartoon_body(
                     soup,
                     selected_body=body,
                 )
-                if legacy_transcript is not None:
-                    body = legacy_transcript
-                    npr_legacy_transcript_selected = True
+                if legacy_cartoon is not None:
+                    body = legacy_cartoon
+                    npr_legacy_gallery_selected = True
+                else:
+                    legacy_transcript = _npr_legacy_transcript_body(
+                        soup,
+                        selected_body=body,
+                    )
+                    if legacy_transcript is not None:
+                        body = legacy_transcript
+                        npr_legacy_transcript_selected = True
     if spec.publisher == "nyt":
         legacy_interactive = _nyt_legacy_interactive_graphic(soup)
         if legacy_interactive is not None:
@@ -692,7 +701,9 @@ def parse_article(
         axios_embedded_content_type = _axios_embedded_content_type(clean_body)
         if axios_embedded_content_type is not None:
             content_type = axios_embedded_content_type
-    if npr_legacy_gallery_selected:
+    if npr_legacy_interactive_selected:
+        content_type = ContentType.INTERACTIVE
+    elif npr_legacy_gallery_selected:
         content_type = ContentType.GALLERY
     elif npr_legacy_transcript_selected:
         content_type = ContentType.TRANSCRIPT
@@ -6040,6 +6051,87 @@ def _npr_legacy_gallery_body(soup: BeautifulSoup) -> Tag | None:
     ):
         return None
     return slideshow
+
+
+def _npr_legacy_flash_interactive_body(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
+    """Normalize NPR Music's pre-HTML5 Flash interactive packages."""
+    body_classes = (
+        {
+            str(value).casefold()
+            for value in (soup.body.get("class") or [])
+        }
+        if soup.body is not None
+        else set()
+    )
+    if "tmplmusicmultimedia" not in body_classes:
+        return None
+    source = soup.select_one(
+        "#storyspan03 .bucketwrap[class*='graphic' i] > .bucket"
+    )
+    if not isinstance(source, Tag):
+        return None
+    graphic = source.select_one(".graphicwrapper")
+    if not isinstance(graphic, Tag) or graphic.select_one("img[src]") is None:
+        return None
+    swf_url: str | None = None
+    for script in source.select("script"):
+        payload = script.string or script.get_text()
+        if "SWFObject" not in payload or "theswf" not in payload:
+            continue
+        match = re.search(
+            r"(?i)addVariable\(\s*['\"]theswf['\"]\s*,\s*"
+            r"['\"]([^'\"]+\.swf(?:\?[^'\"]*)?)['\"]",
+            payload,
+        )
+        if match:
+            swf_url = _normalized_url(
+                match.group(1),
+                base_url=canonical_url,
+            )
+            break
+    if not swf_url:
+        return None
+
+    document = BeautifulSoup(
+        "<article data-jojo-source='npr-legacy-flash-interactive'></article>",
+        "html.parser",
+    )
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    description = next(
+        (
+            child
+            for child in source.find_all("p", recursive=False)
+            if _clean_text(child.get_text(" ", strip=True))
+        ),
+        None,
+    )
+    if isinstance(description, Tag):
+        article.append(
+            BeautifulSoup(str(description), "html.parser").find()
+        )
+    fallback = graphic.select_one("img[src]")
+    if isinstance(fallback, Tag):
+        figure = document.new_tag("figure")
+        figure.append(BeautifulSoup(str(fallback), "html.parser").find())
+        article.append(figure)
+    iframe = document.new_tag("iframe")
+    iframe["src"] = swf_url
+    iframe["title"] = _first_text(
+        _tag_text(source.select_one("h3")),
+        "Archived NPR interactive",
+    )
+    iframe["data-interactive-provider"] = "npr-flash"
+    article.append(iframe)
+    credit = source.select_one(":scope > .footer p")
+    if isinstance(credit, Tag):
+        article.append(BeautifulSoup(str(credit), "html.parser").find())
+    return article
 
 
 def _npr_legacy_cartoon_body(
