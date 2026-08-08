@@ -11,7 +11,8 @@ from jojo_olds_api.parser_source_shards import parser_source_manifest_shard
         ("ft", 2016, "ft/2016-2026/sitemap-wayback"),
         ("nyt", 2026, "nyt/2016-2026/sitemap-wayback"),
         ("wsj", 2014, "wsj/2010-2015/wayback-urlkey"),
-        ("wsj", 2020, "wsj/2016-2026/wayback-urlkey"),
+        ("wsj", 2016, "wsj/2016-2026/wayback"),
+        ("wsj", 2020, "wsj/2016-2026/wayback"),
         ("reuters", 2015, "reuters/2010-2015/wayback-urlkey"),
         ("reuters", 2016, "reuters/2016-2020/wayback-urlkey"),
         (

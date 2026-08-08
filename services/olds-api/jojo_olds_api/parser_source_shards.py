@@ -29,6 +29,11 @@ def parser_source_manifest_shard(publisher: str, year: int) -> str:
         return f"{publisher}/{window}/sitemap-wayback"
     if publisher == "wsj":
         window = "2010-2015" if year <= 2015 else "2016-2026"
+        # The URL-key shard is a compact pre-index.  The replay manifest has
+        # materially broader coverage for current-era WSJ years and remains
+        # the canonical source root for any newly captured raw object.
+        if year >= 2016:
+            return f"wsj/{window}/wayback"
         return f"wsj/{window}/wayback-urlkey"
     if publisher == "axios":
         return "axios/2017-2026/wayback-urlkey"
