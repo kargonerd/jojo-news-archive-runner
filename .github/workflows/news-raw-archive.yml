@@ -301,6 +301,9 @@ jobs:
                 # proxies sometimes truncate before the resume key.
                 wayback_page_limit=250
               fi
+              # A timed-out CDX page remains resumable in discovery state;
+              # retry it in a later bounded run instead of holding a scarce
+              # runner slot for the command defaults (90 seconds x 6).
               python services/olds-api/tools/build_wayback_manifest.py \
                 --publisher "$PUBLISHER" \
                 --from-year "$FROM_YEAR" \
@@ -310,6 +313,8 @@ jobs:
                 --page-limit "$wayback_page_limit" \
                 --max-pages "$MAX_DISCOVERY_PAGES" \
                 --min-request-interval 1.0 \
+                --timeout 30 \
+                --attempts 2 \
                 --collapse urlkey \
                 --reset-incompatible-state \
                 --github-output "$GITHUB_OUTPUT"
