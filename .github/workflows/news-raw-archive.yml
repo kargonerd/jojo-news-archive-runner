@@ -259,10 +259,13 @@ jobs:
               echo "::warning::Could not snapshot live discovery state."
               return 0
             fi
-            if ! rclone copyto \
+            # This is a recovery checkpoint, not the final durable publish.
+            # Never let a transient B2 stall suspend the catalog worker.
+            if ! timeout 30 rclone copyto \
                 "$checkpoint" \
                 "${REMOTE_ROOT}/catalog/discovery.sqlite3.gz" \
-                --retries 8 --low-level-retries 20; then
+                --timeout 20s --contimeout 10s \
+                --retries 2 --low-level-retries 2; then
               echo "::warning::Live discovery checkpoint upload failed."
               return 0
             fi
@@ -503,13 +506,16 @@ jobs:
               return 0
             fi
             if [ -d "$LOCAL_ROOT/raw/objects" ]; then
-              if ! rclone copy \
+              # Periodic recovery uploads must be bounded: the final publish
+              # keeps the full retry budget once this capture batch exits.
+              if ! timeout 120 rclone copy \
                   "$LOCAL_ROOT/raw/objects" \
                   "${REMOTE_ROOT}/raw/objects" \
                   --exclude '*.tmp' \
                   --checksum --ignore-existing --fast-list \
                   --transfers 32 --checkers 64 \
-                  --retries 8 --low-level-retries 20; then
+                  --timeout 30s --contimeout 10s \
+                  --retries 2 --low-level-retries 2; then
                 echo "::warning::Live object upload failed; state withheld."
                 return 0
               fi
@@ -517,22 +523,26 @@ jobs:
             if [ -d "$LOCAL_ROOT/raw/records" ]; then
               # Records are URL-addressed and may change after a bad capture
               # is requeued; B2 keeps prior object versions for recovery.
-              if ! rclone copy \
+              if ! timeout 120 rclone copy \
                   "$LOCAL_ROOT/raw/records" \
                   "${REMOTE_ROOT}/raw/records" \
                   --exclude '*.tmp' \
                   --checksum --fast-list \
                   --transfers 32 --checkers 64 \
-                  --retries 8 --low-level-retries 20; then
+                  --timeout 30s --contimeout 10s \
+                  --retries 2 --low-level-retries 2; then
                 echo "::warning::Live record upload failed; state withheld."
                 return 0
               fi
             fi
             if [ -f "$LOCAL_ROOT/raw/summary.json" ]; then
-              rclone copyto \
+              if ! timeout 30 rclone copyto \
                 "$LOCAL_ROOT/raw/summary.json" \
                 "${REMOTE_ROOT}/state/summary.json" \
-                --retries 8 --low-level-retries 20
+                --timeout 20s --contimeout 10s \
+                --retries 2 --low-level-retries 2; then
+                echo "::warning::Live capture summary upload timed out."
+              fi
             fi
             gzip -dc "$checkpoint" \
               > "$RUNNER_TEMP/capture-live.sqlite3"
@@ -542,16 +552,24 @@ jobs:
               --output "$RUNNER_TEMP/completed-captures.sqlite3"
             gzip -9 -c "$RUNNER_TEMP/completed-captures.sqlite3" \
               > "$RUNNER_TEMP/completed-captures.sqlite3.gz"
-            rclone copyto \
+            if ! timeout 30 rclone copyto \
               "$RUNNER_TEMP/completed-captures.sqlite3.gz" \
               "${REMOTE_ROOT}/state/completed-captures.sqlite3.gz" \
-              --retries 8 --low-level-retries 20
+              --timeout 20s --contimeout 10s \
+              --retries 2 --low-level-retries 2; then
+              echo "::warning::Live completed-capture index upload timed out."
+              return 0
+            fi
             # The snapshot was taken before object upload and is published
             # last, so every capture it references is already durable.
-            rclone copyto \
+            if ! timeout 30 rclone copyto \
               "$checkpoint" \
               "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
-              --retries 8 --low-level-retries 20
+              --timeout 20s --contimeout 10s \
+              --retries 2 --low-level-retries 2; then
+              echo "::warning::Live capture-state upload timed out."
+              return 0
+            fi
             echo "Published live capture checkpoint."
           }
           request_interval=0.5
