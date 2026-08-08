@@ -15261,7 +15261,7 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.8"
+    assert result.extraction.parser_version == "npr-parser/0.1.9"
 
 
 def test_npr_parser_preserves_short_audio_story_mp3():
@@ -15301,7 +15301,7 @@ def test_npr_parser_preserves_short_audio_story_mp3():
     assert [
         block.embed_url for block in result.blocks if block.type.value == "embed"
     ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.8"
+    assert result.extraction.parser_version == "npr-parser/0.1.9"
 
 
 def test_npr_parser_classifies_unavailable_short_audio_story():
@@ -15325,7 +15325,7 @@ def test_npr_parser_classifies_unavailable_short_audio_story():
     assert result.quality.status.value == "partial"
     assert result.plain_text == "A short audio introduction."
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.8"
+    assert result.extraction.parser_version == "npr-parser/0.1.9"
 
 
 def test_npr_parser_accepts_legacy_metadata_only_audio_story():
@@ -15363,7 +15363,57 @@ def test_npr_parser_accepts_legacy_metadata_only_audio_story():
     assert "Unrelated recommended story" not in result.plain_text
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.8"
+    assert result.extraction.parser_version == "npr-parser/0.1.9"
+
+
+def test_npr_parser_accepts_legacy_unavailable_audio_story():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Lightning Fill In The Blank">
+          <meta name="date" content="February 18, 2012">
+          <meta name="description"
+                content="All the news we couldn't fit anywhere else.">
+          <meta property="og:image"
+                content="http://media.npr.org/chrome/news/nprlogo_138x46.gif">
+        </head><body class="tmplNewsStory type1 id147079871 theme35">
+          <div id="storyspan02" class="storylocation">
+            <div class="bucketwrap primary unavailable">
+              <div class="listenicon"><a href="#"></a></div>
+              <div class="avcontent listen"><p>Audio for this story from
+              <a href="/templates/rundowns/rundown.php?prgId=35">
+              Wait Wait...Don't Tell Me!</a> will be available at approx.
+              1:00 p.m. ET</p></div>
+            </div>
+          </div>
+          <div id="storytext" class="storylocation">
+            <div class="dateblock"><div class="textsize">
+              text size <a>A</a> <a>A</a>
+            </div><span class="date">February 18, 2012</span></div>
+            <p>All the news we couldn't fit anywhere else.</p>
+            <div id="featuredCommentsMain147079871"></div>
+          </div>
+          <aside><p>Unrelated recommended story.</p></aside>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2012/02/18/147079871/"
+            "lightning-fill-in-the-blank"
+        ),
+    )
+
+    assert result.content_type == ContentType.AUDIO
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.headline == "Lightning Fill In The Blank"
+    assert result.plain_text == "All the news we couldn't fit anywhere else."
+    assert "Unrelated recommended story" not in result.plain_text
+    assert "text size" not in result.body_html
+    assert "featuredCommentsMain" not in result.body_html
+    assert "body-too-short" not in result.quality.warnings
+    assert result.quality.images_selected == 0
+    assert not any(block.type.value == "embed" for block in result.blocks)
+    assert result.extraction.parser_version == "npr-parser/0.1.9"
 
 
 def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
@@ -15400,7 +15450,7 @@ def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
     assert "A short introduction to the segment." not in result.plain_text
     assert "noncommercial use" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "npr-parser/0.1.8"
+    assert result.extraction.parser_version == "npr-parser/0.1.9"
 
 
 def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
@@ -15434,7 +15484,7 @@ def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
     assert result.images[0].should_archive is True
     assert "onthetrail_01.jpg" in result.images[0].original_url
     assert "promo.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.8"
+    assert result.extraction.parser_version == "npr-parser/0.1.9"
 
 
 def test_npr_parser_recovers_image_led_double_take_cartoon():
@@ -15481,7 +15531,7 @@ def test_npr_parser_recovers_image_led_double_take_cartoon():
     ]
     assert all(image.should_archive for image in result.images)
     assert "related-cartoon.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.8"
+    assert result.extraction.parser_version == "npr-parser/0.1.9"
 
 
 def test_npr_parser_recovers_legacy_music_flash_interactive():
@@ -15535,7 +15585,7 @@ def test_npr_parser_recovers_legacy_music_flash_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://www.npr.org/music/memoriam_2010/memoriam.swf"]
-    assert result.extraction.parser_version == "npr-parser/0.1.8"
+    assert result.extraction.parser_version == "npr-parser/0.1.9"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():

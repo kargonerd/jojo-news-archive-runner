@@ -485,6 +485,8 @@ def parse_article(
         _trim_wsj_roadblock_tail(clean_body)
     if spec.publisher == "nyt":
         _trim_nyt_access_shell_tail(clean_body)
+    if spec.publisher == "npr":
+        _remove_npr_body_chrome(clean_body)
     _remove_noise(clean_body, spec)
     if spec.publisher == "wsj":
         inset_tables = _wsj_inset_table_body(soup)
@@ -555,6 +557,8 @@ def parse_article(
             "",
             headline,
         ).strip()
+    if spec.publisher == "npr" and headline:
+        headline = re.sub(r"(?i)\s*:\s*NPR\s*$", "", headline).strip()
     description = _first_text(
         _string_or_none(nyt_preloaded_metadata.get("description")),
         _string_or_none(news_article.get("description")) if news_article else None,
@@ -714,8 +718,16 @@ def parse_article(
             body=clean_body,
         )
     )
+    npr_legacy_unavailable_audio = (
+        spec.publisher == "npr"
+        and _npr_legacy_unavailable_audio_story(
+            soup,
+            body=clean_body,
+        )
+    )
     if spec.publisher == "npr" and (
         npr_legacy_metadata_audio
+        or npr_legacy_unavailable_audio
         or _npr_short_audio_story(
             soup,
             body=clean_body,
@@ -976,6 +988,7 @@ def parse_article(
             # inline MP3/embed is not evidence that the description parser
             # truncated the page.
             or npr_legacy_metadata_audio
+            or npr_legacy_unavailable_audio
         )
     )
     publisher_notice = _is_publisher_notice(
@@ -6182,6 +6195,16 @@ def _npr_non_editorial_image_url(url: str) -> bool:
     )
 
 
+def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove controls embedded in NPR's legacy story-text container."""
+    for node in list(
+        soup.select(
+            ".dateblock, .textsize, [id^='featuredCommentsMain']"
+        )
+    ):
+        node.decompose()
+
+
 def _npr_short_audio_story(
     soup: BeautifulSoup,
     *,
@@ -6229,6 +6252,45 @@ def _npr_legacy_metadata_audio_story(
         and "tmplnewsstory" in body_classes
         and isinstance(story_text, Tag)
         and story_text.select_one("p") is not None
+        and soup.select_one(".transcript") is None
+        and 1 <= body_characters < 200
+    )
+
+
+def _npr_legacy_unavailable_audio_story(
+    soup: BeautifulSoup,
+    *,
+    body: Tag | None,
+) -> bool:
+    """Recognize legacy radio segments captured before audio publication."""
+    body_characters = len(
+        _clean_text(body.get_text(" ", strip=True)) if body is not None else ""
+    )
+    body_classes = (
+        {
+            str(value).casefold()
+            for value in (soup.body.get("class") or [])
+        }
+        if soup.body is not None
+        else set()
+    )
+    story_text = soup.select_one("#storytext")
+    unavailable = soup.select_one(
+        "#storyspan02 .bucketwrap.primary.unavailable .avcontent.listen"
+    )
+    unavailable_text = _clean_text(
+        unavailable.get_text(" ", strip=True)
+        if isinstance(unavailable, Tag)
+        else ""
+    ).casefold()
+    return bool(
+        "tmplnewsstory" in body_classes
+        and isinstance(story_text, Tag)
+        and story_text.select_one("p") is not None
+        and isinstance(unavailable, Tag)
+        and unavailable.select_one("p") is not None
+        and unavailable_text.startswith("audio for this story from ")
+        and " will be available " in unavailable_text
         and soup.select_one(".transcript") is None
         and 1 <= body_characters < 200
     )
