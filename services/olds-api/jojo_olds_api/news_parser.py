@@ -277,13 +277,21 @@ def parse_article(
             body = legacy_gallery
             npr_legacy_gallery_selected = True
         else:
-            legacy_transcript = _npr_legacy_transcript_body(
+            legacy_cartoon = _npr_legacy_cartoon_body(
                 soup,
                 selected_body=body,
             )
-            if legacy_transcript is not None:
-                body = legacy_transcript
-                npr_legacy_transcript_selected = True
+            if legacy_cartoon is not None:
+                body = legacy_cartoon
+                npr_legacy_gallery_selected = True
+            else:
+                legacy_transcript = _npr_legacy_transcript_body(
+                    soup,
+                    selected_body=body,
+                )
+                if legacy_transcript is not None:
+                    body = legacy_transcript
+                    npr_legacy_transcript_selected = True
     if spec.publisher == "nyt":
         legacy_interactive = _nyt_legacy_interactive_graphic(soup)
         if legacy_interactive is not None:
@@ -6015,6 +6023,45 @@ def _npr_legacy_gallery_body(soup: BeautifulSoup) -> Tag | None:
     ):
         return None
     return slideshow
+
+
+def _npr_legacy_cartoon_body(
+    soup: BeautifulSoup,
+    *,
+    selected_body: Tag | None,
+) -> Tag | None:
+    """Join NPR's short Double Take teaser with its two primary cartoons."""
+    selected_characters = len(
+        _clean_text(selected_body.get_text(" ", strip=True))
+        if selected_body is not None
+        else ""
+    )
+    cartoons = [
+        node
+        for node in soup.select("div.bucketwrap.photo624")
+        if isinstance(node, Tag) and node.select_one("img[src]") is not None
+    ]
+    if selected_characters >= 200 or len(cartoons) < 2:
+        return None
+    document = BeautifulSoup(
+        "<div data-jojo-source='npr-legacy-cartoon'></div>",
+        "html.parser",
+    )
+    wrapper = document.select_one("div")
+    if not isinstance(wrapper, Tag):
+        return None
+    if selected_body is not None:
+        for node in selected_body.select("p, h2, h3, h4"):
+            if node.find_parent(("p", "h2", "h3", "h4")) is not None:
+                continue
+            copy = BeautifulSoup(str(node), "html.parser").find()
+            if isinstance(copy, Tag):
+                wrapper.append(copy)
+    for cartoon in cartoons:
+        copy = BeautifulSoup(str(cartoon), "html.parser").find()
+        if isinstance(copy, Tag):
+            wrapper.append(copy)
+    return wrapper
 
 
 def _npr_non_editorial_image_url(url: str) -> bool:

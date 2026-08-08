@@ -15261,7 +15261,7 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.5"
+    assert result.extraction.parser_version == "npr-parser/0.1.6"
 
 
 def test_npr_parser_preserves_short_audio_story_mp3():
@@ -15301,7 +15301,7 @@ def test_npr_parser_preserves_short_audio_story_mp3():
     assert [
         block.embed_url for block in result.blocks if block.type.value == "embed"
     ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.5"
+    assert result.extraction.parser_version == "npr-parser/0.1.6"
 
 
 def test_npr_parser_classifies_unavailable_short_audio_story():
@@ -15325,7 +15325,7 @@ def test_npr_parser_classifies_unavailable_short_audio_story():
     assert result.quality.status.value == "partial"
     assert result.plain_text == "A short audio introduction."
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.5"
+    assert result.extraction.parser_version == "npr-parser/0.1.6"
 
 
 def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
@@ -15362,7 +15362,7 @@ def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
     assert "A short introduction to the segment." not in result.plain_text
     assert "noncommercial use" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "npr-parser/0.1.5"
+    assert result.extraction.parser_version == "npr-parser/0.1.6"
 
 
 def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
@@ -15396,7 +15396,54 @@ def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
     assert result.images[0].should_archive is True
     assert "onthetrail_01.jpg" in result.images[0].original_url
     assert "promo.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.5"
+    assert result.extraction.parser_version == "npr-parser/0.1.6"
+
+
+def test_npr_parser_recovers_image_led_double_take_cartoon():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Double Take 'Toons">
+          <meta property="article:published_time"
+                content="2010-12-03T12:00:00Z">
+        </head><body class="tmplNewsStory theme130211827">
+          <div id="storytext"><p>Two cartoonists examine the day's
+          economic debate.</p></div>
+          <div class="bucketwrap photo624" id="res1">
+            <img class="img624" src="https://media.npr.org/cartoon-one.jpg"
+                 alt="The first political cartoon">
+            <div class="captionwrap"><span class="creditwrap">
+            First Cartoonist / Daily Paper</span> politicalcartoons.com</div>
+          </div>
+          <div class="bucketwrap photo624" id="res2">
+            <img class="img624" src="https://media.npr.org/cartoon-two.jpg"
+                 alt="The second political cartoon">
+            <div class="captionwrap"><span class="creditwrap">
+            Second Cartoonist / Evening News</span> politicalcartoons.com</div>
+          </div>
+          <div class="bucketwrap cartoon odd">
+            <a class="photowrap"><img
+              src="https://media.npr.org/related-cartoon.jpg"></a>
+          </div>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2010/12/03/131779943/"
+            "double-take-toons-progress-in-work"
+        ),
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "economic debate" in result.plain_text
+    assert [image.original_url for image in result.images] == [
+        "https://media.npr.org/cartoon-one.jpg",
+        "https://media.npr.org/cartoon-two.jpg",
+    ]
+    assert all(image.should_archive for image in result.images)
+    assert "related-cartoon.jpg" not in result.body_html
+    assert result.extraction.parser_version == "npr-parser/0.1.6"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
