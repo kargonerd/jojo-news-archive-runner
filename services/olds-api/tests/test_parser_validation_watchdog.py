@@ -19,6 +19,7 @@ def _write_summary(
     complete_rate: float = 1.0,
     qa_rate: float = 1.0,
     errors: int = 0,
+    unbound_capture_inputs: int = 0,
     parser_version: str | None = None,
 ) -> None:
     path = root / relative_path
@@ -38,6 +39,9 @@ def _write_summary(
                             "completeRate": complete_rate,
                             "qaPassRate": qa_rate,
                             "errors": errors,
+                            "unboundCaptureInputs": (
+                                unbound_capture_inputs
+                            ),
                         }
                     }
                 }
@@ -101,6 +105,7 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "completeRate": 1.0,
         "qaPassRate": 1.0,
         "errors": 0,
+        "unboundCaptureInputs": 0,
         "parserVersion": "ap-parser/0.6.17",
         "ready": True,
         "active": False,
@@ -233,21 +238,23 @@ def test_watchdog_prioritizes_stale_corpus_for_parser_replay(
     assert plan["tasks"][0]["replayableEvaluated"] == 519
 
 
-def test_watchdog_requires_rates_and_zero_errors(tmp_path: Path):
-    for year, complete_rate, qa_rate, errors in (
-        (2021, 0.9499, 1.0, 0),
-        (2022, 1.0, 0.9499, 0),
-        (2023, 1.0, 1.0, 1),
+def test_watchdog_requires_all_quality_gates(tmp_path: Path):
+    for year, complete_rate, qa_rate, errors, unbound in (
+        (2021, 0.9499, 1.0, 0, 0),
+        (2022, 1.0, 0.9999, 0, 0),
+        (2023, 1.0, 1.0, 1, 0),
+        (2024, 1.0, 1.0, 0, 1),
     ):
         _write_summary(
             tmp_path,
             f"validation/wsj/{year}/state/summary.json",
             publisher="wsj",
             year=year,
-            evaluated=500,
+            evaluated=800,
             complete_rate=complete_rate,
             qa_rate=qa_rate,
             errors=errors,
+            unbound_capture_inputs=unbound,
         )
 
     plan = plan_validation_dispatch(
@@ -263,3 +270,4 @@ def test_watchdog_requires_rates_and_zero_errors(tmp_path: Path):
     assert ("wsj", 2021) in cells
     assert ("wsj", 2022) in cells
     assert ("wsj", 2023) in cells
+    assert ("wsj", 2024) in cells

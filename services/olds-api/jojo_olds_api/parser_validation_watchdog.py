@@ -84,6 +84,7 @@ def plan_validation_dispatch(
             "completeRate": 0.0,
             "qaPassRate": 0.0,
             "errors": 0,
+            "unboundCaptureInputs": 0,
             "parserVersion": None,
             "summaryPaths": [],
         }
@@ -149,6 +150,9 @@ def plan_validation_dispatch(
                     row.get("qaPassRate") or 0
                 )
                 cell["errors"] = _integer(row.get("errors"))
+                cell["unboundCaptureInputs"] = _integer(
+                    row.get("unboundCaptureInputs")
+                )
                 cell["parserVersion"] = row.get("parserVersion")
             cell["ready"] = bool(cell["ready"]) or _year_ready(row)
 
@@ -208,6 +212,9 @@ def plan_validation_dispatch(
             ),
             "qaPassRate": float(progress[(publisher, year)]["qaPassRate"]),
             "errors": int(progress[(publisher, year)]["errors"]),
+            "unboundCaptureInputs": int(
+                progress[(publisher, year)]["unboundCaptureInputs"]
+            ),
             "parserVersion": progress[(publisher, year)]["parserVersion"],
             "ready": (publisher, year) in ready_cells,
             "active": (publisher, year) in active_cells,
@@ -254,6 +261,7 @@ def _year_ready(row: dict[str, object]) -> bool:
         and float(row.get("completeRate") or 0) >= MINIMUM_COMPLETE_RATE
         and float(row.get("qaPassRate") or 0) >= MINIMUM_QA_PASS_RATE
         and _integer(row.get("errors")) == 0
+        and _integer(row.get("unboundCaptureInputs")) == 0
     )
 
 
