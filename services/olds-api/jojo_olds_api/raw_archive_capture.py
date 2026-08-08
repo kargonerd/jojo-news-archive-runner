@@ -151,6 +151,8 @@ _ARCHIVE_ERROR_MARKERS = (
     b"wayback machine doesn't have that page archived",
     b"this url has been excluded from the wayback machine",
     b"cannot be crawled or displayed due to robots.txt",
+    b'class="missing-404"',
+    b"class='missing-404'",
 )
 _AUTH_SHELL_MARKERS = (
     b"<title>log in - ",

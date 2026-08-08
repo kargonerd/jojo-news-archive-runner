@@ -6,7 +6,7 @@ import re
 from typing import Iterable
 
 from .publisher_specs import publisher_spec
-from .parser_validation import qa_policy_revision
+from .parser_qa_policy import qa_policy_revision
 from .parser_source_shards import parser_source_manifest_shard
 
 

@@ -132,6 +132,8 @@ def parse_article(
     structured_image_gallery_selected = False
     nyt_interactive_body_selected = False
     ft_crossword_selected = False
+    npr_legacy_transcript_selected = False
+    npr_legacy_gallery_selected = False
     if spec.publisher == "ap":
         gallery_body = _ap_carousel_gallery(soup)
         if gallery_body is not None:
@@ -269,6 +271,19 @@ def parse_article(
             structured_image_gallery_selected = True
     if body is None:
         body = _select_body(soup, spec)
+    if spec.publisher == "npr":
+        legacy_gallery = _npr_legacy_gallery_body(soup)
+        if legacy_gallery is not None:
+            body = legacy_gallery
+            npr_legacy_gallery_selected = True
+        else:
+            legacy_transcript = _npr_legacy_transcript_body(
+                soup,
+                selected_body=body,
+            )
+            if legacy_transcript is not None:
+                body = legacy_transcript
+                npr_legacy_transcript_selected = True
     if spec.publisher == "nyt":
         legacy_interactive = _nyt_legacy_interactive_graphic(soup)
         if legacy_interactive is not None:
@@ -669,6 +684,10 @@ def parse_article(
         axios_embedded_content_type = _axios_embedded_content_type(clean_body)
         if axios_embedded_content_type is not None:
             content_type = axios_embedded_content_type
+    if npr_legacy_gallery_selected:
+        content_type = ContentType.GALLERY
+    elif npr_legacy_transcript_selected:
+        content_type = ContentType.TRANSCRIPT
     if spec.publisher == "npr" and _npr_short_audio_story(
         soup,
         body=clean_body,
@@ -721,6 +740,15 @@ def parse_article(
         else set()
     )
     for url in _lead_image_urls(soup, news_article, canonical_url):
+        if spec.publisher == "npr" and (
+            npr_legacy_gallery_selected
+            or _npr_non_editorial_image_url(url)
+        ):
+            # Legacy multimedia pages expose a full-size slideshow image in
+            # the selected body. Their metadata image is often a duplicate
+            # thumbnail; old transcript pages sometimes expose only the NPR
+            # chrome logo as metadata.
+            continue
         if (
             spec.publisher == "bloomberg"
             and (
@@ -751,6 +779,11 @@ def parse_article(
             starting_position=0,
         )
         for image in body_images:
+            if (
+                spec.publisher == "npr"
+                and _npr_non_editorial_image_url(image.original_url)
+            ):
+                continue
             if (
                 spec.publisher == "bloomberg"
                 and _bloomberg_author_avatar_url(image.original_url)
@@ -5937,6 +5970,62 @@ def _npr_audio_story_nodes(soup: BeautifulSoup) -> list[Tag]:
     ]
 
 
+def _npr_legacy_transcript_body(
+    soup: BeautifulSoup,
+    *,
+    selected_body: Tag | None,
+) -> Tag | None:
+    """Prefer NPR's complete legacy transcript over its short teaser."""
+    transcript = soup.select_one(".transcript")
+    if not isinstance(transcript, Tag) or transcript.select_one("p") is None:
+        return None
+    transcript_characters = len(
+        _clean_text(transcript.get_text(" ", strip=True))
+    )
+    selected_characters = len(
+        _clean_text(selected_body.get_text(" ", strip=True))
+        if selected_body is not None
+        else ""
+    )
+    if (
+        transcript_characters < _MINIMUM_BODY_CHARACTERS
+        or transcript_characters < selected_characters + 250
+        or transcript_characters < selected_characters * 2
+    ):
+        return None
+    return transcript
+
+
+def _npr_legacy_gallery_body(soup: BeautifulSoup) -> Tag | None:
+    """Recover the archived lead image from NPR's pre-HTML5 slideshows."""
+    body_classes = (
+        {
+            str(value).casefold()
+            for value in (soup.body.get("class") or [])
+        }
+        if soup.body is not None
+        else set()
+    )
+    if "tmplnewsmultimedia" not in body_classes:
+        return None
+    slideshow = soup.select_one("div[id^='slideshow']")
+    if (
+        not isinstance(slideshow, Tag)
+        or slideshow.select_one("img[src]") is None
+    ):
+        return None
+    return slideshow
+
+
+def _npr_non_editorial_image_url(url: str) -> bool:
+    path = urlsplit(url).path.casefold()
+    return (
+        "/chrome/news/nprlogo" in path
+        or "/chrome/news/pbs_logo" in path
+        or "/images/zag.gif" in path
+    )
+
+
 def _npr_short_audio_story(
     soup: BeautifulSoup,
     *,
@@ -6709,6 +6798,15 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
             # NPR legacy and transcript pages use underscore-only paragraphs
             # as visual rules.  They are interface separators, not article
             # copy, and otherwise survive as ordinary text blocks.
+            node.decompose()
+        elif (
+            spec.publisher == "npr"
+            and "disclaimer" in {
+                str(value).casefold()
+                for value in (node.get("class") or [])
+            }
+            and "for personal, noncommercial use only" in text
+        ):
             node.decompose()
         elif (
             spec.publisher == "bloomberg"

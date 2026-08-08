@@ -1847,6 +1847,60 @@ def test_capture_tries_fallback_and_stores_only_usable_raw_html(tmp_path: Path):
     assert "bodyHtml" not in record
 
 
+def test_npr_missing_404_capture_is_rejected_before_fallback(tmp_path: Path):
+    canonical_url = "https://www.npr.org/2012/01/10/145002553/example"
+    first_url = (
+        "https://web.archive.org/web/20120111000000id_/" + canonical_url
+    )
+    second_url = (
+        "https://web.archive.org/web/20120112000000id_/" + canonical_url
+    )
+    missing_page = b"""
+    <html><head><title>Page Not Found</title></head>
+      <body class="missing-404"><main><h1>Page Not Found</h1>
+      <p>The requested NPR story could not be found.</p></main></body>
+    </html>
+    """ + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            first_url: (
+                200,
+                {"content-type": "text/html"},
+                missing_page,
+                first_url,
+            ),
+            second_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                second_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="npr",
+        canonical_url=canonical_url,
+        published_at="2012-01-10T00:00:00Z",
+        section="news",
+        candidates=(
+            candidate(first_url, "20120111000000"),
+            candidate(second_url, "20120112000000"),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [first_url, second_url]
+    assert result["capture"].selected_candidate.snapshot_url == second_url
+    assert result["capture"].quality_signals["archiveErrorPage"] is False
+
+
 def test_ap_thin_live_origin_prefers_full_wayback_capture(tmp_path: Path):
     canonical_url = "https://apnews.com/article/historical-example"
     wayback_url = (

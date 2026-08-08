@@ -9,9 +9,11 @@ import warnings
 import pytest
 
 from jojo_olds_api.news_models import (
+    ArticleStatus,
     BlobReference,
     CaptureCandidate,
     CaptureProvider,
+    ContentType,
     ImageRole,
     RawCapture,
 )
@@ -15259,7 +15261,7 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.4"
+    assert result.extraction.parser_version == "npr-parser/0.1.5"
 
 
 def test_npr_parser_preserves_short_audio_story_mp3():
@@ -15299,7 +15301,7 @@ def test_npr_parser_preserves_short_audio_story_mp3():
     assert [
         block.embed_url for block in result.blocks if block.type.value == "embed"
     ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.4"
+    assert result.extraction.parser_version == "npr-parser/0.1.5"
 
 
 def test_npr_parser_classifies_unavailable_short_audio_story():
@@ -15323,7 +15325,78 @@ def test_npr_parser_classifies_unavailable_short_audio_story():
     assert result.quality.status.value == "partial"
     assert result.plain_text == "A short audio introduction."
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.4"
+    assert result.extraction.parser_version == "npr-parser/0.1.5"
+
+
+def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Legacy NPR transcript">
+          <meta property="article:published_time"
+                content="2012-01-03T12:00:00Z">
+        </head><body class="tmplNewsStory">
+          <div id="storytext"><p>A short introduction to the segment.</p></div>
+          <div class="transcript">
+            <p class="disclaimer">Copyright 2012 National Public Radio.
+            For personal, noncommercial use only. See Terms of Use.</p>
+            <p>HOST: The full archived interview starts here and contains
+            the substantive reporting that the short introduction omits.</p>
+            <p>REPORTER: This second paragraph adds enough detail to prove
+            that the complete transcript, rather than the teaser, was kept.</p>
+            <p>GUEST: The final exchange preserves the rest of the historical
+            radio segment for research and reproducible parsing.</p>
+          </div>
+          <img src="https://media.npr.org/chrome/news/nprlogo_138x46.gif">
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2012/01/03/144647124/legacy-transcript"
+        ),
+    )
+
+    assert result.content_type == ContentType.TRANSCRIPT
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "full archived interview" in result.plain_text
+    assert "A short introduction to the segment." not in result.plain_text
+    assert "noncommercial use" not in result.plain_text
+    assert result.quality.images_selected == 0
+    assert result.extraction.parser_version == "npr-parser/0.1.5"
+
+
+def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Legacy NPR photo gallery">
+          <meta property="article:published_time"
+                content="2012-01-09T12:00:00Z">
+        </head><body class="tmplNewsMultimedia type1">
+          <div id="sectionWrap" class="multimediaPage">
+            <nav><img src="https://media.npr.org/chrome/news/nprlogo.gif"></nav>
+            <div id="slideshow144931285">
+              <img src="https://media.npr.org/assets/fullscreen/onthetrail_01.jpg"
+                   alt="Slideshow">
+              <p>Images from the campaign trail.</p>
+            </div>
+            <aside><img src="https://ads.example/promo.jpg"></aside>
+          </div>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2012/01/09/144931252/legacy-gallery"
+        ),
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert len(result.images) == 1
+    assert result.images[0].should_archive is True
+    assert "onthetrail_01.jpg" in result.images[0].original_url
+    assert "promo.jpg" not in result.body_html
+    assert result.extraction.parser_version == "npr-parser/0.1.5"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():

@@ -17,6 +17,7 @@ from .archive_sources import (
 )
 from .news_models import ArticleStatus, ContentType, RawCapture
 from .news_parser import parse_article
+from .parser_qa_policy import qa_policy_revision
 from .publisher_specs import publisher_spec
 
 
@@ -29,13 +30,6 @@ MINIMUM_COMPLETE_RATE = 0.95
 # complete-rate gate remains below 1.0 because valid non-text interactives can
 # intentionally be classified as unsupported while still passing QA.
 MINIMUM_QA_PASS_RATE = 1.0
-# QA rules are versioned independently from the body parser.  Changing body
-# extraction still rotates to a zero-overlap cohort through parser_version;
-# changing only a QA rule replays the same independent sample against the new
-# policy instead of consuming the finite unseen-URL reserve.
-_QA_POLICY_REVISIONS = {
-    "wsj": 1,
-}
 _PAYWALL_PHRASES = (
     "subscribe to read",
     "subscribe to continue",
@@ -74,10 +68,6 @@ _PLACEHOLDER_IMAGE_MARKERS = (
     "og-ft-logo",
     "social-default",
 )
-
-
-def qa_policy_revision(publisher: str) -> int:
-    return _QA_POLICY_REVISIONS.get(publisher, 0)
 
 
 def _has_publisher_interface_noise(
