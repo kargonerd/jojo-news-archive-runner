@@ -39,6 +39,7 @@ from jojo_olds_api.raw_archive_capture import (
     capture_item,
     capture_summary,
     completed_raw_capture,
+    defer_expensive_archive_fallbacks,
     initialize_capture_schema,
     load_capture_manifest,
     mark_capture_downloading,
@@ -364,6 +365,18 @@ def main() -> int:
             item = next(iterator)
         except StopIteration:
             return False
+        row = connection.execute(
+            "SELECT attempts FROM captures WHERE canonical_url=?",
+            (item.canonical_url,),
+        ).fetchone()
+        prior_attempts = int(row[0]) if row is not None else 0
+        defer_fallbacks = defer_expensive_archive_fallbacks(
+            publisher=item.publisher,
+            parser_validation_enabled=bool(
+                args.validation_sample_per_year
+            ),
+            prior_attempts=prior_attempts,
+        )
         mark_capture_downloading(connection, item)
         future = executor.submit(
             capture_item,
@@ -371,11 +384,12 @@ def main() -> int:
             archive_client=archive_client,
             output_dir=args.output_dir,
             maximum_html_bytes=maximum_html_bytes,
+            enable_wayback_timemap_fallback=not defer_fallbacks,
             enable_common_crawl_fallback=(
-                args.enable_common_crawl_fallback
+                args.enable_common_crawl_fallback and not defer_fallbacks
             ),
             enable_arquivo_pt_fallback=(
-                args.enable_arquivo_pt_fallback
+                args.enable_arquivo_pt_fallback and not defer_fallbacks
             ),
             bloomberg_manifest_candidates_only=(
                 args.bloomberg_manifest_candidates_only

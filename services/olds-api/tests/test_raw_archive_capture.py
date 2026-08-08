@@ -51,6 +51,7 @@ from jojo_olds_api.raw_archive_capture import (
     discover_ap_syndication_candidates,
     discover_ft_syndication_candidates,
     discover_reuters_syndication_candidates,
+    defer_expensive_archive_fallbacks,
     ft_google_news_headline_search_url,
     ft_google_news_partner_search_url,
     ftchinese_title_search_url,
@@ -3045,6 +3046,18 @@ def test_wsj_capture_falls_back_to_exact_timemap_snapshot(
         candidates=(candidate(guessed_url, "20160102000000"),),
     )
 
+    deferred_client = StubArchiveClient(client.responses)
+    deferred = capture_item(
+        item,
+        archive_client=deferred_client,
+        output_dir=tmp_path / "deferred",
+        maximum_html_bytes=1_000_000,
+        enable_wayback_timemap_fallback=False,
+    )
+
+    assert deferred["status"] == "error"
+    assert deferred_client.requests == [guessed_url]
+
     result = capture_item(
         item,
         archive_client=client,
@@ -3056,6 +3069,29 @@ def test_wsj_capture_falls_back_to_exact_timemap_snapshot(
     assert client.requests == [guessed_url, timemap_url, exact_url]
     assert result["capture"].selected_candidate.snapshot_url == exact_url
     assert result["capture"].selected_candidate.digest == "WSJ-EXACT"
+
+
+def test_wsj_validation_defers_expensive_fallbacks_until_retry():
+    assert defer_expensive_archive_fallbacks(
+        publisher="wsj",
+        parser_validation_enabled=True,
+        prior_attempts=0,
+    )
+    assert not defer_expensive_archive_fallbacks(
+        publisher="wsj",
+        parser_validation_enabled=True,
+        prior_attempts=1,
+    )
+    assert not defer_expensive_archive_fallbacks(
+        publisher="wsj",
+        parser_validation_enabled=False,
+        prior_attempts=0,
+    )
+    assert not defer_expensive_archive_fallbacks(
+        publisher="npr",
+        parser_validation_enabled=True,
+        prior_attempts=0,
+    )
 
 def test_nyt_capture_uses_exact_timemap_snapshot(tmp_path: Path):
     canonical_url = (

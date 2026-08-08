@@ -572,6 +572,7 @@ def capture_item(
     archive_client: ArchiveClient,
     output_dir: Path,
     maximum_html_bytes: int,
+    enable_wayback_timemap_fallback: bool = True,
     enable_common_crawl_fallback: bool = False,
     enable_arquivo_pt_fallback: bool = False,
     bloomberg_manifest_candidates_only: bool = False,
@@ -1352,6 +1353,7 @@ def capture_item(
 
     if (
         best_response is None
+        and enable_wayback_timemap_fallback
         and item.publisher in WAYBACK_TIMEMAP_FALLBACK_PUBLISHERS
         and not (
             item.publisher == "bloomberg"
@@ -1660,6 +1662,21 @@ def capture_item(
         "recordPath": None,
         "error": "; ".join(failures[-8:]) or "no usable capture candidates",
     }
+
+
+def defer_expensive_archive_fallbacks(
+    *,
+    publisher: str,
+    parser_validation_enabled: bool,
+    prior_attempts: int,
+) -> bool:
+    if prior_attempts < 0:
+        raise ValueError("prior_attempts must not be negative")
+    return bool(
+        publisher == "wsj"
+        and parser_validation_enabled
+        and prior_attempts == 0
+    )
 
 
 def _fetch_infini_news_candidate(
