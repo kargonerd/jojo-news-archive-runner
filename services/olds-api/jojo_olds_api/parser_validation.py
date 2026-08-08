@@ -382,6 +382,25 @@ def ensure_parser_validation_plan(
         )
     }
     if refreshed_years:
+        # A parser change requires an independent holdout cohort.  Preserve
+        # every URL selected under the previous version before dropping the
+        # old plan so the deterministic sampler cannot select it again.
+        for year in sorted(refreshed_years):
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO parser_validation_exclusions(
+                    canonical_url, source_cohort, excluded_at
+                )
+                SELECT canonical_url, ?, ?
+                FROM parser_validation_samples
+                WHERE sample_year=?
+                """,
+                (
+                    f"{publisher}:{year}:{previous_versions[year]}",
+                    now,
+                    year,
+                ),
+            )
         placeholders = ",".join("?" for _ in refreshed_years)
         connection.execute(
             f"""

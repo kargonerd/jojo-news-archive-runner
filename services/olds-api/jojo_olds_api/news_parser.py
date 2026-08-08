@@ -6614,6 +6614,15 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         if text in _EXACT_NOISE_TEXT:
             node.decompose()
         elif (
+            spec.publisher == "npr"
+            and len(text) >= 2
+            and set(text) == {"_"}
+        ):
+            # NPR legacy and transcript pages use underscore-only paragraphs
+            # as visual rules.  They are interface separators, not article
+            # copy, and otherwise survive as ordinary text blocks.
+            node.decompose()
+        elif (
             spec.publisher == "bloomberg"
             and text == "share this article"
         ):

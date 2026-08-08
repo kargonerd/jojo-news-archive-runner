@@ -15233,6 +15233,35 @@ def test_bloomberg_parser_drops_food_safety_news_donation_card():
     assert result.extraction.parser_version == "bloomberg-parser/0.10.300"
 
 
+def test_npr_parser_removes_underscore_only_separators():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="NPR transcript example">
+          <meta property="article:published_time"
+                content="2020-01-04T12:00:00Z">
+        </head><body><div id="storytext">
+          <p>The first paragraph contains enough substantive reporting to be
+          retained as part of the archived NPR article body.</p>
+          <p>_______________________________________________________</p>
+          <p>The second paragraph continues the report and must remain after
+          the visual separator is removed from the normalized article.</p>
+          <p>___</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2020/01/04/793364307/"
+            "timeline-example"
+        ),
+    )
+
+    assert "first paragraph" in result.plain_text
+    assert "second paragraph" in result.plain_text
+    assert "___" not in result.plain_text
+    assert result.extraction.parser_version == "npr-parser/0.1.2"
+
+
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
     result = parse_article(
         b"""

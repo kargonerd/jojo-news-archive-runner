@@ -787,15 +787,6 @@ def test_parser_version_change_refreshes_every_publishers_sample(
         WHERE sample_year=2020
         """
     )
-    connection.execute(
-        """
-        INSERT INTO parser_validation_exclusions(
-            canonical_url, source_cohort, excluded_at
-        )
-        VALUES (?, 'force-fresh-sample', ?)
-        """,
-        (original, datetime.now(timezone.utc).isoformat()),
-    )
     connection.commit()
 
     refreshed = ensure_parser_validation_plan(
@@ -817,6 +808,14 @@ def test_parser_version_change_refreshes_every_publishers_sample(
 
     assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 1
     assert replacement != original
+    assert connection.execute(
+        """
+        SELECT source_cohort
+        FROM parser_validation_exclusions
+        WHERE canonical_url=?
+        """,
+        (original,),
+    ).fetchone() == ("bloomberg:2020:bloomberg-parser/old",)
 
 
 def test_validation_plan_expands_reserve_without_replacing_samples(
