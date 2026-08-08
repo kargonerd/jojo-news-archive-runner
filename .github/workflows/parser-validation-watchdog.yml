@@ -72,12 +72,18 @@ jobs:
             fi
           }
           source_roots=(
+            "ap/2010-2015/sitemap-wayback"
             "ap/2016-2026/sitemap-wayback"
+            "bloomberg/2010-2015/sitemap-wayback"
             "bloomberg/2016-2026/sitemap-wayback"
+            "ft/2010-2015/sitemap-wayback"
             "ft/2016-2026/sitemap-wayback"
+            "nyt/2010-2015/sitemap-wayback"
             "nyt/2016-2026/sitemap-wayback"
+            "reuters/2010-2015/wayback-urlkey"
             "reuters/2016-2020/wayback-urlkey"
             "reuters/2021-2026/reuters-sitemap-wayback"
+            "wsj/2010-2015/wayback-urlkey"
             "wsj/2016-2026/wayback-urlkey"
             "wsj/2016-2026/wayback"
             "axios/2017-2026/wayback-urlkey"
@@ -94,10 +100,19 @@ jobs:
             "caixin/2010-2015/wayback-urlkey"
             "caixin/2016-2026/wayback-urlkey"
           )
+          available_source_shards="$RUNNER_TEMP/available-source-shards.txt"
+          : > "$available_source_shards"
           for source_root in "${source_roots[@]}"; do
             copy_summary \
               "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state" \
               "$RUNNER_TEMP/archive-state/${source_root}/state"
+            if rclone lsl \
+                "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest.jsonl.gz" \
+                --timeout 30s --contimeout 10s \
+                --retries 1 --low-level-retries 1 \
+                >/dev/null 2>&1; then
+              echo "$source_root" >> "$available_source_shards"
+            fi
           done
           # Formal parser-validation summaries are execution state under v2,
           # not part of a publisher's v1 canonical raw source tree. Map this
@@ -157,6 +172,8 @@ jobs:
             services/olds-api/tools/plan_parser_validation_watchdog.py \
             --state-root "$RUNNER_TEMP/archive-state" \
             --active-titles "$active" \
+            --available-source-shards \
+              "$RUNNER_TEMP/available-source-shards.txt" \
             --max-dispatch "$dispatches" \
             --output "$RUNNER_TEMP/validation-plan.json"
           echo "tasks=$(jq -c '.tasks' \

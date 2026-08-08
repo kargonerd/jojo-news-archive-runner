@@ -15,6 +15,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert '--include "validation/*/*/state/summary.json"' in workflow
     assert "copy_summary()" in workflow
     assert '"wsj/2016-2026/wayback"' in workflow
+    assert "available-source-shards.txt" in workflow
+    assert "--available-source-shards" in workflow
 
 
 def test_watchdog_dispatches_two_workers_per_validation_job() -> None:

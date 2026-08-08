@@ -144,6 +144,23 @@ def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
     assert ft_2018["active"] is True
 
 
+def test_watchdog_only_plans_cells_with_readable_source_manifests(
+    tmp_path: Path,
+):
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=66,
+        available_source_shards={"axios/2017-2026/wayback-urlkey"},
+    )
+
+    assert plan["targetCells"] == 10
+    assert {
+        (task["publisher"], task["year"])
+        for task in plan["tasks"]
+    } == {("axios", year) for year in range(2017, 2027)}
+
+
 def test_watchdog_prioritizes_nearly_complete_current_sample(
     tmp_path: Path,
 ):

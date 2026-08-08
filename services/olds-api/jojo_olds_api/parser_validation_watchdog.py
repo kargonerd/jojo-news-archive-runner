@@ -37,12 +37,20 @@ ACTIVE_TITLE_RE = re.compile(
 )
 
 
-def _source_year_is_available(publisher: str, year: int) -> bool:
+def _source_year_is_available(
+    publisher: str,
+    year: int,
+    *,
+    available_source_shards: set[str] | None,
+) -> bool:
     try:
-        parser_source_manifest_shard(publisher, year)
+        source_shard = parser_source_manifest_shard(publisher, year)
     except ValueError:
         return False
-    return True
+    return (
+        available_source_shards is None
+        or source_shard in available_source_shards
+    )
 
 
 def plan_validation_dispatch(
@@ -50,9 +58,19 @@ def plan_validation_dispatch(
     state_root: Path,
     active_titles: Iterable[str],
     max_dispatch: int,
+    available_source_shards: Iterable[str] | None = None,
 ) -> dict[str, object]:
     if max_dispatch < 0:
         raise ValueError("max_dispatch must be non-negative")
+    available_shards = (
+        None
+        if available_source_shards is None
+        else {
+            shard.strip()
+            for shard in available_source_shards
+            if shard.strip()
+        }
+    )
     versions = {
         publisher: publisher_spec(publisher).parser_version
         for publisher in PUBLISHER_ORDER
@@ -71,7 +89,11 @@ def plan_validation_dispatch(
         }
         for publisher in PUBLISHER_ORDER
         for year in TARGET_YEARS
-        if _source_year_is_available(publisher, year)
+        if _source_year_is_available(
+            publisher,
+            year,
+            available_source_shards=available_shards,
+        )
     }
     summaries_read = 0
     invalid_summaries: list[str] = []
