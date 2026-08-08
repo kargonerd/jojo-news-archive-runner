@@ -73,12 +73,41 @@ def action_state(
             ).fetchall()
         }
         if len(validation_tables) == 3:
+            config_columns = {
+                str(row[1])
+                for row in connection.execute(
+                    "PRAGMA table_info(parser_validation_config)"
+                ).fetchall()
+            }
             result_columns = {
                 str(row[1])
                 for row in connection.execute(
                     "PRAGMA table_info(parser_validation_results)"
                 ).fetchall()
             }
+            has_qa_revision = (
+                "qa_revision" in config_columns
+                and "qa_revision" in result_columns
+            )
+            qa_result_join = (
+                "AND result.qa_revision=config.qa_revision"
+                if has_qa_revision
+                else ""
+            )
+            qa_active_select = (
+                ", config.qa_revision" if has_qa_revision else ""
+            )
+            qa_active_group = qa_active_select
+            qa_sample_join = (
+                "AND result.qa_revision=active_years.qa_revision"
+                if has_qa_revision
+                else ""
+            )
+            unbound_expression = (
+                "COALESCE(SUM(result.source_capture_sha256 IS NULL), 0)"
+                if "source_capture_sha256" in result_columns
+                else "0"
+            )
             readiness_columns = {
                 "canonical_url",
                 "sample_year",
@@ -88,7 +117,7 @@ def action_state(
             }
             if readiness_columns.issubset(result_columns):
                 readiness_rows = connection.execute(
-                    """
+                    f"""
                     SELECT
                         config.sample_year,
                         config.target_size,
@@ -101,15 +130,18 @@ def action_state(
                         COALESCE(
                             SUM(result.extraction_status='error'),
                             0
-                        ) AS parser_errors
+                        ) AS parser_errors,
+                        {unbound_expression} AS unbound_capture_inputs
                     FROM parser_validation_config AS config
                     LEFT JOIN parser_validation_results AS result
                       ON result.sample_year=config.sample_year
                      AND result.parser_version=config.parser_version
+                     {qa_result_join}
                     GROUP BY
                         config.sample_year,
                         config.target_size,
                         config.parser_version
+                        {qa_active_group}
                     ORDER BY config.sample_year
                     """
                 ).fetchall()
@@ -118,6 +150,7 @@ def action_state(
                     and int(complete) / int(evaluated) >= 0.95
                     and int(qa_passed) / int(evaluated) >= 1.0
                     and int(parser_errors) == 0
+                    and int(unbound_capture_inputs) == 0
                     for (
                         _sample_year,
                         target_size,
@@ -125,10 +158,12 @@ def action_state(
                         qa_passed,
                         complete,
                         parser_errors,
+                        unbound_capture_inputs,
                     ) in readiness_rows
                 )
                 validation_target_reached = bool(readiness_rows) and all(
                     int(qa_passed) >= int(target_size)
+                    and int(unbound_capture_inputs) == 0
                     for (
                         _sample_year,
                         target_size,
@@ -136,24 +171,28 @@ def action_state(
                         qa_passed,
                         _complete,
                         _parser_errors,
+                        unbound_capture_inputs,
                     ) in readiness_rows
                 )
             validation_replays = int(
                 connection.execute(
-                    """
+                    f"""
                     WITH active_years AS (
                         SELECT
                             config.sample_year,
                             config.target_size,
                             config.parser_version
+                            {qa_active_select}
                         FROM parser_validation_config AS config
                         LEFT JOIN parser_validation_results AS result
-                          ON result.sample_year=config.sample_year
+                         ON result.sample_year=config.sample_year
                          AND result.parser_version=config.parser_version
+                         {qa_result_join}
                         GROUP BY
                             config.sample_year,
                             config.target_size,
                             config.parser_version
+                            {qa_active_group}
                         HAVING COUNT(result.canonical_url)
                              < config.target_size
                     )
@@ -164,8 +203,9 @@ def action_state(
                     JOIN captures AS capture
                       ON capture.canonical_url=sample.canonical_url
                     LEFT JOIN parser_validation_results AS result
-                      ON result.canonical_url=sample.canonical_url
+                     ON result.canonical_url=sample.canonical_url
                      AND result.parser_version=active_years.parser_version
+                     {qa_sample_join}
                     WHERE result.canonical_url IS NULL
                       AND capture.status='complete'
                       AND capture.raw_path IS NOT NULL

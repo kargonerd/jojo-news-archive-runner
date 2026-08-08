@@ -6,6 +6,7 @@ from pathlib import Path
 from jojo_olds_api.parser_validation_watchdog import (
     plan_validation_dispatch,
 )
+from jojo_olds_api.parser_validation import qa_policy_revision
 from jojo_olds_api.publisher_specs import publisher_spec
 
 
@@ -20,6 +21,7 @@ def _write_summary(
     qa_rate: float = 1.0,
     errors: int = 0,
     unbound_capture_inputs: int = 0,
+    qa_revision: int | None = None,
     parser_version: str | None = None,
 ) -> None:
     path = root / relative_path
@@ -41,6 +43,11 @@ def _write_summary(
                             "errors": errors,
                             "unboundCaptureInputs": (
                                 unbound_capture_inputs
+                            ),
+                            "qaRevision": (
+                                qa_revision
+                                if qa_revision is not None
+                                else qa_policy_revision(publisher)
                             ),
                         }
                     }
@@ -106,6 +113,7 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "qaPassRate": 1.0,
         "errors": 0,
         "unboundCaptureInputs": 0,
+        "qaRevision": 0,
         "parserVersion": "ap-parser/0.6.17",
         "ready": True,
         "active": False,
@@ -147,6 +155,51 @@ def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
     assert ft_2018["replayableEvaluated"] == 500
     assert ft_2018["parserVersion"] is None
     assert ft_2018["active"] is True
+
+
+def test_watchdog_rejects_ready_stale_parser_or_qa_revision(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "validation/wsj/2020/state/summary.json",
+        publisher="wsj",
+        year=2020,
+        evaluated=800,
+        parser_version="wsj-parser/0.8.44",
+    )
+    _write_summary(
+        tmp_path,
+        "validation/wsj/2021/state/summary.json",
+        publisher="wsj",
+        year=2021,
+        evaluated=800,
+        qa_revision=0,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=66,
+        available_source_shards={"wsj/2016-2026/wayback"},
+    )
+    tasks = {
+        (task["publisher"], task["year"])
+        for task in plan["tasks"]
+    }
+
+    assert plan["readyCells"] == 0
+    assert ("wsj", 2020) in tasks
+    assert ("wsj", 2021) in tasks
+    for year in (2020, 2021):
+        row = next(
+            item
+            for item in plan["cellProgress"]
+            if item["publisher"] == "wsj" and item["year"] == year
+        )
+        assert row["evaluated"] == 0
+        assert row["replayableEvaluated"] == 800
+        assert row["ready"] is False
 
 
 def test_watchdog_only_plans_cells_with_readable_source_manifests(

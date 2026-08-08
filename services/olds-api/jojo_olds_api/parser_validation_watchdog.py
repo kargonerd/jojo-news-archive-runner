@@ -6,6 +6,7 @@ import re
 from typing import Iterable
 
 from .publisher_specs import publisher_spec
+from .parser_validation import qa_policy_revision
 from .parser_source_shards import parser_source_manifest_shard
 
 
@@ -75,6 +76,10 @@ def plan_validation_dispatch(
         publisher: publisher_spec(publisher).parser_version
         for publisher in PUBLISHER_ORDER
     }
+    qa_revisions = {
+        publisher: qa_policy_revision(publisher)
+        for publisher in PUBLISHER_ORDER
+    }
     progress = {
         (publisher, year): {
             "ready": False,
@@ -85,6 +90,7 @@ def plan_validation_dispatch(
             "qaPassRate": 0.0,
             "errors": 0,
             "unboundCaptureInputs": 0,
+            "qaRevision": None,
             "parserVersion": None,
             "summaryPaths": [],
         }
@@ -134,7 +140,11 @@ def plan_validation_dispatch(
             paths = cell["summaryPaths"]
             if isinstance(paths, list):
                 paths.append(summary_path.relative_to(state_root).as_posix())
-            if row.get("parserVersion") != versions[publisher]:
+            if (
+                row.get("parserVersion") != versions[publisher]
+                or _integer(row.get("qaRevision"))
+                != qa_revisions[publisher]
+            ):
                 continue
             evaluated = _integer(row.get("evaluated"))
             if evaluated >= int(cell["evaluated"]):
@@ -153,6 +163,7 @@ def plan_validation_dispatch(
                 cell["unboundCaptureInputs"] = _integer(
                     row.get("unboundCaptureInputs")
                 )
+                cell["qaRevision"] = _integer(row.get("qaRevision"))
                 cell["parserVersion"] = row.get("parserVersion")
             cell["ready"] = bool(cell["ready"]) or _year_ready(row)
 
@@ -215,6 +226,7 @@ def plan_validation_dispatch(
             "unboundCaptureInputs": int(
                 progress[(publisher, year)]["unboundCaptureInputs"]
             ),
+            "qaRevision": progress[(publisher, year)]["qaRevision"],
             "parserVersion": progress[(publisher, year)]["parserVersion"],
             "ready": (publisher, year) in ready_cells,
             "active": (publisher, year) in active_cells,
@@ -232,6 +244,7 @@ def plan_validation_dispatch(
         "summariesRead": summaries_read,
         "invalidSummaries": invalid_summaries,
         "currentParserVersions": versions,
+        "currentQaRevisions": qa_revisions,
         "cellProgress": cell_progress,
         "tasks": tasks,
     }

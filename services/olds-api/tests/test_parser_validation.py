@@ -192,14 +192,30 @@ def _state_with_years(
     rows = []
     for year in (2020, 2021, 2022):
         for suffix in range(10):
-            canonical_url = (
-                f"https://apnews.com/article/{year}-{suffix}"
-                if publisher == "ap"
-                else (
+            if publisher == "ap":
+                canonical_url = (
+                    f"https://apnews.com/article/{year}-{suffix}"
+                )
+            elif publisher == "bloomberg":
+                canonical_url = (
                     "https://www.bloomberg.com/news/articles/"
                     f"{year}-01-{suffix + 1:02d}/sample-{suffix}"
                 )
-            )
+            elif publisher == "wsj":
+                timestamp = int(
+                    datetime(
+                        year,
+                        1,
+                        1,
+                        tzinfo=timezone.utc,
+                    ).timestamp()
+                )
+                canonical_url = (
+                    "https://www.wsj.com/articles/"
+                    f"sample-{suffix}-{timestamp + suffix}"
+                )
+            else:
+                raise AssertionError(f"unsupported fixture: {publisher}")
             candidate = CaptureCandidate(
                 provider=CaptureProvider.WAYBACK,
                 snapshot_url=(
@@ -816,6 +832,98 @@ def test_parser_version_change_refreshes_every_publishers_sample(
         """,
         (original,),
     ).fetchone() == ("bloomberg:2020:bloomberg-parser/old",)
+
+
+def test_qa_revision_change_replays_without_replacing_cohort(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path, publisher="wsj")
+    ensure_parser_validation_plan(
+        connection,
+        publisher="wsj",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    original = {
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT canonical_url
+            FROM parser_validation_samples
+            WHERE sample_year=2020
+            """
+        )
+    }
+    previously_evaluated = sorted(original)[0]
+    connection.execute(
+        """
+        UPDATE parser_validation_config
+        SET qa_revision=0
+        WHERE sample_year=2020
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_results(
+            canonical_url,
+            publisher,
+            sample_year,
+            parser_version,
+            qa_revision,
+            extraction_status,
+            qa_pass,
+            warnings_json,
+            issues_json,
+            parsed_at
+        )
+        VALUES (?, 'wsj', 2020, 'wsj-parser/0.8.45', 0,
+                'complete', 1, '[]', '[]', ?)
+        """,
+        (previously_evaluated, datetime.now(timezone.utc).isoformat()),
+    )
+    connection.commit()
+
+    refreshed = ensure_parser_validation_plan(
+        connection,
+        publisher="wsj",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    current = {
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT canonical_url
+            FROM parser_validation_samples
+            WHERE sample_year=2020
+            """
+        )
+    }
+    pending = set(
+        pending_parser_validation_urls(
+            connection,
+            maximum=None,
+            maximum_record_attempts=3,
+            from_year=2020,
+            to_year=2020,
+        )
+    )
+
+    assert refreshed["parserVersion"] == "wsj-parser/0.8.45"
+    assert refreshed["qaRevision"] == 1
+    assert refreshed["years"]["2020"]["evaluated"] == 0
+    assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 0
+    assert current == original
+    assert original <= pending
+    assert connection.execute(
+        "SELECT COUNT(*) FROM parser_validation_exclusions"
+    ).fetchone() == (0,)
 
 
 def test_validation_plan_expands_reserve_without_replacing_samples(
@@ -1811,6 +1919,73 @@ def test_validation_rejects_interface_noise_inside_complete_body(
     }
     assert summary["gates"]["minimumQaPassRate"] == 1.0
     assert summary["ready"] is False
+
+
+def test_validation_accepts_wsj_business_wire_source_attribution(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path, publisher="wsj")
+    ensure_parser_validation_plan(
+        connection,
+        publisher="wsj",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    selected = pending_captures(
+        connection,
+        retry_errors=False,
+        maximum=1,
+        maximum_record_attempts=3,
+        prioritize_parser_validation=True,
+    )[0]
+    body = " ".join(
+        ["Substantive archived earnings-release sentence."] * 30
+    )
+    html = f"""
+    <html><head>
+      <script type="application/ld+json">{{
+        "@type": "NewsArticle",
+        "headline": "A complete company earnings release",
+        "datePublished": "2020-01-01T00:00:00Z"
+      }}</script>
+    </head><body><article>
+      <p>{body}</p>
+      <p>SOURCE: Example Company Copyright Business Wire 2020</p>
+    </article></body></html>
+    """.encode()
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id=selected.article_id,
+        publisher="wsj",
+        canonical_url=selected.canonical_url,
+        published_at=datetime.fromisoformat(selected.published_at),
+        selected_candidate=selected.candidates[0],
+        candidates_considered=list(selected.candidates),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=selected.candidates[0].snapshot_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "complete"
+    assert result["qaPass"] is True
+    assert result["issues"] == []
+    assert summary["formatVersion"] == "jojo-parser-validation/2"
+    assert summary["years"]["2020"]["qaRevision"] == 1
+    assert summary["years"]["2020"]["qaPassed"] == 1
+    assert summary["years"]["2020"]["issueCounts"] == {}
 
 
 def test_validation_uses_parsed_publication_year_not_capture_year(

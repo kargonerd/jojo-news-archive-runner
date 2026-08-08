@@ -123,6 +123,53 @@ def test_stale_completed_parser_sample_keeps_chain_running(
     assert result["shouldContinue"] is True
 
 
+def test_stale_qa_revision_keeps_replay_chain_running(tmp_path: Path):
+    state = tmp_path / "capture.sqlite3"
+    connection = sqlite3.connect(state)
+    connection.executescript(
+        """
+        CREATE TABLE captures (
+            canonical_url TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            raw_path TEXT
+        );
+        CREATE TABLE parser_validation_config (
+            sample_year INTEGER PRIMARY KEY,
+            target_size INTEGER NOT NULL,
+            parser_version TEXT NOT NULL,
+            qa_revision INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL,
+            parser_version TEXT,
+            qa_revision INTEGER NOT NULL
+        );
+        INSERT INTO captures VALUES
+            ('https://example.com/article', 'complete', 1, 'objects/a.gz');
+        INSERT INTO parser_validation_config VALUES
+            (2024, 1, 'parser/2', 1);
+        INSERT INTO parser_validation_samples VALUES
+            ('https://example.com/article', 2024);
+        INSERT INTO parser_validation_results VALUES
+            ('https://example.com/article', 2024, 'parser/2', 0);
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    result = MODULE.action_state(state, maximum_record_attempts=3)
+
+    assert result["validationReplays"] == 1
+    assert result["actionable"] == 1
+    assert result["shouldContinue"] is True
+
+
 def test_ready_parser_validation_stops_pending_capture_chain(
     tmp_path: Path,
 ):
@@ -239,3 +286,60 @@ def test_failed_qa_continues_past_captured_target_when_requested(
     assert exact["validationReady"] is False
     assert normal["shouldContinue"] is True
     assert exact["shouldContinue"] is True
+
+
+def test_unbound_capture_input_never_counts_as_ready_or_target(
+    tmp_path: Path,
+):
+    state = tmp_path / "capture.sqlite3"
+    connection = sqlite3.connect(state)
+    connection.executescript(
+        """
+        CREATE TABLE captures (
+            canonical_url TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            raw_path TEXT
+        );
+        CREATE TABLE parser_validation_config (
+            sample_year INTEGER PRIMARY KEY,
+            target_size INTEGER NOT NULL,
+            parser_version TEXT NOT NULL,
+            qa_revision INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL,
+            parser_version TEXT NOT NULL,
+            qa_revision INTEGER NOT NULL,
+            extraction_status TEXT NOT NULL,
+            qa_pass INTEGER NOT NULL,
+            source_capture_sha256 TEXT
+        );
+        INSERT INTO captures VALUES
+            ('https://example.com/pending', 'pending', 0, NULL);
+        INSERT INTO parser_validation_config VALUES
+            (2024, 2, 'parser/2', 1);
+        INSERT INTO parser_validation_results VALUES
+            ('https://example.com/complete-1', 2024, 'parser/2', 1,
+             'complete', 1, 'bound-sha'),
+            ('https://example.com/complete-2', 2024, 'parser/2', 1,
+             'complete', 1, NULL);
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    result = MODULE.action_state(
+        state,
+        maximum_record_attempts=3,
+        stop_at_validation_target=True,
+    )
+
+    assert result["validationReady"] is False
+    assert result["validationTargetReached"] is False
+    assert result["shouldContinue"] is True

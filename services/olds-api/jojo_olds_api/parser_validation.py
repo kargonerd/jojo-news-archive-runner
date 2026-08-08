@@ -20,7 +20,7 @@ from .news_parser import parse_article
 from .publisher_specs import publisher_spec
 
 
-SCHEMA_VERSION = "jojo-parser-validation/1"
+SCHEMA_VERSION = "jojo-parser-validation/2"
 DEFAULT_SEED = "jojo-parser-validation-v1"
 HOLDOUT_SEED = "jojo-parser-holdout-v1"
 MINIMUM_COMPLETE_RATE = 0.95
@@ -29,6 +29,13 @@ MINIMUM_COMPLETE_RATE = 0.95
 # complete-rate gate remains below 1.0 because valid non-text interactives can
 # intentionally be classified as unsupported while still passing QA.
 MINIMUM_QA_PASS_RATE = 1.0
+# QA rules are versioned independently from the body parser.  Changing body
+# extraction still rotates to a zero-overlap cohort through parser_version;
+# changing only a QA rule replays the same independent sample against the new
+# policy instead of consuming the finite unseen-URL reserve.
+_QA_POLICY_REVISIONS = {
+    "wsj": 1,
+}
 _PAYWALL_PHRASES = (
     "subscribe to read",
     "subscribe to continue",
@@ -49,7 +56,6 @@ _UI_NOISE_PHRASES = (
     "text size regular medium large",
     "if you are not redirected automatically",
     "save article log in to save subscribe to wsj",
-    "copyright business wire",
     "market wire, all rights reserved",
     "copyright the financial times limited",
     "this content requires an adobe flash plugin",
@@ -68,6 +74,10 @@ _PLACEHOLDER_IMAGE_MARKERS = (
     "og-ft-logo",
     "social-default",
 )
+
+
+def qa_policy_revision(publisher: str) -> int:
+    return _QA_POLICY_REVISIONS.get(publisher, 0)
 
 
 def _has_publisher_interface_noise(
@@ -182,6 +192,7 @@ def initialize_parser_validation_schema(
             target_size INTEGER NOT NULL,
             seed TEXT NOT NULL,
             parser_version TEXT NOT NULL DEFAULT '',
+            qa_revision INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT NOT NULL
         );
 
@@ -200,6 +211,7 @@ def initialize_parser_validation_schema(
             publisher TEXT NOT NULL,
             sample_year INTEGER NOT NULL,
             parser_version TEXT,
+            qa_revision INTEGER NOT NULL DEFAULT 0,
             extraction_status TEXT NOT NULL,
             content_type TEXT NOT NULL DEFAULT 'article',
             qa_pass INTEGER NOT NULL,
@@ -242,6 +254,13 @@ def initialize_parser_validation_schema(
             ADD COLUMN parser_version TEXT NOT NULL DEFAULT ''
             """
         )
+    if "qa_revision" not in config_columns:
+        connection.execute(
+            """
+            ALTER TABLE parser_validation_config
+            ADD COLUMN qa_revision INTEGER NOT NULL DEFAULT 0
+            """
+        )
     result_columns = {
         str(row[1])
         for row in connection.execute(
@@ -253,6 +272,13 @@ def initialize_parser_validation_schema(
             """
             ALTER TABLE parser_validation_results
             ADD COLUMN content_type TEXT NOT NULL DEFAULT 'article'
+            """
+        )
+    if "qa_revision" not in result_columns:
+        connection.execute(
+            """
+            ALTER TABLE parser_validation_results
+            ADD COLUMN qa_revision INTEGER NOT NULL DEFAULT 0
             """
         )
     if "source_raw_sha256" not in result_columns:
@@ -362,6 +388,7 @@ def ensure_parser_validation_plan(
         )
     now = _now_iso()
     current_parser_version = publisher_spec(publisher).parser_version
+    current_qa_revision = qa_policy_revision(publisher)
     previous_versions = {
         int(year): str(parser_version)
         for year, parser_version in connection.execute(
@@ -412,13 +439,19 @@ def ensure_parser_validation_plan(
     connection.executemany(
         """
         INSERT INTO parser_validation_config(
-            sample_year, target_size, seed, parser_version, updated_at
+            sample_year,
+            target_size,
+            seed,
+            parser_version,
+            qa_revision,
+            updated_at
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(sample_year) DO UPDATE SET
             target_size=excluded.target_size,
             seed=excluded.seed,
             parser_version=excluded.parser_version,
+            qa_revision=excluded.qa_revision,
             updated_at=excluded.updated_at
         """,
         (
@@ -427,6 +460,7 @@ def ensure_parser_validation_plan(
                 target_per_year,
                 seed,
                 current_parser_version,
+                current_qa_revision,
                 now,
             )
             for year in range(from_year, to_year + 1)
@@ -452,9 +486,11 @@ def ensure_parser_validation_plan(
                 """
                 SELECT COUNT(*)
                 FROM parser_validation_results
-                WHERE sample_year=? AND parser_version=?
+                WHERE sample_year=?
+                  AND parser_version=?
+                  AND qa_revision=?
                 """,
-                (year, current_parser_version),
+                (year, current_parser_version, current_qa_revision),
             ).fetchone()[0]
         )
         qa_passed = int(
@@ -462,9 +498,11 @@ def ensure_parser_validation_plan(
                 """
                 SELECT COALESCE(SUM(qa_pass), 0)
                 FROM parser_validation_results
-                WHERE sample_year=? AND parser_version=?
+                WHERE sample_year=?
+                  AND parser_version=?
+                  AND qa_revision=?
                 """,
-                (year, current_parser_version),
+                (year, current_parser_version, current_qa_revision),
             ).fetchone()[0]
         )
         actionable = int(
@@ -477,6 +515,7 @@ def ensure_parser_validation_plan(
                 LEFT JOIN parser_validation_results AS result
                   ON result.canonical_url=sample.canonical_url
                  AND result.parser_version=?
+                 AND result.qa_revision=?
                 WHERE sample.sample_year=?
                   AND result.canonical_url IS NULL
                   AND (
@@ -494,6 +533,7 @@ def ensure_parser_validation_plan(
                 """,
                 (
                     current_parser_version,
+                    current_qa_revision,
                     year,
                     maximum_record_attempts,
                 ),
@@ -510,12 +550,13 @@ def ensure_parser_validation_plan(
                 LEFT JOIN parser_validation_results AS result
                   ON result.canonical_url=sample.canonical_url
                  AND result.parser_version=?
+                 AND result.qa_revision=?
                 WHERE sample.sample_year=?
                   AND result.canonical_url IS NULL
                   AND capture.status='complete'
                   AND capture.raw_path IS NOT NULL
                 """,
-                (current_parser_version, year),
+                (current_parser_version, current_qa_revision, year),
             ).fetchone()[0]
         )
         completed_needed = max(
@@ -681,6 +722,7 @@ def ensure_parser_validation_plan(
         "formatVersion": SCHEMA_VERSION,
         "publisher": publisher,
         "parserVersion": current_parser_version,
+        "qaRevision": current_qa_revision,
         "targetPerYear": target_per_year,
         "reservePerYear": reserve,
         "years": years,
@@ -705,17 +747,20 @@ def pending_parser_validation_urls(
                 config.sample_year,
                 config.target_size,
                 config.parser_version,
+                config.qa_revision,
                 COALESCE(SUM(result.qa_pass), 0) AS qa_passed
             FROM parser_validation_config AS config
             LEFT JOIN parser_validation_results AS result
-              ON result.sample_year=config.sample_year
+             ON result.sample_year=config.sample_year
              AND result.parser_version=config.parser_version
+             AND result.qa_revision=config.qa_revision
             WHERE (? IS NULL OR config.sample_year >= ?)
               AND (? IS NULL OR config.sample_year <= ?)
             GROUP BY
                 config.sample_year,
                 config.target_size,
-                config.parser_version
+                config.parser_version,
+                config.qa_revision
             HAVING COALESCE(SUM(result.qa_pass), 0) < config.target_size
         ),
         ranked AS (
@@ -851,6 +896,7 @@ def pending_parser_validation_urls(
             LEFT JOIN parser_validation_results AS result
               ON result.canonical_url=sample.canonical_url
              AND result.parser_version=active_years.parser_version
+             AND result.qa_revision=active_years.qa_revision
             WHERE result.canonical_url IS NULL
               AND (
                 capture.status='pending'
@@ -895,15 +941,18 @@ def pending_completed_parser_validation_files(
                 config.sample_year,
                 config.target_size,
                 config.parser_version,
+                config.qa_revision,
                 COALESCE(SUM(result.qa_pass), 0) AS qa_passed
             FROM parser_validation_config AS config
             LEFT JOIN parser_validation_results AS result
-              ON result.sample_year=config.sample_year
+             ON result.sample_year=config.sample_year
              AND result.parser_version=config.parser_version
+             AND result.qa_revision=config.qa_revision
             GROUP BY
                 config.sample_year,
                 config.target_size,
-                config.parser_version
+                config.parser_version,
+                config.qa_revision
             HAVING COALESCE(SUM(result.qa_pass), 0) < config.target_size
         ),
         ranked AS (
@@ -925,6 +974,7 @@ def pending_completed_parser_validation_files(
             LEFT JOIN parser_validation_results AS result
               ON result.canonical_url=sample.canonical_url
              AND result.parser_version=active_years.parser_version
+             AND result.qa_revision=active_years.qa_revision
             WHERE result.canonical_url IS NULL
               AND capture.status='complete'
               AND capture.raw_path IS NOT NULL
@@ -961,6 +1011,7 @@ def failed_completed_parser_validation_files(
         JOIN parser_validation_config AS config
           ON config.sample_year=result.sample_year
          AND config.parser_version=result.parser_version
+         AND config.qa_revision=result.qa_revision
         JOIN captures AS capture
           ON capture.canonical_url=result.canonical_url
         WHERE result.qa_pass=0
@@ -1032,6 +1083,7 @@ def record_parser_validation(
         "publisher": capture.publisher,
         "sample_year": sample_year,
         "parser_version": None,
+        "qa_revision": qa_policy_revision(capture.publisher),
         "extraction_status": ArticleStatus.ERROR.value,
         "content_type": ContentType.ARTICLE.value,
         "qa_pass": 0,
@@ -1192,6 +1244,7 @@ def record_parser_validation(
                 publisher,
                 sample_year,
                 parser_version,
+                qa_revision,
                 extraction_status,
                 content_type,
                 qa_pass,
@@ -1215,6 +1268,7 @@ def record_parser_validation(
                 :publisher,
                 :sample_year,
                 :parser_version,
+                :qa_revision,
                 :extraction_status,
                 :content_type,
                 :qa_pass,
@@ -1235,6 +1289,7 @@ def record_parser_validation(
             )
             ON CONFLICT(canonical_url) DO UPDATE SET
                 parser_version=excluded.parser_version,
+                qa_revision=excluded.qa_revision,
                 extraction_status=excluded.extraction_status,
                 content_type=excluded.content_type,
                 qa_pass=excluded.qa_pass,
@@ -1288,12 +1343,12 @@ def parser_validation_summary(
     years: dict[str, object] = {}
     configs = connection.execute(
         """
-        SELECT sample_year, target_size, parser_version
+        SELECT sample_year, target_size, parser_version, qa_revision
         FROM parser_validation_config
         ORDER BY sample_year
         """
     ).fetchall()
-    for sample_year, target_size, parser_version in configs:
+    for sample_year, target_size, parser_version, qa_revision in configs:
         row = connection.execute(
             """
             SELECT
@@ -1326,9 +1381,11 @@ def parser_validation_summary(
                 ,
                 COALESCE(SUM(source_capture_sha256 IS NULL), 0)
             FROM parser_validation_results
-            WHERE sample_year=? AND parser_version=?
+            WHERE sample_year=?
+              AND parser_version=?
+              AND qa_revision=?
             """,
-            (sample_year, parser_version),
+            (sample_year, parser_version, qa_revision),
         ).fetchone()
         evaluated = int(row[0])
         planned = int(
@@ -1354,6 +1411,7 @@ def parser_validation_summary(
             FROM parser_validation_results
             WHERE sample_year=?
               AND parser_version=?
+              AND qa_revision=?
               AND qa_pass=0
             ORDER BY
                 extraction_status='error' DESC,
@@ -1361,7 +1419,7 @@ def parser_validation_summary(
                 body_characters,
                 canonical_url
             """,
-            (sample_year, parser_version),
+            (sample_year, parser_version, qa_revision),
         ).fetchall()
         for (
             canonical_url,
@@ -1396,6 +1454,7 @@ def parser_validation_summary(
         years[str(sample_year)] = {
             "target": int(target_size),
             "parserVersion": str(parser_version),
+            "qaRevision": int(qa_revision),
             "planned": planned,
             "evaluated": evaluated,
             "targetReached": target_reached,
@@ -1443,13 +1502,15 @@ def parser_validation_target_reached(
             COALESCE(SUM(result.qa_pass), 0)
         FROM parser_validation_config AS config
         LEFT JOIN parser_validation_results AS result
-          ON result.sample_year=config.sample_year
+         ON result.sample_year=config.sample_year
          AND result.parser_version=config.parser_version
+         AND result.qa_revision=config.qa_revision
          AND result.source_capture_sha256 IS NOT NULL
         GROUP BY
             config.sample_year,
             config.target_size,
-            config.parser_version
+            config.parser_version,
+            config.qa_revision
         """
     ).fetchall()
     return bool(rows) and all(
