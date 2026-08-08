@@ -730,6 +730,45 @@ def pending_parser_validation_urls(
                             ELSE 1
                         END,
                         CASE
+                            WHEN capture.publisher != 'wsj' THEN 0
+                            -- In the 2016 WSJ validation cohort, every
+                            -- attempted capture whose largest CDX response
+                            -- was 30-50 KiB produced usable full text.  The
+                            -- smaller shells were overwhelmingly paywalls.
+                            WHEN capture.candidates_json LIKE '%tpl=%' THEN 5
+                            WHEN COALESCE((
+                                SELECT MAX(CAST(
+                                    json_extract(value, '$.byteCount')
+                                    AS INTEGER
+                                ))
+                                FROM json_each(capture.candidates_json)
+                            ), 0) >= 30000
+                              AND COALESCE((
+                                SELECT MAX(CAST(
+                                    json_extract(value, '$.byteCount')
+                                    AS INTEGER
+                                ))
+                                FROM json_each(capture.candidates_json)
+                            ), 0) < 50000 THEN 0
+                            WHEN capture.candidates_json LIKE '%tesla=y%'
+                                THEN 1
+                            WHEN COALESCE((
+                                SELECT MAX(CAST(
+                                    json_extract(value, '$.byteCount')
+                                    AS INTEGER
+                                ))
+                                FROM json_each(capture.candidates_json)
+                            ), 0) >= 50000 THEN 2
+                            WHEN COALESCE((
+                                SELECT MAX(CAST(
+                                    json_extract(value, '$.byteCount')
+                                    AS INTEGER
+                                ))
+                                FROM json_each(capture.candidates_json)
+                            ), 0) >= 20000 THEN 3
+                            ELSE 4
+                        END,
+                        CASE
                             WHEN EXISTS (
                                 SELECT 1
                                 FROM json_each(capture.candidates_json)

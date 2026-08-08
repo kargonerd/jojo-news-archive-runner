@@ -919,6 +919,114 @@ def test_validation_plan_tries_fresh_samples_before_retrying_errors(
     assert selected == [pending_url]
 
 
+def test_validation_plan_prioritizes_high_yield_wsj_snapshots(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "wsj-manifest.jsonl"
+    urls = {
+        "small": "https://www.wsj.com/articles/small-shell-1472582355",
+        "full": "https://www.wsj.com/articles/full-text-1472582356",
+        "tpl": "https://www.wsj.com/articles/template-shell-1472582357",
+    }
+    candidates = {
+        "small": CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20160830191501id_/"
+                f"{urls['small']}"
+            ),
+            captured_at=datetime(2016, 8, 30, tzinfo=timezone.utc),
+            mime_type="text/html",
+            status_code=200,
+            byte_count=18_000,
+        ),
+        "full": CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20160830192758id_/"
+                f"{urls['full']}?mod=rss_opinion_main"
+            ),
+            captured_at=datetime(2016, 8, 30, tzinfo=timezone.utc),
+            mime_type="text/html",
+            status_code=200,
+            byte_count=36_000,
+        ),
+        "tpl": CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20160830193539id_/"
+                f"{urls['tpl']}?tpl=centralbanking"
+            ),
+            captured_at=datetime(2016, 8, 30, tzinfo=timezone.utc),
+            mime_type="text/html",
+            status_code=200,
+            byte_count=40_000,
+        ),
+    }
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "publisher": "wsj",
+                    "canonicalUrl": urls[name],
+                    "publishedAt": "2016-08-30T00:00:00Z",
+                    "candidates": [
+                        candidates[name].model_dump(
+                            mode="json",
+                            by_alias=True,
+                            exclude_none=True,
+                        )
+                    ],
+                },
+                default=str,
+            )
+            + "\n"
+            for name in ("small", "full", "tpl")
+        ),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="wsj",
+        from_year=2016,
+        to_year=2016,
+        target_per_year=3,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    connection.execute(
+        """
+        UPDATE parser_validation_samples
+        SET sample_priority=CASE canonical_url
+            WHEN ? THEN '0000'
+            WHEN ? THEN '1111'
+            ELSE 'ffff'
+        END
+        """,
+        (urls["small"], urls["tpl"]),
+    )
+    connection.commit()
+
+    selected = pending_parser_validation_urls(
+        connection,
+        maximum=3,
+        maximum_record_attempts=3,
+    )
+
+    assert selected == [urls["full"], urls["small"], urls["tpl"]]
+
+
 def test_validation_plan_can_add_previously_completed_raw_captures(
     tmp_path: Path,
 ):
