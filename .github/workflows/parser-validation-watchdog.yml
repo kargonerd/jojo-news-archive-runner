@@ -51,32 +51,54 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/archive-state"
-          rclone copy \
-            "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1" \
-            "$RUNNER_TEMP/archive-state" \
-            --include "ap/2016-2026/sitemap-wayback/state/summary.json" \
-            --include "bloomberg/2016-2026/sitemap-wayback/state/summary.json" \
-            --include "ft/2016-2026/sitemap-wayback/state/summary.json" \
-            --include "nyt/2016-2026/sitemap-wayback/state/summary.json" \
-            --include "reuters/2016-2020/wayback-urlkey/state/summary.json" \
-            --include "reuters/2021-2026/reuters-sitemap-wayback/state/summary.json" \
-            --include "wsj/2016-2026/wayback-urlkey/state/summary.json" \
-            --include "validation/*/*/state/summary.json" \
-            --include "axios/2017-2026/wayback-urlkey/state/summary.json" \
-            --include "npr/2010-2015/wayback-urlkey/state/summary.json" \
-            --include "npr/2016-2026/wayback-urlkey/state/summary.json" \
-            --include "nikkei/2010-2015/wayback-urlkey/state/summary.json" \
-            --include "nikkei/2016-2026/wayback-urlkey/state/summary.json" \
-            --include "zaobao/2010-2015/wayback-urlkey/state/summary.json" \
-            --include "zaobao/2016-2026/wayback-urlkey/state/summary.json" \
-            --include "aljazeera/2010-2015/wayback-urlkey/state/summary.json" \
-            --include "aljazeera/2016-2026/wayback-urlkey/state/summary.json" \
-            --include "scmp/2010-2015/wayback-urlkey/state/summary.json" \
-            --include "scmp/2016-2026/wayback-urlkey/state/summary.json" \
-            --include "caixin/2010-2015/wayback-urlkey/state/summary.json" \
-            --include "caixin/2016-2026/wayback-urlkey/state/summary.json" \
-            --transfers 16 --checkers 32 \
-            --retries 8 --low-level-retries 20
+          copy_summary() {
+            remote_dir="$1"
+            destination="$2"
+            listing="$RUNNER_TEMP/summary-listing.txt"
+            errors="$RUNNER_TEMP/summary-listing-errors.txt"
+            if ! rclone lsf "$remote_dir" --files-only \
+                >"$listing" 2>"$errors"; then
+              if grep -qiE "directory not found|object not found" "$errors"; then
+                return 0
+              fi
+              cat "$errors" >&2
+              return 1
+            fi
+            if grep -Fxq "summary.json" "$listing"; then
+              mkdir -p "$destination"
+              rclone copyto "$remote_dir/summary.json" \
+                "$destination/summary.json" \
+                --retries 8 --low-level-retries 20
+            fi
+          }
+          source_roots=(
+            "ap/2016-2026/sitemap-wayback"
+            "bloomberg/2016-2026/sitemap-wayback"
+            "ft/2016-2026/sitemap-wayback"
+            "nyt/2016-2026/sitemap-wayback"
+            "reuters/2016-2020/wayback-urlkey"
+            "reuters/2021-2026/reuters-sitemap-wayback"
+            "wsj/2016-2026/wayback-urlkey"
+            "wsj/2016-2026/wayback"
+            "axios/2017-2026/wayback-urlkey"
+            "npr/2010-2015/wayback-urlkey"
+            "npr/2016-2026/wayback-urlkey"
+            "nikkei/2010-2015/wayback-urlkey"
+            "nikkei/2016-2026/wayback-urlkey"
+            "zaobao/2010-2015/wayback-urlkey"
+            "zaobao/2016-2026/wayback-urlkey"
+            "aljazeera/2010-2015/wayback-urlkey"
+            "aljazeera/2016-2026/wayback-urlkey"
+            "scmp/2010-2015/wayback-urlkey"
+            "scmp/2016-2026/wayback-urlkey"
+            "caixin/2010-2015/wayback-urlkey"
+            "caixin/2016-2026/wayback-urlkey"
+          )
+          for source_root in "${source_roots[@]}"; do
+            copy_summary \
+              "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state" \
+              "$RUNNER_TEMP/archive-state/${source_root}/state"
+          done
           # Formal parser-validation summaries are execution state under v2,
           # not part of a publisher's v1 canonical raw source tree. Map this
           # prefix to the planner's expected validation/<publisher>/<year>

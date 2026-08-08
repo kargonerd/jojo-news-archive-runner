@@ -13,6 +13,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert 'cron: "17,47 * * * *"' in workflow
     assert "news-archive/v2/validation-state" in workflow
     assert '--include "validation/*/*/state/summary.json"' in workflow
+    assert "copy_summary()" in workflow
+    assert '"wsj/2016-2026/wayback"' in workflow
 
 
 def test_watchdog_dispatches_two_workers_per_validation_job() -> None:
