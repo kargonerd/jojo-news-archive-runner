@@ -15261,7 +15261,7 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.6"
+    assert result.extraction.parser_version == "npr-parser/0.1.7"
 
 
 def test_npr_parser_preserves_short_audio_story_mp3():
@@ -15301,7 +15301,7 @@ def test_npr_parser_preserves_short_audio_story_mp3():
     assert [
         block.embed_url for block in result.blocks if block.type.value == "embed"
     ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.6"
+    assert result.extraction.parser_version == "npr-parser/0.1.7"
 
 
 def test_npr_parser_classifies_unavailable_short_audio_story():
@@ -15325,7 +15325,45 @@ def test_npr_parser_classifies_unavailable_short_audio_story():
     assert result.quality.status.value == "partial"
     assert result.plain_text == "A short audio introduction."
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.6"
+    assert result.extraction.parser_version == "npr-parser/0.1.7"
+
+
+def test_npr_parser_accepts_legacy_metadata_only_audio_story():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta name="medium" content="audio">
+          <meta name="date" content="2014-04-04">
+          <meta name="description" content="Ruffled Feathers.">
+          <meta property="og:title" content="Panel Round One">
+          <meta property="og:image"
+                content="http://media.npr.org/chrome/news/nprlogo_138x46.gif">
+        </head><body class="news tmplNewsStory id299212944">
+          <article class="story">
+            <h1>Panel Round One</h1>
+            <div id="storytext" class="storytext storylocation">
+              <p>Ruffled Feathers.</p>
+            </div>
+          </article>
+          <section id="relatedstories">
+            <article><h3>Unrelated recommended story</h3></article>
+          </section>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2014/04/05/299212944/panel-round-one"
+        ),
+    )
+
+    assert result.content_type == ContentType.AUDIO
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.plain_text == "Ruffled Feathers."
+    assert "body-too-short" not in result.quality.warnings
+    assert "Unrelated recommended story" not in result.plain_text
+    assert result.quality.images_selected == 0
+    assert not any(block.type.value == "embed" for block in result.blocks)
+    assert result.extraction.parser_version == "npr-parser/0.1.7"
 
 
 def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
@@ -15362,7 +15400,7 @@ def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
     assert "A short introduction to the segment." not in result.plain_text
     assert "noncommercial use" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "npr-parser/0.1.6"
+    assert result.extraction.parser_version == "npr-parser/0.1.7"
 
 
 def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
@@ -15396,7 +15434,7 @@ def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
     assert result.images[0].should_archive is True
     assert "onthetrail_01.jpg" in result.images[0].original_url
     assert "promo.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.6"
+    assert result.extraction.parser_version == "npr-parser/0.1.7"
 
 
 def test_npr_parser_recovers_image_led_double_take_cartoon():
@@ -15443,7 +15481,7 @@ def test_npr_parser_recovers_image_led_double_take_cartoon():
     ]
     assert all(image.should_archive for image in result.images)
     assert "related-cartoon.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.6"
+    assert result.extraction.parser_version == "npr-parser/0.1.7"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():

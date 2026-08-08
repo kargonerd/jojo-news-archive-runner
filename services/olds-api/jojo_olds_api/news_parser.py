@@ -696,9 +696,19 @@ def parse_article(
         content_type = ContentType.GALLERY
     elif npr_legacy_transcript_selected:
         content_type = ContentType.TRANSCRIPT
-    if spec.publisher == "npr" and _npr_short_audio_story(
-        soup,
-        body=clean_body,
+    npr_legacy_metadata_audio = (
+        spec.publisher == "npr"
+        and _npr_legacy_metadata_audio_story(
+            soup,
+            body=clean_body,
+        )
+    )
+    if spec.publisher == "npr" and (
+        npr_legacy_metadata_audio
+        or _npr_short_audio_story(
+            soup,
+            body=clean_body,
+        )
     ):
         content_type = ContentType.AUDIO
         npr_audio_url = _npr_story_audio_url(
@@ -948,6 +958,13 @@ def parse_article(
                     canonical_url=canonical_url,
                 )
             )
+            # NPR's pre-HTML5 story template represented some intentionally
+            # short radio segments with only the editorial description in
+            # #storytext and an explicit ``medium=audio`` marker.  The player
+            # was supplied outside the archived document, so absence of an
+            # inline MP3/embed is not evidence that the description parser
+            # truncated the page.
+            or npr_legacy_metadata_audio
         )
     )
     publisher_notice = _is_publisher_notice(
@@ -6091,6 +6108,37 @@ def _npr_short_audio_story(
     }.issubset(body_classes)
     return body_characters < 200 and (
         bool(_npr_audio_story_nodes(soup)) or dacs_audio_only
+    )
+
+
+def _npr_legacy_metadata_audio_story(
+    soup: BeautifulSoup,
+    *,
+    body: Tag | None,
+) -> bool:
+    """Recognize complete short descriptions from NPR's legacy audio pages."""
+    body_characters = len(
+        _clean_text(body.get_text(" ", strip=True)) if body is not None else ""
+    )
+    body_classes = (
+        {
+            str(value).casefold()
+            for value in (soup.body.get("class") or [])
+        }
+        if soup.body is not None
+        else set()
+    )
+    story_text = soup.select_one("#storytext")
+    medium = _clean_text(
+        _meta_content(soup, "name", "medium") or ""
+    ).casefold()
+    return bool(
+        medium == "audio"
+        and "tmplnewsstory" in body_classes
+        and isinstance(story_text, Tag)
+        and story_text.select_one("p") is not None
+        and soup.select_one(".transcript") is None
+        and 1 <= body_characters < 200
     )
 
 
