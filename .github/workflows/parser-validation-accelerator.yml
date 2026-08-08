@@ -202,6 +202,7 @@ jobs:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
           REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
           SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
+          LEGACY_SOURCE_ROOT: ${{ steps.paths.outputs.legacy_source_root }}
         run: |
           set -euo pipefail
           restore_if_present() {
@@ -231,14 +232,30 @@ jobs:
             "${REMOTE_ROOT}/catalog/manifest.jsonl.gz" \
             "$manifest"
           source_manifest="$RUNNER_TEMP/source-manifest.jsonl.gz"
+          effective_source_manifest="$source_manifest"
+          legacy_source_manifest="$RUNNER_TEMP/legacy-source-manifest.jsonl.gz"
+          merged_source_manifest="$RUNNER_TEMP/merged-source-manifest.jsonl.gz"
           refreshed_manifest="$RUNNER_TEMP/refreshed-manifest.jsonl.gz"
           if rclone copyto \
               "${SOURCE_ROOT}/catalog/manifest.jsonl.gz" \
               "$source_manifest" \
               --retries 8 --low-level-retries 20 \
               && [ -f "$source_manifest" ]; then
+            if [ -n "$LEGACY_SOURCE_ROOT" ]; then
+              restore_if_present \
+                "${LEGACY_SOURCE_ROOT}/catalog/manifest.jsonl.gz" \
+                "$legacy_source_manifest"
+              if [ -f "$legacy_source_manifest" ]; then
+                python services/olds-api/tools/merge_archive_manifests.py \
+                  --publisher "$PUBLISHER" \
+                  --input "$source_manifest" \
+                  --input "$legacy_source_manifest" \
+                  --output "$merged_source_manifest"
+                effective_source_manifest="$merged_source_manifest"
+              fi
+            fi
             python services/olds-api/tools/filter_archive_manifest.py \
-              --input "$source_manifest" \
+              --input "$effective_source_manifest" \
               --output "$refreshed_manifest" \
               --publisher "$PUBLISHER" \
               --from-year "$SAMPLE_YEAR" \
@@ -326,6 +343,23 @@ jobs:
                 > "$RUNNER_TEMP/source-capture.sqlite3"
             fi
           fi
+          if [ -n "$LEGACY_SOURCE_ROOT" ]; then
+            restore_if_present \
+              "${LEGACY_SOURCE_ROOT}/state/completed-captures.sqlite3.gz" \
+              "$RUNNER_TEMP/legacy-source-capture.sqlite3.gz"
+            if [ -f "$RUNNER_TEMP/legacy-source-capture.sqlite3.gz" ]; then
+              gzip -dc "$RUNNER_TEMP/legacy-source-capture.sqlite3.gz" \
+                > "$RUNNER_TEMP/legacy-source-capture.sqlite3"
+            else
+              restore_if_present \
+                "${LEGACY_SOURCE_ROOT}/state/capture.sqlite3.gz" \
+                "$RUNNER_TEMP/legacy-source-capture.sqlite3.gz"
+              if [ -f "$RUNNER_TEMP/legacy-source-capture.sqlite3.gz" ]; then
+                gzip -dc "$RUNNER_TEMP/legacy-source-capture.sqlite3.gz" \
+                  > "$RUNNER_TEMP/legacy-source-capture.sqlite3"
+              fi
+            fi
+          fi
 
       - name: Import original-cohort exclusions
         if: ${{ startsWith(inputs.cohort, 'holdout-v') }}
@@ -354,47 +388,64 @@ jobs:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
           REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
           SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
+          LEGACY_SOURCE_ROOT: ${{ steps.paths.outputs.legacy_source_root }}
         run: |
           set -euo pipefail
-          source_state="$RUNNER_TEMP/source-capture.sqlite3"
-          files_from="$RUNNER_TEMP/source-import-files.txt"
-          if [ ! -f "$source_state" ]; then
-            echo "No source capture checkpoint is available; preserving exclusions."
-            exit 0
+          import_source() {
+            local source_state="$1"
+            local source_root="$2"
+            local files_from="$3"
+            if [ ! -f "$source_state" ]; then
+              return 0
+            fi
+            python services/olds-api/tools/import_validation_source_captures.py \
+              --source-state "$source_state" \
+              --target-state "$LOCAL_ROOT/raw/capture.sqlite3" \
+              --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
+              --publisher "$PUBLISHER" \
+              --year "$SAMPLE_YEAR" \
+              --target-per-year "$VALIDATION_TARGET" \
+              --seed "$VALIDATION_SEED" \
+              --reserve-per-year 0 \
+              --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+              --files-from "$files_from"
+            if [ -s "$files_from" ]; then
+              rclone copy \
+                "${source_root}/raw" \
+                "$LOCAL_ROOT/raw" \
+                --files-from "$files_from" \
+                --transfers 16 --checkers 32 \
+                --retries 8 --low-level-retries 20 \
+                --stats 30s
+            fi
+          }
+
+          source_files="$RUNNER_TEMP/source-import-files.txt"
+          legacy_files="$RUNNER_TEMP/legacy-source-import-files.txt"
+          import_source \
+            "$RUNNER_TEMP/source-capture.sqlite3" \
+            "$SOURCE_ROOT" \
+            "$source_files"
+          if [ -n "$LEGACY_SOURCE_ROOT" ]; then
+            import_source \
+              "$RUNNER_TEMP/legacy-source-capture.sqlite3" \
+              "$LEGACY_SOURCE_ROOT" \
+              "$legacy_files"
           fi
-          python services/olds-api/tools/import_validation_source_captures.py \
-            --source-state "$source_state" \
-            --target-state "$LOCAL_ROOT/raw/capture.sqlite3" \
-            --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
-            --publisher "$PUBLISHER" \
-            --year "$SAMPLE_YEAR" \
-            --target-per-year "$VALIDATION_TARGET" \
-            --seed "$VALIDATION_SEED" \
-            --reserve-per-year 0 \
-            --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
-            --files-from "$files_from"
-          if [ ! -s "$files_from" ]; then
-            exit 0
-          fi
-          rclone copy \
-            "${SOURCE_ROOT}/raw" \
-            "$LOCAL_ROOT/raw" \
-            --files-from "$files_from" \
-            --transfers 16 --checkers 32 \
-            --retries 8 --low-level-retries 20 \
-            --stats 30s
           # Raw objects are addressed by the SHA-256 of uncompressed HTML.
           # Old clients can encode identical gzip payloads with a different
           # header, so retain an existing addressed object instead of rejecting
           # an otherwise identical source document.
-          rclone copy \
-            "$LOCAL_ROOT/raw" \
-            "${SOURCE_ROOT}/raw" \
-            --files-from "$files_from" \
-            --checksum --ignore-existing \
-            --transfers 16 --checkers 32 \
-            --retries 8 --low-level-retries 20 \
-            --stats 30s
+          if [ -s "$source_files" ]; then
+            rclone copy \
+              "$LOCAL_ROOT/raw" \
+              "${SOURCE_ROOT}/raw" \
+              --files-from "$source_files" \
+              --checksum --ignore-existing \
+              --transfers 16 --checkers 32 \
+              --retries 8 --low-level-retries 20 \
+              --stats 30s
+          fi
 
       - name: Plan parser replay
         id: replay
@@ -416,6 +467,16 @@ jobs:
             --all-result-files-from \
               "$RUNNER_TEMP/parser-validation-all-files.txt" \
             --github-output "$GITHUB_OUTPUT"
+          {
+            for restored in \
+              "$RUNNER_TEMP/legacy-source-import-files.txt" \
+              "$RUNNER_TEMP/parser-validation-files.txt" \
+              "$RUNNER_TEMP/parser-validation-all-files.txt"; do
+              if [ -f "$restored" ]; then
+                sed -n 's#^objects/##p' "$restored"
+              fi
+            done
+          } | sort -u > "$RUNNER_TEMP/restored-object-excludes.txt"
 
       - name: Restore previous parser sample HTML
         if: ${{ steps.replay.outputs.replays != '0' }}
@@ -534,6 +595,7 @@ jobs:
                   "$LOCAL_ROOT/raw/objects" \
                   "${SOURCE_ROOT}/raw/objects" \
                   --exclude '*.tmp' \
+                  --exclude-from "$RUNNER_TEMP/restored-object-excludes.txt" \
                   --checksum --ignore-existing --fast-list \
                   --transfers 32 --checkers 64 \
                   --timeout 30s --contimeout 10s \
@@ -769,6 +831,7 @@ jobs:
               "$LOCAL_ROOT/raw/objects" \
               "${SOURCE_ROOT}/raw/objects" \
               --exclude '*.tmp' \
+              --exclude-from "$RUNNER_TEMP/restored-object-excludes.txt" \
               --checksum --ignore-existing --fast-list \
               --transfers 32 --checkers 64 \
               --retries 8 --low-level-retries 20 \

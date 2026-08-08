@@ -74,4 +74,11 @@ def test_accelerator_reads_wsj_legacy_raw_without_copying_it() -> None:
 
     assert 'legacy_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/wsj/2016-2026/wayback-urlkey"' in workflow
     assert 'LEGACY_SOURCE_ROOT: ${{ steps.paths.outputs.legacy_source_root }}' in workflow
+    assert "merge_archive_manifests.py" in workflow
+    assert '"${LEGACY_SOURCE_ROOT}/catalog/manifest.jsonl.gz"' in workflow
+    assert '"${LEGACY_SOURCE_ROOT}/state/completed-captures.sqlite3.gz"' in workflow
     assert '"${LEGACY_SOURCE_ROOT}/raw"' in workflow
+    assert '"$RUNNER_TEMP/legacy-source-import-files.txt"' in workflow
+    assert workflow.count(
+        '--exclude-from "$RUNNER_TEMP/restored-object-excludes.txt"'
+    ) == 2
