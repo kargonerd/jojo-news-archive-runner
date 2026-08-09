@@ -5,6 +5,7 @@ from __future__ import annotations
 # extraction rotates to a zero-overlap cohort through parser_version; changing
 # only a QA rule replays the same sample against the new policy.
 _QA_POLICY_REVISIONS = {
+    "axios": 1,
     "wsj": 1,
 }
 

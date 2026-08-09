@@ -256,6 +256,51 @@ def test_axios_visual_fallback_is_classified_as_interactive():
     assert result.quality.status.value == "complete"
 
 
+def test_axios_visual_fallback_replaces_metadata_placeholder():
+    canonical_url = "https://www.axios.com/2017/12/15/example-chart"
+    html = b"""
+    <html><head>
+      <meta property="og:image"
+            content="https://static.axios.com/img/axios-site/axios-placeholder-16x9.png">
+      <script type="application/ld+json">{
+        "@type":"NewsArticle", "headline":"A chart",
+        "datePublished":"2017-12-15T12:00:00Z",
+        "image":"https://static.axios.com/img/axios-site/axios-placeholder-16x9.png"
+      }</script>
+    </head><body><main id="main-content">
+      <div class="DraftjsBlocks_draftjs__example">
+        <figure><div id="av-example-chart">
+          <img class="axios-visual-newsletter-fallback-image"
+               src="https://graphics.axios.com/example/fallback-chart.png"
+               alt="Data: Example; Chart: Axios">
+          <img class="axios-visual-apple-fallback-image"
+               src="https://graphics.axios.com/example/fallback-chart-apple.png"
+               alt="Data: Example; Chart: Axios">
+        </div><figcaption>Data: Example; Chart: Axios</figcaption></figure>
+      </div>
+    </main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    selected = [image for image in result.images if image.should_archive]
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+    assert result.extraction.parser_version == "axios-parser/0.1.7"
+    assert len(selected) == 1
+    assert selected[0].role == ImageRole.CHART
+    assert selected[0].original_url == (
+        "https://graphics.axios.com/example/fallback-chart.png"
+    )
+    assert "axios-visual-fallback" in selected[0].selection_reasons
+    assert all("axios-placeholder" not in image.original_url for image in result.images)
+
+
 def test_axios_legacy_short_news_card_is_not_treated_as_truncated():
     canonical_url = "https://www.axios.com/2017/01/21/example-card"
     html = b"""

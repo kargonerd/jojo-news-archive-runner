@@ -11453,6 +11453,19 @@ def _image_from_tag(
     ):
         role = ImageRole.TRACKING
         reasons.append("tracking-signal")
+    elif spec.publisher == "axios" and any(
+        marker in context.casefold()
+        for marker in (
+            "axios-visual-apple-fallback-image",
+            "axios-visual-newsletter-fallback-image",
+        )
+    ):
+        # Axios chart-led stories render an editorial fallback image inside
+        # a class containing ``newsletter``.  The generic chrome detector
+        # would otherwise demote the actual chart to an icon while keeping
+        # the site's metadata placeholder as the lead image.
+        role = ImageRole.CHART
+        reasons.append("axios-visual-fallback")
     elif _NOISE_RE.search(context):
         if re.search(r"(?i)(advert|sponsor|promo)", context):
             role = ImageRole.ADVERTISEMENT
@@ -11935,6 +11948,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/img/wsj_profile_lg.",
             "/common/imgs/wsjsection.",
             "/img/social/opengraph/ij-social-default-",
+            "axios-placeholder-",
         )
     )
 

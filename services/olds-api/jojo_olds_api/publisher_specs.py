@@ -211,7 +211,7 @@ PUBLISHER_SPECS = {
     ),
     "axios": PublisherSpec(
         publisher="axios",
-        parser_version="axios-parser/0.1.6",
+        parser_version="axios-parser/0.1.7",
         domains=("axios.com", "www.axios.com"),
         default_language="en",
         edition="us",

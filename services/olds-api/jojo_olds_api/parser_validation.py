@@ -43,7 +43,6 @@ _UI_NOISE_PHRASES = (
     "promoted by revcontent",
     "sponsored content from around the web",
     "more from reuters sponsored content",
-    "trending stories",
     "share this article",
     "our standards: the thomson reuters trust principles",
     "get livefyre",
@@ -57,6 +56,9 @@ _UI_NOISE_PHRASES = (
     "follow @financialtimesfashion on instagram",
     "ft subscriber? sign up for the weekly working it newsletter",
     "see acast.com/privacy for privacy and opt-out information",
+)
+_EXACT_UI_NOISE_BLOCKS = (
+    "trending stories",
 )
 _PLACEHOLDER_IMAGE_MARKERS = (
     "wsj-social-share",
@@ -168,6 +170,26 @@ def _has_publisher_interface_noise(
             for text in blocks
         )
     return False
+
+
+def _has_generic_interface_noise(blocks: list[str]) -> bool:
+    """Detect standalone interface chrome without matching normal prose."""
+    return any(
+        text == "0 min read"
+        or text == "read more:"
+        or text == "promoted content"
+        or text in _EXACT_UI_NOISE_BLOCKS
+        or (len(text) >= 2 and set(text) == {"_"})
+        or text.startswith("recommended *")
+        or text.startswith("share on twitter (opens new window)")
+        or text.startswith("follow the topics in this ")
+        or (
+            text.startswith("get alerts on ")
+            and text.endswith(" when a new story is published")
+        )
+        or any(phrase in text for phrase in _UI_NOISE_PHRASES)
+        for text in blocks
+    )
 
 
 def initialize_parser_validation_schema(
@@ -1179,20 +1201,8 @@ def record_parser_validation(
             for block in article.blocks
             if block.text and _normalize_text(block.text)
         ]
-        if any(
-            text == "0 min read"
-            or text == "read more:"
-            or text == "promoted content"
-            or (len(text) >= 2 and set(text) == {"_"})
-            or text.startswith("recommended *")
-            or text.startswith("share on twitter (opens new window)")
-            or text.startswith("follow the topics in this ")
-            or (
-                text.startswith("get alerts on ")
-                and text.endswith(" when a new story is published")
-            )
-            or any(phrase in text for phrase in _UI_NOISE_PHRASES)
-            for text in normalized_blocks
+        if _has_generic_interface_noise(
+            normalized_blocks
         ) or _has_publisher_interface_noise(
             capture.publisher,
             [

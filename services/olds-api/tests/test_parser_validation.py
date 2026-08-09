@@ -11,6 +11,7 @@ from jojo_olds_api.news_models import (
     RawCapture,
 )
 from jojo_olds_api.parser_validation import (
+    _has_generic_interface_noise,
     _has_publisher_interface_noise,
     ensure_parser_validation_plan,
     failed_completed_parser_validation_files,
@@ -21,6 +22,16 @@ from jojo_olds_api.parser_validation import (
     pending_parser_validation_urls,
     record_parser_validation,
 )
+
+
+def test_generic_interface_noise_requires_standalone_trending_stories():
+    assert _has_generic_interface_noise(["trending stories"])
+    assert not _has_generic_interface_noise(
+        [
+            "many local newsrooms use social networks to monitor "
+            "trending stories on social media."
+        ]
+    )
 from jojo_olds_api.raw_archive_capture import (
     completed_raw_capture,
     initialize_capture_schema,
