@@ -54,6 +54,10 @@ def test_validation_only_archive_chain_releases_runner_at_ready_gate() -> None:
         workflow.index("- name: Capture bounded raw HTML batch") :
         workflow.index("- name: Checkpoint capture state")
     ]
+    replay_section = workflow[
+        workflow.index("- name: Plan replay of previously captured parser samples") :
+        workflow.index("- name: Restore previously captured parser sample HTML")
+    ]
     continuation_section = workflow[
         workflow.index("- name: Dispatch next bounded run") :
     ]
@@ -71,6 +75,8 @@ def test_validation_only_archive_chain_releases_runner_at_ready_gate() -> None:
         "steps.before.outputs.validation_target_reached != 'true'"
         in capture_section
     )
+    assert "steps.validation_replay.outputs.replays != '0'" in capture_section
+    assert "validation_target_reached" not in replay_section
     assert (
         '-f stop_when_validation_ready="${{ inputs.stop_when_validation_ready }}"'
         in continuation_section

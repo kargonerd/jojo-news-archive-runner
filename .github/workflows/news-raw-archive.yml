@@ -431,14 +431,8 @@ jobs:
         id: validation_replay
         if: >-
           ${{
-            (
-              steps.catalog.outputs.complete == 'true' ||
-              steps.catalog.outputs.capture_ready == 'true'
-            ) &&
-            (
-              !inputs.stop_when_validation_ready ||
-              steps.before.outputs.validation_target_reached != 'true'
-            )
+            steps.catalog.outputs.complete == 'true' ||
+            steps.catalog.outputs.capture_ready == 'true'
           }}
         shell: bash
         env:
@@ -514,7 +508,8 @@ jobs:
             ) &&
             (
               !inputs.stop_when_validation_ready ||
-              steps.before.outputs.validation_target_reached != 'true'
+              steps.before.outputs.validation_target_reached != 'true' ||
+              steps.validation_replay.outputs.replays != '0'
             )
           }}
         shell: bash
