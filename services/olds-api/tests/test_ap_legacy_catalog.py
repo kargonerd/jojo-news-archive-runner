@@ -9,6 +9,7 @@ from jojo_olds_api.ap_legacy_catalog import (
     build_ap_hosted_manifest_rows,
     normalize_ap_partner_url,
 )
+from jojo_olds_api.news_models import CaptureProvider
 
 
 def _row(
@@ -245,6 +246,31 @@ def test_builds_google_and_yahoo_partner_manifest_rows():
     )
     assert rows[1]["candidates"][0]["expectedHeadline"] == (
         "Ex Colo. sheriff accused"
+    )
+
+
+def test_builds_wayback_yahoo_partner_candidate():
+    yahoo = _row(
+        "http://news.yahoo.com:80/s/ap/20100101/"
+        "ap_en_ce/us_limbaugh_hospital",
+        timestamp="20100104083044",
+        digest="WAYBACK-YAHOO",
+    )
+
+    rows, metrics = build_ap_partner_manifest_rows(
+        [yahoo],
+        from_year=2010,
+        to_year=2010,
+        provider=CaptureProvider.WAYBACK,
+    )
+
+    assert metrics["articles"] == 1
+    candidate = rows[0]["candidates"][0]
+    assert candidate["provider"] == "wayback"
+    assert candidate["snapshotUrl"] == (
+        "https://web.archive.org/web/20100104083044id_/"
+        "http://news.yahoo.com:80/s/ap/20100101/"
+        "ap_en_ce/us_limbaugh_hospital"
     )
 
 

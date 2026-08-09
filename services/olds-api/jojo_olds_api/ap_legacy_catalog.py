@@ -21,6 +21,7 @@ from .wayback_manifest import MANIFEST_FORMAT_VERSION
 
 
 ARQUIVO_PT_REPLAY_ENDPOINT = "https://arquivo.pt/noFrame/replay"
+WAYBACK_REPLAY_ENDPOINT = "https://web.archive.org/web"
 _TIMESTAMP_RE = re.compile(r"\d{14}")
 _GOOGLE_HOSTED_PATH_RE = re.compile(
     r"^/hostednews/ap/article/(?P<article>[A-Za-z0-9_-]+)$"
@@ -366,12 +367,18 @@ def build_ap_partner_manifest_rows(
     from_year: int,
     to_year: int,
     maximum_candidates: int = 3,
+    provider: CaptureProvider = CaptureProvider.ARQUIVO_PT,
 ) -> tuple[list[dict[str, object]], dict[str, int]]:
     """Build manifest rows for validated Google/Yahoo AP distributions."""
     if from_year < 1900 or to_year > 2100 or from_year > to_year:
         raise ValueError("invalid publication year range")
     if maximum_candidates < 1:
         raise ValueError("maximum_candidates must be positive")
+    if provider not in {
+        CaptureProvider.ARQUIVO_PT,
+        CaptureProvider.WAYBACK,
+    }:
+        raise ValueError("unsupported AP partner capture provider")
     grouped: dict[
         str,
         tuple[datetime, list[tuple[tuple[object, ...], CaptureCandidate]]],
@@ -424,11 +431,17 @@ def build_ap_partner_manifest_rows(
             rejected_rows += 1
             continue
         captured_at = _timestamp_datetime(timestamp)
-        candidate = CaptureCandidate(
-            provider=CaptureProvider.ARQUIVO_PT,
-            snapshot_url=(
+        if provider == CaptureProvider.ARQUIVO_PT:
+            snapshot_url = (
                 f"{ARQUIVO_PT_REPLAY_ENDPOINT}/{timestamp}/{original_url}"
-            ),
+            )
+        else:
+            snapshot_url = (
+                f"{WAYBACK_REPLAY_ENDPOINT}/{timestamp}id_/{original_url}"
+            )
+        candidate = CaptureCandidate(
+            provider=provider,
+            snapshot_url=snapshot_url,
             source_url=original_url,
             expected_headline=_optional_string(row.get("expectedHeadline")),
             captured_at=captured_at,

@@ -410,6 +410,8 @@ jobs:
           supplemental_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/ap/${FROM_YEAR}-${TO_YEAR}/legacy-archive"
           supplemental="$RUNNER_TEMP/ap-legacy-manifest.jsonl.gz"
           merged="$RUNNER_TEMP/ap-merged-manifest.jsonl.gz"
+          wayback_yahoo="$RUNNER_TEMP/ap-wayback-yahoo-manifest.jsonl.gz"
+          wayback_yahoo_merged="$RUNNER_TEMP/ap-wayback-yahoo-merged-manifest.jsonl.gz"
           if rclone lsf "${supplemental_root}/catalog" --files-only \
               | grep -Fxq "manifest.jsonl.gz"; then
             rclone copyto \
@@ -424,6 +426,21 @@ jobs:
             mv "$merged" "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
           else
             echo "::notice::No AP legacy supplemental manifest yet."
+          fi
+          if rclone lsf "${supplemental_root}/catalog" --files-only \
+              | grep -Fxq "wayback-yahoo-manifest.jsonl.gz"; then
+            rclone copyto \
+              "${supplemental_root}/catalog/wayback-yahoo-manifest.jsonl.gz" \
+              "$wayback_yahoo" \
+              --retries 8 --low-level-retries 20
+            python services/olds-api/tools/merge_archive_manifests.py \
+              --publisher ap \
+              --input "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
+              --input "$wayback_yahoo" \
+              --output "$wayback_yahoo_merged"
+            mv "$wayback_yahoo_merged" "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
+          else
+            echo "::notice::No AP Wayback Yahoo supplemental manifest yet."
           fi
 
       - name: Checkpoint discovery

@@ -125,3 +125,9 @@ def test_accelerator_merges_ap_legacy_supplemental_manifest() -> None:
         in workflow
     )
     assert '--input "$supplemental_source_manifest"' in workflow
+    assert (
+        '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/'
+        'wayback-yahoo-manifest.jsonl.gz"'
+        in workflow
+    )
+    assert '--input "$ap_wayback_yahoo_manifest"' in workflow

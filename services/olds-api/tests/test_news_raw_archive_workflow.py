@@ -84,6 +84,9 @@ def test_ap_raw_archive_merges_legacy_manifest_without_duplicate_raw_root() -> N
     assert "merge_archive_manifests.py" in merge_section
     assert '--input "$supplemental"' in merge_section
     assert '--output "$merged"' in merge_section
+    assert "wayback-yahoo-manifest.jsonl.gz" in merge_section
+    assert '--input "$wayback_yahoo"' in merge_section
+    assert '--output "$wayback_yahoo_merged"' in merge_section
     assert "raw/objects" not in merge_section
 
 
