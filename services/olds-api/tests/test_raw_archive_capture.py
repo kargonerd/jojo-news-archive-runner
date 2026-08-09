@@ -1585,6 +1585,96 @@ def test_interrupted_capture_does_not_consume_an_attempt():
     )
 
 
+def test_capture_schema_requeues_completed_tiny_html_shell():
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="npr",
+        authorization_reference="authorization:test",
+    )
+    connection.execute(
+        """
+        INSERT INTO captures(
+            canonical_url, article_id, publisher, candidates_json,
+            status, attempts, content_type, quality_score, raw_bytes,
+            updated_at
+        ) VALUES (
+            'https://www.npr.org/2012/05/03/151955581/example',
+            'npr-example',
+            'npr',
+            '[]',
+            'complete',
+            1,
+            'text/html',
+            70,
+            65,
+            'now'
+        )
+        """
+    )
+    connection.commit()
+
+    initialize_capture_schema(
+        connection,
+        publisher="npr",
+        authorization_reference="authorization:test",
+    )
+
+    assert connection.execute(
+        "SELECT status, attempts, last_error FROM captures"
+    ).fetchone() == (
+        "pending",
+        0,
+        "quality-recheck:tiny-html-shell",
+    )
+
+
+def test_pending_capture_prioritizes_quality_recheck_before_validation():
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="npr",
+        authorization_reference="authorization:test",
+    )
+    connection.executemany(
+        """
+        INSERT INTO captures(
+            canonical_url, article_id, publisher, published_at,
+            candidates_json, status, attempts, last_error, updated_at
+        ) VALUES (?, ?, 'npr', ?, '[]', 'pending', 0, ?, ?)
+        """,
+        (
+            (
+                "https://www.npr.org/2010/01/01/1/ordinary",
+                "npr-ordinary",
+                "2010-01-01T00:00:00Z",
+                None,
+                "2026-08-09T00:00:00Z",
+            ),
+            (
+                "https://www.npr.org/2012/05/03/2/tiny-shell",
+                "npr-repair",
+                "2012-05-03T00:00:00Z",
+                "quality-recheck:tiny-html-shell",
+                "2026-08-09T01:00:00Z",
+            ),
+        ),
+    )
+    connection.commit()
+
+    selected = pending_captures(
+        connection,
+        retry_errors=False,
+        maximum=1,
+        maximum_record_attempts=3,
+        prioritize_parser_validation=True,
+    )
+
+    assert [item.canonical_url for item in selected] == [
+        "https://www.npr.org/2012/05/03/2/tiny-shell"
+    ]
+
+
 def test_manifest_refresh_retries_errors_when_candidates_change(
     tmp_path: Path,
 ):
@@ -5569,6 +5659,20 @@ def test_raw_quality_rejects_nginx_default_server_page():
     assert signals["serverPlaceholderShell"] is True
 
 
+def test_raw_quality_rejects_tiny_archive_burn_stub():
+    content = b"\n\n<!--  Burned on demand at 2012-07-05 23:11:03 -->"
+
+    score, signals = score_raw_capture(
+        content,
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 70
+    assert signals["looksLikeHtml"] is True
+    assert signals["tinyHtmlShell"] is True
+
+
 def test_npr_capture_skips_nginx_placeholder_for_next_candidate(
     tmp_path: Path,
 ):
@@ -5633,7 +5737,7 @@ def test_npr_capture_skips_nginx_placeholder_for_next_candidate(
     assert result["capture"].selected_candidate.snapshot_url == article_url
 
 
-def test_npr_capture_discovers_alternate_http_timemap_snapshot(
+def test_npr_capture_discovers_alternate_http_timemap_after_tiny_stub(
     tmp_path: Path,
 ):
     canonical_url = (
@@ -5655,10 +5759,7 @@ def test_npr_capture_discovers_alternate_http_timemap_snapshot(
         "url=http%3A%2F%2Fwww.npr.org%2F2012%2F05%2F09%2F152339471%2F"
         "u-s-wholesale-stockpiles-edged-higher-in-march"
     )
-    placeholder = b"""
-    <html><head><title>Welcome to nginx!</title></head>
-    <body><center><h1>Welcome to nginx!</h1></center></body></html>
-    """
+    placeholder = b"\n\n<!-- Burned on demand at 2012-07-05 23:11:03 -->"
     header = [
         "urlkey",
         "timestamp",
@@ -5798,6 +5899,42 @@ def test_completed_nginx_placeholder_is_requeued_by_quality_audit(
         capture,
         archive_root=tmp_path,
     ) == "server-placeholder-shell"
+
+
+def test_completed_tiny_burn_stub_is_requeued_by_quality_audit(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.npr.org/2012/05/03/151955581/"
+        "bull-fights-bankruptcy-and-a-damn-dangerous-book"
+    )
+    snapshot_url = (
+        "https://web.archive.org/web/20120706031557id_/" + canonical_url
+    )
+    content = b"\n\n<!-- Burned on demand at 2012-07-05 23:11:03 -->"
+    blob = store_raw_html(tmp_path, content)
+    capture = RawCapture(
+        article_id="npr:" + ("b" * 64),
+        publisher="npr",
+        canonical_url=canonical_url,
+        published_at=datetime(2012, 5, 3, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=snapshot_url,
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=snapshot_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=70,
+        raw_html=blob,
+    )
+
+    assert completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    ) == "tiny-html-shell"
 
 
 def test_raw_quality_rejects_authentication_shell():

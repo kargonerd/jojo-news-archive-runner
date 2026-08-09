@@ -58,6 +58,7 @@ CAPTURE_POLICY_VERSIONS = {
     "bloomberg": "bloomberg-capture/0.10.3",
     "ft": "ft-capture/0.20.2",
     "nyt": "nyt-capture/0.9.0",
+    "npr": "npr-capture/1.1",
     "reuters": "reuters-capture/0.7.2",
     "wsj": "wsj-capture/0.8.7",
 }
@@ -377,6 +378,25 @@ def initialize_capture_schema(
         """,
         (_now_iso(),),
     )
+    # Earlier scoring gave a 200 response containing only an archive-side
+    # burn comment a score of 70 and marked it complete.  Requeue those tiny
+    # HTML shells on checkpoint restore so an alternate Timemap capture can
+    # replace the bad raw object.
+    connection.execute(
+        """
+        UPDATE captures
+        SET status='pending',
+            attempts=0,
+            last_error='quality-recheck:tiny-html-shell',
+            updated_at=?
+        WHERE status='complete'
+          AND raw_bytes > 0
+          AND raw_bytes < 512
+          AND LOWER(COALESCE(content_type, '')) LIKE '%html%'
+          AND COALESCE(quality_score, 0) <= 70
+        """,
+        (_now_iso(),),
+    )
     connection.commit()
 
 
@@ -485,16 +505,38 @@ def pending_captures(
 ) -> list[ManifestItem]:
     if maximum_record_attempts < 1:
         raise ValueError("maximum_record_attempts must be positive")
-    priority_urls: list[str] = []
+    repair_limit = -1 if maximum is None else maximum
+    priority_urls = [
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT canonical_url
+            FROM captures
+            WHERE status='pending'
+              AND last_error LIKE 'quality-recheck:%'
+            ORDER BY updated_at, canonical_url
+            LIMIT ?
+            """,
+            (repair_limit,),
+        )
+    ]
     if prioritize_parser_validation:
         from .parser_validation import pending_parser_validation_urls
 
-        priority_urls = pending_parser_validation_urls(
+        validation_limit = (
+            None
+            if maximum is None
+            else max(0, maximum - len(priority_urls))
+        )
+        validation_urls = pending_parser_validation_urls(
             connection,
-            maximum=maximum,
+            maximum=validation_limit,
             maximum_record_attempts=maximum_record_attempts,
             from_year=validation_from_year,
             to_year=validation_to_year,
+        )
+        priority_urls.extend(
+            url for url in validation_urls if url not in priority_urls
         )
     priority_rows: list[tuple] = []
     if priority_urls:
@@ -2168,6 +2210,8 @@ def _candidate_rejection_reasons(
         reasons.append("archive-error-page")
     if signals.get("serverPlaceholderShell"):
         reasons.append("server-placeholder-shell")
+    if signals.get("tinyHtmlShell"):
+        reasons.append("tiny-html-shell")
     if signals["authenticationShell"] and not (
         publisher == "wsj" and wsj_parser_usable
     ):
@@ -6076,6 +6120,12 @@ def score_raw_capture(
         marker in prefix for marker in _REDIRECT_SHELL_MARKERS
     )
     substantial = len(content) >= 2_048
+    tiny_html_shell = bool(
+        looks_like_html
+        and len(content) < 512
+        and not has_article_marker
+        and not has_strong_body_marker
+    )
     score = 0
     if http_status in ACCEPTED_HTTP_STATUSES:
         score += 35
@@ -6095,12 +6145,14 @@ def score_raw_capture(
         or ft_truncated_article_shell
         or bloomberg_teaser_shell
         or server_placeholder_shell
+        or tiny_html_shell
     ):
         score = max(0, score - 60)
     return score, {
         "looksLikeHtml": looks_like_html,
         "archiveErrorPage": archive_error_page,
         "serverPlaceholderShell": server_placeholder_shell,
+        "tinyHtmlShell": tiny_html_shell,
         "hasArticleMarker": has_article_marker,
         "hasStrongBodyMarker": has_strong_body_marker,
         "authenticationShell": authentication_shell,
@@ -6552,6 +6604,7 @@ def completed_capture_rejection_reason(
             "ft-truncated-article-shell",
             bool(signals["ftTruncatedArticleShell"]),
         ),
+        ("tiny-html-shell", bool(signals["tinyHtmlShell"])),
     )
     for reason, rejected in checks:
         if rejected:

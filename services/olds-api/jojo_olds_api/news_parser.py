@@ -3848,6 +3848,24 @@ def _promote_bloomberg_image_candidates(candidates: list[str]) -> list[str]:
     return promoted
 
 
+def _promote_npr_image_candidates(candidates: list[str]) -> list[str]:
+    """Prefer NPR's full ``data-original`` asset over legacy crops."""
+    indexed = list(enumerate(candidates))
+    indexed.sort(
+        key=lambda item: (
+            bool(
+                re.search(
+                    r"-s\d+-c\d+(?=\.(?:gif|jpe?g|png|webp)$)",
+                    urlsplit(item[1]).path,
+                    flags=re.IGNORECASE,
+                )
+            ),
+            item[0],
+        )
+    )
+    return [url for _, url in indexed]
+
+
 def _promote_ft_image_candidates(candidates: list[str]) -> list[str]:
     """Prefer a 1200px FT Origami rendition while retaining source variants."""
     promoted: list[str] = []
@@ -6431,6 +6449,24 @@ def _npr_legacy_cartoon_body(
         for node in soup.select("div.bucketwrap.photo624")
         if isinstance(node, Tag) and node.select_one("img[src]") is not None
     ]
+    page_title = _clean_text(
+        soup.title.get_text(" ", strip=True) if soup.title is not None else ""
+    ).casefold()
+    double_take_page = bool(
+        "double take" in page_title
+        or soup.select_one(
+            ".contentheader[data-metrics-category*='Double Take' i]"
+        )
+    )
+    if len(cartoons) < 2 and double_take_page:
+        cartoons = [
+            node
+            for node in soup.select(
+                "#supplementarycontent > div.bucketwrap.image"
+            )
+            if isinstance(node, Tag)
+            and node.select_one(".imagewrap img[src]") is not None
+        ]
     if selected_characters >= 200 or len(cartoons) < 2:
         return None
     document = BeautifulSoup(
@@ -11387,6 +11423,8 @@ def _image_from_tag(
         return None
     if spec.publisher == "bloomberg":
         candidates = _promote_bloomberg_image_candidates(candidates)
+    if spec.publisher == "npr":
+        candidates = _promote_npr_image_candidates(candidates)
     if spec.publisher == "ft":
         candidates = _promote_ft_image_candidates(candidates)
     if spec.publisher == "reuters":
@@ -11405,7 +11443,17 @@ def _image_from_tag(
         )
         if isinstance(carousel_slide, Tag):
             caption_container = carousel_slide
-    if spec.publisher == "nyt":
+    if spec.publisher == "npr":
+        legacy_bucket = image_node.find_parent(
+            "div",
+            class_=lambda value: value
+            and "bucketwrap" in str(value).casefold(),
+        )
+        if isinstance(legacy_bucket, Tag):
+            caption_container = legacy_bucket
+    if spec.publisher == "npr":
+        caption, credit = _npr_caption_credit(caption_container)
+    elif spec.publisher == "nyt":
         caption, credit = _nyt_caption_credit(caption_container)
     elif spec.publisher == "bloomberg":
         caption, credit = _bloomberg_caption_credit(caption_container)
@@ -11980,6 +12028,29 @@ def _caption_credit(container: Tag) -> tuple[str | None, str | None]:
     credit = _clean_text(raw[match.start() :]) or None
     if caption and credit and caption.casefold() == credit.casefold():
         caption = None
+    return caption, credit
+
+
+def _npr_caption_credit(container: Tag) -> tuple[str | None, str | None]:
+    """Separate legacy NPR cartoon captions from adjacent credit spans."""
+    caption_node = container.select_one(
+        ".captionwrap .caption, figcaption, [class*='caption' i]"
+    )
+    caption: str | None = None
+    if isinstance(caption_node, Tag):
+        copy = BeautifulSoup(str(caption_node), "html.parser").find()
+        if isinstance(copy, Tag):
+            for hidden in copy.select(".hide-caption"):
+                hidden.decompose()
+            caption = _clean_text(copy.get_text(" ", strip=True)) or None
+    credit_node = container.select_one(".creditwrap")
+    credit = (
+        _clean_text(credit_node.get_text(" ", strip=True)) or None
+        if isinstance(credit_node, Tag)
+        else None
+    )
+    if caption is None and credit is None:
+        return _caption_credit(container)
     return caption, credit
 
 
