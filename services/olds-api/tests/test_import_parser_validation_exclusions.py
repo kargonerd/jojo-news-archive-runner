@@ -123,3 +123,56 @@ def test_removes_existing_samples_that_overlap_new_exclusions(
         "SELECT COUNT(*) FROM parser_validation_samples"
     ).fetchone()[0] == 0
     target.close()
+
+
+def test_can_limit_imported_exclusions_to_one_sample_year(tmp_path: Path):
+    source_path = tmp_path / "source.sqlite3"
+    target_path = tmp_path / "target.sqlite3"
+    source = sqlite3.connect(source_path)
+    source.executescript(
+        """
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        INSERT INTO parser_validation_results VALUES
+            ('https://www.ft.com/content/from-2016', 2016),
+            ('https://www.ft.com/content/from-2017', 2017);
+        """
+    )
+    source.commit()
+    source.close()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(TOOL),
+            "--source-state",
+            str(source_path),
+            "--target-state",
+            str(target_path),
+            "--source-cohort",
+            "ft:2016:ft-parser/0.8.29",
+            "--sample-year",
+            "2016",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["sampleYear"] == 2016
+    assert payload["sourceSamples"] == 1
+    target = sqlite3.connect(target_path)
+    exclusions = target.execute(
+        "SELECT canonical_url, source_cohort "
+        "FROM parser_validation_exclusions"
+    ).fetchall()
+    target.close()
+    assert exclusions == [
+        (
+            "https://www.ft.com/content/from-2016",
+            "ft:2016:ft-parser/0.8.29",
+        )
+    ]

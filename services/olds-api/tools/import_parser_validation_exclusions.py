@@ -22,6 +22,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-state", type=Path, required=True)
     parser.add_argument("--target-state", type=Path, required=True)
     parser.add_argument("--source-cohort", default="validation-v1")
+    parser.add_argument(
+        "--sample-year",
+        type=int,
+        help="Only import evaluated URLs assigned to this publication year.",
+    )
     return parser.parse_args()
 
 
@@ -53,10 +58,17 @@ def main() -> int:
             source_table = "parser_validation_samples"
         else:
             raise SystemExit("source state has no parser validation URL table")
+        where_clause = ""
+        parameters: tuple[object, ...] = ()
+        if args.sample_year is not None:
+            where_clause = " WHERE sample_year=?"
+            parameters = (args.sample_year,)
         urls = [
             str(row[0])
             for row in source.execute(
                 f"SELECT DISTINCT canonical_url FROM {source_table}"
+                f"{where_clause}",
+                parameters,
             )
         ]
         now = datetime.now(timezone.utc).isoformat()
@@ -117,6 +129,7 @@ def main() -> int:
             "formatVersion": "jojo-parser-validation-exclusions/1",
             "sourceCohort": args.source_cohort,
             "sourceTable": source_table,
+            "sampleYear": args.sample_year,
             "sourceSamples": len(urls),
             "excluded": int(
                 target.execute(
