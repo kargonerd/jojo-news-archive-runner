@@ -25,6 +25,11 @@ env:
   # and storage cost have been reviewed.
   MAX_STANDARD_CONCURRENCY: "2"
   MAX_DISPATCH_PER_RUN: "2"
+  # Bloomberg has completed the current research acceptance cycle. Reuters is
+  # outside the active convergence objective; both remain supported by the
+  # generic planner and can be re-enabled by editing this explicit queue.
+  VALIDATION_PUBLISHERS: >-
+    ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin
   DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
 jobs:
@@ -178,6 +183,7 @@ jobs:
             --available-source-shards \
               "$RUNNER_TEMP/available-source-shards.txt" \
             --max-dispatch "$dispatches" \
+            --publishers $VALIDATION_PUBLISHERS \
             --output "$RUNNER_TEMP/validation-plan.json"
           echo "tasks=$(jq -c '.tasks' \
             "$RUNNER_TEMP/validation-plan.json")" >> "$GITHUB_OUTPUT"

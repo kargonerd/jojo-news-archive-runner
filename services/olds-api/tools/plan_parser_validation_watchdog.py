@@ -32,6 +32,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--max-dispatch", type=int, required=True)
+    parser.add_argument(
+        "--publishers",
+        nargs="+",
+        help=(
+            "Optional explicit publisher subset to schedule. The planner's "
+            "default remains the full supported set."
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -47,6 +55,7 @@ def main() -> int:
         state_root=args.state_root,
         active_titles=titles,
         max_dispatch=args.max_dispatch,
+        publishers=args.publishers,
         available_source_shards=(
             args.available_source_shards.read_text(encoding="utf-8").splitlines()
             if args.available_source_shards is not None

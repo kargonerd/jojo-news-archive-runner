@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from jojo_olds_api.parser_validation_watchdog import (
     plan_validation_dispatch,
 )
@@ -217,6 +219,43 @@ def test_watchdog_only_plans_cells_with_readable_source_manifests(
         (task["publisher"], task["year"])
         for task in plan["tasks"]
     } == {("axios", year) for year in range(2017, 2027)}
+
+
+def test_watchdog_filters_to_explicit_pending_publishers(tmp_path: Path):
+    _write_summary(
+        tmp_path,
+        "validation/reuters/2024/state/summary.json",
+        publisher="reuters",
+        year=2024,
+        evaluated=799,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=66,
+        publishers=["wsj", "nyt"],
+    )
+
+    assert plan["publishers"] == ["wsj", "nyt"]
+    assert plan["targetCells"] == 34
+    assert {
+        row["publisher"] for row in plan["cellProgress"]
+    } == {"wsj", "nyt"}
+    assert all(
+        task["publisher"] in {"wsj", "nyt"}
+        for task in plan["tasks"]
+    )
+
+
+def test_watchdog_rejects_unknown_explicit_publisher(tmp_path: Path):
+    with pytest.raises(ValueError, match="unsupported watchdog publishers"):
+        plan_validation_dispatch(
+            state_root=tmp_path,
+            active_titles=[],
+            max_dispatch=1,
+            publishers=["unknown-news"],
+        )
 
 
 def test_watchdog_prioritizes_nearly_complete_current_sample(

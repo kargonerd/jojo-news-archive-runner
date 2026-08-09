@@ -60,9 +60,26 @@ def plan_validation_dispatch(
     active_titles: Iterable[str],
     max_dispatch: int,
     available_source_shards: Iterable[str] | None = None,
+    publishers: Iterable[str] | None = None,
 ) -> dict[str, object]:
     if max_dispatch < 0:
         raise ValueError("max_dispatch must be non-negative")
+    requested_publishers = (
+        set(PUBLISHER_ORDER)
+        if publishers is None
+        else {publisher.strip() for publisher in publishers if publisher.strip()}
+    )
+    unsupported_publishers = requested_publishers - set(PUBLISHER_ORDER)
+    if unsupported_publishers:
+        raise ValueError(
+            "unsupported watchdog publishers: "
+            + ", ".join(sorted(unsupported_publishers))
+        )
+    publisher_order = tuple(
+        publisher
+        for publisher in PUBLISHER_ORDER
+        if publisher in requested_publishers
+    )
     available_shards = (
         None
         if available_source_shards is None
@@ -74,11 +91,11 @@ def plan_validation_dispatch(
     )
     versions = {
         publisher: publisher_spec(publisher).parser_version
-        for publisher in PUBLISHER_ORDER
+        for publisher in publisher_order
     }
     qa_revisions = {
         publisher: qa_policy_revision(publisher)
-        for publisher in PUBLISHER_ORDER
+        for publisher in publisher_order
     }
     progress = {
         (publisher, year): {
@@ -94,7 +111,7 @@ def plan_validation_dispatch(
             "parserVersion": None,
             "summaryPaths": [],
         }
-        for publisher in PUBLISHER_ORDER
+        for publisher in publisher_order
         for year in TARGET_YEARS
         if _source_year_is_available(
             publisher,
@@ -187,7 +204,7 @@ def plan_validation_dispatch(
     ]
     order = {
         publisher: index
-        for index, publisher in enumerate(PUBLISHER_ORDER)
+        for index, publisher in enumerate(publisher_order)
     }
     candidates.sort(
         key=lambda cell: (
@@ -231,12 +248,13 @@ def plan_validation_dispatch(
             "ready": (publisher, year) in ready_cells,
             "active": (publisher, year) in active_cells,
         }
-        for publisher in PUBLISHER_ORDER
+        for publisher in publisher_order
         for year in TARGET_YEARS
         if (publisher, year) in progress
     ]
     return {
         "formatVersion": FORMAT_VERSION,
+        "publishers": list(publisher_order),
         "targetCells": len(progress),
         "readyCells": len(ready_cells),
         "activeCells": len(active_cells),

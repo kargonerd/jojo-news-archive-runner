@@ -19,6 +19,9 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "--available-source-shards" in workflow
     assert 'object_listing="$(\n              rclone lsl' in workflow
     assert '&& [ -n "$object_listing" ]; then' in workflow
+    assert "VALIDATION_PUBLISHERS:" in workflow
+    assert "ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin" in workflow
+    assert "--publishers $VALIDATION_PUBLISHERS" in workflow
 
 
 def test_watchdog_dispatches_two_workers_per_validation_job() -> None:
