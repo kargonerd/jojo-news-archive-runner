@@ -602,6 +602,7 @@ def capture_item(
     ft_dynamic_syndication_attempted = False
     ft_ghostarchive_attempted = False
     bloomberg_legacy_timemap_attempted = False
+    arquivo_pt_attempted = False
     ft_original_headline = next(
         (
             candidate.expected_headline
@@ -907,6 +908,46 @@ def capture_item(
             if response[5] == 100:
                 break
 
+    def consider_arquivo_pt() -> None:
+        nonlocal arquivo_pt_attempted
+        if (
+            arquivo_pt_attempted
+            or not enable_arquivo_pt_fallback
+            or item.publisher not in ARQUIVO_PT_FALLBACK_PUBLISHERS
+            or (best_response is not None and best_response[5] >= 100)
+        ):
+            return
+        arquivo_pt_attempted = True
+        arquivo_pt_candidates: tuple[CaptureCandidate, ...] = ()
+        for discovery_url in _common_crawl_discovery_urls(item):
+            discovery_item = ManifestItem(
+                publisher=item.publisher,
+                canonical_url=discovery_url,
+                published_at=item.published_at,
+                section=item.section,
+                candidates=item.candidates,
+            )
+            try:
+                arquivo_pt_candidates = discover_arquivo_pt_candidates(
+                    discovery_item,
+                    archive_client=archive_client,
+                )
+            except Exception as exc:
+                failures.append(f"arquivo-pt-index:{type(exc).__name__}")
+                continue
+            if arquivo_pt_candidates:
+                break
+        existing_urls = {
+            candidate.snapshot_url for candidate in candidates_considered
+        }
+        arquivo_pt_candidates = tuple(
+            candidate
+            for candidate in arquivo_pt_candidates
+            if candidate.snapshot_url not in existing_urls
+        )
+        candidates_considered.extend(arquivo_pt_candidates)
+        consider_candidates(arquivo_pt_candidates)
+
     def consider_ft_title_index() -> None:
         nonlocal ft_title_index_attempted
         if (
@@ -1183,6 +1224,13 @@ def capture_item(
                 consider_candidates(legacy_candidates)
         if best_response is None:
             consider_candidates(item.candidates)
+
+    # In the independent WSJ retry cohort, every observed secondary-archive
+    # success came from Arquivo.pt while Common Crawl contributed none.  Try
+    # the evidenced high-yield index first, retaining Common Crawl as the next
+    # fallback when Arquivo.pt has no validated full-text capture.
+    if item.publisher == "wsj":
+        consider_arquivo_pt()
 
     if (
         item.publisher != "ft"
@@ -1545,40 +1593,7 @@ def capture_item(
     consider_ft_title_index()
     consider_ft_dynamic_syndication()
 
-    if (
-        enable_arquivo_pt_fallback
-        and item.publisher in ARQUIVO_PT_FALLBACK_PUBLISHERS
-        and (best_response is None or best_response[5] < 100)
-    ):
-        arquivo_pt_candidates: tuple[CaptureCandidate, ...] = ()
-        for discovery_url in _common_crawl_discovery_urls(item):
-            discovery_item = ManifestItem(
-                publisher=item.publisher,
-                canonical_url=discovery_url,
-                published_at=item.published_at,
-                section=item.section,
-                candidates=item.candidates,
-            )
-            try:
-                arquivo_pt_candidates = discover_arquivo_pt_candidates(
-                    discovery_item,
-                    archive_client=archive_client,
-                )
-            except Exception as exc:
-                failures.append(f"arquivo-pt-index:{type(exc).__name__}")
-                continue
-            if arquivo_pt_candidates:
-                break
-        existing_urls = {
-            candidate.snapshot_url for candidate in candidates_considered
-        }
-        arquivo_pt_candidates = tuple(
-            candidate
-            for candidate in arquivo_pt_candidates
-            if candidate.snapshot_url not in existing_urls
-        )
-        candidates_considered.extend(arquivo_pt_candidates)
-        consider_candidates(arquivo_pt_candidates)
+    consider_arquivo_pt()
 
     if (
         best_response is not None

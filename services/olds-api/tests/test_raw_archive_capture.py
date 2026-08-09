@@ -3186,6 +3186,79 @@ def test_wsj_capture_falls_back_to_exact_timemap_snapshot(
     assert result["capture"].selected_candidate.digest == "WSJ-EXACT"
 
 
+def test_wsj_retry_prefers_validated_arquivo_pt_before_common_crawl(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.wsj.com/articles/"
+        "a-riverside-compound-in-germany-1485968536"
+    )
+    guessed_url = (
+        "https://web.archive.org/web/20170202000000id_/" + canonical_url
+    )
+    item = ManifestItem(
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at="2017-02-01T18:34:40Z",
+        section=None,
+        candidates=(candidate(guessed_url, "20170202000000"),),
+    )
+    query_url = arquivo_pt_cdx_url(item)
+    replay_url = (
+        "https://arquivo.pt/noFrame/replay/20170201183440/"
+        + canonical_url
+    )
+    index = json.dumps(
+        {
+            "url": canonical_url,
+            "timestamp": "20170201183440",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "WSJ-ARQUIVO",
+            "length": str(len(ARTICLE)),
+        }
+    ).encode()
+    client = StubArchiveClient(
+        {
+            guessed_url: (
+                404,
+                {"content-type": "text/html"},
+                b"",
+                guessed_url,
+            ),
+            query_url: (
+                200,
+                {"content-type": "text/x-ndjson"},
+                index,
+                query_url,
+            ),
+            replay_url: (
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                ARTICLE,
+                replay_url,
+            ),
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        enable_wayback_timemap_fallback=False,
+        enable_common_crawl_fallback=True,
+        enable_arquivo_pt_fallback=True,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [guessed_url, query_url, replay_url]
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.ARQUIVO_PT
+    assert capture.selected_candidate.digest == "WSJ-ARQUIVO"
+    assert capture.quality_signals["arquivoPtReplayValidated"] is True
+
+
 def test_wsj_validation_defers_expensive_fallbacks_until_retry():
     assert defer_expensive_archive_fallbacks(
         publisher="wsj",
