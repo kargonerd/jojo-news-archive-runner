@@ -36,6 +36,25 @@ def test_wayback_discovery_retries_across_bounded_runs() -> None:
     assert "runner slot for the command defaults (90 seconds x 6)" in wayback_section
 
 
+def test_wsj_catalog_only_uses_bounded_two_per_second_metadata_rate() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    wayback_section = workflow[
+        workflow.index('elif [ "$MANIFEST_MODE" = "wayback-urlkey" ]; then') :
+        workflow.index(
+            "else",
+            workflow.index(
+                'elif [ "$MANIFEST_MODE" = "wayback-urlkey" ]; then'
+            ),
+        )
+    ]
+
+    assert 'discovery_interval=1.0' in wayback_section
+    assert '[ "$PUBLISHER" = "wsj" ]' in wayback_section
+    assert '[ "$MAX_CAPTURES" = "0" ]' in wayback_section
+    assert 'discovery_interval=0.5' in wayback_section
+    assert '--min-request-interval "$discovery_interval"' in wayback_section
+
+
 def test_npr_raw_archive_merges_common_crawl_without_duplicate_raw_root() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     merge_section = workflow[

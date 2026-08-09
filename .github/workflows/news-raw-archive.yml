@@ -301,12 +301,21 @@ jobs:
                 --github-output "$GITHUB_OUTPUT"
             elif [ "$MANIFEST_MODE" = "wayback-urlkey" ]; then
               wayback_page_limit=2000
+              discovery_interval=1.0
               if [ "$PUBLISHER" = "wsj" ] &&
                  [ "$FROM_YEAR" -le 2013 ]; then
                 # The legacy online.wsj.com query is extremely broad. Smaller
                 # resumable pages avoid multi-minute 200 responses that CDX
                 # proxies sometimes truncate before the resume key.
                 wayback_page_limit=250
+              fi
+              if [ "$PUBLISHER" = "wsj" ] &&
+                 [ "$MAX_CAPTURES" = "0" ]; then
+                # Infini-News calls are globally rate limited across workers.
+                # Two metadata requests per second stayed stable in probes
+                # and halves catalog-only latency without changing capture
+                # traffic.
+                discovery_interval=0.5
               fi
               # A timed-out CDX page remains resumable in discovery state;
               # retry it in a later bounded run instead of holding a scarce
@@ -319,7 +328,7 @@ jobs:
                 --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
                 --page-limit "$wayback_page_limit" \
                 --max-pages "$MAX_DISCOVERY_PAGES" \
-                --min-request-interval 1.0 \
+                --min-request-interval "$discovery_interval" \
                 --timeout 30 \
                 --attempts 2 \
                 --collapse urlkey \
