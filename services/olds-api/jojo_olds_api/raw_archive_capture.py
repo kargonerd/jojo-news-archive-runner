@@ -353,6 +353,10 @@ def initialize_capture_schema(
         """
         UPDATE captures
         SET status='pending',
+            attempts=CASE
+                WHEN attempts > 0 THEN attempts - 1
+                ELSE 0
+            END,
             last_error='interrupted before completion',
             updated_at=?
         WHERE status='downloading'

@@ -1541,6 +1541,48 @@ def test_legacy_manifest_loads_into_generic_capture_state(tmp_path: Path):
     )
 
 
+def test_interrupted_capture_does_not_consume_an_attempt():
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    connection.execute(
+        """
+        INSERT INTO captures(
+            canonical_url, article_id, publisher, published_at, section,
+            candidates_json, status, attempts, updated_at
+        ) VALUES (
+            'https://www.wsj.com/articles/interrupted',
+            'wsj-interrupted',
+            'wsj',
+            '2017-01-01T00:00:00Z',
+            NULL,
+            '[]',
+            'downloading',
+            2,
+            'now'
+        )
+        """
+    )
+    connection.commit()
+
+    initialize_capture_schema(
+        connection,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+
+    assert connection.execute(
+        "SELECT status, attempts, last_error FROM captures"
+    ).fetchone() == (
+        "pending",
+        1,
+        "interrupted before completion",
+    )
+
+
 def test_manifest_refresh_retries_errors_when_candidates_change(
     tmp_path: Path,
 ):
