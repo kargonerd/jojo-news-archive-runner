@@ -10663,7 +10663,7 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
         if re.match(
             r"(?i)^follow @financialtimesfashion on instagram\b",
             text,
-        ) and "subscribe to culture call" in text.casefold():
+        ):
             node.decompose()
             continue
         if re.match(
@@ -10672,6 +10672,27 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             text,
         ):
             node.decompose()
+
+    for marker in list(soup.select("p, h2, h3, h4")):
+        if (
+            _clean_text(marker.get_text(" ", strip=True)).casefold()
+            != "read more:"
+        ):
+            continue
+        sibling = marker.find_next_sibling()
+        while isinstance(sibling, Tag):
+            next_sibling = sibling.find_next_sibling()
+            text = _clean_text(sibling.get_text(" ", strip=True))
+            if sibling.name in {"ul", "ol"} or (
+                sibling.name == "p"
+                and len(text) <= 300
+                and text.startswith(("-", "–", "—", "−"))
+            ):
+                sibling.decompose()
+                sibling = next_sibling
+                continue
+            break
+        marker.decompose()
 
     tail_markers: list[Tag] = list(
         soup.select(
@@ -10862,14 +10883,18 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
 def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
     """Remove syndication copyright footers without dropping article prose."""
     pattern = re.compile(
-        r"""(?ix)(?:"""
-        r"""^\s*copyright\s+(?:the\s+)?financial\s+times\s+limited"""
-        r"""(?:\s+\d{4})?(?:\.\s*all\s+rights\s+reserved\.|\.)?\s*$"""
-        r"""|"""
-        r"""\s*[_–—-]\s*copyright\s+(?:the\s+)?"""
-        r"""financial\s+times\s+limited(?:\s+\d{4})?"""
-        r"""(?:\.\s*all\s+rights\s+reserved\.|\.)?\s*$"""
-        r""")"""
+        r"""(?isx)
+        \s*
+        (?:data\s+visualisation\s+by\s+and\s+)?
+        (?:[_–—−-]\s*)?
+        \(?\s*copyright\s+(?:the\s+)?financial\s+times\s+limited
+        (?:\s+\d{4})?
+        (?:\.\s*all\s+rights\s+reserved\.|\.)?
+        \s*\)?
+        (?:\s*/\s*(?:bloomberg|new\s+york\s+times))?
+        (?:\s+(?:share|join)\b.*)?
+        \s*$
+        """
     )
     for text_node in list(soup.find_all(string=pattern)):
         cleaned = pattern.sub("", str(text_node)).rstrip()
@@ -10877,6 +10902,20 @@ def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
             text_node.replace_with(cleaned)
         else:
             text_node.extract()
+    # Licensed partners often split one legal footer across italic and link
+    # nodes (for example "Copyright The" + "Financial Times Limited" +
+    # the year).  Match the rendered block as a fallback, while preserving
+    # any real sentence that precedes the suffix.
+    for node in list(soup.select("p, li")):
+        text = _clean_text(node.get_text(" ", strip=True))
+        cleaned = pattern.sub("", text).rstrip()
+        if cleaned == text:
+            continue
+        if cleaned:
+            node.clear()
+            node.string = cleaned
+        else:
+            node.decompose()
     for node in list(soup.select("p")):
         if _clean_text(node.get_text(" ", strip=True)) == ".":
             node.decompose()
