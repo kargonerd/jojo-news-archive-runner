@@ -158,6 +158,15 @@ _ARCHIVE_ERROR_MARKERS = (
     b'class="missing-404"',
     b"class='missing-404'",
 )
+_SERVER_PLACEHOLDER_MARKERS = (
+    b"<title>welcome to nginx!</title>",
+    b"<h1>welcome to nginx!</h1>",
+    b"<title>test page for the nginx http server",
+    b"<title>apache2 ubuntu default page",
+    b"<title>apache http server test page",
+    b"<title>iis windows server</title>",
+)
+_SERVER_PLACEHOLDER_MAXIMUM_BYTES = 100_000
 _AUTH_SHELL_MARKERS = (
     b"<title>log in - ",
     b"<title>sign in - ",
@@ -2129,6 +2138,8 @@ def _candidate_rejection_reasons(
         reasons.append("non-html")
     if signals["archiveErrorPage"]:
         reasons.append("archive-error-page")
+    if signals.get("serverPlaceholderShell"):
+        reasons.append("server-placeholder-shell")
     if signals["authenticationShell"] and not (
         publisher == "wsj" and wsj_parser_usable
     ):
@@ -5920,6 +5931,10 @@ def score_raw_capture(
         or any(marker in prefix for marker in _HTML_MARKERS)
     )
     archive_error_page = any(marker in prefix for marker in _ARCHIVE_ERROR_MARKERS)
+    server_placeholder_shell = bool(
+        len(content) <= _SERVER_PLACEHOLDER_MAXIMUM_BYTES
+        and any(marker in prefix for marker in _SERVER_PLACEHOLDER_MARKERS)
+    )
     has_article_marker = b"<article" in prefix or b"newsarticle" in prefix
     final_url_lower = final_url.casefold()
     decoded_final_url = unquote(final_url_lower)
@@ -6034,11 +6049,13 @@ def score_raw_capture(
         or redirect_shell
         or ft_truncated_article_shell
         or bloomberg_teaser_shell
+        or server_placeholder_shell
     ):
         score = max(0, score - 60)
     return score, {
         "looksLikeHtml": looks_like_html,
         "archiveErrorPage": archive_error_page,
+        "serverPlaceholderShell": server_placeholder_shell,
         "hasArticleMarker": has_article_marker,
         "hasStrongBodyMarker": has_strong_body_marker,
         "authenticationShell": authentication_shell,
@@ -6472,6 +6489,10 @@ def completed_capture_rejection_reason(
         ("empty-response", not content),
         ("not-html", not bool(signals["looksLikeHtml"])),
         ("archive-error-page", bool(signals["archiveErrorPage"])),
+        (
+            "server-placeholder-shell",
+            bool(signals["serverPlaceholderShell"]),
+        ),
         ("authentication-shell", bool(signals["authenticationShell"])),
         ("access-challenge-shell", bool(signals["accessChallengeShell"])),
         (

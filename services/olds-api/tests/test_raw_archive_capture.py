@@ -5551,6 +5551,129 @@ def test_raw_quality_rejects_archive_error_page():
     assert signals["archiveErrorPage"] is True
 
 
+def test_raw_quality_rejects_nginx_default_server_page():
+    content = b"""
+    <html><head><title>Welcome to nginx!</title></head>
+    <body bgcolor="white" text="black">
+      <center><h1>Welcome to nginx!</h1></center>
+    </body></html>
+    """
+
+    score, signals = score_raw_capture(
+        content,
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 70
+    assert signals["serverPlaceholderShell"] is True
+
+
+def test_npr_capture_skips_nginx_placeholder_for_next_candidate(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.npr.org/2012/05/09/152339471/"
+        "u-s-wholesale-stockpiles-edged-higher-in-march"
+    )
+    placeholder_url = (
+        "https://web.archive.org/web/20120510000000id_/" + canonical_url
+    )
+    article_url = (
+        "https://web.archive.org/web/20120511000000id_/" + canonical_url
+    )
+    placeholder = b"""
+    <html><head><title>Welcome to nginx!</title></head>
+    <body bgcolor="white" text="black">
+      <center><h1>Welcome to nginx!</h1></center>
+    </body></html>
+    """
+    client = StubArchiveClient(
+        {
+            placeholder_url: (
+                200,
+                {"content-type": "text/html"},
+                placeholder,
+                placeholder_url,
+            ),
+            article_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                article_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="npr",
+        canonical_url=canonical_url,
+        published_at="2012-05-09T00:00:00Z",
+        section=None,
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=placeholder_url,
+            ),
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=article_url,
+            ),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [placeholder_url, article_url]
+    assert result["capture"].selected_candidate.snapshot_url == article_url
+
+
+def test_completed_nginx_placeholder_is_requeued_by_quality_audit(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.npr.org/2012/05/09/152339471/"
+        "u-s-wholesale-stockpiles-edged-higher-in-march"
+    )
+    snapshot_url = (
+        "https://web.archive.org/web/20120510000000id_/" + canonical_url
+    )
+    content = b"""
+    <html><head><title>Welcome to nginx!</title></head>
+    <body bgcolor="white" text="black">
+      <center><h1>Welcome to nginx!</h1></center>
+    </body></html>
+    """
+    blob = store_raw_html(tmp_path, content)
+    capture = RawCapture(
+        article_id="npr:" + ("a" * 64),
+        publisher="npr",
+        canonical_url=canonical_url,
+        published_at=datetime(2012, 5, 9, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=snapshot_url,
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=snapshot_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=70,
+        raw_html=blob,
+    )
+
+    assert completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    ) == "server-placeholder-shell"
+
+
 def test_raw_quality_rejects_authentication_shell():
     score, signals = score_raw_capture(
         b"""
