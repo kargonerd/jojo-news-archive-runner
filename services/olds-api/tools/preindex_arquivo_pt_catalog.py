@@ -117,7 +117,11 @@ def preindex(
     timeout: float,
     attempts: int,
 ) -> dict[str, object]:
-    metadata_key = f"arquivo_pt-prefix-head-v1:{publisher}:{year}:{limit}"
+    # v1 candidates were subsequently overwritten by the manifest reload in
+    # capture_archive_batch.  v2 records that candidates were merged under
+    # the persistence-safe manifest policy and intentionally reindexes a v1
+    # checkpoint once.
+    metadata_key = f"arquivo_pt-prefix-head-v2:{publisher}:{year}:{limit}"
     connection = sqlite3.connect(state_path, timeout=60)
     temporary_path: Path | None = None
     try:

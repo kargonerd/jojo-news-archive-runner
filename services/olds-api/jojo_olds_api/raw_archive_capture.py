@@ -6679,7 +6679,7 @@ def _insert_manifest_batch(
                 if (
                     isinstance(candidate, dict)
                     and candidate.get("provider")
-                    in {"infini-news", "other"}
+                    in {"arquivo-pt", "infini-news", "other"}
                     and str(candidate.get("snapshotUrl") or "")
                     not in manifest_snapshot_urls
                 )

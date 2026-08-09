@@ -1809,6 +1809,81 @@ def test_manifest_refresh_preserves_preindexed_mirror_candidate(
     assert candidates[0]["snapshotUrl"] == mirror_url
 
 
+def test_manifest_refresh_preserves_preindexed_arquivo_candidates(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.wsj.com/articles/preindexed-arquivo"
+    wayback_url = (
+        "https://web.archive.org/web/20170102000000id_/" + canonical_url
+    )
+    arquivo_url = (
+        "https://arquivo.pt/noFrame/replay/20170103000000/" + canonical_url
+    )
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "publisher": "wsj",
+                "canonicalUrl": canonical_url,
+                "publishedAt": "2017-01-01T00:00:00Z",
+                "candidates": [
+                    {
+                        "provider": "wayback",
+                        "snapshotUrl": wayback_url,
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    existing = json.loads(
+        connection.execute("SELECT candidates_json FROM captures").fetchone()[0]
+    )
+    connection.execute(
+        "UPDATE captures SET candidates_json=?",
+        (
+            json.dumps(
+                [
+                    {
+                        "provider": "arquivo-pt",
+                        "snapshotUrl": arquivo_url,
+                        "digest": "ARQUIVO",
+                    },
+                    *existing,
+                ]
+            ),
+        ),
+    )
+    connection.commit()
+
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    candidates = json.loads(
+        connection.execute("SELECT candidates_json FROM captures").fetchone()[0]
+    )
+
+    assert [candidate["provider"] for candidate in candidates] == [
+        "arquivo-pt",
+        "wayback",
+    ]
+    assert candidates[0]["snapshotUrl"] == arquivo_url
+
+
 def test_capture_policy_upgrade_retries_errors_once(tmp_path: Path):
     canonical_url = "https://www.ft.com/content/policy-upgrade"
     snapshot_url = (
