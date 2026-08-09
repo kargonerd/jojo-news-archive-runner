@@ -284,6 +284,7 @@ def test_prefix_client_uses_page_count_then_ndjson_page():
     client = CommonCrawlPrefixClient(
         minimum_interval=0,
         attempts=1,
+        page_size=1,
         client=http_client,
     )
     collections = client.collections()
@@ -301,5 +302,62 @@ def test_prefix_client_uses_page_count_then_ndjson_page():
     query = requests[-1].url.params
     assert query.get("matchType") == "prefix"
     assert query.get("collapse") == "urlkey"
+    assert query.get("pageSize") == "1"
     assert query.get_list("filter") == ["status:200", "mime:text/html"]
+    http_client.close()
+
+
+def test_prefix_client_treats_filtered_no_capture_page_as_empty():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params.get("showNumPages") == "true":
+            return httpx.Response(
+                200,
+                json={"pages": 2, "pageSize": 1, "blocks": 2},
+                request=request,
+            )
+        return httpx.Response(
+            404,
+            json={"message": "No Captures found for: example.com/path/"},
+            request=request,
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = CommonCrawlPrefixClient(
+        minimum_interval=0,
+        attempts=3,
+        page_size=1,
+        client=http_client,
+    )
+
+    assert client.page_count(
+        index_url=INDEX_URL,
+        pattern="example.com/path/",
+    ) == 2
+    assert client.page(
+        index_url=INDEX_URL,
+        pattern="example.com/path/",
+        page=0,
+    ).rows == ()
+    http_client.close()
+
+
+def test_prefix_client_treats_no_capture_count_as_zero_pages():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            404,
+            json={"message": "No Captures found for: example.com/path/"},
+            request=request,
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = CommonCrawlPrefixClient(
+        minimum_interval=0,
+        attempts=3,
+        client=http_client,
+    )
+
+    assert client.page_count(
+        index_url=INDEX_URL,
+        pattern="example.com/path/",
+    ) == 0
     http_client.close()

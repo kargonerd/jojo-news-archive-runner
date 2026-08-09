@@ -43,6 +43,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-request-interval", type=float, default=2.0)
     parser.add_argument("--timeout", type=float, default=45.0)
     parser.add_argument("--attempts", type=int, default=4)
+    parser.add_argument(
+        "--page-size",
+        type=int,
+        help=(
+            "Optional number of compressed index blocks per page. Use 1 "
+            "for broad prefixes that time out with the server default."
+        ),
+    )
     parser.add_argument("--summary", type=Path)
     parser.add_argument("--github-output", type=Path)
     return parser.parse_args()
@@ -111,11 +119,14 @@ def main() -> int:
         raise SystemExit("--from-year must not be after --to-year")
     if args.max_pages < 1 or args.max_errors < 1:
         raise SystemExit("--max-pages and --max-errors must be positive")
+    if args.page_size is not None and args.page_size < 1:
+        raise SystemExit("--page-size must be positive")
     spec = archive_source_spec(args.publisher)
     client = CommonCrawlPrefixClient(
         minimum_interval=args.min_request_interval,
         timeout=args.timeout,
         attempts=args.attempts,
+        page_size=args.page_size,
     )
     args.state.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(args.state, timeout=60)

@@ -27,6 +27,10 @@ MANIFEST_FORMAT_VERSION = "jojo-capture-manifest/1"
 RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
 
 
+class CommonCrawlNoCapturesError(Exception):
+    """The queried prefix or filtered index page contains no captures."""
+
+
 @dataclass(frozen=True)
 class PrefixCollection:
     identifier: str
@@ -47,6 +51,7 @@ class CommonCrawlPrefixClient:
         minimum_interval: float = 2.0,
         timeout: float = 45.0,
         attempts: int = 4,
+        page_size: int | None = None,
         client: httpx.Client | None = None,
     ) -> None:
         if minimum_interval < 0:
@@ -55,9 +60,12 @@ class CommonCrawlPrefixClient:
             raise ValueError("timeout must be positive")
         if attempts < 1:
             raise ValueError("attempts must be positive")
+        if page_size is not None and page_size < 1:
+            raise ValueError("page_size must be positive when provided")
         self.rate_limiter = GlobalRateLimiter(minimum_interval)
         self.timeout = timeout
         self.attempts = attempts
+        self.page_size = page_size
         self._provided_client = client
         self._client = client or httpx.Client(
             headers={
@@ -109,10 +117,14 @@ class CommonCrawlPrefixClient:
         return tuple(result)
 
     def page_count(self, *, index_url: str, pattern: str) -> int:
-        response = self._get(
-            index_url,
-            params=_query_parameters(pattern) + [("showNumPages", "true")],
-        )
+        try:
+            response = self._get(
+                index_url,
+                params=_query_parameters(pattern, page_size=self.page_size)
+                + [("showNumPages", "true")],
+            )
+        except CommonCrawlNoCapturesError:
+            return 0
         payload = response.json()
         if not isinstance(payload, dict):
             raise ValueError("Common Crawl page count is not an object")
@@ -130,10 +142,14 @@ class CommonCrawlPrefixClient:
     ) -> PrefixIndexPage:
         if page < 0:
             raise ValueError("page must not be negative")
-        response = self._get(
-            index_url,
-            params=_query_parameters(pattern) + [("page", str(page))],
-        )
+        try:
+            response = self._get(
+                index_url,
+                params=_query_parameters(pattern, page_size=self.page_size)
+                + [("page", str(page))],
+            )
+        except CommonCrawlNoCapturesError:
+            return PrefixIndexPage(rows=())
         rows: list[dict[str, object]] = []
         for line in response.text.splitlines():
             if not line.strip():
@@ -157,6 +173,13 @@ class CommonCrawlPrefixClient:
             try:
                 response = self._client.get(url, params=params)
                 last_status = response.status_code
+                if response.status_code == 404:
+                    try:
+                        message = str(response.json().get("message") or "")
+                    except (ValueError, AttributeError):
+                        message = ""
+                    if message.startswith("No Captures found for:"):
+                        raise CommonCrawlNoCapturesError(message)
                 if response.status_code in RETRYABLE_STATUS_CODES:
                     raise RuntimeError(
                         f"retryable HTTP {response.status_code}"
@@ -606,8 +629,12 @@ def prefix_summary(connection: sqlite3.Connection) -> dict[str, object]:
     }
 
 
-def _query_parameters(pattern: str) -> list[tuple[str, str]]:
-    return [
+def _query_parameters(
+    pattern: str,
+    *,
+    page_size: int | None = None,
+) -> list[tuple[str, str]]:
+    parameters = [
         ("url", pattern),
         ("output", "json"),
         ("filter", "status:200"),
@@ -615,6 +642,9 @@ def _query_parameters(pattern: str) -> list[tuple[str, str]]:
         ("matchType", "prefix"),
         ("collapse", "urlkey"),
     ]
+    if page_size is not None:
+        parameters.append(("pageSize", str(page_size)))
+    return parameters
 
 
 def _write_row(
