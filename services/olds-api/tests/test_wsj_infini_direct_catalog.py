@@ -70,7 +70,7 @@ def test_scan_accepts_only_strict_wsj_origin_rows(monkeypatch):
                 "A URL timestamp from another year",
                 "A rejected WSJ video page title",
             ],
-            "text_length": [449, 900, 900, 299, 900, 900],
+            "text_length": [1_449, 900, 900, 999, 1_900, 1_900],
             "language": ["eng_Latn"] * 6,
         }
     )
@@ -99,7 +99,7 @@ def test_scan_accepts_only_strict_wsj_origin_rows(monkeypatch):
     assert len(rows) == 1
     assert rows[0]["canonicalUrl"] == valid_url.replace("http://", "https://")
     assert rows[0]["publishedAt"] == "2017-01-04"
-    assert rows[0]["textLength"] == 449
+    assert rows[0]["textLength"] == 1_449
 
 
 def test_direct_catalog_is_bounded_resumable_and_merges_urls(monkeypatch):
@@ -246,7 +246,7 @@ def test_completed_direct_catalog_backfills_dataset_rows_and_exports_candidates(
                 "sourceUrl": second_url,
                 "publishedAt": "2017-01-04",
                 "expectedHeadline": "A complete second WSJ test article",
-                "textLength": 1_600,
+                "textLength": 600,
                 "warcFilename": "CC-NEWS-20170104084927-00053.warc.gz",
                 "parquetRowIndex": 4,
             }
@@ -301,3 +301,14 @@ def test_completed_direct_catalog_backfills_dataset_rows_and_exports_candidates(
     assert "config=year_2017" in direct["snapshotUrl"]
     assert "offset=3" in direct["snapshotUrl"]
     assert direct["warcFilename"].endswith("00052.warc.gz")
+    assert all(
+        candidate["provider"] != "infini-news"
+        for candidate in rows[second_url]["candidates"]
+    )
+    summary = catalog.wsj_infini_direct_summary(connection)
+    assert summary is not None
+    assert summary["years"]["2017"]["eligibleArticles"] == 1
+    assert (
+        summary["years"]["2017"]["eligibleArticlesWithDocumentIndex"]
+        == 1
+    )

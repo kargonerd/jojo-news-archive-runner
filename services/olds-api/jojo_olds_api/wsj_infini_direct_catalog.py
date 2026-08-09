@@ -38,7 +38,11 @@ DEFAULT_MAXIMUM_FILES_PER_RUN = 50
 DEFAULT_SCAN_WORKERS = 8
 DEFAULT_METADATA_FILES_PER_RUN = 1_200
 DEFAULT_METADATA_WORKERS = 24
-MINIMUM_TEXT_CHARACTERS = 300
+# Keep discovery eligibility aligned with the final derived-HTML acceptance
+# gate.  Infini-News contains many WSJ subscription previews in the 300-900
+# character range; exporting those rows only spends an API request before the
+# capture worker rejects them as incomplete.
+MINIMUM_TEXT_CHARACTERS = 1_000
 PARQUET_FOOTER_PROBE_BYTES = 32 * 1024
 _WSJ_HOSTS = {"wsj.com", "www.wsj.com", "online.wsj.com"}
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -341,6 +345,16 @@ def wsj_infini_direct_summary(
             "files": int(file_count or 0),
             "filesByStatus": file_status,
             "articles": _article_count(connection, int(year)),
+            "eligibleArticles": int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM wsj_infini_direct_articles
+                    WHERE source_year=? AND text_length>=?
+                    """,
+                    (year, MINIMUM_TEXT_CHARACTERS),
+                ).fetchone()[0]
+            ),
             "articlesWithDocumentIndex": int(
                 connection.execute(
                     """
@@ -349,6 +363,18 @@ def wsj_infini_direct_summary(
                     WHERE source_year=? AND document_index IS NOT NULL
                     """,
                     (year,),
+                ).fetchone()[0]
+            ),
+            "eligibleArticlesWithDocumentIndex": int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM wsj_infini_direct_articles
+                    WHERE source_year=?
+                      AND document_index IS NOT NULL
+                      AND text_length>=?
+                    """,
+                    (year, MINIMUM_TEXT_CHARACTERS),
                 ).fetchone()[0]
             ),
             "metadataFilesReady": int(
@@ -389,8 +415,10 @@ def wsj_infini_direct_capture_candidates(
                document_index, warc_filename
         FROM wsj_infini_direct_articles
         WHERE document_index IS NOT NULL
+          AND text_length>=?
         ORDER BY canonical_url
-        """
+        """,
+        (MINIMUM_TEXT_CHARACTERS,),
     ):
         candidate = CaptureCandidate(
             provider=CaptureProvider.INFINI_NEWS,
