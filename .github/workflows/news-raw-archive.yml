@@ -51,7 +51,7 @@ on:
         default: "5"
         type: string
       max_captures:
-        description: "Maximum raw HTML captures in this run."
+        description: "Maximum raw HTML captures; use 0 for catalog-only."
         required: true
         default: "500"
         type: string
@@ -224,12 +224,14 @@ jobs:
             "${REMOTE_ROOT}/catalog/manifest.jsonl.gz" \
             "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
 
-          restore_if_present \
-            "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
-            "$RUNNER_TEMP/capture.sqlite3.gz"
-          if [ -f "$RUNNER_TEMP/capture.sqlite3.gz" ]; then
-            gzip -dc "$RUNNER_TEMP/capture.sqlite3.gz" \
-              > "$LOCAL_ROOT/raw/capture.sqlite3"
+          if [ "$MAX_CAPTURES" != "0" ]; then
+            restore_if_present \
+              "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
+              "$RUNNER_TEMP/capture.sqlite3.gz"
+            if [ -f "$RUNNER_TEMP/capture.sqlite3.gz" ]; then
+              gzip -dc "$RUNNER_TEMP/capture.sqlite3.gz" \
+                > "$LOCAL_ROOT/raw/capture.sqlite3"
+            fi
           fi
 
       - name: Advance or select manifest
@@ -440,8 +442,11 @@ jobs:
         id: before
         if: >-
           ${{
-            steps.catalog.outputs.complete == 'true' ||
-            steps.catalog.outputs.capture_ready == 'true'
+            inputs.max_captures != '0' &&
+            (
+              steps.catalog.outputs.complete == 'true' ||
+              steps.catalog.outputs.capture_ready == 'true'
+            )
           }}
         shell: bash
         env:
@@ -461,8 +466,11 @@ jobs:
         id: validation_replay
         if: >-
           ${{
-            steps.catalog.outputs.complete == 'true' ||
-            steps.catalog.outputs.capture_ready == 'true'
+            inputs.max_captures != '0' &&
+            (
+              steps.catalog.outputs.complete == 'true' ||
+              steps.catalog.outputs.capture_ready == 'true'
+            )
           }}
         shell: bash
         env:
@@ -481,7 +489,11 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
 
       - name: Restore previously captured parser sample HTML
-        if: ${{ steps.validation_replay.outputs.replays != '0' }}
+        if: >-
+          ${{
+            inputs.max_captures != '0' &&
+            steps.validation_replay.outputs.replays != '0'
+          }}
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
@@ -496,7 +508,11 @@ jobs:
             --stats 30s
 
       - name: Replay current parser against restored sample HTML
-        if: ${{ steps.validation_replay.outputs.replays != '0' }}
+        if: >-
+          ${{
+            inputs.max_captures != '0' &&
+            steps.validation_replay.outputs.replays != '0'
+          }}
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
@@ -510,7 +526,11 @@ jobs:
             --summary "$LOCAL_ROOT/raw/summary.json"
 
       - name: Publish parser validation replay checkpoint
-        if: ${{ steps.validation_replay.outputs.replays != '0' }}
+        if: >-
+          ${{
+            inputs.max_captures != '0' &&
+            steps.validation_replay.outputs.replays != '0'
+          }}
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
@@ -532,6 +552,7 @@ jobs:
         id: capture
         if: >-
           ${{
+            inputs.max_captures != '0' &&
             (
               steps.catalog.outputs.complete == 'true' ||
               steps.catalog.outputs.capture_ready == 'true'
@@ -686,6 +707,7 @@ jobs:
           ${{
             always() &&
             !cancelled() &&
+            inputs.max_captures != '0' &&
             (
               steps.catalog.outputs.complete == 'true' ||
               steps.catalog.outputs.capture_ready == 'true'
@@ -720,6 +742,7 @@ jobs:
           ${{
             always() &&
             !cancelled() &&
+            inputs.max_captures != '0' &&
             (
               steps.catalog.outputs.complete == 'true' ||
               steps.catalog.outputs.capture_ready == 'true'
@@ -776,6 +799,7 @@ jobs:
           ${{
             always() &&
             !cancelled() &&
+            inputs.max_captures != '0' &&
             (
               steps.catalog.outputs.complete == 'true' ||
               steps.catalog.outputs.capture_ready == 'true'
@@ -853,6 +877,7 @@ jobs:
       - name: Propagate capture failure after checkpoint
         if: >-
           ${{
+            inputs.max_captures != '0' &&
             (
               steps.catalog.outputs.complete == 'true' ||
               steps.catalog.outputs.capture_ready == 'true'

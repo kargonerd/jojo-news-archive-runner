@@ -64,6 +64,38 @@ def test_archive_continuation_drains_actionable_captures_before_discovery() -> N
     assert '-f max_discovery_pages="$next_discovery_pages"' in continuation_section
 
 
+def test_zero_capture_limit_is_a_true_catalog_only_run() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    restore_section = workflow[
+        workflow.index("- name: Restore discovery and capture checkpoints") :
+        workflow.index("- name: Advance or select manifest")
+    ]
+    capture_step_names = (
+        "Plan capture batch",
+        "Plan replay of previously captured parser samples",
+        "Restore previously captured parser sample HTML",
+        "Replay current parser against restored sample HTML",
+        "Publish parser validation replay checkpoint",
+        "Capture bounded raw HTML batch",
+        "Checkpoint capture state",
+        "Publish raw objects, records, and capture checkpoint",
+        "Report remaining capture work",
+        "Propagate capture failure after checkpoint",
+    )
+
+    assert "use 0 for catalog-only" in workflow
+    assert 'if [ "$MAX_CAPTURES" != "0" ]; then' in restore_section
+    for index, step_name in enumerate(capture_step_names):
+        start = workflow.index(f"- name: {step_name}")
+        end = (
+            workflow.index("- name:", start + 1)
+            if index < len(capture_step_names) - 1
+            else workflow.index("- name: Propagate discovery failure", start)
+        )
+        section = workflow[start:end]
+        assert "inputs.max_captures != '0'" in section
+
+
 def test_validation_only_archive_chain_releases_runner_at_ready_gate() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     capture_section = workflow[
