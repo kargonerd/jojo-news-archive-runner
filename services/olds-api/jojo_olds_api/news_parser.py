@@ -6524,7 +6524,9 @@ def _npr_legacy_metadata_audio_story(
     ).casefold()
     return bool(
         medium == "audio"
-        and "tmplnewsstory" in body_classes
+        and bool(
+            body_classes & {"tmplnewsstory", "tmplmusicstory"}
+        )
         and isinstance(story_text, Tag)
         and story_text.select_one("p") is not None
         and soup.select_one(".transcript") is None
