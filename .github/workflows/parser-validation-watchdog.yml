@@ -106,11 +106,14 @@ jobs:
             copy_summary \
               "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state" \
               "$RUNNER_TEMP/archive-state/${source_root}/state"
-            if rclone lsl \
+            object_listing=""
+            if object_listing="$(
+              rclone lsl \
                 "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest.jsonl.gz" \
                 --timeout 30s --contimeout 10s \
                 --retries 1 --low-level-retries 1 \
-                >/dev/null 2>&1; then
+                2>/dev/null
+            )" && [ -n "$object_listing" ]; then
               echo "$source_root" >> "$available_source_shards"
             fi
           done

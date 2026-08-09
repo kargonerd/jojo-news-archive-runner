@@ -17,6 +17,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert '"wsj/2016-2026/wayback"' in workflow
     assert "available-source-shards.txt" in workflow
     assert "--available-source-shards" in workflow
+    assert 'object_listing="$(\n              rclone lsl' in workflow
+    assert '&& [ -n "$object_listing" ]; then' in workflow
 
 
 def test_watchdog_dispatches_two_workers_per_validation_job() -> None:
