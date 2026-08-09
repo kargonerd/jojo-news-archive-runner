@@ -99,7 +99,7 @@ def test_wsj_infini_catalog_adds_only_canonical_origin_urls(
     queries = process_wsj_infini_queries(
         connection,
         http_client=client,
-        maximum_queries=2,
+        maximum_queries=5,
     )
     documents = process_wsj_infini_documents(
         connection,
@@ -111,7 +111,7 @@ def test_wsj_infini_catalog_adds_only_canonical_origin_urls(
     )
 
     assert queries == {
-        "processed": 2,
+        "processed": 5,
         "occurrences": 2,
         "errors": [],
     }
@@ -122,7 +122,7 @@ def test_wsj_infini_catalog_adds_only_canonical_origin_urls(
         "errors": [],
     }
     assert wsj_infini_summary(connection) == {
-        "queriesByStatus": {"complete": 2},
+        "queriesByStatus": {"complete": 5},
         "occurrencesByStatus": {"accepted": 1, "rejected": 1},
         "articlesByYear": {"2017": 1},
         "shouldContinue": False,

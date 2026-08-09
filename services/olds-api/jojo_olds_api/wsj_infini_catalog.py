@@ -18,6 +18,18 @@ WSJ_INFINI_LAST_YEAR = 2023
 WSJ_INFINI_TARGET_PER_YEAR = 1_000
 MAXIMUM_OCCURRENCES_PER_QUERY = 4_000
 WSJ_ORIGIN_QUERY_SPECS = (
+    (
+        "articles-url-token",
+        "wsj.com/articles",
+        2016,
+        2018,
+    ),
+    (
+        "origin-host-token",
+        "wsj.com",
+        2016,
+        2018,
+    ),
     ("subscription", "WSJ subscription", 2016, 2017),
     (
         "continue-reading",
@@ -40,6 +52,12 @@ WSJ_ORIGIN_QUERY_SPECS = (
         ),
         2023,
         2023,
+    ),
+    (
+        "www-origin-host-token",
+        "www.wsj.com",
+        2016,
+        2018,
     ),
 )
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z0-9]+")
