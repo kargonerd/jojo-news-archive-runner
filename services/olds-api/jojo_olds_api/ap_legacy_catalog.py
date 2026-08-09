@@ -109,6 +109,8 @@ def build_ap_hosted_manifest_rows(
     manifest_rows: list[dict[str, object]] = []
     candidate_count = 0
     duplicate_candidates = 0
+    duplicate_articles_by_digest = 0
+    primary_digests: set[str] = set()
     for canonical_url in sorted(grouped):
         published_at, ranked_candidates = grouped[canonical_url]
         candidates: list[CaptureCandidate] = []
@@ -124,6 +126,12 @@ def build_ap_hosted_manifest_rows(
                 break
         if not candidates:
             continue
+        primary_digest = candidates[0].digest or ""
+        if primary_digest and primary_digest in primary_digests:
+            duplicate_articles_by_digest += 1
+            continue
+        if primary_digest:
+            primary_digests.add(primary_digest)
         candidate_count += len(candidates)
         manifest_rows.append(
             {
@@ -147,6 +155,7 @@ def build_ap_hosted_manifest_rows(
         "articles": len(manifest_rows),
         "candidates": candidate_count,
         "duplicateCandidates": duplicate_candidates,
+        "duplicateArticlesByDigest": duplicate_articles_by_digest,
     }
 
 
@@ -439,6 +448,8 @@ def build_ap_partner_manifest_rows(
     manifest_rows: list[dict[str, object]] = []
     candidate_count = 0
     duplicate_candidates = 0
+    duplicate_articles_by_digest = 0
+    primary_digests: set[str] = set()
     for canonical_url in sorted(grouped):
         published_at, ranked_candidates = grouped[canonical_url]
         candidates: list[CaptureCandidate] = []
@@ -454,6 +465,12 @@ def build_ap_partner_manifest_rows(
                 break
         if not candidates:
             continue
+        primary_digest = candidates[0].digest or ""
+        if primary_digest and primary_digest in primary_digests:
+            duplicate_articles_by_digest += 1
+            continue
+        if primary_digest:
+            primary_digests.add(primary_digest)
         candidate_count += len(candidates)
         manifest_rows.append(
             {
@@ -477,6 +494,7 @@ def build_ap_partner_manifest_rows(
         "articles": len(manifest_rows),
         "candidates": candidate_count,
         "duplicateCandidates": duplicate_candidates,
+        "duplicateArticlesByDigest": duplicate_articles_by_digest,
     }
 
 

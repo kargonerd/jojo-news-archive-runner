@@ -87,6 +87,29 @@ def test_rejects_missing_ctime_wrong_year_and_non_html_rows():
     assert metrics["rowsRejected"] == 3
 
 
+def test_deduplicates_hosted_articles_by_primary_capture_digest():
+    first = (
+        "http://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST"
+        "?SITE=AP&CTIME=2011-01-11-12-21-19"
+    )
+    duplicate = (
+        "http://hosted.ap.org/dynamic/stories/B/BRITAIN_POLITICS"
+        "?SITE=AP&CTIME=2011-01-12-12-21-19"
+    )
+
+    rows, metrics = build_ap_hosted_manifest_rows(
+        [
+            _row(first, timestamp="20110113114709", digest="SAME"),
+            _row(duplicate, timestamp="20110114114709", digest="SAME"),
+        ],
+        from_year=2011,
+        to_year=2011,
+    )
+
+    assert len(rows) == 1
+    assert metrics["duplicateArticlesByDigest"] == 1
+
+
 def test_reads_identity_metadata_from_missing_ctime_story_page():
     result = ap_hosted_page_metadata(
         b"""
