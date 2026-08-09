@@ -819,6 +819,33 @@ def pending_parser_validation_urls(
                         END,
                         CASE
                             WHEN capture.publisher != 'wsj' THEN 0
+                            -- The validation cohort remains the same random
+                            -- sample.  Only execute its already-indexed,
+                            -- provenance-bearing full-text candidates before
+                            -- low-yield replay guesses so each checkpoint
+                            -- banks the strongest evidence first.
+                            WHEN EXISTS (
+                                SELECT 1
+                                FROM json_each(capture.candidates_json)
+                                WHERE json_extract(value, '$.provider')
+                                    = 'infini-news'
+                            ) THEN 0
+                            WHEN EXISTS (
+                                SELECT 1
+                                FROM json_each(capture.candidates_json)
+                                WHERE json_extract(value, '$.provider')
+                                    = 'arquivo-pt'
+                            ) THEN 1
+                            WHEN EXISTS (
+                                SELECT 1
+                                FROM json_each(capture.candidates_json)
+                                WHERE json_extract(value, '$.provider')
+                                    = 'other'
+                            ) THEN 2
+                            ELSE 3
+                        END,
+                        CASE
+                            WHEN capture.publisher != 'wsj' THEN 0
                             -- WSJ changed its archived page shape after the
                             -- legacy 2016 cohort.  In 2018+ cohorts, prefer
                             -- the larger CDX responses before the 30-50 KiB

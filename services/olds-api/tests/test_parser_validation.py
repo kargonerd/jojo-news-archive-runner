@@ -1303,6 +1303,104 @@ def test_validation_plan_prioritizes_high_yield_wsj_snapshots(
     assert selected == [urls["full"], urls["small"], urls["tpl"]]
 
 
+def test_validation_plan_prioritizes_indexed_wsj_full_text_sources(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "wsj-indexed-manifest.jsonl"
+    urls = {
+        name: f"https://www.wsj.com/articles/{name}-indexed-1483518944"
+        for name in ("wayback", "other", "arquivo", "infini")
+    }
+    candidate_lists = {
+        "wayback": [
+            {
+                "provider": "wayback",
+                "snapshotUrl": (
+                    "https://web.archive.org/web/20170105000000id_/"
+                    + urls["wayback"]
+                ),
+                "byteCount": 500_000,
+            }
+        ],
+        "other": [
+            {
+                "provider": "other",
+                "snapshotUrl": "https://partner.example/wsj-story",
+                "expectedHeadline": "A validated partner story",
+            }
+        ],
+        "arquivo": [
+            {
+                "provider": "arquivo-pt",
+                "snapshotUrl": (
+                    "https://arquivo.pt/noFrame/replay/20170105000000/"
+                    + urls["arquivo"]
+                ),
+            }
+        ],
+        "infini": [
+            {
+                "provider": "infini-news",
+                "snapshotUrl": (
+                    "https://datasets-server.huggingface.co/rows?"
+                    "dataset=ruggsea%2Finfini-news-corpus&"
+                    "config=year_2017&split=train&offset=42&length=1"
+                ),
+                "sourceUrl": urls["infini"],
+                "expectedHeadline": "A complete indexed WSJ story",
+            }
+        ],
+    }
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "publisher": "wsj",
+                    "canonicalUrl": urls[name],
+                    "publishedAt": "2017-01-04T00:00:00Z",
+                    "candidates": candidate_lists[name],
+                }
+            )
+            + "\n"
+            for name in ("wayback", "other", "arquivo", "infini")
+        ),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="wsj",
+        from_year=2017,
+        to_year=2017,
+        target_per_year=4,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    selected = pending_parser_validation_urls(
+        connection,
+        maximum=4,
+        maximum_record_attempts=3,
+    )
+
+    assert selected == [
+        urls["infini"],
+        urls["arquivo"],
+        urls["other"],
+        urls["wayback"],
+    ]
+
+
 def test_validation_plan_prioritizes_large_modern_wsj_snapshots(
     tmp_path: Path,
 ):
