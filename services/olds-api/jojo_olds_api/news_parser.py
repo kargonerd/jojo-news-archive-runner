@@ -273,9 +273,15 @@ def parse_article(
     if body is None:
         body = _select_body(soup, spec)
     if spec.publisher == "npr":
-        legacy_interactive = _npr_legacy_flash_interactive_body(
-            soup,
-            canonical_url=canonical_url,
+        legacy_interactive = (
+            _npr_legacy_iframe_interactive_body(
+                soup,
+                canonical_url=canonical_url,
+            )
+            or _npr_legacy_flash_interactive_body(
+                soup,
+                canonical_url=canonical_url,
+            )
         )
         if legacy_interactive is not None:
             body = legacy_interactive
@@ -6147,6 +6153,69 @@ def _npr_legacy_flash_interactive_body(
     return article
 
 
+def _npr_legacy_iframe_interactive_body(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
+    """Recover iframe-led interactives from NPR's legacy multimedia page."""
+    body_classes = (
+        {
+            str(value).casefold()
+            for value in (soup.body.get("class") or [])
+        }
+        if soup.body is not None
+        else set()
+    )
+    if "tmplnewsmultimedia" not in body_classes:
+        return None
+    source = soup.select_one("#storyspan03 .bucketwrap.statichtml")
+    iframe = (
+        source.select_one("iframe[src]")
+        if isinstance(source, Tag)
+        else None
+    )
+    if not isinstance(source, Tag) or not isinstance(iframe, Tag):
+        return None
+    embed_url = _normalized_url(
+        str(iframe.get("src") or ""),
+        base_url=canonical_url,
+    )
+    if not embed_url:
+        return None
+
+    document = BeautifulSoup(
+        "<article data-jojo-source='npr-legacy-iframe-interactive'></article>",
+        "html.parser",
+    )
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    description = _first_text(
+        _tag_text(soup.select_one("#storytext p")),
+        _meta_content(soup, "name", "description"),
+    )
+    if description:
+        paragraph = document.new_tag("p")
+        paragraph.string = description
+        article.append(paragraph)
+    embed = document.new_tag("iframe")
+    embed["src"] = embed_url
+    embed["title"] = _first_text(
+        _tag_text(soup.select_one(".storytitle h1")),
+        "Archived NPR interactive",
+    )
+    embed["data-interactive-provider"] = "npr-legacy-iframe"
+    article.append(embed)
+    for selector in (":scope > .notes", ":scope > .footer"):
+        node = source.select_one(selector)
+        if isinstance(node, Tag):
+            copy = BeautifulSoup(str(node), "html.parser").find()
+            if isinstance(copy, Tag):
+                article.append(copy)
+    return article
+
+
 def _npr_legacy_cartoon_body(
     soup: BeautifulSoup,
     *,
@@ -6203,6 +6272,13 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
         )
     ):
         node.decompose()
+    for container in list(soup.select(".container")):
+        header = container.select_one(":scope > .conheader")
+        header_text = _clean_text(
+            header.get_text(" ", strip=True) if header is not None else ""
+        ).casefold()
+        if header_text in {"read more:", "related npr stories"}:
+            container.decompose()
 
 
 def _npr_short_audio_story(
