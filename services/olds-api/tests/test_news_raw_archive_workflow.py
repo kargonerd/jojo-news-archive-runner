@@ -63,6 +63,15 @@ def test_validation_only_archive_chain_releases_runner_at_ready_gate() -> None:
     assert "--stop-when-validation-target-reached" in capture_section
     assert "steps.after.outputs.validation_ready != 'true'" in continuation_section
     assert (
+        "steps.after.outputs.validation_target_reached != 'true'"
+        in continuation_section
+    )
+    assert workflow.count("--stop-at-validation-target") == 2
+    assert (
+        "steps.before.outputs.validation_target_reached != 'true'"
+        in capture_section
+    )
+    assert (
         '-f stop_when_validation_ready="${{ inputs.stop_when_validation_ready }}"'
         in continuation_section
     )

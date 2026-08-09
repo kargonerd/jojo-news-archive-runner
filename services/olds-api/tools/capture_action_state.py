@@ -162,16 +162,15 @@ def action_state(
                     ) in readiness_rows
                 )
                 validation_target_reached = bool(readiness_rows) and all(
-                    int(qa_passed) >= int(target_size)
-                    and int(unbound_capture_inputs) == 0
+                    int(evaluated) >= int(target_size)
                     for (
                         _sample_year,
                         target_size,
                         evaluated,
-                        qa_passed,
+                        _qa_passed,
                         _complete,
                         _parser_errors,
-                        unbound_capture_inputs,
+                        _unbound_capture_inputs,
                     ) in readiness_rows
                 )
             validation_replays = int(

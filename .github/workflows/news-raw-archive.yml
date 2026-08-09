@@ -417,17 +417,28 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
-          python services/olds-api/tools/capture_action_state.py \
-            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
-            --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+          args=(
+            --state "$LOCAL_ROOT/raw/capture.sqlite3"
+            --max-record-attempts "$MAX_RECORD_ATTEMPTS"
             --github-output "$GITHUB_OUTPUT"
+          )
+          if [ "${{ inputs.stop_when_validation_ready }}" = "true" ]; then
+            args+=(--stop-at-validation-target)
+          fi
+          python services/olds-api/tools/capture_action_state.py "${args[@]}"
 
       - name: Plan replay of previously captured parser samples
         id: validation_replay
         if: >-
           ${{
-            steps.catalog.outputs.complete == 'true' ||
-            steps.catalog.outputs.capture_ready == 'true'
+            (
+              steps.catalog.outputs.complete == 'true' ||
+              steps.catalog.outputs.capture_ready == 'true'
+            ) &&
+            (
+              !inputs.stop_when_validation_ready ||
+              steps.before.outputs.validation_target_reached != 'true'
+            )
           }}
         shell: bash
         env:
@@ -497,8 +508,14 @@ jobs:
         id: capture
         if: >-
           ${{
-            steps.catalog.outputs.complete == 'true' ||
-            steps.catalog.outputs.capture_ready == 'true'
+            (
+              steps.catalog.outputs.complete == 'true' ||
+              steps.catalog.outputs.capture_ready == 'true'
+            ) &&
+            (
+              !inputs.stop_when_validation_ready ||
+              steps.before.outputs.validation_target_reached != 'true'
+            )
           }}
         shell: bash
         env:
@@ -744,10 +761,15 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
-          python services/olds-api/tools/capture_action_state.py \
-            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
-            --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+          args=(
+            --state "$LOCAL_ROOT/raw/capture.sqlite3"
+            --max-record-attempts "$MAX_RECORD_ATTEMPTS"
             --github-output "$GITHUB_OUTPUT"
+          )
+          if [ "${{ inputs.stop_when_validation_ready }}" = "true" ]; then
+            args+=(--stop-at-validation-target)
+          fi
+          python services/olds-api/tools/capture_action_state.py "${args[@]}"
 
       - name: Dispatch next bounded run
         if: >-
@@ -755,7 +777,10 @@ jobs:
             inputs.auto_continue &&
             (
               !inputs.stop_when_validation_ready ||
-              steps.after.outputs.validation_ready != 'true'
+              (
+                steps.after.outputs.validation_ready != 'true' &&
+                steps.after.outputs.validation_target_reached != 'true'
+              )
             ) &&
             steps.catalog.outputs.exit_code == '0' &&
             (
