@@ -113,3 +113,15 @@ def test_accelerator_merges_npr_common_crawl_supplemental_manifest() -> None:
         in workflow
     )
     assert '--input "$supplemental_source_manifest"' in workflow
+
+
+def test_accelerator_merges_ap_legacy_supplemental_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "ap" ]; then' in workflow
+    assert "news-archive/v1/ap/${source_window}/legacy-archive" in workflow
+    assert (
+        '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz"'
+        in workflow
+    )
+    assert '--input "$supplemental_source_manifest"' in workflow

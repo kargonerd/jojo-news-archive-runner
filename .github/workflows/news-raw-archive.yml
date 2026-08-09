@@ -396,6 +396,36 @@ jobs:
             echo "::notice::No NPR Common Crawl supplemental manifest yet."
           fi
 
+      - name: Merge AP legacy supplemental manifest
+        if: >-
+          ${{
+            inputs.publisher == 'ap' &&
+            inputs.manifest_mode == 'wayback-urlkey'
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          set -euo pipefail
+          supplemental_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/ap/${FROM_YEAR}-${TO_YEAR}/legacy-archive"
+          supplemental="$RUNNER_TEMP/ap-legacy-manifest.jsonl.gz"
+          merged="$RUNNER_TEMP/ap-merged-manifest.jsonl.gz"
+          if rclone lsf "${supplemental_root}/catalog" --files-only \
+              | grep -Fxq "manifest.jsonl.gz"; then
+            rclone copyto \
+              "${supplemental_root}/catalog/manifest.jsonl.gz" \
+              "$supplemental" \
+              --retries 8 --low-level-retries 20
+            python services/olds-api/tools/merge_archive_manifests.py \
+              --publisher ap \
+              --input "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
+              --input "$supplemental" \
+              --output "$merged"
+            mv "$merged" "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
+          else
+            echo "::notice::No AP legacy supplemental manifest yet."
+          fi
+
       - name: Checkpoint discovery
         if: >-
           ${{
