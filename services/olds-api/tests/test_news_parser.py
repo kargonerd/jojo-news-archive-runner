@@ -10475,7 +10475,7 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert "___" not in result.plain_text
     assert "<button" not in result.body_html
     assert "data-ap-readmore" not in result.body_html
-    assert result.extraction.parser_version == "ap-parser/0.6.20"
+    assert result.extraction.parser_version == "ap-parser/0.6.21"
 
 
 def test_ap_parser_extracts_hosted_ap_legacy_story_template():
@@ -10539,7 +10539,46 @@ def test_ap_parser_extracts_hosted_ap_legacy_story_template():
     assert len(result.images) == 1
     assert result.images[0].role.value == "tracking"
     assert result.images[0].should_archive is False
-    assert result.extraction.parser_version == "ap-parser/0.6.20"
+    assert result.extraction.parser_version == "ap-parser/0.6.21"
+
+
+def test_ap_parser_extracts_bigstory_timestamp_and_body():
+    html = b"""
+    <html><body>
+      <h1>007 exhibition looks at screen spy as style icon</h1>
+      <div class="article-data">
+        <div class="field-name-field-byline-original">By JILL LAWLESS</div>
+        <span class="updated" title="2012-07-05T12:27:51-04:00">
+          Jul. 5 12:27 PM EDT
+        </span>
+      </div>
+      <div class="node-body"><div class="node-content">
+        <p>LONDON (AP) -- A major exhibition examines the clothing,
+        vehicles, props and visual design that shaped the screen spy over
+        five decades of films and popular culture.</p>
+        <p>The archived report contains enough additional reporting to
+        distinguish the complete article from a navigation shell, teaser,
+        photo caption, advertisement, or related-story card.</p>
+      </div></div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "https://bigstory.ap.org/article/"
+            "007-exhibition-looks-screen-spy-style-icon"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.published_at is not None
+    assert result.published_at.astimezone(timezone.utc).isoformat() == (
+        "2012-07-05T16:27:51+00:00"
+    )
+    assert "major exhibition examines" in result.plain_text
+    assert result.extraction.parser_version == "ap-parser/0.6.21"
 
 
 def test_ap_parser_extracts_legacy_yahoo_distribution_story():
@@ -10586,7 +10625,7 @@ def test_ap_parser_extracts_legacy_yahoo_distribution_story():
     assert "The Associated Press reported" in result.plain_text
     assert "Follow Yahoo News" not in result.plain_text
     assert "user comment" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.20"
+    assert result.extraction.parser_version == "ap-parser/0.6.21"
 
 
 def test_ap_parser_extracts_google_hosted_distribution_story():
@@ -10657,7 +10696,7 @@ def test_ap_parser_extracts_google_hosted_distribution_story():
     assert "Related articles" not in result.plain_text
     assert "Copyright 2011" not in result.plain_text
     assert "Associated Press - 2 days ago" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.20"
+    assert result.extraction.parser_version == "ap-parser/0.6.21"
 
 
 def test_ap_parser_extracts_huffpost_wire_distribution_story():
@@ -10711,7 +10750,7 @@ def test_ap_parser_extracts_huffpost_wire_distribution_story():
     assert "industrialization minister resigned" in result.plain_text
     assert "Story continues below" not in result.plain_text
     assert "Advertisement" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.20"
+    assert result.extraction.parser_version == "ap-parser/0.6.21"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -10754,7 +10793,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.20"
+    assert article.extraction.parser_version == "ap-parser/0.6.21"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -10788,7 +10827,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.20"
+    assert result.extraction.parser_version == "ap-parser/0.6.21"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -14294,7 +14333,7 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
         block.text in {"_", "——————————", "<"}
         for block in result.blocks
     )
-    assert result.extraction.parser_version == "ap-parser/0.6.20"
+    assert result.extraction.parser_version == "ap-parser/0.6.21"
 
 
 def test_ap_parser_deduplicates_dims_variants_by_underlying_asset():

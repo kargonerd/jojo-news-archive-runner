@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import calendar
 from collections import Counter
 import json
 from pathlib import Path
@@ -56,48 +57,82 @@ def fetch_yahoo_month(
         raise ValueError("invalid Yahoo/AP publication month")
     if limit < 1 or attempts < 1:
         raise ValueError("limit and attempts must be positive")
-    params = [
-        ("url", f"news.yahoo.com/s/ap/{year:04d}{month:02d}*"),
-        ("output", "json"),
-        (
-            "fl",
-            "timestamp,original,statuscode,mimetype,digest,length",
-        ),
-        ("filter", "statuscode:200"),
-        ("filter", "mimetype:text/html"),
-        ("collapse", "urlkey"),
-        ("limit", str(limit)),
-    ]
-    last_error: Exception | None = None
-    for attempt in range(1, attempts + 1):
-        try:
-            response = client.get(WAYBACK_CDX_ENDPOINT, params=params)
-            if response.status_code in RETRYABLE_STATUS_CODES:
-                raise RuntimeError(
-                    f"retryable Wayback CDX HTTP {response.status_code}"
+    month_prefix = f"{year:04d}{month:02d}"
+
+    def fetch_prefix(prefix: str) -> tuple[list[dict[str, object]], int]:
+        params = [
+            ("url", f"news.yahoo.com/s/ap/{prefix}*"),
+            ("output", "json"),
+            (
+                "fl",
+                "timestamp,original,statuscode,mimetype,digest,length",
+            ),
+            ("filter", "statuscode:200"),
+            ("filter", "mimetype:text/html"),
+            ("collapse", "urlkey"),
+            ("limit", str(limit)),
+        ]
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                response = client.get(WAYBACK_CDX_ENDPOINT, params=params)
+                if response.status_code in RETRYABLE_STATUS_CODES:
+                    raise RuntimeError(
+                        f"retryable Wayback CDX HTTP {response.status_code}"
+                    )
+                response.raise_for_status()
+                payload = response.json()
+                if payload == []:
+                    return [], attempt
+                if not isinstance(payload, list) or not payload:
+                    raise ValueError("Wayback CDX payload is not a table")
+                header = payload[0]
+                if not isinstance(header, list):
+                    raise ValueError("Wayback CDX header is invalid")
+                fields = [str(value) for value in header]
+                rows: list[dict[str, object]] = []
+                for raw_row in payload[1:]:
+                    if (
+                        not isinstance(raw_row, list)
+                        or len(raw_row) != len(fields)
+                    ):
+                        raise ValueError(
+                            "Wayback CDX row does not match header"
+                        )
+                    rows.append(dict(zip(fields, raw_row, strict=True)))
+                return rows, attempt
+            except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+                last_error = exc
+                if attempt < attempts:
+                    time.sleep(min(30, 2 ** (attempt - 1)))
+        assert last_error is not None
+        raise RuntimeError(
+            f"Wayback Yahoo/AP prefix {prefix} failed after "
+            f"{attempts} attempts"
+        ) from last_error
+
+    try:
+        return fetch_prefix(month_prefix)
+    except RuntimeError:
+        # Large CDX month queries occasionally return a JSON error object even
+        # after retries. Daily prefixes are disjoint and substantially smaller,
+        # so use them as a fail-closed fallback instead of discarding all prior
+        # months in the catalog run.
+        rows: list[dict[str, object]] = []
+        attempts_used = attempts
+        for day in range(1, calendar.monthrange(year, month)[1] + 1):
+            try:
+                day_rows, day_attempts = fetch_prefix(
+                    f"{month_prefix}{day:02d}"
                 )
-            response.raise_for_status()
-            payload = response.json()
-            if not isinstance(payload, list) or not payload:
-                raise ValueError("Wayback CDX payload is not a table")
-            header = payload[0]
-            if not isinstance(header, list):
-                raise ValueError("Wayback CDX header is invalid")
-            fields = [str(value) for value in header]
-            rows: list[dict[str, object]] = []
-            for raw_row in payload[1:]:
-                if not isinstance(raw_row, list) or len(raw_row) != len(fields):
-                    raise ValueError("Wayback CDX row does not match header")
-                rows.append(dict(zip(fields, raw_row, strict=True)))
-            return rows, attempt
-        except (httpx.HTTPError, RuntimeError, ValueError) as exc:
-            last_error = exc
-            if attempt < attempts:
-                time.sleep(min(30, 2 ** (attempt - 1)))
-    assert last_error is not None
-    raise RuntimeError(
-        f"Wayback Yahoo/AP month query failed after {attempts} attempts"
-    ) from last_error
+            except RuntimeError as day_error:
+                raise RuntimeError(
+                    f"Wayback Yahoo/AP month {month_prefix} failed in both "
+                    "monthly and daily query modes"
+                ) from day_error
+            rows.extend(day_rows)
+            attempts_used += day_attempts
+        return rows, attempts_used
 
 
 def main() -> int:

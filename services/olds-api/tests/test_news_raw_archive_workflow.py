@@ -87,6 +87,9 @@ def test_ap_raw_archive_merges_legacy_manifest_without_duplicate_raw_root() -> N
     assert "wayback-yahoo-manifest.jsonl.gz" in merge_section
     assert '--input "$wayback_yahoo"' in merge_section
     assert '--output "$wayback_yahoo_merged"' in merge_section
+    assert "wayback-bigstory-manifest.jsonl.gz" in merge_section
+    assert '--input "$wayback_bigstory"' in merge_section
+    assert '--output "$wayback_bigstory_merged"' in merge_section
     assert "raw/objects" not in merge_section
 
 

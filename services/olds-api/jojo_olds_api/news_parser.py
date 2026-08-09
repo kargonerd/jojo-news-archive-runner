@@ -4041,7 +4041,8 @@ def _ap_hosted_published_at(soup: BeautifulSoup) -> str | None:
         soup.select_one(
             ".ap-story-table .timestamp.updated[title], "
             ".ap-story-table time.updated[datetime], "
-            "#yn-story .byline abbr.timedate[title]"
+            "#yn-story .byline abbr.timedate[title], "
+            ".article-data .updated[title]"
         ),
         "title",
     ) or _tag_attribute(

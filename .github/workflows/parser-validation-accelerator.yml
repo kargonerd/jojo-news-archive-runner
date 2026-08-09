@@ -249,6 +249,8 @@ jobs:
           supplemental_merged_source_manifest="$RUNNER_TEMP/supplemental-merged-source-manifest.jsonl.gz"
           ap_wayback_yahoo_manifest="$RUNNER_TEMP/ap-wayback-yahoo-manifest.jsonl.gz"
           ap_wayback_yahoo_merged_manifest="$RUNNER_TEMP/ap-wayback-yahoo-merged-manifest.jsonl.gz"
+          ap_wayback_bigstory_manifest="$RUNNER_TEMP/ap-wayback-bigstory-manifest.jsonl.gz"
+          ap_wayback_bigstory_merged_manifest="$RUNNER_TEMP/ap-wayback-bigstory-merged-manifest.jsonl.gz"
           refreshed_manifest="$RUNNER_TEMP/refreshed-manifest.jsonl.gz"
           if rclone copyto \
               "${SOURCE_ROOT}/catalog/manifest.jsonl.gz" \
@@ -292,6 +294,17 @@ jobs:
                   --input "$ap_wayback_yahoo_manifest" \
                   --output "$ap_wayback_yahoo_merged_manifest"
                 effective_source_manifest="$ap_wayback_yahoo_merged_manifest"
+              fi
+              restore_if_present \
+                "${SUPPLEMENTAL_SOURCE_ROOT}/catalog/wayback-bigstory-manifest.jsonl.gz" \
+                "$ap_wayback_bigstory_manifest"
+              if [ -f "$ap_wayback_bigstory_manifest" ]; then
+                python services/olds-api/tools/merge_archive_manifests.py \
+                  --publisher ap \
+                  --input "$effective_source_manifest" \
+                  --input "$ap_wayback_bigstory_manifest" \
+                  --output "$ap_wayback_bigstory_merged_manifest"
+                effective_source_manifest="$ap_wayback_bigstory_merged_manifest"
               fi
             fi
             python services/olds-api/tools/filter_archive_manifest.py \

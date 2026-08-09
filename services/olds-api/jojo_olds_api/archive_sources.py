@@ -65,7 +65,12 @@ ARCHIVE_SOURCE_SPECS = {
         rejected_path_patterns=_patterns(
             r"^/(?:hub|video|videos|search|press-releases|newsletters)(?:/|$)",
         ),
-        alternate_hosts=("hosted.ap.org", "hosted2.ap.org"),
+        alternate_hosts=(
+            "hosted.ap.org",
+            "hosted2.ap.org",
+            "bigstory.ap.org",
+        ),
+        preserve_normalized_hosts=("bigstory.ap.org",),
     ),
     "wsj": ArchiveSourceSpec(
         publisher="wsj",

@@ -84,7 +84,79 @@ def test_rejects_malformed_wayback_cdx_table():
             attempts=1,
         )
     except RuntimeError as exc:
-        assert "failed after 1 attempts" in str(exc)
+        assert "failed in both monthly and daily query modes" in str(exc)
     else:
         raise AssertionError("malformed CDX payload must fail closed")
+    http_client.close()
+
+
+def test_falls_back_to_daily_queries_when_month_payload_is_malformed():
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        prefix = request.url.params["url"]
+        if prefix == "news.yahoo.com/s/ap/201002*":
+            return httpx.Response(
+                200,
+                json={"error": "query too large"},
+                request=request,
+            )
+        if prefix == "news.yahoo.com/s/ap/20100201*":
+            return httpx.Response(
+                200,
+                json=[
+                    [
+                        "timestamp",
+                        "original",
+                        "statuscode",
+                        "mimetype",
+                        "digest",
+                        "length",
+                    ],
+                    [
+                        "20100201120000",
+                        "http://news.yahoo.com/s/ap/20100201/ap_story",
+                        "200",
+                        "text/html",
+                        "DIGEST",
+                        "1000",
+                    ],
+                ],
+                request=request,
+            )
+        return httpx.Response(200, json=[], request=request)
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    rows, attempts = fetch_yahoo_month(
+        http_client,
+        year=2010,
+        month=2,
+        limit=100_000,
+        attempts=1,
+    )
+
+    assert attempts == 29
+    assert len(rows) == 1
+    assert rows[0]["digest"] == "DIGEST"
+    assert len(requests) == 29
+    assert requests[-1].url.params["url"] == "news.yahoo.com/s/ap/20100228*"
+    http_client.close()
+
+
+def test_accepts_empty_wayback_result_table():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[], request=request)
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    rows, attempts = fetch_yahoo_month(
+        http_client,
+        year=2012,
+        month=1,
+        limit=10,
+        attempts=1,
+    )
+
+    assert rows == []
+    assert attempts == 1
     http_client.close()

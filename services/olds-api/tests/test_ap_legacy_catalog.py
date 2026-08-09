@@ -5,6 +5,7 @@ from jojo_olds_api.ap_legacy_catalog import (
     ap_huff_wire_page_metadata,
     ap_partner_publication_datetime,
     ap_hosted_page_metadata,
+    build_ap_bigstory_manifest_rows,
     build_ap_partner_manifest_rows,
     build_ap_hosted_manifest_rows,
     normalize_ap_partner_url,
@@ -272,6 +273,29 @@ def test_builds_wayback_yahoo_partner_candidate():
         "http://news.yahoo.com:80/s/ap/20100101/"
         "ap_en_ce/us_limbaugh_hospital"
     )
+
+
+def test_builds_wayback_bigstory_candidate_with_capture_year_hint():
+    row = _row(
+        "http://bigstory.ap.org:80/article/"
+        "007-exhibition-looks-screen-spy-style-icon",
+        timestamp="20120706031558",
+        digest="BIGSTORY",
+    )
+
+    rows, metrics = build_ap_bigstory_manifest_rows(
+        [row],
+        from_year=2012,
+        to_year=2012,
+    )
+
+    assert metrics["articles"] == 1
+    assert rows[0]["canonicalUrl"] == (
+        "https://bigstory.ap.org/article/"
+        "007-exhibition-looks-screen-spy-style-icon"
+    )
+    assert rows[0]["publishedAt"] == "2012-07-06T03:15:58+00:00"
+    assert rows[0]["candidates"][0]["provider"] == "wayback"
 
 
 def test_rejects_unvalidated_google_and_huffpost_partner_rows():

@@ -511,6 +511,126 @@ def build_ap_partner_manifest_rows(
     }
 
 
+def build_ap_bigstory_manifest_rows(
+    rows: Iterable[dict[str, object]],
+    *,
+    from_year: int,
+    to_year: int,
+    maximum_candidates: int = 3,
+) -> tuple[list[dict[str, object]], dict[str, int]]:
+    """Build AP Big Story rows using capture time as catalog-year hint.
+
+    Big Story pages expose the exact timestamp inside the archived HTML. The
+    manifest only needs a stable year for sampling, so the first 2012 capture
+    is retained as a provisional value and the parser replaces it from
+    ``.article-data .updated[title]`` when the page is captured.
+    """
+    if from_year < 1900 or to_year > 2100 or from_year > to_year:
+        raise ValueError("invalid publication year range")
+    if maximum_candidates < 1:
+        raise ValueError("maximum_candidates must be positive")
+    spec = archive_source_spec("ap")
+    grouped: dict[
+        str,
+        list[tuple[tuple[object, ...], datetime, CaptureCandidate]],
+    ] = {}
+    seen_rows = 0
+    rejected_rows = 0
+    for row in rows:
+        seen_rows += 1
+        original_url = str(row.get("url") or row.get("original") or "").strip()
+        canonical_url = normalize_article_url(spec, original_url)
+        timestamp = str(row.get("timestamp") or "").strip()
+        mime_type = str(row.get("mime") or row.get("mimetype") or "").strip()
+        status_code = str(row.get("status") or row.get("statuscode") or "").strip()
+        if _TIMESTAMP_RE.fullmatch(timestamp) is None:
+            rejected_rows += 1
+            continue
+        captured_at = _timestamp_datetime(timestamp)
+        parsed = urlsplit(canonical_url or "")
+        if (
+            canonical_url is None
+            or (parsed.hostname or "").casefold() != "bigstory.ap.org"
+            or not parsed.path.startswith("/article/")
+            or not from_year <= captured_at.year <= to_year
+            or mime_type.casefold() != "text/html"
+            or status_code != "200"
+        ):
+            rejected_rows += 1
+            continue
+        candidate = CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                f"{WAYBACK_REPLAY_ENDPOINT}/{timestamp}id_/{original_url}"
+            ),
+            source_url=original_url,
+            captured_at=captured_at,
+            digest=_optional_string(row.get("digest")),
+            mime_type=mime_type,
+            status_code=200,
+            byte_count=_optional_nonnegative_int(row.get("length")),
+        )
+        rank = (timestamp, candidate.snapshot_url)
+        grouped.setdefault(canonical_url, []).append(
+            (rank, captured_at, candidate)
+        )
+
+    manifest_rows: list[dict[str, object]] = []
+    candidate_count = 0
+    duplicate_candidates = 0
+    duplicate_articles_by_digest = 0
+    primary_digests: set[str] = set()
+    for canonical_url in sorted(grouped):
+        candidates: list[CaptureCandidate] = []
+        identities: set[tuple[str, str]] = set()
+        published_at: datetime | None = None
+        for _, captured_at, candidate in sorted(
+            grouped[canonical_url], key=lambda item: item[0]
+        ):
+            identity = (candidate.snapshot_url, candidate.digest or "")
+            if identity in identities:
+                duplicate_candidates += 1
+                continue
+            identities.add(identity)
+            candidates.append(candidate)
+            published_at = published_at or captured_at
+            if len(candidates) >= maximum_candidates:
+                break
+        if not candidates or published_at is None:
+            continue
+        primary_digest = candidates[0].digest or ""
+        if primary_digest and primary_digest in primary_digests:
+            duplicate_articles_by_digest += 1
+            continue
+        if primary_digest:
+            primary_digests.add(primary_digest)
+        candidate_count += len(candidates)
+        manifest_rows.append(
+            {
+                "formatVersion": MANIFEST_FORMAT_VERSION,
+                "publisher": "ap",
+                "canonicalUrl": canonical_url,
+                "publishedAt": published_at.isoformat(),
+                "candidates": [
+                    candidate.model_dump(
+                        mode="json",
+                        by_alias=True,
+                        exclude_none=True,
+                    )
+                    for candidate in candidates
+                ],
+            }
+        )
+    return manifest_rows, {
+        "rowsSeen": seen_rows,
+        "rowsRejected": rejected_rows,
+        "articles": len(manifest_rows),
+        "candidates": candidate_count,
+        "duplicateCandidates": duplicate_candidates,
+        "duplicateArticlesByDigest": duplicate_articles_by_digest,
+    }
+
+
 def ap_hosted_page_metadata(
     html_bytes: bytes,
 ) -> tuple[datetime, str] | None:
