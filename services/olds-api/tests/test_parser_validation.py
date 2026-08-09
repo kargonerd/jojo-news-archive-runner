@@ -1127,6 +1127,63 @@ def test_validation_plan_tries_fresh_samples_before_retrying_errors(
     assert selected == [pending_url]
 
 
+def test_validation_plan_retries_server_placeholder_before_fresh_sample(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+    samples = [
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT canonical_url
+            FROM parser_validation_samples
+            WHERE sample_year=2020
+            ORDER BY canonical_url
+            """
+        ).fetchall()
+    ]
+    error_url, pending_url = samples
+    connection.execute(
+        """
+        UPDATE captures
+        SET status='error', attempts=1,
+            last_error='reject-server-placeholder-shell'
+        WHERE canonical_url=?
+        """,
+        (error_url,),
+    )
+    connection.execute(
+        """
+        UPDATE parser_validation_samples
+        SET sample_priority=CASE canonical_url
+            WHEN ? THEN 'ffff'
+            ELSE '0000'
+        END
+        WHERE sample_year=2020
+        """,
+        (error_url,),
+    )
+    connection.commit()
+
+    selected = pending_parser_validation_urls(
+        connection,
+        maximum=1,
+        maximum_record_attempts=3,
+    )
+
+    assert selected == [error_url]
+    assert selected != [pending_url]
+
+
 def test_validation_plan_prioritizes_high_yield_wsj_snapshots(
     tmp_path: Path,
 ):

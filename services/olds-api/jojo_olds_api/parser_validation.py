@@ -787,8 +787,13 @@ def pending_parser_validation_urls(
                     PARTITION BY sample.sample_year
                     ORDER BY
                         CASE capture.status
-                            WHEN 'pending' THEN 0
-                            ELSE 1
+                            WHEN 'pending' THEN 1
+                            ELSE CASE
+                                WHEN capture.last_error LIKE
+                                     '%server-placeholder-shell%'
+                                    THEN 0
+                                ELSE 2
+                            END
                         END,
                         CASE
                             WHEN capture.publisher != 'wsj' THEN 0
