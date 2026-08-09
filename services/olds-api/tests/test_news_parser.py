@@ -10435,7 +10435,7 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert "___" not in result.plain_text
     assert "<button" not in result.body_html
     assert "data-ap-readmore" not in result.body_html
-    assert result.extraction.parser_version == "ap-parser/0.6.18"
+    assert result.extraction.parser_version == "ap-parser/0.6.19"
 
 
 def test_ap_parser_extracts_hosted_ap_legacy_story_template():
@@ -10499,7 +10499,54 @@ def test_ap_parser_extracts_hosted_ap_legacy_story_template():
     assert len(result.images) == 1
     assert result.images[0].role.value == "tracking"
     assert result.images[0].should_archive is False
-    assert result.extraction.parser_version == "ap-parser/0.6.18"
+    assert result.extraction.parser_version == "ap-parser/0.6.19"
+
+
+def test_ap_parser_extracts_legacy_yahoo_distribution_story():
+    html = b"""
+    <html><head>
+      <meta name="title" content="Clarification: Piers Morgan story">
+    </head><body>
+      <div id="yn-story">
+        <h1 id="yn-title">Clarification: Piers Morgan story</h1>
+        <div class="byline">
+          <cite class="vcard"><span class="fn org"></span></cite>
+          <abbr title="2011-01-09T17:41:58-0800" class="timedate">
+            Sun Jan 9, 8:41 pm ET
+          </abbr>
+        </div>
+        <div class="yn-story-content">
+          <p>PASADENA, Calif. -- In a Jan. 6 story, The Associated Press
+          reported CNN anchor Piers Morgan's claim about an interview. The
+          clarification explains the election result and corrects the prior
+          report with enough context to stand as the complete AP item.</p>
+        </div>
+        <div class="yn-share-social">Follow Yahoo News on social media.</div>
+        <div class="comments"><p>This user comment is not article text.</p></div>
+      </div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "http://news.yahoo.com/s/ap/20110110/"
+            "ap_on_en_tv/us_tv_cnn_morgan"
+        ),
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.headline == "Clarification: Piers Morgan story"
+    assert result.published_at is not None
+    assert result.published_at.astimezone(timezone.utc).isoformat() == (
+        "2011-01-10T01:41:58+00:00"
+    )
+    assert "The Associated Press reported" in result.plain_text
+    assert "Follow Yahoo News" not in result.plain_text
+    assert "user comment" not in result.plain_text
+    assert result.extraction.parser_version == "ap-parser/0.6.19"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -10542,7 +10589,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.18"
+    assert article.extraction.parser_version == "ap-parser/0.6.19"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -10576,7 +10623,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.18"
+    assert result.extraction.parser_version == "ap-parser/0.6.19"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -14082,7 +14129,7 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
         block.text in {"_", "——————————", "<"}
         for block in result.blocks
     )
-    assert result.extraction.parser_version == "ap-parser/0.6.18"
+    assert result.extraction.parser_version == "ap-parser/0.6.19"
 
 
 def test_ap_parser_deduplicates_dims_variants_by_underlying_asset():

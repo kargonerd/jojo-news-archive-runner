@@ -39,8 +39,13 @@ class PublisherSpec:
 PUBLISHER_SPECS = {
     "ap": PublisherSpec(
         publisher="ap",
-        parser_version="ap-parser/0.6.18",
-        domains=("apnews.com", "hosted.ap.org", "hosted2.ap.org"),
+        parser_version="ap-parser/0.6.19",
+        domains=(
+            "apnews.com",
+            "hosted.ap.org",
+            "hosted2.ap.org",
+            "news.yahoo.com",
+        ),
         default_language="en",
         edition="us",
         body_selectors=(
@@ -48,6 +53,7 @@ PUBLISHER_SPECS = {
             ".RichTextStoryBody",
             "[data-testid='article-body']",
             ".ap-story-table .entry-content",
+            "#yn-story .yn-story-content",
             "article",
         ),
         preferred_image_hosts=("dims.apnews.com", "storage.googleapis.com"),

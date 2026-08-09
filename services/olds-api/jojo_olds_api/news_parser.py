@@ -3985,11 +3985,12 @@ def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:
 
 
 def _ap_hosted_headline(soup: BeautifulSoup) -> str | None:
-    """Extract the headline from AP's pre-BigStory hosted-news template."""
+    """Extract headlines from AP's pre-BigStory distribution templates."""
     return _tag_text(
         soup.select_one(
             ".ap-story-table .headline.entry-title, "
-            ".ap-story-table .entry-title"
+            ".ap-story-table .entry-title, "
+            "#yn-story #yn-title"
         )
     )
 
@@ -4000,7 +4001,8 @@ def _ap_hosted_authors(soup: BeautifulSoup) -> list[Author]:
     seen: set[str] = set()
     for node in soup.select(
         ".ap-story-table .byline .author .fn, "
-        ".ap-story-table .byline .vcard .fn"
+        ".ap-story-table .byline .vcard .fn, "
+        "#yn-story .byline .vcard .fn"
     ):
         name = _clean_text(node.get_text(" ", strip=True))
         key = name.casefold()
@@ -4011,11 +4013,12 @@ def _ap_hosted_authors(soup: BeautifulSoup) -> list[Author]:
 
 
 def _ap_hosted_published_at(soup: BeautifulSoup) -> str | None:
-    """Return the machine-readable AP legacy timestamp, when present."""
+    """Return a machine-readable AP legacy timestamp, when present."""
     return _tag_attribute(
         soup.select_one(
             ".ap-story-table .timestamp.updated[title], "
-            ".ap-story-table time.updated[datetime]"
+            ".ap-story-table time.updated[datetime], "
+            "#yn-story .byline abbr.timedate[title]"
         ),
         "title",
     ) or _tag_attribute(

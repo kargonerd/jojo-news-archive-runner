@@ -18,6 +18,7 @@ import httpx
 
 from .archive_sources import (
     ArchiveSourceSpec,
+    ap_hosted_publication_datetime,
     archive_source_spec,
     normalize_article_url,
     wsj_article_publication_datetime,
@@ -2061,6 +2062,9 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
 
 def infer_published_at(canonical_url: str) -> str | None:
     parsed = urlsplit(canonical_url)
+    ap_hosted_published = ap_hosted_publication_datetime(canonical_url)
+    if ap_hosted_published is not None:
+        return ap_hosted_published.isoformat()
     patterns = [
         r"/article/(?:0(?:%2C|,){2})?BT-CO-"
         r"(20\d{2})(\d{2})(\d{2})-",

@@ -518,6 +518,32 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "http://www.apnews.com/article/example?utm_source=test",
     ) == "https://apnews.com/article/example"
     assert normalize_article_url(ap, "https://apnews.com/hub/world-news") is None
+    assert normalize_article_url(
+        ap,
+        "http://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST"
+        "?SITE=AZPHG&SECTION=HOME&TEMPLATE=DEFAULT"
+        "&CTIME=2011-01-11-15-30-46",
+    ) == (
+        "https://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST"
+        "?CTIME=2011-01-11-15-30-46"
+    )
+    assert normalize_article_url(
+        ap,
+        "https://hosted2.ap.org/dynamic/stories/A/AF_IVORY_COAST"
+        "?ctime=2011-01-11-15-30-46&SITE=AP",
+    ) == (
+        "https://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST"
+        "?CTIME=2011-01-11-15-30-46"
+    )
+    assert normalize_article_url(
+        ap,
+        "https://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST?SITE=AP",
+    ) is None
+    assert article_url_publication_year(
+        ap,
+        "http://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST"
+        "?SITE=AP&CTIME=2011-01-11-15-30-46",
+    ) == 2011
 
     wsj = archive_source_spec("wsj")
     assert normalize_article_url(
@@ -651,6 +677,10 @@ def test_date_inference_and_candidate_ranking_prefers_after_publication():
         "https://www.nytimes.com/2020/01/02/world/example.html"
     )
     assert published == "2020-01-02T00:00:00+00:00"
+    assert infer_published_at(
+        "https://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST"
+        "?CTIME=2011-01-11-15-30-46"
+    ) == "2011-01-11T15:30:46+00:00"
     after = candidate_rank("20200102010000", published_at=published)
     before = candidate_rank("20200101010000", published_at=published)
     assert after < before

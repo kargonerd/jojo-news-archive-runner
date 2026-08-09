@@ -116,7 +116,7 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "errors": 0,
         "unboundCaptureInputs": 0,
         "qaRevision": 0,
-        "parserVersion": "ap-parser/0.6.18",
+        "parserVersion": "ap-parser/0.6.19",
         "ready": True,
         "active": False,
     }

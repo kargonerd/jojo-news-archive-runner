@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 
 @dataclass(frozen=True)
@@ -49,7 +49,10 @@ ARCHIVE_SOURCE_SPECS = {
     "ap": ArchiveSourceSpec(
         publisher="ap",
         canonical_host="apnews.com",
-        wayback_patterns=(
+        wayback_patterns=tuple(
+            f"hosted.ap.org/dynamic/stories/{prefix.upper()}/*"
+            for prefix in _SLUG_PREFIXES
+        ) + (
             "apnews.com/article/*",
             "apnews.com/*",
         ),
@@ -57,10 +60,12 @@ ARCHIVE_SOURCE_SPECS = {
             r"^/article/",
             r"^/[a-f0-9]{24,}$",
             r"^/.+-[a-f0-9]{24,}$",
+            r"^/dynamic/stories/[a-z0-9]/[a-z0-9_-]+$",
         ),
         rejected_path_patterns=_patterns(
             r"^/(?:hub|video|videos|search|press-releases|newsletters)(?:/|$)",
         ),
+        alternate_hosts=("hosted.ap.org", "hosted2.ap.org"),
     ),
     "wsj": ArchiveSourceSpec(
         publisher="wsj",
@@ -266,6 +271,22 @@ def normalize_article_url(
         return None
     if path != "/":
         path = path.rstrip("/")
+    if spec.publisher == "ap" and hostname in {
+        "hosted.ap.org",
+        "hosted2.ap.org",
+    }:
+        published = ap_hosted_publication_datetime(value)
+        if published is None:
+            return None
+        return urlunsplit(
+            (
+                "https",
+                "hosted.ap.org",
+                path,
+                "CTIME=" + published.strftime("%Y-%m-%d-%H-%M-%S"),
+                "",
+            )
+        )
     normalized_host = (
         hostname
         if hostname in spec.preserve_normalized_hosts
@@ -285,6 +306,9 @@ def article_url_publication_year(
     if spec.publisher == "wsj":
         published = wsj_article_publication_datetime(normalized)
         return published.year if published is not None else None
+    if spec.publisher == "ap":
+        published = ap_hosted_publication_datetime(normalized)
+        return published.year if published is not None else None
     if spec.publisher != "reuters":
         return None
     if not path.startswith("/article/"):
@@ -294,6 +318,40 @@ def article_url_publication_year(
         path,
     )
     return int(matches[-1]) if matches else None
+
+
+def ap_hosted_publication_datetime(value: str) -> datetime | None:
+    """Parse the story-revision timestamp used by legacy Hosted AP URLs."""
+    parsed = urlsplit(value.strip())
+    if (parsed.hostname or "").casefold() not in {
+        "hosted.ap.org",
+        "hosted2.ap.org",
+    }:
+        return None
+    ctime = next(
+        (
+            query_value
+            for key, query_value in parse_qsl(
+                parsed.query,
+                keep_blank_values=True,
+            )
+            if key.casefold() == "ctime"
+        ),
+        "",
+    )
+    match = re.fullmatch(
+        r"((?:19|20)\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})",
+        ctime,
+    )
+    if match is None:
+        return None
+    try:
+        return datetime(
+            *(int(value) for value in match.groups()),
+            tzinfo=timezone.utc,
+        )
+    except ValueError:
+        return None
 
 
 def wsj_article_publication_datetime(value: str) -> datetime | None:
