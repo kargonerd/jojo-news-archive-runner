@@ -124,7 +124,7 @@ jobs:
             --publisher npr \
             --from-year "$FROM_YEAR" \
             --to-year "$TO_YEAR" \
-            --collection-from-year 2012 \
+            --collection-from-year 2014 \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
             --summary "$LOCAL_ROOT/state/summary.json" \

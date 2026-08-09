@@ -15,6 +15,7 @@ def test_catalog_is_bounded_checkpointed_and_private() -> None:
 
     assert "build_common_crawl_prefix_manifest.py" in workflow
     assert "sudo apt-get install -y rclone" in workflow
+    assert "--collection-from-year 2014" in workflow
     assert '--max-pages "$MAX_PAGES"' in workflow
     assert "--min-request-interval 3" in workflow
     assert "verify_b2_private_bucket.py" in workflow
