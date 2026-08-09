@@ -945,6 +945,54 @@ def test_validation_plan_prunes_legacy_reserve_only_exclusions(
     assert reserve_only not in exclusions
 
 
+def test_validation_plan_preserves_external_validation_v1_exclusions(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path, publisher="bloomberg")
+    initialize_parser_validation_schema(connection)
+    excluded = str(
+        connection.execute(
+            "SELECT canonical_url FROM captures ORDER BY canonical_url LIMIT 1"
+        ).fetchone()[0]
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        ) VALUES (?, 'validation-v1', ?)
+        """,
+        (excluded, datetime.now(timezone.utc).isoformat()),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="bloomberg",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=1,
+        maximum_record_attempts=3,
+    )
+
+    assert connection.execute(
+        """
+        SELECT source_cohort
+        FROM parser_validation_exclusions
+        WHERE canonical_url=?
+        """,
+        (excluded,),
+    ).fetchone() == ("validation-v1",)
+    assert connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM parser_validation_samples
+        WHERE canonical_url=?
+        """,
+        (excluded,),
+    ).fetchone() == (0,)
+
+
 def test_qa_revision_change_replays_without_replacing_cohort(
     tmp_path: Path,
 ):
