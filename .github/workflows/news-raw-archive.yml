@@ -754,6 +754,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          next_discovery_pages="$MAX_DISCOVERY_PAGES"
+          actionable="${{ steps.after.outputs.actionable }}"
+          if [[ "$actionable" =~ ^[1-9][0-9]*$ ]]; then
+            next_discovery_pages=0
+            echo "Draining $actionable actionable captures before expanding discovery."
+          fi
+
           for attempt in 1 2 3 4 5; do
             if gh workflow run news-raw-archive.yml \
               --ref "$GITHUB_REF_NAME" \
@@ -761,7 +768,7 @@ jobs:
               -f from_year="$FROM_YEAR" \
               -f to_year="$TO_YEAR" \
               -f manifest_mode="$MANIFEST_MODE" \
-              -f max_discovery_pages="$MAX_DISCOVERY_PAGES" \
+              -f max_discovery_pages="$next_discovery_pages" \
               -f max_captures="$MAX_CAPTURES" \
               -f workers="$DOWNLOAD_WORKERS" \
               -f max_runtime_minutes="$MAX_RUNTIME_MINUTES" \

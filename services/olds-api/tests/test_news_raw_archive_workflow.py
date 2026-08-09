@@ -34,3 +34,15 @@ def test_wayback_discovery_retries_across_bounded_runs() -> None:
     assert "--timeout 30" in wayback_section
     assert "--attempts 2" in wayback_section
     assert "runner slot for the command defaults (90 seconds x 6)" in wayback_section
+
+
+def test_archive_continuation_drains_actionable_captures_before_discovery() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    continuation_section = workflow[
+        workflow.index("- name: Dispatch next bounded run") :
+    ]
+
+    assert 'actionable="${{ steps.after.outputs.actionable }}"' in continuation_section
+    assert 'if [[ "$actionable" =~ ^[1-9][0-9]*$ ]]; then' in continuation_section
+    assert "next_discovery_pages=0" in continuation_section
+    assert '-f max_discovery_pages="$next_discovery_pages"' in continuation_section
