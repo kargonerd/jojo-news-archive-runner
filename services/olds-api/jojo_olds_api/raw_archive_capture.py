@@ -1996,31 +1996,23 @@ def _fetch_usable_candidate(
         signals = signals | {
             "structuredSubscriptionArticle": True,
         }
-    if (
-        status_code not in ACCEPTED_HTTP_STATUSES
-        or not content
-        or not signals["looksLikeHtml"]
-        or signals["archiveErrorPage"]
-        or (
-            signals["authenticationShell"]
-            and not (publisher == "wsj" and wsj_parser_usable)
-        )
-        or signals["accessChallengeShell"]
-        or (
-            signals["subscriptionShell"]
-            and not structured_subscription_article
-        )
-        or signals["ftTruncatedArticleShell"]
-        or signals["redirectShell"]
-        or not bloomberg_parser_usable
-        or not ap_parser_usable
-        or not wsj_parser_usable
-        or not reuters_parser_usable
-        or not ft_parser_usable
-    ):
+    rejection_reasons = _candidate_rejection_reasons(
+        publisher=publisher,
+        status_code=status_code,
+        content=content,
+        signals=signals,
+        structured_subscription_article=structured_subscription_article,
+        bloomberg_parser_usable=bloomberg_parser_usable,
+        ap_parser_usable=ap_parser_usable,
+        wsj_parser_usable=wsj_parser_usable,
+        reuters_parser_usable=reuters_parser_usable,
+        ft_parser_usable=ft_parser_usable,
+    )
+    if rejection_reasons:
         return (
             None,
-            f"{candidate.provider.value}:http-{status_code}:score-{quality_score}",
+            f"{candidate.provider.value}:http-{status_code}:"
+            f"score-{quality_score}:reject-{','.join(rejection_reasons)}",
         )
     if candidate.provider == CaptureProvider.COMMON_CRAWL:
         signals = signals | {
@@ -2059,6 +2051,55 @@ def _fetch_usable_candidate(
         ),
         None,
     )
+
+
+def _candidate_rejection_reasons(
+    *,
+    publisher: str,
+    status_code: int,
+    content: bytes,
+    signals: dict[str, object],
+    structured_subscription_article: bool,
+    bloomberg_parser_usable: bool,
+    ap_parser_usable: bool,
+    wsj_parser_usable: bool,
+    reuters_parser_usable: bool,
+    ft_parser_usable: bool,
+) -> tuple[str, ...]:
+    """Return stable diagnostics for every candidate rejection predicate."""
+
+    reasons: list[str] = []
+    if status_code not in ACCEPTED_HTTP_STATUSES:
+        reasons.append("http-status")
+    if not content:
+        reasons.append("empty-content")
+    if not signals["looksLikeHtml"]:
+        reasons.append("non-html")
+    if signals["archiveErrorPage"]:
+        reasons.append("archive-error-page")
+    if signals["authenticationShell"] and not (
+        publisher == "wsj" and wsj_parser_usable
+    ):
+        reasons.append("authentication-shell")
+    if signals["accessChallengeShell"]:
+        reasons.append("access-challenge-shell")
+    if signals["subscriptionShell"] and not structured_subscription_article:
+        reasons.append("subscription-shell")
+    if signals["ftTruncatedArticleShell"]:
+        reasons.append("ft-truncated-shell")
+    if signals["redirectShell"]:
+        reasons.append("redirect-shell")
+    if not bloomberg_parser_usable:
+        reasons.append("bloomberg-parser-unusable")
+    if not ap_parser_usable:
+        reasons.append("ap-parser-unusable")
+    if not wsj_parser_usable:
+        reasons.append("wsj-parser-unusable")
+    if not reuters_parser_usable:
+        reasons.append("reuters-parser-unusable")
+    if not ft_parser_usable:
+        reasons.append("ft-parser-unusable")
+    return tuple(reasons)
 
 
 def arquivo_pt_cdx_url(item: ManifestItem) -> str:

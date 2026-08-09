@@ -39,6 +39,7 @@ from jojo_olds_api.raw_archive_capture import (
     _ap_syndication_search_urls,
     _ap_capture_parser_evidence,
     _capture_nyt_interactive_resources,
+    _candidate_rejection_reasons,
     _common_crawl_discovery_urls,
     _decode_archived_html_content,
     _ft_capture_parser_evidence,
@@ -78,6 +79,63 @@ from jojo_olds_api.raw_archive_capture import (
     score_raw_capture,
     store_raw_html,
 )
+
+
+def test_candidate_rejection_reasons_explain_wsj_parser_rejection():
+    signals = {
+        "looksLikeHtml": True,
+        "archiveErrorPage": False,
+        "authenticationShell": True,
+        "accessChallengeShell": False,
+        "subscriptionShell": False,
+        "ftTruncatedArticleShell": False,
+        "redirectShell": False,
+    }
+
+    reasons = _candidate_rejection_reasons(
+        publisher="wsj",
+        status_code=200,
+        content=b"<html></html>",
+        signals=signals,
+        structured_subscription_article=False,
+        bloomberg_parser_usable=True,
+        ap_parser_usable=True,
+        wsj_parser_usable=False,
+        reuters_parser_usable=True,
+        ft_parser_usable=True,
+    )
+
+    assert reasons == (
+        "authentication-shell",
+        "wsj-parser-unusable",
+    )
+
+
+def test_candidate_rejection_reasons_preserve_wsj_auth_shell_exception():
+    signals = {
+        "looksLikeHtml": True,
+        "archiveErrorPage": False,
+        "authenticationShell": True,
+        "accessChallengeShell": False,
+        "subscriptionShell": False,
+        "ftTruncatedArticleShell": False,
+        "redirectShell": False,
+    }
+
+    reasons = _candidate_rejection_reasons(
+        publisher="wsj",
+        status_code=200,
+        content=b"<html></html>",
+        signals=signals,
+        structured_subscription_article=False,
+        bloomberg_parser_usable=True,
+        ap_parser_usable=True,
+        wsj_parser_usable=True,
+        reuters_parser_usable=True,
+        ft_parser_usable=True,
+    )
+
+    assert reasons == ()
 
 
 def test_wsj_archive_capture_supports_secondary_archive_fallbacks():
