@@ -6019,9 +6019,18 @@ def _npr_audio_story_nodes(soup: BeautifulSoup) -> list[Tag]:
     return [
         node
         for node in soup.select(
-            "#primaryaudio, #headlineaudio, article.resaudio, .audio-module"
+            "#primaryaudio, #headlineaudio, article.resaudio, .audio-module, "
+            "#storyspan02 .bucketwrap.primary"
         )
         if isinstance(node, Tag)
+        and (
+            node.select_one(".avcontent.listen") is None
+            or node.select_one(
+                ".avcontent.listen a[href*='NPR.Player.openPlayer'], "
+                ".audiotools a.download[href]"
+            )
+            is not None
+        )
     ]
 
 
