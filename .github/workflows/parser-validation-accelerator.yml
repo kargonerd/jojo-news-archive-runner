@@ -188,12 +188,18 @@ jobs:
           if [ "$PUBLISHER" = "wsj" ] && [ "$SAMPLE_YEAR" -ge 2016 ]; then
             legacy_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/wsj/2016-2026/wayback-urlkey"
           fi
+          supplemental_source_root=""
+          if [ "$PUBLISHER" = "npr" ]; then
+            source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
+            supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/${source_window}/commoncrawl-prefix"
+          fi
           mkdir -p "$local_root/catalog" "$local_root/raw"
           {
             echo "local_root=$local_root"
             echo "remote_root=$remote_root"
             echo "source_root=$source_root"
             echo "legacy_source_root=$legacy_source_root"
+            echo "supplemental_source_root=$supplemental_source_root"
           } >> "$GITHUB_OUTPUT"
 
       - name: Restore filtered manifest and validation checkpoint
@@ -203,6 +209,7 @@ jobs:
           REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
           SOURCE_ROOT: ${{ steps.paths.outputs.source_root }}
           LEGACY_SOURCE_ROOT: ${{ steps.paths.outputs.legacy_source_root }}
+          SUPPLEMENTAL_SOURCE_ROOT: ${{ steps.paths.outputs.supplemental_source_root }}
         run: |
           set -euo pipefail
           restore_if_present() {
@@ -235,6 +242,8 @@ jobs:
           effective_source_manifest="$source_manifest"
           legacy_source_manifest="$RUNNER_TEMP/legacy-source-manifest.jsonl.gz"
           merged_source_manifest="$RUNNER_TEMP/merged-source-manifest.jsonl.gz"
+          supplemental_source_manifest="$RUNNER_TEMP/supplemental-source-manifest.jsonl.gz"
+          supplemental_merged_source_manifest="$RUNNER_TEMP/supplemental-merged-source-manifest.jsonl.gz"
           refreshed_manifest="$RUNNER_TEMP/refreshed-manifest.jsonl.gz"
           if rclone copyto \
               "${SOURCE_ROOT}/catalog/manifest.jsonl.gz" \
@@ -252,6 +261,19 @@ jobs:
                   --input "$legacy_source_manifest" \
                   --output "$merged_source_manifest"
                 effective_source_manifest="$merged_source_manifest"
+              fi
+            fi
+            if [ -n "$SUPPLEMENTAL_SOURCE_ROOT" ]; then
+              restore_if_present \
+                "${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz" \
+                "$supplemental_source_manifest"
+              if [ -f "$supplemental_source_manifest" ]; then
+                python services/olds-api/tools/merge_archive_manifests.py \
+                  --publisher "$PUBLISHER" \
+                  --input "$effective_source_manifest" \
+                  --input "$supplemental_source_manifest" \
+                  --output "$supplemental_merged_source_manifest"
+                effective_source_manifest="$supplemental_merged_source_manifest"
               fi
             fi
             python services/olds-api/tools/filter_archive_manifest.py \

@@ -1,0 +1,245 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import gzip
+import json
+from pathlib import Path
+import sqlite3
+
+import httpx
+
+from jojo_olds_api.archive_sources import archive_source_spec
+from jojo_olds_api.common_crawl_prefix_manifest import (
+    CommonCrawlPrefixClient,
+    PrefixCollection,
+    PrefixIndexPage,
+    export_prefix_manifest,
+    initialize_prefix_schema,
+    next_prefix_query,
+    prefix_patterns,
+    prefix_summary,
+    record_prefix_page,
+    record_prefix_page_count,
+)
+from jojo_olds_api.news_models import CaptureProvider
+from jojo_olds_api.raw_archive_capture import manifest_item_from_row
+
+
+INDEX_URL = "https://index.commoncrawl.org/CC-MAIN-2014-10-index"
+WARC_FILENAME = (
+    "crawl-data/CC-MAIN-2014-10/segments/example/warc/"
+    "CC-MAIN-201403-example.warc.gz"
+)
+ARTICLE_URL = (
+    "http://www.npr.org/2010/03/06/124385712/"
+    "actor-tony-shalhoub-plays-not-my-job?ft=1"
+)
+CANONICAL_URL = (
+    "https://www.npr.org/2010/03/06/124385712/"
+    "actor-tony-shalhoub-plays-not-my-job"
+)
+
+
+def _collection(identifier: str = "CC-MAIN-2014-10") -> PrefixCollection:
+    return PrefixCollection(
+        identifier=identifier,
+        index_url=INDEX_URL.replace("CC-MAIN-2014-10", identifier),
+        from_at=datetime(2014, 3, 7, tzinfo=timezone.utc),
+        to_at=datetime(2014, 3, 17, tzinfo=timezone.utc),
+    )
+
+
+def _index_row(timestamp: str, *, offset: int) -> dict[str, object]:
+    return {
+        "url": ARTICLE_URL,
+        "timestamp": timestamp,
+        "status": "200",
+        "mime": "text/html",
+        "digest": f"digest-{offset}",
+        "length": "9000",
+        "offset": str(offset),
+        "filename": WARC_FILENAME,
+    }
+
+
+def test_npr_prefix_patterns_include_www_and_bare_hosts():
+    assert prefix_patterns(
+        archive_source_spec("npr"),
+        from_year=2010,
+        to_year=2010,
+    ) == (
+        "www.npr.org/2010/",
+        "npr.org/2010/",
+    )
+
+
+def test_prefix_schema_adds_new_collections_without_resetting_progress():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("npr")
+    first = _collection()
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(first,),
+    )
+    collection_id, _, pattern, _, _ = next_prefix_query(connection)
+    record_prefix_page_count(
+        connection,
+        collection_id=collection_id,
+        pattern=pattern,
+        total_pages=0,
+    )
+
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(first, _collection("CC-MAIN-2015-11")),
+    )
+
+    assert connection.execute(
+        "SELECT COUNT(*) FROM prefix_queries"
+    ).fetchone()[0] == 4
+    assert connection.execute(
+        """
+        SELECT status FROM prefix_queries
+        WHERE collection_id=? AND pattern=?
+        """,
+        (collection_id, pattern),
+    ).fetchone()[0] == "complete"
+
+
+def test_records_caps_and_exports_common_crawl_candidates(tmp_path: Path):
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("npr")
+    collection = _collection()
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(collection,),
+    )
+    pattern = "www.npr.org/2010/"
+    record_prefix_page_count(
+        connection,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        total_pages=1,
+    )
+    result = record_prefix_page(
+        connection,
+        spec=spec,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        page_number=0,
+        total_pages=1,
+        page=PrefixIndexPage(
+            rows=tuple(
+                _index_row(timestamp, offset=index)
+                for index, timestamp in enumerate(
+                    (
+                        "20140307033634",
+                        "20140308033634",
+                        "20140309033634",
+                        "20140310033634",
+                    ),
+                    start=1,
+                )
+            )
+            + (
+                {
+                    **_index_row("20140311033634", offset=99),
+                    "filename": "crawl-002/legacy.arc.gz",
+                },
+            ),
+        ),
+    )
+
+    assert result == {"seen": 5, "accepted": 4, "complete": True}
+    assert connection.execute(
+        "SELECT COUNT(*) FROM prefix_candidates"
+    ).fetchone()[0] == 3
+    assert prefix_summary(connection)["shouldContinue"] is True
+
+    # The bare-host query remains pending; finish it without index rows.
+    record_prefix_page_count(
+        connection,
+        collection_id=collection.identifier,
+        pattern="npr.org/2010/",
+        total_pages=0,
+    )
+    assert prefix_summary(connection)["shouldContinue"] is False
+
+    destination = tmp_path / "manifest.jsonl.gz"
+    summary = export_prefix_manifest(
+        connection,
+        spec=spec,
+        destination=destination,
+    )
+    assert summary["articles"] == 1
+    assert summary["candidates"] == 3
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        row = json.loads(handle.readline())
+    item = manifest_item_from_row(row, publisher="npr")
+    assert item.canonical_url == CANONICAL_URL
+    assert len(item.candidates) == 3
+    assert all(
+        candidate.provider == CaptureProvider.COMMON_CRAWL
+        for candidate in item.candidates
+    )
+    assert item.candidates[0].warc_length == 9000
+
+
+def test_prefix_client_uses_page_count_then_ndjson_page():
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/collinfo.json":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "CC-MAIN-2014-10",
+                        "cdx-api": INDEX_URL,
+                        "from": "2014-03-07T03:34:34",
+                        "to": "2014-03-17T22:15:18",
+                    }
+                ],
+                request=request,
+            )
+        if request.url.params.get("showNumPages") == "true":
+            return httpx.Response(200, json={"pages": 1}, request=request)
+        return httpx.Response(
+            200,
+            text=json.dumps(_index_row("20140307033634", offset=1)) + "\n",
+            request=request,
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = CommonCrawlPrefixClient(
+        minimum_interval=0,
+        attempts=1,
+        client=http_client,
+    )
+    collections = client.collections()
+    assert collections[0].identifier == "CC-MAIN-2014-10"
+    assert client.page_count(
+        index_url=INDEX_URL,
+        pattern="www.npr.org/2010/",
+    ) == 1
+    page = client.page(
+        index_url=INDEX_URL,
+        pattern="www.npr.org/2010/",
+        page=0,
+    )
+    assert len(page.rows) == 1
+    query = requests[-1].url.params
+    assert query.get("matchType") == "prefix"
+    assert query.get("collapse") == "urlkey"
+    assert query.get_list("filter") == ["status:200", "mime:text/html"]
+    http_client.close()

@@ -82,3 +82,19 @@ def test_accelerator_reads_wsj_legacy_raw_without_copying_it() -> None:
     assert workflow.count(
         '--exclude-from "$RUNNER_TEMP/restored-object-excludes.txt"'
     ) == 2
+
+
+def test_accelerator_merges_npr_common_crawl_supplemental_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'if [ "$PUBLISHER" = "npr" ]; then' in workflow
+    assert "commoncrawl-prefix" in workflow
+    assert (
+        'SUPPLEMENTAL_SOURCE_ROOT: '
+        '${{ steps.paths.outputs.supplemental_source_root }}'
+    ) in workflow
+    assert (
+        '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz"'
+        in workflow
+    )
+    assert '--input "$supplemental_source_manifest"' in workflow
