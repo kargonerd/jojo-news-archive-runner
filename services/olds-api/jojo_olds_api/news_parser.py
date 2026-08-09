@@ -274,7 +274,11 @@ def parse_article(
         body = _select_body(soup, spec)
     if spec.publisher == "npr":
         legacy_interactive = (
-            _npr_legacy_iframe_interactive_body(
+            _npr_legacy_election_results_body(
+                soup,
+                canonical_url=canonical_url,
+            )
+            or _npr_legacy_iframe_interactive_body(
                 soup,
                 canonical_url=canonical_url,
             )
@@ -301,13 +305,20 @@ def parse_article(
                     body = legacy_cartoon
                     npr_legacy_gallery_selected = True
                 else:
-                    legacy_transcript = _npr_legacy_transcript_body(
+                    legacy_book_list = _npr_legacy_book_list_body(
                         soup,
                         selected_body=body,
                     )
-                    if legacy_transcript is not None:
-                        body = legacy_transcript
-                        npr_legacy_transcript_selected = True
+                    if legacy_book_list is not None:
+                        body = legacy_book_list
+                    else:
+                        legacy_transcript = _npr_legacy_transcript_body(
+                            soup,
+                            selected_body=body,
+                        )
+                        if legacy_transcript is not None:
+                            body = legacy_transcript
+                            npr_legacy_transcript_selected = True
     if spec.publisher == "nyt":
         legacy_interactive = _nyt_legacy_interactive_graphic(soup)
         if legacy_interactive is not None:
@@ -6068,6 +6079,117 @@ def _npr_legacy_transcript_body(
     ):
         return None
     return transcript
+
+
+def _npr_legacy_election_results_body(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
+    """Preserve AP-backed result feeds from NPR's 2010 election pages."""
+    scripts = [
+        node
+        for node in soup.select(
+            "#storyspan03 .elexResultsTable "
+            "script[src*='hosted.ap.org/dynamic/files/elections/' i]"
+        )
+        if isinstance(node, Tag)
+    ]
+    if not scripts:
+        return None
+    document = BeautifulSoup(
+        "<article data-jojo-source='npr-legacy-election-results'></article>",
+        "html.parser",
+    )
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    for selector in ("#storytext p", "#storyspan03 .listtext p"):
+        for paragraph in soup.select(selector):
+            copy = BeautifulSoup(str(paragraph), "html.parser").find()
+            if isinstance(copy, Tag):
+                article.append(copy)
+    previous_heading = ""
+    for index, script in enumerate(scripts, start=1):
+        heading = script.find_previous("h2")
+        heading_text = _clean_text(
+            heading.get_text(" ", strip=True)
+            if isinstance(heading, Tag)
+            else "Election"
+        )
+        if heading_text and heading_text != previous_heading:
+            heading_copy = document.new_tag("h2")
+            heading_copy.string = heading_text
+            article.append(heading_copy)
+            previous_heading = heading_text
+        source_url = _normalized_url(
+            str(script.get("src") or ""),
+            base_url=canonical_url,
+        )
+        if not source_url:
+            continue
+        embed = document.new_tag("iframe")
+        embed["src"] = source_url
+        embed["title"] = f"{heading_text or 'Election'} results data {index}"
+        embed["data-interactive-provider"] = "npr-ap-election-results"
+        article.append(embed)
+    return article if article.select_one("iframe[src]") is not None else None
+
+
+def _npr_legacy_book_list_body(
+    soup: BeautifulSoup,
+    *,
+    selected_body: Tag | None,
+) -> Tag | None:
+    """Recover reviews stored outside #storytext by NPR's book template."""
+    body_classes = (
+        {
+            str(value).casefold()
+            for value in (soup.body.get("class") or [])
+        }
+        if soup.body is not None
+        else set()
+    )
+    source = soup.select_one("#storyspan03 .bucketwrap.booklist")
+    if (
+        "tmplbookstory" not in body_classes
+        or not isinstance(source, Tag)
+        or len(source.select(".booklistitem")) < 2
+    ):
+        return None
+    source_characters = len(_clean_text(source.get_text(" ", strip=True)))
+    selected_characters = len(
+        _clean_text(selected_body.get_text(" ", strip=True))
+        if selected_body is not None
+        else ""
+    )
+    if source_characters < 500 or source_characters < selected_characters * 2:
+        return None
+    document = BeautifulSoup(
+        "<article data-jojo-source='npr-legacy-book-list'></article>",
+        "html.parser",
+    )
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    if selected_body is not None:
+        for paragraph in selected_body.select("p"):
+            copy = BeautifulSoup(str(paragraph), "html.parser").find()
+            if isinstance(copy, Tag):
+                article.append(copy)
+    book_list = BeautifulSoup(str(source), "html.parser").find()
+    if not isinstance(book_list, Tag):
+        return None
+    for noise in book_list.select(
+        ".ecommercepop, .purchaseLink, .internallink, h5, a[name]"
+    ):
+        noise.decompose()
+    for edition in book_list.select(".bookedition"):
+        edition.name = "p"
+    for bullet in book_list.select(".bull"):
+        bullet.decompose()
+    article.append(book_list)
+    return article
 
 
 def _npr_legacy_gallery_body(soup: BeautifulSoup) -> Tag | None:

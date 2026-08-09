@@ -15261,7 +15261,7 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_preserves_short_audio_story_mp3():
@@ -15301,7 +15301,7 @@ def test_npr_parser_preserves_short_audio_story_mp3():
     assert [
         block.embed_url for block in result.blocks if block.type.value == "embed"
     ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_classifies_unavailable_short_audio_story():
@@ -15325,7 +15325,7 @@ def test_npr_parser_classifies_unavailable_short_audio_story():
     assert result.quality.status.value == "partial"
     assert result.plain_text == "A short audio introduction."
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_accepts_legacy_metadata_only_audio_story():
@@ -15363,7 +15363,7 @@ def test_npr_parser_accepts_legacy_metadata_only_audio_story():
     assert "Unrelated recommended story" not in result.plain_text
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_accepts_legacy_unavailable_audio_story():
@@ -15413,7 +15413,7 @@ def test_npr_parser_accepts_legacy_unavailable_audio_story():
     assert "body-too-short" not in result.quality.warnings
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
@@ -15450,7 +15450,7 @@ def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
     assert "A short introduction to the segment." not in result.plain_text
     assert "noncommercial use" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
@@ -15484,7 +15484,7 @@ def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
     assert result.images[0].should_archive is True
     assert "onthetrail_01.jpg" in result.images[0].original_url
     assert "promo.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_recovers_image_led_double_take_cartoon():
@@ -15531,7 +15531,7 @@ def test_npr_parser_recovers_image_led_double_take_cartoon():
     ]
     assert all(image.should_archive for image in result.images)
     assert "related-cartoon.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_recovers_legacy_music_flash_interactive():
@@ -15585,7 +15585,129 @@ def test_npr_parser_recovers_legacy_music_flash_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://www.npr.org/music/memoriam_2010/memoriam.swf"]
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
+
+
+def test_npr_parser_recovers_ap_backed_legacy_election_results():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Election 2010: Oklahoma : NPR">
+          <meta name="date" content="Tue, 02 Nov 2010 18:06:00 -0400">
+        </head><body class="tmplNewsStory type1 id130683830">
+          <div id="storytext"><p>U.S. House, U.S. Senate and governor
+          results, provided by the Associated Press.</p></div>
+          <div id="storyspan03">
+            <div class="bucketwrap listtext"><p>Detailed election results
+            provided by the Associated Press.</p></div>
+            <div class="bucketwrap statichtml">
+              <h2>U.S. Senate</h2><div class="elexResultsTable">
+                <script src="http://hosted.ap.org/dynamic/files/elections/2010/general/by_race/OK_38145.js?SITE=NPRELN"></script>
+              </div>
+              <h2>Governor</h2><div class="elexResultsTable">
+                <script src="http://hosted.ap.org/dynamic/files/elections/2010/general/by_race/OK_37857.js?SITE=NPRELN"></script>
+              </div>
+            </div>
+          </div>
+          <aside><p>Unrelated recommended story.</p></aside>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2010/11/02/130683830/"
+            "election-2010-oklahoma"
+        ),
+    )
+
+    assert result.content_type == ContentType.INTERACTIVE
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "Detailed election results" in result.plain_text
+    assert "Unrelated recommended story" not in result.plain_text
+    assert [
+        block.embed_url
+        for block in result.blocks
+        if block.type.value == "embed"
+    ] == [
+        "http://hosted.ap.org/dynamic/files/elections/2010/general/"
+        "by_race/OK_38145.js?SITE=NPRELN",
+        "http://hosted.ap.org/dynamic/files/elections/2010/general/"
+        "by_race/OK_37857.js?SITE=NPRELN",
+    ]
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
+
+
+def test_npr_parser_recovers_legacy_book_list_and_removes_purchase_chrome():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="New In Paperback : NPR">
+          <meta name="date" content="Wed, 18 Jan 2012 12:00:00 -0500">
+        </head><body class="tmplBookStory type1 id145352505">
+          <div id="storytext"><p><em>Fiction and nonfiction releases from
+          four notable writers.</em></p></div>
+          <div id="storyspan03"><div class="bucketwrap list booklist">
+            <div class="bucket listitem booklistitem">
+              <img src="http://media.npr.org/books/first.jpg" alt="First book">
+              <h3>All The Time In The World</h3>
+              <div class="bookMeta"><p class="author">by E. L. Doctorow</p>
+                <div class="bookedition"><span>Paperback, 304 pages,</span>
+                  <span>Random House, $16, published January 24 2012</span>
+                  <span class="purchaseLink">| purchase</span>
+                  <div class="ecommercepop">Purchase Featured Books at
+                  Amazon. Your purchase helps support NPR Programming.</div>
+                </div>
+              </div>
+              <div class="capsulereview"><blockquote><p>E. L. Doctorow is
+              a master of long-form narrative, while these stories reveal
+              mysteries at the heart of family behavior and artistic life.
+              The collection moves between memory, ambition and the Bronx,
+              giving each character enough room to surprise the reader.</p>
+              </blockquote></div>
+              <h5>News and Reviews</h5><div class="internallink">
+              Related review should not become article text.</div>
+            </div>
+            <div class="bucket listitem booklistitem">
+              <img src="http://media.npr.org/books/second.jpg" alt="Second book">
+              <h3>The Lady Matador's Hotel</h3>
+              <div class="bookMeta"><p class="author">by Cristina Garcia</p>
+                <div class="bookedition"><span>Paperback, 209 pages,</span>
+                  <span>Simon &amp; Schuster, $15, published January 3 2012</span>
+                  <span class="purchaseLink">| purchase</span>
+                  <div class="ecommercepop">Purchase Featured Books at
+                  Independent Booksellers.</div>
+                </div>
+              </div>
+              <div class="capsulereview"><blockquote><p>Cristina Garcia
+              gathers a bullfighter, guerrillas, lawyers, waiters and poets
+              in a Central American hotel. The compact novel creates its
+              effects through vivid language and by entering the minds of
+              characters whose private plans gradually collide.</p>
+              </blockquote></div>
+              <h5>News and Reviews</h5><div class="internallink">
+              Another related review should not become article text.</div>
+            </div>
+          </div></div>
+          <aside><p>Unrelated recommended story.</p></aside>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2012/01/18/145352505/"
+            "new-in-paperback-jan-16-22"
+        ),
+    )
+
+    assert result.content_type == ContentType.ARTICLE
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "All The Time In The World" in result.plain_text
+    assert "The Lady Matador's Hotel" in result.plain_text
+    assert "mysteries at the heart of family behavior" in result.plain_text
+    assert "Paperback, 304 pages" in result.plain_text
+    assert "Purchase Featured Books" not in result.plain_text
+    assert "Related review should not" not in result.plain_text
+    assert "Unrelated recommended story" not in result.plain_text
+    assert result.quality.images_selected == 2
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_removes_legacy_read_more_bucket():
@@ -15621,7 +15743,7 @@ def test_npr_parser_removes_legacy_read_more_bucket():
     assert "second substantive paragraph" in result.plain_text
     assert "Read More" not in result.plain_text
     assert "Related report part one" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_recovers_legacy_iframe_interactive():
@@ -15657,7 +15779,7 @@ def test_npr_parser_recovers_legacy_iframe_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://election-maps.example/results/embed?state=us"]
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_recovers_legacy_inline_graphic():
@@ -15792,7 +15914,7 @@ def test_npr_parser_recovers_legacy_program_audio_download():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://pd.npr.org/audio/prediction.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_npr_parser_does_not_infer_audio_from_plain_primary_bucket():
@@ -15822,7 +15944,7 @@ def test_npr_parser_does_not_infer_audio_from_plain_primary_bucket():
     assert result.quality.status.value == "partial"
     assert result.content_type.value == "article"
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.13"
+    assert result.extraction.parser_version == "npr-parser/0.1.14"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
