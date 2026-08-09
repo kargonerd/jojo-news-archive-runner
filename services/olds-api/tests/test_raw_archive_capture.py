@@ -5633,6 +5633,132 @@ def test_npr_capture_skips_nginx_placeholder_for_next_candidate(
     assert result["capture"].selected_candidate.snapshot_url == article_url
 
 
+def test_npr_capture_discovers_alternate_http_timemap_snapshot(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.npr.org/2012/05/09/152339471/"
+        "u-s-wholesale-stockpiles-edged-higher-in-march"
+    )
+    original_url = canonical_url.replace("https://", "http://")
+    placeholder_url = (
+        "https://web.archive.org/web/20120509192313id_/" + original_url
+    )
+    article_url = (
+        "https://web.archive.org/web/20120510192313id_/" + original_url
+    )
+    https_timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?" + (
+        "url=https%3A%2F%2Fwww.npr.org%2F2012%2F05%2F09%2F152339471%2F"
+        "u-s-wholesale-stockpiles-edged-higher-in-march"
+    )
+    http_timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?" + (
+        "url=http%3A%2F%2Fwww.npr.org%2F2012%2F05%2F09%2F152339471%2F"
+        "u-s-wholesale-stockpiles-edged-higher-in-march"
+    )
+    placeholder = b"""
+    <html><head><title>Welcome to nginx!</title></head>
+    <body><center><h1>Welcome to nginx!</h1></center></body></html>
+    """
+    header = [
+        "urlkey",
+        "timestamp",
+        "original",
+        "mimetype",
+        "statuscode",
+        "digest",
+        "length",
+    ]
+    http_timemap = json.dumps(
+        [
+            header,
+            [
+                "org,npr)/example",
+                "20120509192313",
+                original_url,
+                "text/html",
+                "200",
+                "PLACEHOLDER",
+                str(len(placeholder)),
+            ],
+            [
+                "org,npr)/example",
+                "20120510192313",
+                original_url,
+                "text/html",
+                "200",
+                "ARTICLE",
+                str(len(ARTICLE)),
+            ],
+        ]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            placeholder_url: (
+                200,
+                {"content-type": "text/html"},
+                placeholder,
+                placeholder_url,
+            ),
+            https_timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                json.dumps([header]).encode(),
+                https_timemap_url,
+            ),
+            http_timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                http_timemap,
+                http_timemap_url,
+            ),
+            article_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                article_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="npr",
+        canonical_url=canonical_url,
+        published_at="2012-05-09T00:00:00Z",
+        section=None,
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=placeholder_url,
+                captured_at=datetime(
+                    2012,
+                    5,
+                    9,
+                    19,
+                    23,
+                    13,
+                    tzinfo=timezone.utc,
+                ),
+                digest="PLACEHOLDER",
+            ),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [
+        placeholder_url,
+        https_timemap_url,
+        http_timemap_url,
+        article_url,
+    ]
+    assert result["capture"].selected_candidate.snapshot_url == article_url
+
+
 def test_completed_nginx_placeholder_is_requeued_by_quality_audit(
     tmp_path: Path,
 ):

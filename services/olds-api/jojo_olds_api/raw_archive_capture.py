@@ -67,6 +67,7 @@ WAYBACK_TIMEMAP_MAXIMUM_BYTES = 2_000_000
 WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES = 8
 WAYBACK_TIMEMAP_FALLBACK_PUBLISHERS = {
     "bloomberg",
+    "npr",
     "nyt",
     "reuters",
     "wsj",
@@ -1218,6 +1219,16 @@ def capture_item(
                     section=item.section,
                     candidates=item.candidates,
                 )
+                published = _parse_iso_datetime(item.published_at)
+                timemap_items = (
+                    [item]
+                    if bloomberg_legacy_timemap_attempted
+                    else (
+                        [legacy_item, item]
+                        if published is not None and published.year <= 2015
+                        else [item, legacy_item]
+                    )
+                )
                 try:
                     legacy_candidates = discover_wayback_timemap_candidates(
                         legacy_item,
@@ -1438,14 +1449,31 @@ def capture_item(
                     section=item.section,
                     candidates=item.candidates,
                 )
-                published = _parse_iso_datetime(item.published_at)
-                timemap_items = (
-                    [item]
-                    if bloomberg_legacy_timemap_attempted
-                    else (
-                        [legacy_item, item]
-                        if published is not None and published.year <= 2015
-                        else [item, legacy_item]
+        else:
+            timemap_urls = {item.canonical_url}
+            for existing_candidate in candidates_considered:
+                if existing_candidate.provider != CaptureProvider.WAYBACK:
+                    continue
+                original_url = _wayback_snapshot_original_url(
+                    existing_candidate.snapshot_url
+                )
+                if (
+                    original_url is None
+                    or original_url in timemap_urls
+                    or not _same_article_url(
+                        original_url,
+                        item.canonical_url,
+                    )
+                ):
+                    continue
+                timemap_urls.add(original_url)
+                timemap_items.append(
+                    ManifestItem(
+                        publisher=item.publisher,
+                        canonical_url=original_url,
+                        published_at=item.published_at,
+                        section=item.section,
+                        candidates=item.candidates,
                     )
                 )
         for timemap_item in timemap_items:
@@ -5501,6 +5529,23 @@ def _archive_url_match_key(value: str) -> tuple[str, str]:
     parts = urlsplit(value)
     host = (parts.hostname or "").casefold().removeprefix("www.")
     return host, _archive_article_path(host, parts.path)
+
+
+def _wayback_snapshot_original_url(value: str) -> str | None:
+    parts = urlsplit(value)
+    if (parts.hostname or "").casefold() != "web.archive.org":
+        return None
+    match = re.match(
+        r"^/web/\d{1,14}(?:[a-z_]+)?/(https?://.+)$",
+        parts.path,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    original = match.group(1)
+    if parts.query:
+        original += "?" + parts.query
+    return original
 
 
 def _archive_article_path(host: str, path: str) -> str:
