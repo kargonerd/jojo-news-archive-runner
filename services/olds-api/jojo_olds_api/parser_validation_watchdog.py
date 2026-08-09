@@ -34,7 +34,9 @@ PUBLISHER_ORDER = (
     "caixin",
 )
 ACTIVE_TITLE_RE = re.compile(
-    r"^parser-(?:qa|validation)-(aljazeera|ap|axios|bloomberg|caixin|ft|nikkei|npr|nyt|reuters|scmp|wsj|zaobao)-(20\d{2})$"
+    r"^parser-(?:qa|validation|holdout-v[1-9][0-9]*)-"
+    r"(aljazeera|ap|axios|bloomberg|caixin|ft|nikkei|npr|nyt|reuters|scmp|wsj|zaobao)-"
+    r"(20\d{2})$"
 )
 
 
@@ -279,7 +281,9 @@ def _publisher_from_summary_path(
         return None
     if not parts:
         return None
-    if parts[0] == "validation":
+    if parts[0] == "validation" or re.fullmatch(
+        r"holdout-v[1-9][0-9]*", parts[0]
+    ):
         return parts[1] if len(parts) > 1 else None
     return parts[0]
 

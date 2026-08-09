@@ -159,6 +159,42 @@ def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
     assert ft_2018["active"] is True
 
 
+def test_watchdog_accepts_ready_holdout_and_tracks_active_holdout(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "holdout-v3/nyt/2018/state/summary.json",
+        publisher="nyt",
+        year=2018,
+        evaluated=800,
+    )
+    _write_summary(
+        tmp_path,
+        "smoke-v1/nyt/2019/state/summary.json",
+        publisher="nyt",
+        year=2019,
+        evaluated=800,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=["parser-holdout-v4-nyt-2020"],
+        max_dispatch=66,
+        publishers=["nyt"],
+    )
+    tasks = {
+        (task["publisher"], task["year"])
+        for task in plan["tasks"]
+    }
+
+    assert plan["readyCells"] == 1
+    assert plan["activeCells"] == 1
+    assert ("nyt", 2018) not in tasks
+    assert ("nyt", 2019) in tasks
+    assert ("nyt", 2020) not in tasks
+
+
 def test_watchdog_rejects_ready_stale_parser_or_qa_revision(
     tmp_path: Path,
 ):

@@ -123,13 +123,16 @@ jobs:
             fi
           done
           # Formal parser-validation summaries are execution state under v2,
-          # not part of a publisher's v1 canonical raw source tree. Map this
-          # prefix to the planner's expected validation/<publisher>/<year>
-          # layout so finished cells are never dispatched again.
+          # not part of a publisher's v1 canonical raw source tree. Restore
+          # both the original validation cohort and formal holdout cohorts;
+          # a current-version holdout that passes all gates is authoritative
+          # convergence evidence and must not be dispatched again. Smoke
+          # cohorts remain deliberately excluded.
           rclone copy \
             "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v2/validation-state" \
             "$RUNNER_TEMP/archive-state" \
             --include "validation/*/*/state/summary.json" \
+            --include "holdout-v*/*/*/state/summary.json" \
             --transfers 16 --checkers 32 \
             --retries 8 --low-level-retries 20
 
