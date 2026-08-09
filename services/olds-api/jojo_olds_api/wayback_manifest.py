@@ -27,6 +27,10 @@ from .wsj_infini_catalog import (
     wsj_infini_should_continue,
     wsj_infini_summary,
 )
+from .wsj_infini_direct_catalog import (
+    wsj_infini_direct_should_continue,
+    wsj_infini_direct_summary,
+)
 from .wsj_syndication_catalog import (
     wsj_syndication_articles,
     wsj_syndication_should_continue,
@@ -1788,6 +1792,8 @@ def export_capture_manifest(
         incomplete += 1
     if wsj_infini_should_continue(connection):
         incomplete += 1
+    if wsj_infini_direct_should_continue(connection):
+        incomplete += 1
     year_counts = {
         str(year): wsj_catalog_count_for_year(connection, year)
         for year in range(from_year, to_year + 1)
@@ -2001,6 +2007,12 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
         result["shouldContinue"] = bool(
             result["shouldContinue"]
         ) or wsj_infini_should_continue(connection)
+    infini_direct = wsj_infini_direct_summary(connection)
+    if infini_direct is not None:
+        result["wsjInfiniDirect"] = infini_direct
+        result["shouldContinue"] = bool(
+            result["shouldContinue"]
+        ) or wsj_infini_direct_should_continue(connection)
     legacy_dates = wsj_legacy_date_summary(connection)
     if legacy_dates is not None:
         result["wsjLegacyDates"] = legacy_dates

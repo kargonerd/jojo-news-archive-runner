@@ -46,6 +46,10 @@ from jojo_olds_api.wsj_infini_catalog import (
     process_wsj_infini_documents,
     process_wsj_infini_queries,
 )
+from jojo_olds_api.wsj_infini_direct_catalog import (
+    initialize_wsj_infini_direct_schema,
+    process_wsj_infini_direct_catalog,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -127,6 +131,7 @@ def main() -> int:
     wsj_syndication_resolutions_this_run = 0
     wsj_infini_queries_this_run = 0
     wsj_infini_documents_this_run = 0
+    wsj_infini_direct_files_this_run = 0
     cdx_paused_for_google_news = False
     deferred_errors: list[str] = []
     if args.publisher == "wsj" and args.collapse == "urlkey":
@@ -136,6 +141,11 @@ def main() -> int:
         initialize_wsj_rss_schema(connection)
         initialize_wsj_syndication_schema(connection)
         initialize_wsj_infini_schema(
+            connection,
+            from_year=args.from_year,
+            to_year=args.to_year,
+        )
+        initialize_wsj_infini_direct_schema(
             connection,
             from_year=args.from_year,
             to_year=args.to_year,
@@ -178,6 +188,39 @@ def main() -> int:
             except Exception as exc:
                 deferred_errors.append(
                     "WSJ Infini-News query: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            try:
+                infini_direct_result = process_wsj_infini_direct_catalog(
+                    connection,
+                    from_year=args.from_year,
+                    to_year=args.to_year,
+                    http_client=http_client,
+                    maximum_files=max(1, args.max_pages or 5) * 5,
+                    workers=8,
+                )
+                wsj_infini_direct_files_this_run = int(
+                    infini_direct_result["attemptedFiles"]
+                )
+                infini_direct_errors = infini_direct_result.pop("errors")
+                deferred_errors.extend(
+                    f"WSJ Infini-News direct: {error}"
+                    for error in infini_direct_errors
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "wsj-infini-direct",
+                            **infini_direct_result,
+                            "errors": len(infini_direct_errors),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+            except Exception as exc:
+                deferred_errors.append(
+                    "WSJ Infini-News direct: "
                     f"{type(exc).__name__}: {exc}"
                 )
             if wsj_google_news_should_continue(
@@ -499,6 +542,7 @@ def main() -> int:
         ),
         "wsjInfiniQueriesThisRun": wsj_infini_queries_this_run,
         "wsjInfiniDocumentsThisRun": wsj_infini_documents_this_run,
+        "wsjInfiniDirectFilesThisRun": wsj_infini_direct_files_this_run,
         "cdxPausedForGoogleNews": cdx_paused_for_google_news,
         "deferredError": (
             "; ".join(deferred_errors) if deferred_errors else None
