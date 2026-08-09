@@ -10435,7 +10435,7 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert "___" not in result.plain_text
     assert "<button" not in result.body_html
     assert "data-ap-readmore" not in result.body_html
-    assert result.extraction.parser_version == "ap-parser/0.6.19"
+    assert result.extraction.parser_version == "ap-parser/0.6.20"
 
 
 def test_ap_parser_extracts_hosted_ap_legacy_story_template():
@@ -10499,7 +10499,7 @@ def test_ap_parser_extracts_hosted_ap_legacy_story_template():
     assert len(result.images) == 1
     assert result.images[0].role.value == "tracking"
     assert result.images[0].should_archive is False
-    assert result.extraction.parser_version == "ap-parser/0.6.19"
+    assert result.extraction.parser_version == "ap-parser/0.6.20"
 
 
 def test_ap_parser_extracts_legacy_yahoo_distribution_story():
@@ -10546,7 +10546,132 @@ def test_ap_parser_extracts_legacy_yahoo_distribution_story():
     assert "The Associated Press reported" in result.plain_text
     assert "Follow Yahoo News" not in result.plain_text
     assert "user comment" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.19"
+    assert result.extraction.parser_version == "ap-parser/0.6.20"
+
+
+def test_ap_parser_extracts_google_hosted_distribution_story():
+    canonical_url = (
+        "http://www.google.com/hostednews/ap/article/"
+        "ALeqM5g3GDCPdLfq2U7PRBzbJTC12i2JZg?docId=example"
+    )
+    capture = raw_capture("ap", canonical_url).model_copy(
+        update={
+            "published_at": datetime(
+                2011,
+                11,
+                30,
+                16,
+                9,
+                tzinfo=timezone.utc,
+            )
+        }
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="Ex Colo. sheriff accused of offering meth for sex">
+    </head><body>
+      <div id="hostednews-article">
+        <div class="g-unit g-first"><div class="hn-copy">
+          <div class="g-section">
+            <div id="hn-headline">
+              Ex Colo. sheriff accused of offering meth for sex
+            </div>
+            <p class="hn-byline">
+              By STEVEN K. PAULSON, Associated Press - 2 days ago
+            </p>
+            <p>CENTENNIAL, Colo. (AP) -- The former sheriff was known for
+            his public service and concern about teenage drug use before the
+            allegations described in this complete archived report.</p>
+            <p>The report contains enough additional detail to distinguish
+            the article body from a navigation shell or summary card.</p>
+            <p id="hn-distributor-copyright">
+              Copyright 2011 The Associated Press. All rights reserved.
+            </p>
+          </div>
+          <div class="g-section" id="rn-section">
+            <h4>Related articles</h4><p>Unrelated recommendation.</p>
+          </div>
+        </div></div>
+      </div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=canonical_url,
+        raw_capture=capture,
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.headline == (
+        "Ex Colo. sheriff accused of offering meth for sex"
+    )
+    assert [author.name for author in result.authors] == [
+        "STEVEN K. PAULSON"
+    ]
+    assert result.published_at == capture.published_at
+    assert "former sheriff was known" in result.plain_text
+    assert "Related articles" not in result.plain_text
+    assert "Copyright 2011" not in result.plain_text
+    assert "Associated Press - 2 days ago" not in result.plain_text
+    assert result.extraction.parser_version == "ap-parser/0.6.20"
+
+
+def test_ap_parser_extracts_huffpost_wire_distribution_story():
+    canonical_url = (
+        "https://www.huffingtonpost.com/huff-wires/20110104/"
+        "af-kenya-corruption"
+    )
+    html = b"""
+    <html><head>
+      <title>Kenyan minister resigns over car imports scandal</title>
+    </head><body>
+      <div class="entry"><div class="entry_right">
+        <h1><a>Kenyan minister resigns over car imports scandal</a></h1>
+        <div class="comments_datetime"><p>
+          <a class="wire_author">TOM MALITI</a> |
+          January 4, 2011 10:06 AM EST |
+          <span class="ap"><img alt="AP"></span>
+        </p></div>
+        <div class="entry_content">
+          <p>NAIROBI, Kenya -- Kenya's industrialization minister resigned
+          on Tuesday over a car imports scandal and said he looked forward
+          to presenting his defense in court.</p>
+          <div class="contin_below">Story continues below</div>
+          <div class="adver_cont_below">
+            <span class="mid_article_ad_label">Advertisement</span>
+            <div class="ad_wrapper">Advertisement frame</div>
+          </div>
+          <p>The anti-corruption commission had investigated the imports,
+          and this second paragraph completes the archived AP wire item.</p>
+        </div>
+      </div></div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=canonical_url,
+        allow_generic_syndication=True,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.headline == (
+        "Kenyan minister resigns over car imports scandal"
+    )
+    assert [author.name for author in result.authors] == ["TOM MALITI"]
+    assert result.published_at is not None
+    assert result.published_at.astimezone(timezone.utc).isoformat() == (
+        "2011-01-04T15:06:00+00:00"
+    )
+    assert "industrialization minister resigned" in result.plain_text
+    assert "Story continues below" not in result.plain_text
+    assert "Advertisement" not in result.plain_text
+    assert result.extraction.parser_version == "ap-parser/0.6.20"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -10589,7 +10714,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.19"
+    assert article.extraction.parser_version == "ap-parser/0.6.20"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -10623,7 +10748,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.19"
+    assert result.extraction.parser_version == "ap-parser/0.6.20"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -14129,7 +14254,7 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
         block.text in {"_", "——————————", "<"}
         for block in result.blocks
     )
-    assert result.extraction.parser_version == "ap-parser/0.6.19"
+    assert result.extraction.parser_version == "ap-parser/0.6.20"
 
 
 def test_ap_parser_deduplicates_dims_variants_by_underlying_asset():

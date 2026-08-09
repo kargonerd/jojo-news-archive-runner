@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ast
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 import hashlib
 import html as html_module
@@ -3990,7 +3990,9 @@ def _ap_hosted_headline(soup: BeautifulSoup) -> str | None:
         soup.select_one(
             ".ap-story-table .headline.entry-title, "
             ".ap-story-table .entry-title, "
-            "#yn-story #yn-title"
+            "#yn-story #yn-title, "
+            "#hostednews-article #hn-headline, "
+            ".entry h1"
         )
     )
 
@@ -4002,13 +4004,34 @@ def _ap_hosted_authors(soup: BeautifulSoup) -> list[Author]:
     for node in soup.select(
         ".ap-story-table .byline .author .fn, "
         ".ap-story-table .byline .vcard .fn, "
-        "#yn-story .byline .vcard .fn"
+        "#yn-story .byline .vcard .fn, "
+        ".entry .wire_author"
     ):
         name = _clean_text(node.get_text(" ", strip=True))
         key = name.casefold()
         if name and key not in seen:
             result.append(Author(name=name))
             seen.add(key)
+    if result:
+        return result
+    google_byline = _tag_text(
+        soup.select_one("#hostednews-article .hn-byline")
+    )
+    if google_byline:
+        match = re.match(
+            r"(?is)^\s*by\s+(.+?),\s*(?:the\s+)?associated\s+press\b",
+            google_byline,
+        )
+        if match:
+            for name in re.split(
+                r"\s+(?:and|&)\s+|\s*,\s*",
+                match.group(1),
+            ):
+                cleaned = _clean_text(name)
+                key = cleaned.casefold()
+                if cleaned and key not in seen:
+                    result.append(Author(name=cleaned))
+                    seen.add(key)
     return result
 
 
@@ -4024,7 +4047,28 @@ def _ap_hosted_published_at(soup: BeautifulSoup) -> str | None:
     ) or _tag_attribute(
         soup.select_one(".ap-story-table time.updated[datetime]"),
         "datetime",
+    ) or _ap_huff_wire_published_at(soup)
+
+
+def _ap_huff_wire_published_at(soup: BeautifulSoup) -> str | None:
+    """Read the exact publication timestamp from HuffPost AP-wire pages."""
+    metadata = soup.select_one(".entry .comments_datetime")
+    text = _clean_text(metadata.get_text(" ", strip=True)) if metadata else ""
+    match = re.search(
+        r"(?i)\b([A-Z][a-z]+ \d{1,2}, 20\d{2} "
+        r"\d{1,2}:\d{2} [AP]M)\s+(EST|EDT)\b",
+        text,
     )
+    if match is None:
+        return None
+    try:
+        parsed = datetime.strptime(match.group(1), "%B %d, %Y %I:%M %p")
+    except ValueError:
+        return None
+    offset = -5 if match.group(2).upper() == "EST" else -4
+    return parsed.replace(
+        tzinfo=timezone(timedelta(hours=offset))
+    ).isoformat()
 
 
 def _ap_structured_race_call_body(
@@ -10972,6 +11016,14 @@ def _strip_ft_copyright_suffixes(soup: BeautifulSoup) -> None:
 
 def _remove_ap_body_promos(soup: BeautifulSoup) -> None:
     """Remove AP calls-to-action embedded as legacy body paragraphs."""
+    for node in list(
+        soup.select(
+            "#hn-headline, .hn-byline, #hn-distributor-copyright, "
+            ".contin_below, .adver_cont_below, .mid_article_ad_label, "
+            ".ad_wrapper"
+        )
+    ):
+        node.decompose()
     for node in list(soup.select("[data-ap-readmore]")):
         node.decompose()
     for button in list(soup.select("button")):

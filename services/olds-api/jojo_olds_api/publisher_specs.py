@@ -39,12 +39,14 @@ class PublisherSpec:
 PUBLISHER_SPECS = {
     "ap": PublisherSpec(
         publisher="ap",
-        parser_version="ap-parser/0.6.19",
+        parser_version="ap-parser/0.6.20",
         domains=(
             "apnews.com",
             "hosted.ap.org",
             "hosted2.ap.org",
             "news.yahoo.com",
+            "www.google.com",
+            "www.huffingtonpost.com",
         ),
         default_language="en",
         edition="us",
@@ -54,6 +56,8 @@ PUBLISHER_SPECS = {
             "[data-testid='article-body']",
             ".ap-story-table .entry-content",
             "#yn-story .yn-story-content",
+            "#hostednews-article .hn-copy > .g-section:first-child",
+            ".entry .entry_content",
             "article",
         ),
         preferred_image_hosts=("dims.apnews.com", "storage.googleapis.com"),
