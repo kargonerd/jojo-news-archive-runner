@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 import pyarrow as pa
 
@@ -11,6 +12,16 @@ from jojo_olds_api.wayback_manifest import (
     initialize_discovery_schema,
 )
 from jojo_olds_api.wsj_infini_catalog import initialize_wsj_infini_schema
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+BUILD_TOOL = (
+    REPOSITORY_ROOT
+    / "services"
+    / "olds-api"
+    / "tools"
+    / "build_wayback_manifest.py"
+)
 
 
 def test_scan_accepts_only_strict_wsj_origin_rows(monkeypatch):
@@ -165,3 +176,10 @@ def test_direct_catalog_is_bounded_resumable_and_merges_urls(monkeypatch):
     combined = discovery_summary(connection)
     assert combined["wsjInfiniDirect"] == summary
     assert combined["shouldContinue"] is True
+
+
+def test_build_tool_bounds_direct_scan_to_ten_files_per_discovery_page():
+    tool = BUILD_TOOL.read_text(encoding="utf-8")
+
+    assert "maximum_files=max(1, args.max_pages or 5) * 10" in tool
+    assert "workers=8" in tool

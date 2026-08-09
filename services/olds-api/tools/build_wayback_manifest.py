@@ -196,7 +196,7 @@ def main() -> int:
                     from_year=args.from_year,
                     to_year=args.to_year,
                     http_client=http_client,
-                    maximum_files=max(1, args.max_pages or 5) * 5,
+                    maximum_files=max(1, args.max_pages or 5) * 10,
                     workers=8,
                 )
                 wsj_infini_direct_files_this_run = int(
