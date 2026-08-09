@@ -379,6 +379,25 @@ def ensure_parser_validation_plan(
     now = _now_iso()
     current_parser_version = publisher_spec(publisher).parser_version
     current_qa_revision = qa_policy_revision(publisher)
+    # Versions before this migration recorded every planned reserve URL as a
+    # holdout exclusion, even when no parser-validation result was produced.
+    # Keep the zero-overlap guarantee scoped to articles that were actually
+    # evaluated and recover untouched reserve candidates for future cohorts.
+    for year in range(from_year, to_year + 1):
+        source_prefix = f"{publisher}:{year}:"
+        connection.execute(
+            """
+            DELETE FROM parser_validation_exclusions
+            WHERE substr(source_cohort, 1, ?) = ?
+              AND NOT EXISTS (
+                SELECT 1
+                FROM parser_validation_results AS result
+                WHERE result.canonical_url =
+                      parser_validation_exclusions.canonical_url
+              )
+            """,
+            (len(source_prefix), source_prefix),
+        )
     previous_versions = {
         int(year): str(parser_version)
         for year, parser_version in connection.execute(
@@ -400,17 +419,24 @@ def ensure_parser_validation_plan(
     }
     if refreshed_years:
         # A parser change requires an independent holdout cohort.  Preserve
-        # every URL selected under the previous version before dropping the
-        # old plan so the deterministic sampler cannot select it again.
+        # every URL actually evaluated under the previous version before
+        # dropping the old plan. Unevaluated reserve candidates remain
+        # eligible because they were never part of the measured cohort.
         for year in sorted(refreshed_years):
             connection.execute(
                 """
                 INSERT OR IGNORE INTO parser_validation_exclusions(
                     canonical_url, source_cohort, excluded_at
                 )
-                SELECT canonical_url, ?, ?
-                FROM parser_validation_samples
-                WHERE sample_year=?
+                SELECT sample.canonical_url, ?, ?
+                FROM parser_validation_samples AS sample
+                WHERE sample.sample_year=?
+                  AND EXISTS (
+                    SELECT 1
+                    FROM parser_validation_results AS result
+                    WHERE result.canonical_url=sample.canonical_url
+                      AND result.sample_year=sample.sample_year
+                  )
                 """,
                 (
                     f"{publisher}:{year}:{previous_versions[year]}",

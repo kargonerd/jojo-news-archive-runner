@@ -776,7 +776,7 @@ def test_bloomberg_plan_randomly_prefers_exact_wayback_captures(
     )
 
 
-def test_parser_version_change_refreshes_every_publishers_sample(
+def test_parser_version_change_excludes_only_evaluated_samples(
     tmp_path: Path,
 ):
     connection = _state_with_years(tmp_path, publisher="bloomberg")
@@ -786,16 +786,38 @@ def test_parser_version_change_refreshes_every_publishers_sample(
         from_year=2020,
         to_year=2020,
         target_per_year=1,
-        reserve_per_year=0,
+        reserve_per_year=1,
         maximum_record_attempts=3,
     )
-    original = connection.execute(
+    original = {
+        str(row[0])
+        for row in connection.execute(
         """
         SELECT canonical_url
         FROM parser_validation_samples
         WHERE sample_year=2020
         """
-    ).fetchone()[0]
+        )
+    }
+    evaluated = sorted(original)[0]
+    connection.execute(
+        """
+        INSERT INTO parser_validation_results(
+            canonical_url,
+            publisher,
+            sample_year,
+            parser_version,
+            extraction_status,
+            qa_pass,
+            warnings_json,
+            issues_json,
+            parsed_at
+        )
+        VALUES (?, 'bloomberg', 2020, 'bloomberg-parser/old',
+                'complete', 1, '[]', '[]', ?)
+        """,
+        (evaluated, datetime.now(timezone.utc).isoformat()),
+    )
     connection.execute(
         """
         UPDATE parser_validation_config
@@ -811,27 +833,105 @@ def test_parser_version_change_refreshes_every_publishers_sample(
         from_year=2020,
         to_year=2020,
         target_per_year=1,
-        reserve_per_year=0,
+        reserve_per_year=1,
         maximum_record_attempts=3,
     )
-    replacement = connection.execute(
-        """
-        SELECT canonical_url
-        FROM parser_validation_samples
-        WHERE sample_year=2020
-        """
-    ).fetchone()[0]
+    replacement = {
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT canonical_url
+            FROM parser_validation_samples
+            WHERE sample_year=2020
+            """
+        )
+    }
 
     assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 1
-    assert replacement != original
+    assert evaluated not in replacement
+    assert (original - {evaluated}) <= replacement
     assert connection.execute(
         """
         SELECT source_cohort
         FROM parser_validation_exclusions
         WHERE canonical_url=?
         """,
-        (original,),
+        (evaluated,),
     ).fetchone() == ("bloomberg:2020:bloomberg-parser/old",)
+    assert connection.execute(
+        "SELECT COUNT(*) FROM parser_validation_exclusions"
+    ).fetchone() == (1,)
+
+
+def test_validation_plan_prunes_legacy_reserve_only_exclusions(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path, publisher="bloomberg")
+    ensure_parser_validation_plan(
+        connection,
+        publisher="bloomberg",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=1,
+        maximum_record_attempts=3,
+    )
+    selected = sorted(
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    )
+    evaluated, reserve_only = selected
+    connection.execute(
+        """
+        INSERT INTO parser_validation_results(
+            canonical_url,
+            publisher,
+            sample_year,
+            parser_version,
+            extraction_status,
+            qa_pass,
+            warnings_json,
+            issues_json,
+            parsed_at
+        )
+        VALUES (?, 'bloomberg', 2020, 'bloomberg-parser/old',
+                'complete', 1, '[]', '[]', ?)
+        """,
+        (evaluated, datetime.now(timezone.utc).isoformat()),
+    )
+    connection.executemany(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        ) VALUES (?, 'bloomberg:2020:bloomberg-parser/old', ?)
+        """,
+        (
+            (url, datetime.now(timezone.utc).isoformat())
+            for url in selected
+        ),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="bloomberg",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=1,
+        maximum_record_attempts=3,
+    )
+
+    exclusions = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_exclusions"
+        )
+    }
+    assert exclusions == {evaluated}
+    assert reserve_only not in exclusions
 
 
 def test_qa_revision_change_replays_without_replacing_cohort(
