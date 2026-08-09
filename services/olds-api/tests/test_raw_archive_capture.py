@@ -105,6 +105,7 @@ def test_candidate_rejection_reasons_explain_wsj_parser_rejection():
         ap_parser_usable=True,
         wsj_parser_usable=False,
         reuters_parser_usable=True,
+        npr_parser_usable=True,
         ft_parser_usable=True,
     )
 
@@ -135,10 +136,39 @@ def test_candidate_rejection_reasons_preserve_wsj_auth_shell_exception():
         ap_parser_usable=True,
         wsj_parser_usable=True,
         reuters_parser_usable=True,
+        npr_parser_usable=True,
         ft_parser_usable=True,
     )
 
     assert reasons == ()
+
+
+def test_candidate_rejection_reasons_explain_npr_parser_rejection():
+    signals = {
+        "looksLikeHtml": True,
+        "archiveErrorPage": False,
+        "authenticationShell": False,
+        "accessChallengeShell": False,
+        "subscriptionShell": False,
+        "ftTruncatedArticleShell": False,
+        "redirectShell": False,
+    }
+
+    reasons = _candidate_rejection_reasons(
+        publisher="npr",
+        status_code=200,
+        content=b"<html></html>",
+        signals=signals,
+        structured_subscription_article=False,
+        bloomberg_parser_usable=True,
+        ap_parser_usable=True,
+        wsj_parser_usable=True,
+        reuters_parser_usable=True,
+        npr_parser_usable=False,
+        ft_parser_usable=True,
+    )
+
+    assert reasons == ("npr-parser-unusable",)
 
 
 def test_wsj_archive_capture_supports_secondary_archive_fallbacks():
@@ -5799,6 +5829,133 @@ def test_npr_capture_skips_nginx_placeholder_for_next_candidate(
     assert result["status"] == "complete"
     assert client.requests == [placeholder_url, article_url]
     assert result["capture"].selected_candidate.snapshot_url == article_url
+
+
+def test_npr_capture_skips_parser_incomplete_privacy_page(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.npr.org/2017/05/29/530555477/"
+        "new-show-black-crows"
+    )
+    privacy_url = (
+        "https://web.archive.org/web/20220901164451id_/"
+        "https://choice.npr.org/index.html?origin=" + canonical_url
+    )
+    article_url = (
+        "https://web.archive.org/web/20170601000000id_/" + canonical_url
+    )
+    privacy_page = b"""
+    <html><head><title>Cookie Consent and Choices</title></head>
+    <body><article><h1>Cookie Consent and Choices</h1>
+      <p>Please choose whether NPR may use cookies on this device.</p>
+    </article></body></html>
+    """ + (b" " * 10_000)
+    article = b"""
+    <html><head>
+      <meta property="og:title" content="New show tells stories">
+      <meta property="article:published_time"
+            content="2017-05-29T12:00:00Z">
+    </head><body><div id="storytext">
+      <p>The first paragraph reports on the people behind the production and
+      explains why their testimony matters to listeners across the region.
+      It includes enough concrete context to establish this as the archived
+      article rather than a navigation or consent page.</p>
+      <p>The second paragraph describes how the reporting team gathered the
+      interviews, verified the accounts and edited the material for radio.
+      Those details continue the substantive article body for this test.</p>
+      <p>The final paragraph provides additional historical context, names
+      the communities involved and explains what audiences will hear when
+      the program is broadcast.</p>
+    </div></body></html>
+    """
+    client = StubArchiveClient(
+        {
+            privacy_url: (
+                200,
+                {"content-type": "text/html"},
+                privacy_page,
+                privacy_url,
+            ),
+            article_url: (
+                200,
+                {"content-type": "text/html"},
+                article,
+                article_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="npr",
+        canonical_url=canonical_url,
+        published_at="2017-05-29T00:00:00Z",
+        section=None,
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=privacy_url,
+            ),
+            CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url=article_url,
+            ),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [privacy_url, article_url]
+    assert result["capture"].selected_candidate.snapshot_url == article_url
+
+
+def test_completed_npr_editorial_removal_notice_is_requeued(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.npr.org/2018/04/03/598239092/"
+        "the-man-who-spent-100k"
+    )
+    snapshot_url = (
+        "https://web.archive.org/web/20180404000000id_/" + canonical_url
+    )
+    content = b"""
+    <html><head>
+      <meta property="og:title" content="The Man Who Spent $100K">
+      <meta property="article:published_time"
+            content="2018-04-03T12:00:00Z">
+    </head><body><div id="storytext"><p><em>
+      This story has been temporarily removed pending an editorial review.
+    </em></p></div></body></html>
+    """ + (b" " * 10_000)
+    blob = store_raw_html(tmp_path, content)
+    capture = RawCapture(
+        article_id="npr:" + ("c" * 64),
+        publisher="npr",
+        canonical_url=canonical_url,
+        published_at=datetime(2018, 4, 3, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=snapshot_url,
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=snapshot_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    assert completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    ) == "npr-capture-parser-incomplete"
 
 
 def test_npr_capture_discovers_alternate_http_timemap_after_tiny_stub(

@@ -614,6 +614,14 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
     ) == "https://www.npr.org/2018/02/03/123456789/example"
     assert normalize_article_url(
         archive_source_spec("npr"),
+        "https://www.npr.org/2017/05/29/530555477/example%0A",
+    ) == "https://www.npr.org/2017/05/29/530555477/example"
+    assert normalize_article_url(
+        archive_source_spec("npr"),
+        "https://www.npr.org/2018/04/03/598239092/example=",
+    ) == "https://www.npr.org/2018/04/03/598239092/example"
+    assert normalize_article_url(
+        archive_source_spec("npr"),
         "https://www.npr.org/2010/11/02/130682288/election-2010-florida-results",
     ) is None
     assert normalize_article_url(

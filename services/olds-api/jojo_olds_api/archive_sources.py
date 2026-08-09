@@ -242,6 +242,16 @@ def normalize_article_url(
     if hostname not in allowed_hosts:
         return None
     path = re.sub(r"/+", "/", parsed.path or "/")
+    if spec.publisher == "npr":
+        # CDX indexes occasionally contain scraper-added line endings or a
+        # trailing assignment marker. Neither can be part of NPR's article
+        # slug, and leaving them in place prevents timemap fallback from
+        # finding captures for the real canonical URL.
+        path = re.sub(
+            r"(?i)(?:%(?:0[0-9a-f]|7f))+$",
+            "",
+            path,
+        ).rstrip("=")
     if spec.publisher == "reuters" and re.search(
         r"[|<>(){}]|%(?:28|29|3c|3e|7b|7c|7d)",
         path,

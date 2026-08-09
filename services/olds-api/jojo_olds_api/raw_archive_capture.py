@@ -58,7 +58,7 @@ CAPTURE_POLICY_VERSIONS = {
     "bloomberg": "bloomberg-capture/0.10.3",
     "ft": "ft-capture/0.20.2",
     "nyt": "nyt-capture/0.9.0",
-    "npr": "npr-capture/1.1",
+    "npr": "npr-capture/1.2",
     "reuters": "reuters-capture/0.7.2",
     "wsj": "wsj-capture/0.8.7",
 }
@@ -2140,6 +2140,13 @@ def _fetch_usable_candidate(
             )
         )
         signals = signals | reuters_evidence
+    npr_parser_usable = True
+    if publisher == "npr" and signals["looksLikeHtml"]:
+        npr_parser_usable, npr_evidence = _npr_capture_parser_evidence(
+            content,
+            canonical_url=canonical_url,
+        )
+        signals = signals | npr_evidence
     ft_parser_usable = True
     if publisher == "ft" and signals["looksLikeHtml"]:
         ft_parser_usable, ft_evidence = _ft_capture_parser_evidence(
@@ -2172,6 +2179,7 @@ def _fetch_usable_candidate(
         ap_parser_usable=ap_parser_usable,
         wsj_parser_usable=wsj_parser_usable,
         reuters_parser_usable=reuters_parser_usable,
+        npr_parser_usable=npr_parser_usable,
         ft_parser_usable=ft_parser_usable,
     )
     if rejection_reasons:
@@ -2230,6 +2238,7 @@ def _candidate_rejection_reasons(
     ap_parser_usable: bool,
     wsj_parser_usable: bool,
     reuters_parser_usable: bool,
+    npr_parser_usable: bool,
     ft_parser_usable: bool,
 ) -> tuple[str, ...]:
     """Return stable diagnostics for every candidate rejection predicate."""
@@ -2267,6 +2276,8 @@ def _candidate_rejection_reasons(
         reasons.append("wsj-parser-unusable")
     if not reuters_parser_usable:
         reasons.append("reuters-parser-unusable")
+    if not npr_parser_usable:
+        reasons.append("npr-parser-unusable")
     if not ft_parser_usable:
         reasons.append("ft-parser-unusable")
     return tuple(reasons)
@@ -6099,6 +6110,40 @@ def _reuters_capture_parser_evidence(
     }
 
 
+def _npr_capture_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="npr",
+            canonical_url=canonical_url,
+            allow_generic_syndication=False,
+        )
+    except Exception as exc:
+        return False, {
+            "nprCaptureParserUsable": False,
+            "nprCaptureParserError": type(exc).__name__,
+        }
+    nontext = article.content_type in {
+        ContentType.INTERACTIVE,
+        ContentType.VIDEO,
+        ContentType.AUDIO,
+        ContentType.GALLERY,
+    }
+    usable = article.quality.status == ArticleStatus.COMPLETE or nontext
+    return usable, {
+        "nprCaptureParserUsable": usable,
+        "nprCaptureExtractionStatus": article.quality.status.value,
+        "nprCaptureContentType": article.content_type.value,
+        "nprCaptureBodyCharacters": article.quality.body_characters,
+    }
+
+
 def _ft_capture_parser_evidence(
     content: bytes,
     *,
@@ -6768,6 +6813,13 @@ def completed_capture_rejection_reason(
         )
         if not usable:
             return "reuters-capture-parser-incomplete"
+    if capture.publisher == "npr":
+        usable, _ = _npr_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "npr-capture-parser-incomplete"
     if capture.publisher == "ft":
         usable, _ = _ft_capture_parser_evidence(
             content,

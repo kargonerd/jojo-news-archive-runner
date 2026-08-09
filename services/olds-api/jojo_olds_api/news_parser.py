@@ -6511,6 +6511,21 @@ def _npr_non_editorial_image_url(url: str) -> bool:
 
 def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
     """Remove controls embedded in NPR's legacy story-text container."""
+    for bucket in list(soup.select(".bucketwrap.image")):
+        image = bucket.select_one("img")
+        if isinstance(image, Tag):
+            caption, credit = _npr_caption_credit(bucket)
+            if caption:
+                image["data-jojo-npr-caption"] = caption
+            if credit:
+                image["data-jojo-npr-credit"] = credit
+        for node in list(
+            bucket.select(
+                ".credit-caption, .enlarge_html, .captionwrap, "
+                ".caption-wrap, .creditwrap"
+            )
+        ):
+            node.decompose()
     for node in list(
         soup.select(
             ".dateblock, .textsize, [id^='featuredCommentsMain']"
@@ -12073,22 +12088,36 @@ def _caption_credit(container: Tag) -> tuple[str | None, str | None]:
 
 def _npr_caption_credit(container: Tag) -> tuple[str | None, str | None]:
     """Separate legacy NPR cartoon captions from adjacent credit spans."""
+    annotated_image = container.select_one("img[data-jojo-npr-caption]")
+    if isinstance(annotated_image, Tag):
+        return (
+            _clean_text(annotated_image.get("data-jojo-npr-caption", ""))
+            or None,
+            _clean_text(annotated_image.get("data-jojo-npr-credit", ""))
+            or None,
+        )
     caption_node = container.select_one(
-        ".captionwrap .caption, figcaption, [class*='caption' i]"
+        ".captionwrap .caption, .caption-wrap .caption, figcaption, "
+        "[class*='caption' i]"
     )
     caption: str | None = None
     if isinstance(caption_node, Tag):
         copy = BeautifulSoup(str(caption_node), "html.parser").find()
         if isinstance(copy, Tag):
-            for hidden in copy.select(".hide-caption"):
+            for hidden in copy.select(
+                ".hide-caption, .toggle-caption, .credit"
+            ):
                 hidden.decompose()
             caption = _clean_text(copy.get_text(" ", strip=True)) or None
-    credit_node = container.select_one(".creditwrap")
-    credit = (
-        _clean_text(credit_node.get_text(" ", strip=True)) or None
-        if isinstance(credit_node, Tag)
-        else None
-    )
+    credit_parts: list[str] = []
+    seen_credit: set[str] = set()
+    for credit_node in container.select(".creditwrap, .credit"):
+        value = _clean_text(credit_node.get_text(" ", strip=True))
+        key = value.casefold()
+        if value and key not in seen_credit:
+            credit_parts.append(value)
+            seen_credit.add(key)
+    credit = " / ".join(credit_parts) or None
     if caption is None and credit is None:
         return _caption_credit(container)
     return caption, credit
