@@ -181,7 +181,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh workflow run npr-common-crawl-catalog.yml \
-            --ref "$GITHUB_SHA" \
+            --ref "$GITHUB_REF_NAME" \
             -f from_year="$FROM_YEAR" \
             -f to_year="$TO_YEAR" \
             -f max_pages="$MAX_PAGES" \

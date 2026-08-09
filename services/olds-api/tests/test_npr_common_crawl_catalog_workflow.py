@@ -32,3 +32,5 @@ def test_catalog_does_not_auto_loop_when_no_page_succeeded() -> None:
     assert "steps.discovery.outputs.should_continue == 'true'" in dispatch
     assert "steps.discovery.outputs.pages != '0'" in dispatch
     assert "auto_continue=true" in dispatch
+    assert '--ref "$GITHUB_REF_NAME"' in dispatch
+    assert 'GITHUB_SHA' not in dispatch
