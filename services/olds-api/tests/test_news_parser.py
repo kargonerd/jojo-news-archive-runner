@@ -15261,7 +15261,7 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_preserves_short_audio_story_mp3():
@@ -15301,7 +15301,7 @@ def test_npr_parser_preserves_short_audio_story_mp3():
     assert [
         block.embed_url for block in result.blocks if block.type.value == "embed"
     ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_classifies_unavailable_short_audio_story():
@@ -15325,7 +15325,7 @@ def test_npr_parser_classifies_unavailable_short_audio_story():
     assert result.quality.status.value == "partial"
     assert result.plain_text == "A short audio introduction."
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_accepts_legacy_metadata_only_audio_story():
@@ -15363,7 +15363,7 @@ def test_npr_parser_accepts_legacy_metadata_only_audio_story():
     assert "Unrelated recommended story" not in result.plain_text
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_accepts_legacy_unavailable_audio_story():
@@ -15413,7 +15413,7 @@ def test_npr_parser_accepts_legacy_unavailable_audio_story():
     assert "body-too-short" not in result.quality.warnings
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
@@ -15450,7 +15450,7 @@ def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
     assert "A short introduction to the segment." not in result.plain_text
     assert "noncommercial use" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
@@ -15484,7 +15484,7 @@ def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
     assert result.images[0].should_archive is True
     assert "onthetrail_01.jpg" in result.images[0].original_url
     assert "promo.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_recovers_image_led_double_take_cartoon():
@@ -15531,7 +15531,7 @@ def test_npr_parser_recovers_image_led_double_take_cartoon():
     ]
     assert all(image.should_archive for image in result.images)
     assert "related-cartoon.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_recovers_legacy_music_flash_interactive():
@@ -15585,7 +15585,7 @@ def test_npr_parser_recovers_legacy_music_flash_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://www.npr.org/music/memoriam_2010/memoriam.swf"]
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_removes_legacy_read_more_bucket():
@@ -15621,7 +15621,7 @@ def test_npr_parser_removes_legacy_read_more_bucket():
     assert "second substantive paragraph" in result.plain_text
     assert "Read More" not in result.plain_text
     assert "Related report part one" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_recovers_legacy_iframe_interactive():
@@ -15657,7 +15657,94 @@ def test_npr_parser_recovers_legacy_iframe_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://election-maps.example/results/embed?state=us"]
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
+
+
+def test_npr_parser_recovers_legacy_inline_graphic():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta name="date" content="Wed, 15 Feb 2012 12:00:00 -0500">
+          <meta property="og:title" content="Lin Vs. Tebow">
+        </head><body class="tmplNewsMultimedia type1">
+          <div id="storyspan02" class="storylocation">
+            <div class="bucketwrap graphic948"><div class="bucket">
+              <p>The meteoric rise of a point guard has echoes of a
+              quarterback who caused a stir the previous fall. Both began
+              their professional careers as benchwarmers before becoming
+              overnight sensations for struggling teams.</p>
+              <div class="graphicwrapper">
+                <img src="/news/graphics/2012/02/lintebow.gif"
+                     alt="Linsanity vs Tebowmania">
+              </div>
+              <div class="notes"><h4>Notes</h4>
+                One player did not start this game.</div>
+              <div class="footer"><p>Source: NBA, NFL and ESPN</p>
+                <p>Credit: NPR Visuals</p></div>
+            </div></div>
+          </div>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2012/02/15/146955598/lin-vs-tebow"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.content_type == ContentType.INTERACTIVE
+    assert "meteoric rise" in result.plain_text
+    assert "Source: NBA, NFL and ESPN" in result.plain_text
+    assert [image.original_url for image in result.images] == [
+        "https://www.npr.org/news/graphics/2012/02/lintebow.gif"
+    ]
+
+
+def test_npr_parser_recovers_legacy_scripted_poll():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta name="date" content="Tue, 07 Dec 2010 12:34:00 -0500">
+          <meta property="og:title"
+                content="Economics Experiment: Pick The Cutest Animal">
+        </head><body class="tmplNewsMultimedia type1">
+          <div id="storyspan03" class="storylocation">
+            <div class="bucketwrap statichtml">
+              <script src="/buckets/news/2010/12/pmpoll.js"></script>
+              <div id="pmPoll">
+                <h1>This is an actual economics experiment. Please read
+                these instructions carefully before choosing an animal.</h1>
+                <div id="pmDirections"></div>
+                <div id="pmVideo0" class="pmVideo"></div>
+                <div id="pmPollWidget0" class="pmPollWidget">
+                  <script src="https://static.polldaddy.com/p/4174330.js">
+                  </script>
+                </div>
+                <div id="pmThankYou"><p><strong>Thank you for
+                participating in this experiment.</strong> We will share
+                the results on a future Planet Money podcast.</p>
+                  <p>Source: Cute animal videos via
+                    <a href="https://www.youtube.com/watch?v=example">
+                    YouTube</a></p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2010/12/07/131726215/"
+            "economics-experiment-pick-the-cutest-animal"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.content_type == ContentType.INTERACTIVE
+    assert "actual economics experiment" in result.plain_text
+    assert "Thank you for participating" in result.plain_text
+    assert "Cute animal videos via YouTube" in result.plain_text
+    assert "<script" not in result.body_html
 
 
 def test_npr_parser_recovers_legacy_program_audio_download():
@@ -15705,7 +15792,7 @@ def test_npr_parser_recovers_legacy_program_audio_download():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://pd.npr.org/audio/prediction.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_npr_parser_does_not_infer_audio_from_plain_primary_bucket():
@@ -15735,7 +15822,7 @@ def test_npr_parser_does_not_infer_audio_from_plain_primary_bucket():
     assert result.quality.status.value == "partial"
     assert result.content_type.value == "article"
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.12"
+    assert result.extraction.parser_version == "npr-parser/0.1.13"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():

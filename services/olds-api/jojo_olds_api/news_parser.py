@@ -282,6 +282,7 @@ def parse_article(
                 soup,
                 canonical_url=canonical_url,
             )
+            or _npr_legacy_inline_interactive_body(soup)
         )
         if legacy_interactive is not None:
             body = legacy_interactive
@@ -6231,6 +6232,64 @@ def _npr_legacy_iframe_interactive_body(
             copy = BeautifulSoup(str(node), "html.parser").find()
             if isinstance(copy, Tag):
                 article.append(copy)
+    return article
+
+
+def _npr_legacy_inline_interactive_body(
+    soup: BeautifulSoup,
+) -> Tag | None:
+    """Recover pre-HTML5 NPR graphics and script-driven inline packages."""
+
+    body_classes = (
+        {
+            str(value).casefold()
+            for value in (soup.body.get("class") or [])
+        }
+        if soup.body is not None
+        else set()
+    )
+    if "tmplnewsmultimedia" not in body_classes:
+        return None
+
+    graphic = soup.select_one(
+        "#storyspan02 .bucketwrap[class*='graphic' i] > .bucket"
+    )
+    source: Tag | None = None
+    if (
+        isinstance(graphic, Tag)
+        and graphic.select_one("img[src]") is not None
+        and len(_clean_text(graphic.get_text(" ", strip=True))) >= 80
+    ):
+        source = graphic
+
+    scripted = soup.select_one("#storyspan03 .bucketwrap.statichtml")
+    if (
+        source is None
+        and isinstance(scripted, Tag)
+        and scripted.select_one(
+            "#pmPoll, .pmVideo, .pmPollWidget, script[src*='polldaddy' i]"
+        )
+        is not None
+        and len(_clean_text(scripted.get_text(" ", strip=True))) >= 80
+    ):
+        source = scripted
+    if source is None:
+        return None
+
+    document = BeautifulSoup(
+        "<article data-jojo-source='npr-legacy-inline-interactive'></article>",
+        "html.parser",
+    )
+    article = document.article
+    copy = BeautifulSoup(str(source), "html.parser").find()
+    if not isinstance(article, Tag) or not isinstance(copy, Tag):
+        return None
+    # These packages commonly use an H1 for essential directions inside the
+    # graphic. Normal article extraction treats H1 as duplicate page chrome,
+    # so normalize it to body prose before block extraction.
+    for heading in copy.select("h1"):
+        heading.name = "p"
+    article.append(copy)
     return article
 
 
