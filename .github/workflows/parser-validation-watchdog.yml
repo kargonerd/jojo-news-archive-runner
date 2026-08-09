@@ -219,6 +219,7 @@ jobs:
           while IFS= read -r task; do
             publisher="$(jq -r '.publisher' <<<"$task")"
             year="$(jq -r '.year' <<<"$task")"
+            cohort="$(jq -r '.cohort' <<<"$task")"
             shard="$(jq -r '.sourceManifestShard' <<<"$task")"
             runner="$(jq -r '.runnerOs' <<<"$task")"
             enable_ft_infini_direct_discovery=false
@@ -230,6 +231,7 @@ jobs:
           gh workflow run parser-validation-accelerator.yml \
               --ref "$DEFAULT_BRANCH" \
               -f publisher="$publisher" \
+              -f cohort="$cohort" \
               -f year="$year" \
               -f source_manifest_shard="$shard" \
               -f max_captures=800 \
@@ -238,5 +240,5 @@ jobs:
               -f auto_continue=true \
               -f enable_ft_infini_direct_discovery="$enable_ft_infini_direct_discovery" \
               -f runner_os="$runner"
-            echo "Dispatched $publisher/$year from $shard on $runner."
+            echo "Dispatched $cohort $publisher/$year from $shard on $runner."
           done < <(jq -c '.[]' <<<"$TASKS")

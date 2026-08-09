@@ -33,6 +33,12 @@ PUBLISHER_ORDER = (
     "scmp",
     "caixin",
 )
+# WSJ's current validation states were migrated/replayed from earlier parser
+# cohorts.  They are useful exclusion sources, but are not independent
+# convergence evidence.  Require a disjoint holdout before marking a WSJ cell
+# ready; publishers can be added here when the same provenance audit proves a
+# replayed cohort was reused after a parser repair.
+REQUIRED_HOLDOUT_COHORTS = {"wsj": "holdout-v1"}
 ACTIVE_TITLE_RE = re.compile(
     r"^parser-(?:qa|validation|holdout-v[1-9][0-9]*)-"
     r"(aljazeera|ap|axios|bloomberg|caixin|ft|nikkei|npr|nyt|reuters|scmp|wsj|zaobao)-"
@@ -112,6 +118,7 @@ def plan_validation_dispatch(
             "qaRevision": None,
             "parserVersion": None,
             "summaryPaths": [],
+            "cohortRows": {},
         }
         for publisher in publisher_order
         for year in TARGET_YEARS
@@ -138,6 +145,10 @@ def plan_validation_dispatch(
             )
             continue
         summaries_read += 1
+        cohort = _cohort_from_summary_path(
+            summary_path,
+            state_root=state_root,
+        )
         validation = payload.get("parserValidation")
         if not isinstance(validation, dict):
             continue
@@ -166,25 +177,48 @@ def plan_validation_dispatch(
             ):
                 continue
             evaluated = _integer(row.get("evaluated"))
-            if evaluated >= int(cell["evaluated"]):
-                cell["evaluated"] = evaluated
-                cell["target"] = max(
-                    MINIMUM_SAMPLES,
-                    _integer(row.get("target")),
-                )
-                cell["completeRate"] = float(
-                    row.get("completeRate") or 0
-                )
-                cell["qaPassRate"] = float(
-                    row.get("qaPassRate") or 0
-                )
-                cell["errors"] = _integer(row.get("errors"))
-                cell["unboundCaptureInputs"] = _integer(
-                    row.get("unboundCaptureInputs")
-                )
-                cell["qaRevision"] = _integer(row.get("qaRevision"))
-                cell["parserVersion"] = row.get("parserVersion")
-            cell["ready"] = bool(cell["ready"]) or _year_ready(row)
+            cohort_rows = cell["cohortRows"]
+            assert isinstance(cohort_rows, dict)
+            previous = cohort_rows.get(cohort)
+            if not isinstance(previous, dict) or evaluated >= _integer(
+                previous.get("evaluated")
+            ):
+                cohort_rows[cohort] = row
+
+    for (publisher, _year), cell in progress.items():
+        cohort_rows = cell["cohortRows"]
+        assert isinstance(cohort_rows, dict)
+        required_cohort = (
+            REQUIRED_HOLDOUT_COHORTS.get(publisher)
+            if "validation" in cohort_rows
+            else None
+        )
+        selected_cohort = required_cohort
+        if selected_cohort is None and cohort_rows:
+            selected_cohort = max(
+                cohort_rows,
+                key=lambda name: _integer(cohort_rows[name].get("evaluated")),
+            )
+        selected = cohort_rows.get(selected_cohort, {})
+        if isinstance(selected, dict) and selected:
+            cell["evaluated"] = _integer(selected.get("evaluated"))
+            cell["target"] = max(
+                MINIMUM_SAMPLES,
+                _integer(selected.get("target")),
+            )
+            cell["completeRate"] = float(
+                selected.get("completeRate") or 0
+            )
+            cell["qaPassRate"] = float(selected.get("qaPassRate") or 0)
+            cell["errors"] = _integer(selected.get("errors"))
+            cell["unboundCaptureInputs"] = _integer(
+                selected.get("unboundCaptureInputs")
+            )
+            cell["qaRevision"] = _integer(selected.get("qaRevision"))
+            cell["parserVersion"] = selected.get("parserVersion")
+            cell["ready"] = _year_ready(selected)
+        cell["requiredCohort"] = required_cohort
+        cell["selectedCohort"] = selected_cohort
 
     active_cells: set[tuple[str, int]] = set()
     for title in active_titles:
@@ -225,6 +259,7 @@ def plan_validation_dispatch(
                 progress[(publisher, year)]["replayableEvaluated"]
             ),
             parser_version=versions[publisher],
+            cohort=_dispatch_cohort(progress[(publisher, year)]),
         )
         for publisher, year in candidates[:max_dispatch]
     ]
@@ -247,6 +282,8 @@ def plan_validation_dispatch(
             ),
             "qaRevision": progress[(publisher, year)]["qaRevision"],
             "parserVersion": progress[(publisher, year)]["parserVersion"],
+            "requiredCohort": progress[(publisher, year)]["requiredCohort"],
+            "selectedCohort": progress[(publisher, year)]["selectedCohort"],
             "ready": (publisher, year) in ready_cells,
             "active": (publisher, year) in active_cells,
         }
@@ -288,6 +325,20 @@ def _publisher_from_summary_path(
     return parts[0]
 
 
+def _cohort_from_summary_path(
+    summary_path: Path,
+    *,
+    state_root: Path,
+) -> str:
+    parts = summary_path.relative_to(state_root).parts
+    if parts and (
+        parts[0] == "validation"
+        or re.fullmatch(r"holdout-v[1-9][0-9]*", parts[0])
+    ):
+        return parts[0]
+    return "source"
+
+
 def _year_ready(row: dict[str, object]) -> bool:
     evaluated = _integer(row.get("evaluated"))
     target = max(MINIMUM_SAMPLES, _integer(row.get("target")))
@@ -298,6 +349,18 @@ def _year_ready(row: dict[str, object]) -> bool:
         and _integer(row.get("errors")) == 0
         and _integer(row.get("unboundCaptureInputs")) == 0
     )
+
+
+def _dispatch_cohort(cell: dict[str, object]) -> str:
+    required = cell.get("requiredCohort")
+    if isinstance(required, str) and required:
+        return required
+    selected = cell.get("selectedCohort")
+    if isinstance(selected, str) and re.fullmatch(
+        r"holdout-v[1-9][0-9]*", selected
+    ):
+        return selected
+    return "validation"
 
 
 def _integer(value: object) -> int:
@@ -314,6 +377,7 @@ def _task(
     evaluated: int,
     replayable_evaluated: int,
     parser_version: str,
+    cohort: str,
 ) -> dict[str, object]:
     return {
         "publisher": publisher,
@@ -329,4 +393,5 @@ def _task(
         "currentEvaluated": evaluated,
         "replayableEvaluated": replayable_evaluated,
         "parserVersion": parser_version,
+        "cohort": cohort,
     }

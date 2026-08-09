@@ -25,6 +25,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--to-year", type=int, required=True)
     parser.add_argument("--target-per-year", type=int, default=800)
     parser.add_argument(
+        "--require-complete",
+        action="store_true",
+        help=(
+            "Also require the current cohort to have evaluated at least the "
+            "configured per-year target. Without this flag the audit only "
+            "proves rotation setup and zero overlap."
+        ),
+    )
+    parser.add_argument(
         "--expected-previous-source-cohort",
         help=(
             "Expected source_cohort label for the previous state, such as "
@@ -86,6 +95,7 @@ def audit_rotation(
     to_year: int,
     target_per_year: int = 800,
     expected_previous_source_cohort: str | None = None,
+    require_complete: bool = False,
 ) -> dict[str, object]:
     if from_year > to_year:
         raise ValueError("from_year must not exceed to_year")
@@ -185,6 +195,8 @@ def audit_rotation(
                 issues.append(f"{year}:no-previous-evaluated-samples")
             if not current_samples:
                 issues.append(f"{year}:no-current-samples")
+            if require_complete and current_evaluated < target_per_year:
+                issues.append(f"{year}:current-evaluated-below-target")
             if cohort_overlap:
                 issues.append(f"{year}:prior-cohort-overlap")
             if exclusion_overlap:
@@ -214,6 +226,7 @@ def audit_rotation(
         "expectedParserVersion": expected_parser_version,
         "expectedPreviousSourceCohort": expected_previous_source_cohort,
         "targetPerYear": target_per_year,
+        "requireComplete": require_complete,
         "passed": not issues,
         "issues": issues,
         "years": years,
@@ -248,6 +261,7 @@ def main() -> int:
             expected_previous_source_cohort=(
                 args.expected_previous_source_cohort
             ),
+            require_complete=args.require_complete,
         )
     except (OSError, sqlite3.Error, ValueError) as exc:
         result = {

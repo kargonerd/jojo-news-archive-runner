@@ -117,6 +117,8 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "unboundCaptureInputs": 0,
         "qaRevision": 0,
         "parserVersion": "ap-parser/0.6.21",
+        "requiredCohort": None,
+        "selectedCohort": "source",
         "ready": True,
         "active": False,
     }
@@ -330,9 +332,65 @@ def test_watchdog_prioritizes_nearly_complete_current_sample(
             "runnerOs": "ubuntu-latest",
             "currentEvaluated": 499,
             "replayableEvaluated": 499,
-                "parserVersion": "reuters-parser/0.7.25",
+            "parserVersion": "reuters-parser/0.7.25",
+            "cohort": "validation",
         }
     ]
+
+
+def test_watchdog_requires_disjoint_wsj_holdout_after_validation(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "validation/wsj/2022/state/summary.json",
+        publisher="wsj",
+        year=2022,
+        evaluated=800,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["wsj"],
+        available_source_shards={"wsj/2016-2026/wayback"},
+    )
+
+    assert plan["readyCells"] == 0
+    assert plan["tasks"][0]["cohort"] == "holdout-v1"
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["publisher"] == "wsj" and row["year"] == 2022
+    )
+    assert cell["requiredCohort"] == "holdout-v1"
+    assert cell["selectedCohort"] == "holdout-v1"
+    assert cell["evaluated"] == 0
+    assert cell["replayableEvaluated"] == 800
+    assert cell["ready"] is False
+
+    _write_summary(
+        tmp_path,
+        "holdout-v1/wsj/2022/state/summary.json",
+        publisher="wsj",
+        year=2022,
+        evaluated=800,
+    )
+    complete = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["wsj"],
+        available_source_shards={"wsj/2016-2026/wayback"},
+    )
+    complete_cell = next(
+        row
+        for row in complete["cellProgress"]
+        if row["publisher"] == "wsj" and row["year"] == 2022
+    )
+    assert complete_cell["evaluated"] == 800
+    assert complete_cell["ready"] is True
 
 
 def test_watchdog_prioritizes_stale_corpus_for_parser_replay(
@@ -364,6 +422,7 @@ def test_watchdog_prioritizes_stale_corpus_for_parser_replay(
     assert plan["tasks"][0]["year"] == 2016
     assert plan["tasks"][0]["currentEvaluated"] == 0
     assert plan["tasks"][0]["replayableEvaluated"] == 519
+    assert plan["tasks"][0]["cohort"] == "validation"
 
 
 def test_watchdog_requires_all_quality_gates(tmp_path: Path):

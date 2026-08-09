@@ -124,6 +124,19 @@ def test_audit_rotation_accepts_gzip_states_with_zero_overlap(tmp_path: Path):
         "wrongExclusionCohortLabels": 0,
     }
 
+    strict = audit_rotation(
+        previous_state=previous_gz,
+        current_state=current_gz,
+        publisher="npr",
+        expected_parser_version="npr-parser/0.1.15",
+        from_year=2014,
+        to_year=2014,
+        require_complete=True,
+    )
+    assert strict["passed"] is False
+    assert strict["requireComplete"] is True
+    assert "2014:current-evaluated-below-target" in strict["issues"]
+
 
 def test_audit_rotation_rejects_reused_or_unexcluded_urls(tmp_path: Path):
     previous_path = tmp_path / "previous.sqlite3"
