@@ -183,3 +183,5 @@ def test_build_tool_bounds_direct_scan_to_ten_files_per_discovery_page():
 
     assert "maximum_files=max(1, args.max_pages or 5) * 10" in tool
     assert "workers=8" in tool
+    assert "if wsj_infini_direct_should_continue(connection):" in tool
+    assert '"status": "deferred-for-direct-catalog"' in tool
