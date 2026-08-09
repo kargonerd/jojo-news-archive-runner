@@ -36,10 +36,10 @@ from jojo_olds_api.parser_validation import (
 )
 from jojo_olds_api.raw_archive_capture import (
     ManifestItem,
+    archive_fallback_policy,
     capture_item,
     capture_summary,
     completed_raw_capture,
-    defer_expensive_archive_fallbacks,
     initialize_capture_schema,
     load_capture_manifest,
     mark_capture_downloading,
@@ -370,7 +370,7 @@ def main() -> int:
             (item.canonical_url,),
         ).fetchone()
         prior_attempts = int(row[0]) if row is not None else 0
-        defer_fallbacks = defer_expensive_archive_fallbacks(
+        fallback_policy = archive_fallback_policy(
             publisher=item.publisher,
             parser_validation_enabled=bool(
                 args.validation_sample_per_year
@@ -384,12 +384,15 @@ def main() -> int:
             archive_client=archive_client,
             output_dir=args.output_dir,
             maximum_html_bytes=maximum_html_bytes,
-            enable_wayback_timemap_fallback=not defer_fallbacks,
+            enable_wayback_timemap_fallback=(
+                fallback_policy.wayback_timemap
+            ),
             enable_common_crawl_fallback=(
-                args.enable_common_crawl_fallback and not defer_fallbacks
+                args.enable_common_crawl_fallback
+                and fallback_policy.common_crawl
             ),
             enable_arquivo_pt_fallback=(
-                args.enable_arquivo_pt_fallback and not defer_fallbacks
+                args.enable_arquivo_pt_fallback and fallback_policy.arquivo_pt
             ),
             bloomberg_manifest_candidates_only=(
                 args.bloomberg_manifest_candidates_only

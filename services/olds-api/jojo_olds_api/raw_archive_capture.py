@@ -1681,18 +1681,47 @@ def capture_item(
     }
 
 
+@dataclass(frozen=True)
+class ArchiveFallbackPolicy:
+    wayback_timemap: bool
+    common_crawl: bool
+    arquivo_pt: bool
+
+
+def archive_fallback_policy(
+    *,
+    publisher: str,
+    parser_validation_enabled: bool,
+    prior_attempts: int,
+) -> ArchiveFallbackPolicy:
+    if prior_attempts < 0:
+        raise ValueError("prior_attempts must not be negative")
+    if publisher == "wsj" and parser_validation_enabled:
+        return ArchiveFallbackPolicy(
+            wayback_timemap=prior_attempts >= 2,
+            common_crawl=prior_attempts >= 2,
+            arquivo_pt=prior_attempts >= 1,
+        )
+    return ArchiveFallbackPolicy(
+        wayback_timemap=True,
+        common_crawl=True,
+        arquivo_pt=True,
+    )
+
+
 def defer_expensive_archive_fallbacks(
     *,
     publisher: str,
     parser_validation_enabled: bool,
     prior_attempts: int,
 ) -> bool:
-    if prior_attempts < 0:
-        raise ValueError("prior_attempts must not be negative")
-    return bool(
-        publisher == "wsj"
-        and parser_validation_enabled
-        and prior_attempts == 0
+    policy = archive_fallback_policy(
+        publisher=publisher,
+        parser_validation_enabled=parser_validation_enabled,
+        prior_attempts=prior_attempts,
+    )
+    return not any(
+        (policy.wayback_timemap, policy.common_crawl, policy.arquivo_pt)
     )
 
 

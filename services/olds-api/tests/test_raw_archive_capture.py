@@ -44,6 +44,7 @@ from jojo_olds_api.raw_archive_capture import (
     _decode_archived_html_content,
     _ft_capture_parser_evidence,
     _wsj_capture_parser_evidence,
+    archive_fallback_policy,
     arquivo_pt_cdx_url,
     ap_syndication_search_url,
     bloomberg_syndication_search_url,
@@ -3280,6 +3281,51 @@ def test_wsj_validation_defers_expensive_fallbacks_until_retry():
         parser_validation_enabled=True,
         prior_attempts=0,
     )
+
+
+def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
+    first = archive_fallback_policy(
+        publisher="wsj",
+        parser_validation_enabled=True,
+        prior_attempts=0,
+    )
+    second = archive_fallback_policy(
+        publisher="wsj",
+        parser_validation_enabled=True,
+        prior_attempts=1,
+    )
+    third = archive_fallback_policy(
+        publisher="wsj",
+        parser_validation_enabled=True,
+        prior_attempts=2,
+    )
+    ordinary = archive_fallback_policy(
+        publisher="npr",
+        parser_validation_enabled=True,
+        prior_attempts=0,
+    )
+
+    assert (
+        first.wayback_timemap,
+        first.common_crawl,
+        first.arquivo_pt,
+    ) == (False, False, False)
+    assert (
+        second.wayback_timemap,
+        second.common_crawl,
+        second.arquivo_pt,
+    ) == (False, False, True)
+    assert (
+        third.wayback_timemap,
+        third.common_crawl,
+        third.arquivo_pt,
+    ) == (True, True, True)
+    assert (
+        ordinary.wayback_timemap,
+        ordinary.common_crawl,
+        ordinary.arquivo_pt,
+    ) == (True, True, True)
+
 
 def test_nyt_capture_uses_exact_timemap_snapshot(tmp_path: Path):
     canonical_url = (
