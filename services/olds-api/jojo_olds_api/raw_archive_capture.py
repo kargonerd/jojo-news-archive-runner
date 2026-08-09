@@ -6918,18 +6918,29 @@ def _insert_manifest_batch(
         existing_json = persisted_candidates.get(str(row[0]))
         if existing_json is not None:
             existing_candidates = json.loads(existing_json)
+            publisher = str(row[2])
             manifest_snapshot_urls = {
                 str(candidate.get("snapshotUrl") or "")
                 for candidate in manifest_candidates
                 if isinstance(candidate, dict)
             }
+            # Arquivo.pt and dynamically discovered partner mirrors do not
+            # live in the source manifest, so retain them across refreshes.
+            # WSJ Infini-News rows do live in that manifest and are filtered
+            # there by the current minimum-text policy.  Preserving an older
+            # WSJ Infini candidate that disappeared from a refreshed manifest
+            # would bypass that policy and force every short preview through
+            # the expensive archive fallback chain.
+            preserved_derived_providers = {"arquivo-pt", "other"}
+            if publisher != "wsj":
+                preserved_derived_providers.add("infini-news")
             derived_candidates = [
                 candidate
                 for candidate in existing_candidates
                 if (
                     isinstance(candidate, dict)
                     and candidate.get("provider")
-                    in {"arquivo-pt", "infini-news", "other"}
+                    in preserved_derived_providers
                     and str(candidate.get("snapshotUrl") or "")
                     not in manifest_snapshot_urls
                 )

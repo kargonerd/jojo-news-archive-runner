@@ -1974,6 +1974,70 @@ def test_manifest_refresh_preserves_preindexed_arquivo_candidates(
     assert candidates[0]["snapshotUrl"] == arquivo_url
 
 
+def test_wsj_manifest_refresh_removes_stale_infini_candidate(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.wsj.com/articles/stale-infini-preview"
+    wayback_url = (
+        "https://web.archive.org/web/20170102000000id_/" + canonical_url
+    )
+    infini_url = (
+        "https://datasets-server.huggingface.co/rows?"
+        "dataset=ruggsea%2Finfini-news-corpus&config=year_2017&"
+        "split=train&offset=42&length=1"
+    )
+    manifest = tmp_path / "manifest.jsonl"
+
+    def write_manifest(candidates: list[dict[str, object]]) -> None:
+        manifest.write_text(
+            json.dumps(
+                {
+                    "publisher": "wsj",
+                    "canonicalUrl": canonical_url,
+                    "publishedAt": "2017-01-01T00:00:00Z",
+                    "candidates": candidates,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    write_manifest(
+        [
+            {
+                "provider": "infini-news",
+                "snapshotUrl": infini_url,
+                "sourceUrl": canonical_url,
+                "expectedHeadline": "A stale short WSJ preview",
+            },
+            {"provider": "wayback", "snapshotUrl": wayback_url},
+        ]
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+
+    write_manifest([{"provider": "wayback", "snapshotUrl": wayback_url}])
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    candidates = json.loads(
+        connection.execute("SELECT candidates_json FROM captures").fetchone()[0]
+    )
+
+    assert [candidate["provider"] for candidate in candidates] == ["wayback"]
+
+
 def test_capture_policy_upgrade_retries_errors_once(tmp_path: Path):
     canonical_url = "https://www.ft.com/content/policy-upgrade"
     snapshot_url = (
