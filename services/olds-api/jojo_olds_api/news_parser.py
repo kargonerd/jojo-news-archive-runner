@@ -10921,6 +10921,12 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
             r"you can share this article\b"
         ),
         re.compile(
+            r"(?i)^(?:just\s+)?high quality global journalism "
+            r"requires investment\.\s*please share this article "
+            r"with others using the link below\b.*"
+            r"(?:copyright policy|ftsales\.support@ft\.com)\b"
+        ),
+        re.compile(
             r"(?i)^the financial times is making key coronavirus "
             r"coverage free to read\b"
         ),
