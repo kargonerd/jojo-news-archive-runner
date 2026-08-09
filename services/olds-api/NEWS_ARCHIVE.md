@@ -179,6 +179,11 @@ The `News raw archive` workflow requires:
 The B2 key must be restricted to the private archive bucket and allow bucket
 listing plus file list/read/write/delete operations.
 
+Set `max_captures` to `0` for a catalog-only run. That mode restores and
+publishes only `catalog/discovery.sqlite3.gz` and `catalog/manifest.jsonl.gz`;
+it does not restore raw capture state, download article HTML, replay a parser,
+or write anything below `raw/` or `state/`.
+
 For a storage smoke test, select:
 
 ```text
@@ -222,6 +227,18 @@ metadata only; its extracted text is never used as the raw article. Each
 official URL still goes through the normal publication-near Wayback capture and
 the same 800-article parser gate. This avoids treating other Dow Jones
 publications that share the copyright template as WSJ articles.
+
+For the sparse 2016–2018 WSJ years, the same catalog also performs bounded,
+resumable scans of Infini-News' year-partitioned Parquet metadata. It reads only
+the URL, hostname, date, headline, text-length, language, and WARC-provenance
+columns until each year has 1,600 strict official-origin candidates. A row is
+accepted only when the metadata hostname and URL hostname agree on an official
+WSJ host, URL normalization accepts an article path, the year agrees, the
+headline and text-length gates pass, the language is English, and the WARC is a
+`CC-NEWS-*.warc.gz` object. The remote Parquet files and extracted article text
+are never copied to B2; only the small resumable catalog state and manifest are
+stored. As with the text-query catalog, the discovered URL must still produce a
+usable archived page before it can enter parser validation.
 
 For WSJ articles from 2023 onward, the same shard also enumerates the public
 Wall Street Journal category on To Vima, resolves each licensed-copy headline
