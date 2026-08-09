@@ -749,6 +749,36 @@ def capture_item(
                 )
             if (
                 item.publisher == "wsj"
+                and candidate.provider == CaptureProvider.INFINI_NEWS
+            ):
+                validated, validation_signals = (
+                    _validate_wsj_infini_origin_response(
+                        item,
+                        expected_source_url=candidate.source_url or "",
+                        expected_headline=candidate.expected_headline,
+                        content=response[2],
+                        final_url=response[3],
+                    )
+                )
+                if not validated:
+                    failures.append(
+                        "wsj-infini-origin:validation:"
+                        + str(
+                            validation_signals.get("reason") or "failed"
+                        )
+                    )
+                    continue
+                response = (
+                    response[0],
+                    response[1],
+                    response[2],
+                    response[3],
+                    response[4],
+                    response[5],
+                    response[6] | validation_signals,
+                )
+            if (
+                item.publisher == "wsj"
                 and candidate.provider == CaptureProvider.OTHER
             ):
                 validated, validation_signals = (
@@ -1873,7 +1903,10 @@ def _fetch_infini_news_candidate(
     text = str(row.get("text") or "").strip()
     minimum_body_characters = (
         1_000
-        if _is_ft_origin_url(candidate.source_url)
+        if (
+            _is_ft_origin_url(candidate.source_url)
+            or _is_wsj_origin_url(candidate.source_url)
+        )
         else FT_SYNDICATION_MINIMUM_BODY_CHARACTERS
     )
     if len(text) < minimum_body_characters:
@@ -1988,8 +2021,10 @@ def _fetch_usable_candidate(
                 )
             )
         elif candidate.provider == CaptureProvider.INFINI_NEWS:
-            if publisher != "ft":
-                raise ValueError("Infini-News derived capture is FT-only")
+            if publisher not in {"ft", "wsj"}:
+                raise ValueError(
+                    "Infini-News derived capture is FT/WSJ-only"
+                )
             status_code, headers, content, final_url = (
                 _fetch_infini_news_candidate(
                     candidate,
@@ -5140,6 +5175,97 @@ def _validate_ft_syndication_response(
     }
 
 
+def _validate_wsj_infini_origin_response(
+    item: ManifestItem,
+    *,
+    expected_source_url: str,
+    expected_headline: str | None,
+    content: bytes,
+    final_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    origin_url_validated = bool(
+        _is_wsj_origin_url(expected_source_url)
+        and _is_wsj_origin_url(item.canonical_url)
+        and _is_wsj_origin_url(final_url)
+        and _same_article_url(expected_source_url, item.canonical_url)
+        and _same_article_url(final_url, item.canonical_url)
+    )
+    if not origin_url_validated:
+        return False, {
+            "reason": "unexpected-origin-url",
+            "wsjInfiniOriginValidated": False,
+            "infiniOriginUrlValidated": False,
+            "infiniOriginFinalUrl": final_url,
+        }
+    if not expected_headline:
+        return False, {
+            "reason": "missing-original-headline",
+            "wsjInfiniOriginValidated": False,
+            "infiniOriginUrlValidated": True,
+            "infiniOriginFinalUrl": final_url,
+        }
+    try:
+        article = parse_article(
+            content,
+            publisher="wsj",
+            canonical_url=item.canonical_url,
+        )
+    except Exception as exc:
+        return False, {
+            "reason": f"parser-{type(exc).__name__}",
+            "wsjInfiniOriginValidated": False,
+            "infiniOriginUrlValidated": True,
+            "infiniOriginFinalUrl": final_url,
+        }
+    headline_overlap = _headline_text_overlap(
+        expected_headline,
+        article.headline or "",
+    )
+    expected_date = _parse_iso_datetime(item.published_at)
+    date_delta_days: int | None = None
+    if expected_date is not None and article.published_at is not None:
+        date_delta_days = abs(
+            (article.published_at.date() - expected_date.date()).days
+        )
+    date_visible = _expected_date_visible(
+        content,
+        expected_date=expected_date,
+    )
+    date_matches = (
+        date_delta_days is not None and date_delta_days <= 2
+    ) or date_visible
+    body_characters = article.quality.body_characters
+    valid = (
+        article.quality.status == ArticleStatus.COMPLETE
+        and body_characters >= 1_000
+        and headline_overlap >= 0.8
+        and date_matches
+    )
+    if article.quality.status != ArticleStatus.COMPLETE:
+        reason = f"parser-{article.quality.status.value}"
+    elif body_characters < 1_000:
+        reason = "body-too-short"
+    elif headline_overlap < 0.8:
+        reason = "headline-mismatch"
+    elif not date_matches:
+        reason = "publication-date-mismatch"
+    else:
+        reason = None
+    return valid, {
+        "reason": reason,
+        "wsjInfiniOriginValidated": valid,
+        "infiniOriginUrlValidated": origin_url_validated,
+        "infiniOriginFinalUrl": final_url,
+        "infiniOriginHeadlineOverlap": round(headline_overlap, 4),
+        "infiniOriginBodyCharacters": body_characters,
+        "infiniOriginDateDeltaDays": date_delta_days,
+        "infiniOriginExpectedDateVisible": date_visible,
+        "infiniOriginExpectedHeadline": expected_headline,
+    }
+
+
 def _validate_ft_infini_origin_response(
     item: ManifestItem,
     *,
@@ -5646,6 +5772,11 @@ def _common_crawl_discovery_urls(item: CaptureItem) -> tuple[str, ...]:
 def _is_ft_origin_url(value: str | None) -> bool:
     hostname = (urlsplit(value or "").hostname or "").casefold()
     return hostname == "ft.com" or hostname.endswith(".ft.com")
+
+
+def _is_wsj_origin_url(value: str | None) -> bool:
+    hostname = (urlsplit(value or "").hostname or "").casefold()
+    return hostname in {"wsj.com", "www.wsj.com", "online.wsj.com"}
 
 
 def _same_ft_origin_article_url(first: str, second: str) -> bool:

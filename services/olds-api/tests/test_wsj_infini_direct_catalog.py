@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gzip
+import json
 import sqlite3
 from pathlib import Path
 
@@ -9,6 +11,7 @@ from jojo_olds_api import wsj_infini_direct_catalog as catalog
 from jojo_olds_api.archive_sources import archive_source_spec
 from jojo_olds_api.wayback_manifest import (
     discovery_summary,
+    export_capture_manifest,
     initialize_discovery_schema,
 )
 from jojo_olds_api.wsj_infini_catalog import initialize_wsj_infini_schema
@@ -131,6 +134,7 @@ def test_direct_catalog_is_bounded_resumable_and_merges_urls(monkeypatch):
                 "sourceUrl": f"http://www.wsj.com/articles/test-{suffix}-1483518944",
                 "publishedAt": "2017-01-04",
                 "expectedHeadline": f"A complete WSJ test article {suffix}",
+                "documentIndex": 3 if suffix == "a" else 103,
                 "textLength": 500,
                 "warcFilename": "CC-NEWS-20170104084927-00052.warc.gz",
                 "parquetRowIndex": 3,
@@ -185,3 +189,115 @@ def test_build_tool_bounds_direct_scan_to_ten_files_per_discovery_page():
     assert "workers=8" in tool
     assert "if wsj_infini_direct_should_continue(connection):" in tool
     assert '"status": "deferred-for-direct-catalog"' in tool
+
+
+def test_completed_direct_catalog_backfills_dataset_rows_and_exports_candidates(
+    monkeypatch,
+    tmp_path: Path,
+):
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=archive_source_spec("wsj"),
+        from_year=2017,
+        to_year=2017,
+        collapse="urlkey",
+    )
+    initialize_wsj_infini_schema(
+        connection,
+        from_year=2017,
+        to_year=2017,
+    )
+    catalog.initialize_wsj_infini_direct_schema(
+        connection,
+        from_year=2017,
+        to_year=2017,
+    )
+    files = [
+        ("data/year=2017/month=01/part-a.parquet", 10_000),
+        ("data/year=2017/month=01/part-b.parquet", 20_000),
+    ]
+    catalog._store_file_catalog(connection, year=2017, files=files)
+    first_url = "https://www.wsj.com/articles/first-story-1483518944"
+    second_url = "https://www.wsj.com/articles/second-story-1483518945"
+    catalog._store_scanned_articles(
+        connection,
+        year=2017,
+        path=files[0][0],
+        articles=[
+            {
+                "canonicalUrl": first_url,
+                "sourceUrl": first_url,
+                "publishedAt": "2017-01-04",
+                "expectedHeadline": "A complete first WSJ test article",
+                "textLength": 1_500,
+                "warcFilename": "CC-NEWS-20170104084927-00052.warc.gz",
+                "parquetRowIndex": 3,
+            }
+        ],
+    )
+    catalog._store_scanned_articles(
+        connection,
+        year=2017,
+        path=files[1][0],
+        articles=[
+            {
+                "canonicalUrl": second_url,
+                "sourceUrl": second_url,
+                "publishedAt": "2017-01-04",
+                "expectedHeadline": "A complete second WSJ test article",
+                "textLength": 1_600,
+                "warcFilename": "CC-NEWS-20170104084927-00053.warc.gz",
+                "parquetRowIndex": 4,
+            }
+        ],
+    )
+    connection.execute(
+        "UPDATE wsj_infini_direct_years SET status='complete'"
+    )
+    monkeypatch.setattr(
+        catalog,
+        "_read_parquet_row_count",
+        lambda _client, path, _size: 10 if path.endswith("a.parquet") else 20,
+    )
+
+    result = catalog.process_wsj_infini_direct_catalog(
+        connection,
+        from_year=2017,
+        to_year=2017,
+        http_client=object(),
+    )
+
+    assert result["metadata"] == {
+        "year": 2017,
+        "attemptedFiles": 2,
+        "completedFiles": 2,
+        "unresolvedFiles": 0,
+        "indexedArticles": 2,
+        "errors": [],
+    }
+    assert result["shouldContinue"] is False
+    assert connection.execute(
+        """
+        SELECT canonical_url, document_index
+        FROM wsj_infini_direct_articles
+        ORDER BY canonical_url
+        """
+    ).fetchall() == [(first_url, 3), (second_url, 14)]
+
+    destination = tmp_path / "manifest.jsonl.gz"
+    export_capture_manifest(
+        connection,
+        spec=archive_source_spec("wsj"),
+        destination=destination,
+        from_year=2017,
+        to_year=2017,
+        capture_minimum_per_year=1,
+    )
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        rows = {row["canonicalUrl"]: row for row in map(json.loads, handle)}
+    direct = rows[first_url]["candidates"][0]
+    assert direct["provider"] == "infini-news"
+    assert "config=year_2017" in direct["snapshotUrl"]
+    assert "offset=3" in direct["snapshotUrl"]
+    assert direct["warcFilename"].endswith("00052.warc.gz")

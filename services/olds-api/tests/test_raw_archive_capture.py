@@ -7020,3 +7020,99 @@ def test_wayback_candidate_records_actual_redirected_snapshot():
         tzinfo=timezone.utc,
     )
     assert resolved.byte_count == 1234
+
+
+def test_wsj_direct_infini_origin_is_validated_as_derived_html(
+    tmp_path: Path,
+):
+    headline = "Global Markets Rally as Investors Reassess Economic Outlook"
+    canonical_url = (
+        "https://www.wsj.com/articles/"
+        "global-markets-rally-as-investors-reassess-outlook-1483518944"
+    )
+    row_url = (
+        "https://datasets-server.huggingface.co/rows?"
+        "dataset=ruggsea%2Finfini-news-corpus&config=year_2017&"
+        "split=train&offset=54321&length=1"
+    )
+    body = "\n".join(
+        (
+            "Wall Street Journal reporting paragraph "
+            f"{index} contains market data, executive interviews, "
+            "historical comparisons and detailed economic analysis."
+        )
+        for index in range(1, 18)
+    )
+    warc_filename = "CC-NEWS-20170104084927-00052.warc.gz"
+    payload = json.dumps(
+        {
+            "rows": [
+                {
+                    "row_idx": 54321,
+                    "row": {
+                        "url": canonical_url,
+                        "year": 2017,
+                        "title": headline,
+                        "publish_date": "2017-01-04",
+                        "author": "WSJ Staff",
+                        "description": "Detailed market report.",
+                        "text": body,
+                        "warc_filename": warc_filename,
+                    },
+                }
+            ]
+        }
+    ).encode()
+    item = ManifestItem(
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at="2017-01-04T00:00:00+00:00",
+        section=None,
+        candidates=(
+            CaptureCandidate(
+                provider=CaptureProvider.INFINI_NEWS,
+                snapshot_url=row_url,
+                source_url=canonical_url,
+                expected_headline=headline,
+                warc_filename=warc_filename,
+            ),
+        ),
+    )
+    client = StubArchiveClient(
+        {
+            row_url: (
+                200,
+                {"content-type": "application/json"},
+                payload,
+                row_url,
+            )
+        }
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        enable_common_crawl_fallback=False,
+        enable_arquivo_pt_fallback=False,
+    )
+
+    assert result["status"] == "complete"
+    capture = result["capture"]
+    assert capture.selected_candidate.provider == CaptureProvider.INFINI_NEWS
+    assert capture.representation == CaptureRepresentation.DERIVED_HTML
+    assert capture.quality_score == 100
+    assert capture.quality_signals["wsjInfiniOriginValidated"] is True
+    assert capture.quality_signals["infiniOriginUrlValidated"] is True
+    assert capture.quality_signals["infiniOriginBodyCharacters"] >= 1_000
+    with gzip.open(tmp_path / capture.raw_html.path, "rb") as handle:
+        derived = handle.read()
+    article = parse_article(
+        derived,
+        publisher="wsj",
+        canonical_url=canonical_url,
+        raw_capture=capture,
+    )
+    assert article.quality.status.value == "complete"
+    assert article.canonical_url == canonical_url
