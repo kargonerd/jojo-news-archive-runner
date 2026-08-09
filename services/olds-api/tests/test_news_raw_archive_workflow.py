@@ -36,6 +36,22 @@ def test_wayback_discovery_retries_across_bounded_runs() -> None:
     assert "runner slot for the command defaults (90 seconds x 6)" in wayback_section
 
 
+def test_npr_raw_archive_merges_common_crawl_without_duplicate_raw_root() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    merge_section = workflow[
+        workflow.index("- name: Merge NPR Common Crawl supplemental manifest") :
+        workflow.index("- name: Checkpoint discovery")
+    ]
+
+    assert "inputs.publisher == 'npr'" in merge_section
+    assert "inputs.manifest_mode == 'wayback-urlkey'" in merge_section
+    assert "commoncrawl-prefix" in merge_section
+    assert "merge_archive_manifests.py" in merge_section
+    assert '--input "$supplemental"' in merge_section
+    assert '--output "$merged"' in merge_section
+    assert "raw/objects" not in merge_section
+
+
 def test_archive_continuation_drains_actionable_captures_before_discovery() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     continuation_section = workflow[

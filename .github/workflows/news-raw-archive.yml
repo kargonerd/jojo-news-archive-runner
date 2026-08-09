@@ -355,6 +355,36 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
+      - name: Merge NPR Common Crawl supplemental manifest
+        if: >-
+          ${{
+            inputs.publisher == 'npr' &&
+            inputs.manifest_mode == 'wayback-urlkey'
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          set -euo pipefail
+          supplemental_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/${FROM_YEAR}-${TO_YEAR}/commoncrawl-prefix"
+          supplemental="$RUNNER_TEMP/npr-common-crawl-manifest.jsonl.gz"
+          merged="$RUNNER_TEMP/npr-merged-manifest.jsonl.gz"
+          if rclone lsf "${supplemental_root}/catalog" --files-only \
+              | grep -Fxq "manifest.jsonl.gz"; then
+            rclone copyto \
+              "${supplemental_root}/catalog/manifest.jsonl.gz" \
+              "$supplemental" \
+              --retries 8 --low-level-retries 20
+            python services/olds-api/tools/merge_archive_manifests.py \
+              --publisher npr \
+              --input "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
+              --input "$supplemental" \
+              --output "$merged"
+            mv "$merged" "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
+          else
+            echo "::notice::No NPR Common Crawl supplemental manifest yet."
+          fi
+
       - name: Checkpoint discovery
         if: >-
           ${{
