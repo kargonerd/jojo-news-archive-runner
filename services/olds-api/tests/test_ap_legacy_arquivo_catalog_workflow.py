@@ -16,6 +16,14 @@ def test_ap_legacy_catalog_workflow_builds_and_publishes_supplement() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert "build_ap_legacy_arquivo_manifest.py" in workflow
+    tool = (
+        REPOSITORY_ROOT
+        / "services"
+        / "olds-api"
+        / "tools"
+        / "build_ap_legacy_arquivo_manifest.py"
+    ).read_text(encoding="utf-8")
+    assert "sys.path.insert(0, str(SERVICE_ROOT))" in tool
     assert '--capture-from-year "$CAPTURE_FROM_YEAR"' in workflow
     assert '--capture-to-year "$CAPTURE_TO_YEAR"' in workflow
     assert '--recovery-workers "$RECOVERY_WORKERS"' in workflow

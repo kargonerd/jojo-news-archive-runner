@@ -6,10 +6,17 @@ from datetime import datetime
 import json
 from pathlib import Path
 import re
+import sys
 import time
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
+
+
+SERVICE_ROOT = Path(__file__).resolve().parents[1]
+if str(SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICE_ROOT))
+
 
 from jojo_olds_api.ap_legacy_catalog import (
     ARQUIVO_PT_REPLAY_ENDPOINT,
