@@ -743,9 +743,18 @@ def parse_article(
             body=clean_body,
         )
     )
+    npr_legacy_named_audio = (
+        spec.publisher == "npr"
+        and _npr_legacy_named_audio_story(
+            soup,
+            body=clean_body,
+            canonical_url=canonical_url,
+        )
+    )
     if spec.publisher == "npr" and (
         npr_legacy_metadata_audio
         or npr_legacy_unavailable_audio
+        or npr_legacy_named_audio
         or _npr_short_audio_story(
             soup,
             body=clean_body,
@@ -1007,6 +1016,7 @@ def parse_article(
             # truncated the page.
             or npr_legacy_metadata_audio
             or npr_legacy_unavailable_audio
+            or npr_legacy_named_audio
         )
     )
     publisher_notice = _is_publisher_notice(
@@ -6604,6 +6614,36 @@ def _npr_legacy_unavailable_audio_story(
         and unavailable.select_one("p") is not None
         and unavailable_text.startswith("audio for this story from ")
         and " will be available " in unavailable_text
+        and soup.select_one(".transcript") is None
+        and 1 <= body_characters < 200
+    )
+
+
+def _npr_legacy_named_audio_story(
+    soup: BeautifulSoup,
+    *,
+    body: Tag | None,
+    canonical_url: str,
+) -> bool:
+    """Recover a narrowly identified legacy Morning Edition audio series."""
+    body_characters = len(
+        _clean_text(body.get_text(" ", strip=True)) if body is not None else ""
+    )
+    body_classes = (
+        {
+            str(value).casefold()
+            for value in (soup.body.get("class") or [])
+        }
+        if soup.body is not None
+        else set()
+    )
+    path = urlsplit(canonical_url).path.casefold().rstrip("/")
+    story_text = soup.select_one("#storytext")
+    return bool(
+        "tmplnewsstory" in body_classes
+        and re.search(r"/(?:the-)?last-word-in-business$", path)
+        and isinstance(story_text, Tag)
+        and story_text.select_one("p") is not None
         and soup.select_one(".transcript") is None
         and 1 <= body_characters < 200
     )
