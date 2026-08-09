@@ -12,7 +12,7 @@ SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
-from jojo_olds_api.archive_sources import archive_source_spec
+from jojo_olds_api.archive_sources import ArchiveSourceSpec, archive_source_spec
 from jojo_olds_api.common_crawl_prefix_manifest import (
     CommonCrawlPrefixClient,
     export_prefix_manifest,
@@ -48,6 +48,63 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def initialize_with_collection_refresh(
+    connection: sqlite3.Connection,
+    *,
+    client: CommonCrawlPrefixClient,
+    spec: ArchiveSourceSpec,
+    from_year: int,
+    to_year: int,
+    collection_from_year: int,
+) -> dict[str, object]:
+    """Refresh Common Crawl indexes without stranding a saved checkpoint."""
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=from_year,
+        to_year=to_year,
+        collections=(),
+    )
+    try:
+        collections = tuple(
+            collection
+            for collection in client.collections()
+            if collection.to_at.year >= collection_from_year
+            and collection.from_at <= datetime.now(timezone.utc)
+        )
+    except (RuntimeError, ValueError) as exc:
+        existing_queries = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM prefix_queries"
+            ).fetchone()[0]
+        )
+        if existing_queries == 0:
+            raise
+        result = {
+            "source": "checkpoint",
+            "queryCount": existing_queries,
+            "refreshError": type(exc).__name__,
+        }
+        print(
+            json.dumps(
+                {"event": "common-crawl-collection-refresh-fallback", **result}
+            ),
+            flush=True,
+        )
+        return result
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=from_year,
+        to_year=to_year,
+        collections=collections,
+    )
+    return {
+        "source": "remote",
+        "collectionCount": len(collections),
+    }
+
+
 def main() -> int:
     args = parse_args()
     if args.from_year > args.to_year:
@@ -65,19 +122,13 @@ def main() -> int:
     pages = 0
     errors = 0
     try:
-        collections = tuple(
-            collection
-            for collection in client.collections()
-            if collection.to_at.year >= args.collection_from_year
-            and collection.from_at
-            <= datetime.now(timezone.utc)
-        )
-        initialize_prefix_schema(
+        collection_refresh = initialize_with_collection_refresh(
             connection,
+            client=client,
             spec=spec,
             from_year=args.from_year,
             to_year=args.to_year,
-            collections=collections,
+            collection_from_year=args.collection_from_year,
         )
         while pages < args.max_pages and errors < args.max_errors:
             query = next_prefix_query(connection)
@@ -154,6 +205,7 @@ def main() -> int:
             **prefix_summary(connection),
             "pagesThisRun": pages,
             "errorsThisRun": errors,
+            "collectionRefresh": collection_refresh,
             "manifest": manifest,
         }
         if args.summary is not None:

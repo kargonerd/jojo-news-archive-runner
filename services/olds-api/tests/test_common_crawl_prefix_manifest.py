@@ -23,6 +23,9 @@ from jojo_olds_api.common_crawl_prefix_manifest import (
 )
 from jojo_olds_api.news_models import CaptureProvider
 from jojo_olds_api.raw_archive_capture import manifest_item_from_row
+from tools.build_common_crawl_prefix_manifest import (
+    initialize_with_collection_refresh,
+)
 
 
 INDEX_URL = "https://index.commoncrawl.org/CC-MAIN-2014-10-index"
@@ -110,6 +113,63 @@ def test_prefix_schema_adds_new_collections_without_resetting_progress():
         """,
         (collection_id, pattern),
     ).fetchone()[0] == "complete"
+
+
+def test_collection_refresh_timeout_reuses_checkpoint_queries():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("npr")
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(_collection(),),
+    )
+
+    class TimeoutClient:
+        def collections(self):
+            raise RuntimeError("temporary collection endpoint timeout")
+
+    result = initialize_with_collection_refresh(
+        connection,
+        client=TimeoutClient(),
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collection_from_year=2014,
+    )
+
+    assert result == {
+        "source": "checkpoint",
+        "queryCount": 2,
+        "refreshError": "RuntimeError",
+    }
+    assert connection.execute(
+        "SELECT COUNT(*) FROM prefix_queries"
+    ).fetchone()[0] == 2
+
+
+def test_collection_refresh_timeout_rejects_empty_checkpoint():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("npr")
+
+    class TimeoutClient:
+        def collections(self):
+            raise RuntimeError("temporary collection endpoint timeout")
+
+    try:
+        initialize_with_collection_refresh(
+            connection,
+            client=TimeoutClient(),
+            spec=spec,
+            from_year=2010,
+            to_year=2010,
+            collection_from_year=2014,
+        )
+    except RuntimeError as exc:
+        assert "temporary collection endpoint timeout" in str(exc)
+    else:
+        raise AssertionError("an empty checkpoint must not look complete")
 
 
 def test_records_caps_and_exports_common_crawl_candidates(tmp_path: Path):
