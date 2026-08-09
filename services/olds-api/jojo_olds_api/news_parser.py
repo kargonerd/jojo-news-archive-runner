@@ -10274,7 +10274,7 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^for newspaper delivery questions\b"),
         re.compile(r"^_{2,}$"),
-        re.compile(r"(?i)^read more$"),
+        re.compile(r"(?i)^read more:?$"),
         re.compile(
             r"(?i)^\[?\s*(?:enjoying this article\?\s*)?"
             r"sign up for (?:our|the) .*newsletter\b"
