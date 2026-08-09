@@ -159,3 +159,49 @@ def test_audit_rotation_rejects_reused_or_unexcluded_urls(tmp_path: Path):
     assert result["passed"] is False
     assert "2014:prior-cohort-overlap" in result["issues"]
     assert "2014:missing-prior-exclusions" in result["issues"]
+
+
+def test_audit_rotation_accepts_explicit_holdout_source_cohort(tmp_path: Path):
+    previous_path = tmp_path / "holdout-v2.sqlite3"
+    current_path = tmp_path / "holdout-v3.sqlite3"
+    previous = _state(previous_path)
+    current = _state(current_path)
+    old_url = "https://www.nytimes.com/2018/01/01/world/old.html"
+    new_url = "https://www.nytimes.com/2018/01/02/world/new.html"
+    try:
+        _seed_config(previous, year=2018, parser_version="nyt-parser/0.8.54")
+        _seed_sample(
+            previous,
+            url=old_url,
+            year=2018,
+            parser_version="nyt-parser/0.8.54",
+        )
+        _seed_config(current, year=2018, parser_version="nyt-parser/0.8.54")
+        _seed_sample(current, url=new_url, year=2018)
+        current.execute(
+            """
+            INSERT INTO parser_validation_exclusions(
+                canonical_url, source_cohort, excluded_at
+            ) VALUES (?, 'holdout-v2', '2026-08-09T00:00:00Z')
+            """,
+            (old_url,),
+        )
+        previous.commit()
+        current.commit()
+    finally:
+        previous.close()
+        current.close()
+
+    result = audit_rotation(
+        previous_state=previous_path,
+        current_state=current_path,
+        publisher="nyt",
+        expected_parser_version="nyt-parser/0.8.54",
+        expected_previous_source_cohort="holdout-v2",
+        from_year=2018,
+        to_year=2018,
+    )
+
+    assert result["passed"] is True
+    assert result["expectedPreviousSourceCohort"] == "holdout-v2"
+    assert result["years"]["2018"]["wrongExclusionCohortLabels"] == 0

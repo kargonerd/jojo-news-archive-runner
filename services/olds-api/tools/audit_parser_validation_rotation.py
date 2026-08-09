@@ -24,6 +24,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--from-year", type=int, required=True)
     parser.add_argument("--to-year", type=int, required=True)
     parser.add_argument("--target-per-year", type=int, default=800)
+    parser.add_argument(
+        "--expected-previous-source-cohort",
+        help=(
+            "Expected source_cohort label for the previous state, such as "
+            "holdout-v2. By default, require the parser-version rotation "
+            "label <publisher>:<year>:<previous-parser-version>."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -77,6 +85,7 @@ def audit_rotation(
     from_year: int,
     to_year: int,
     target_per_year: int = 800,
+    expected_previous_source_cohort: str | None = None,
 ) -> dict[str, object]:
     if from_year > to_year:
         raise ValueError("from_year must not exceed to_year")
@@ -156,7 +165,9 @@ def audit_rotation(
             previous_version = (
                 str(previous_config[1]) if previous_config is not None else ""
             )
-            expected_label = f"{publisher}:{year}:{previous_version}"
+            expected_label = expected_previous_source_cohort or (
+                f"{publisher}:{year}:{previous_version}"
+            )
             for url in sorted(previous_evaluated - missing_exclusions):
                 if all_exclusions[url] != expected_label:
                     wrong_labels.append(url)
@@ -201,6 +212,7 @@ def audit_rotation(
         "formatVersion": "jojo-parser-validation-rotation-audit/1",
         "publisher": publisher,
         "expectedParserVersion": expected_parser_version,
+        "expectedPreviousSourceCohort": expected_previous_source_cohort,
         "targetPerYear": target_per_year,
         "passed": not issues,
         "issues": issues,
@@ -233,6 +245,9 @@ def main() -> int:
             from_year=args.from_year,
             to_year=args.to_year,
             target_per_year=args.target_per_year,
+            expected_previous_source_cohort=(
+                args.expected_previous_source_cohort
+            ),
         )
     except (OSError, sqlite3.Error, ValueError) as exc:
         result = {
