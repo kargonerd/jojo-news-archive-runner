@@ -551,6 +551,21 @@ jobs:
             --stop-at-validation-target \
             --github-output "$GITHUB_OUTPUT"
 
+      - name: Pre-index WSJ Arquivo.pt prefix candidates
+        id: wsj_arquivo_preindex
+        if: ${{ inputs.publisher == 'wsj' }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          if ! python services/olds-api/tools/preindex_arquivo_pt_catalog.py \
+              --publisher wsj \
+              --year "$SAMPLE_YEAR" \
+              --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+              --github-output "$GITHUB_OUTPUT"; then
+            echo "::warning::Arquivo.pt prefix pre-index failed; continuing with exact URL fallbacks."
+          fi
+
       - name: Pre-index validated FT mirror candidates
         id: ft_preindex
         if: ${{ inputs.publisher == 'ft' }}

@@ -46,6 +46,7 @@ from jojo_olds_api.raw_archive_capture import (
     _wsj_capture_parser_evidence,
     archive_fallback_policy,
     arquivo_pt_cdx_url,
+    arquivo_pt_prefix_cdx_url,
     ap_syndication_search_url,
     bloomberg_syndication_search_url,
     capture_item,
@@ -72,6 +73,7 @@ from jojo_olds_api.raw_archive_capture import (
     nyt_syndication_title_search_url,
     nyt_trusted_wordpress_search_url,
     pending_captures,
+    preindex_arquivo_pt_prefix_candidates,
     record_capture_result,
     reuters_syndication_search_url,
     reuters_syndication_title_search_url,
@@ -2551,8 +2553,8 @@ def test_arquivo_pt_candidates_are_exact_deduplicated_and_ranked():
     )
     query_url = arquivo_pt_cdx_url(item)
     assert parse_qs(urlsplit(query_url).query)["filter"] == [
-        "=status:200",
-        "=mime:text/html",
+        "status:200",
+        "mime:text/html",
     ]
     rows = [
         {
@@ -2615,6 +2617,146 @@ def test_arquivo_pt_candidates_are_exact_deduplicated_and_ranked():
         "https://arquivo.pt/noFrame/replay/20200102000000/"
         + canonical_url
     )
+
+
+def test_arquivo_pt_prefix_query_is_bounded_to_publisher_and_year():
+    query = parse_qs(
+        urlsplit(
+            arquivo_pt_prefix_cdx_url(
+                publisher="wsj",
+                year=2017,
+            )
+        ).query
+    )
+
+    assert query == {
+        "url": ["www.wsj.com/articles/*"],
+        "output": ["json"],
+        "filter": ["status:200", "mime:text/html"],
+        "from": ["2017"],
+        "to": ["2017"],
+        "limit": ["100000"],
+    }
+
+
+def test_preindexes_exact_arquivo_pt_prefix_candidates_without_resetting_state():
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="wsj",
+        authorization_reference="test",
+    )
+    canonical_url = "https://www.wsj.com/articles/example"
+    existing = CaptureCandidate(
+        provider=CaptureProvider.WAYBACK,
+        snapshot_url=(
+            "https://web.archive.org/web/20170101000000id_/" + canonical_url
+        ),
+    )
+    connection.executemany(
+        """
+        INSERT INTO captures(
+            canonical_url, article_id, publisher, published_at, section,
+            candidates_json, status, attempts, last_error, updated_at
+        ) VALUES (?, ?, 'wsj', ?, NULL, ?, ?, ?, ?, 'before')
+        """,
+        [
+            (
+                canonical_url,
+                "wsj:example",
+                "2017-06-10T00:00:00Z",
+                json.dumps([existing.model_dump(mode="json", by_alias=True)]),
+                "error",
+                2,
+                "not found",
+            ),
+            (
+                "https://www.wsj.com/articles/not-in-prefix-result",
+                "wsj:other",
+                "2017-02-01T00:00:00Z",
+                "[]",
+                "pending",
+                0,
+                None,
+            ),
+        ],
+    )
+    rows = [
+        {
+            "url": "http://www.wsj.com/articles/example",
+            "timestamp": "20170611000000",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "NEAR",
+            "length": "25000",
+        },
+        {
+            "url": canonical_url,
+            "timestamp": "20171201000000",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "FAR",
+            "length": "30000",
+        },
+        {
+            "url": canonical_url,
+            "timestamp": "20170612000000",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "NEAR",
+            "length": "26000",
+        },
+        {
+            "url": canonical_url,
+            "timestamp": "20160612000000",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "WRONG-YEAR",
+        },
+        {
+            "url": canonical_url,
+            "timestamp": "20170612000000",
+            "mime": "image/jpeg",
+            "status": "200",
+            "digest": "WRONG-MIME",
+        },
+        {
+            "url": "https://www.wsj.com/articles/different",
+            "timestamp": "20170612000000",
+            "mime": "text/html",
+            "status": "200",
+            "digest": "WRONG-URL",
+        },
+    ]
+
+    metrics = preindex_arquivo_pt_prefix_candidates(
+        connection,
+        publisher="wsj",
+        year=2017,
+        rows=rows,
+    )
+
+    state = connection.execute(
+        """
+        SELECT candidates_json, status, attempts, last_error
+        FROM captures WHERE canonical_url=?
+        """,
+        (canonical_url,),
+    ).fetchone()
+    candidates = [
+        CaptureCandidate.model_validate(value)
+        for value in json.loads(state[0])
+    ]
+    assert metrics == {
+        "rowsRead": 6,
+        "rowsMatched": 3,
+        "targetsMatched": 1,
+        "capturesUpdated": 1,
+        "candidatesSelected": 2,
+    }
+    assert [candidate.digest for candidate in candidates[:2]] == ["NEAR", "FAR"]
+    assert candidates[2] == existing
+    assert state[1:] == ("error", 2, "not found")
 
 
 def test_ft_capture_falls_back_to_validated_arquivo_pt_replay(

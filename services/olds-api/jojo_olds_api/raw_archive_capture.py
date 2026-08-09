@@ -123,6 +123,10 @@ ARQUIVO_PT_CDX_ENDPOINT = "https://arquivo.pt/wayback/cdx"
 ARQUIVO_PT_REPLAY_ENDPOINT = "https://arquivo.pt/noFrame/replay"
 ARQUIVO_PT_INDEX_MAXIMUM_BYTES = 2_000_000
 ARQUIVO_PT_MAXIMUM_CANDIDATES = 3
+ARQUIVO_PT_PREFIX_URLS = {
+    "ft": "www.ft.com/content/*",
+    "wsj": "www.wsj.com/articles/*",
+}
 REUTERS_SYNDICATION_STOP_WORDS = {
     "a",
     "after",
@@ -2155,11 +2159,180 @@ def arquivo_pt_cdx_url(item: ManifestItem) -> str:
         [
             ("url", item.canonical_url),
             ("output", "json"),
-            ("filter", "=status:200"),
-            ("filter", "=mime:text/html"),
+            ("filter", "status:200"),
+            ("filter", "mime:text/html"),
             ("collapse", "digest"),
         ]
     )
+
+
+def arquivo_pt_prefix_cdx_url(
+    *,
+    publisher: str,
+    year: int,
+    limit: int = 100_000,
+) -> str:
+    if publisher not in ARQUIVO_PT_PREFIX_URLS:
+        raise ValueError(f"unsupported Arquivo.pt prefix publisher: {publisher}")
+    if year < 1900 or year > 2100:
+        raise ValueError("year is outside the supported range")
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    return ARQUIVO_PT_CDX_ENDPOINT + "?" + urlencode(
+        [
+            ("url", ARQUIVO_PT_PREFIX_URLS[publisher]),
+            ("output", "json"),
+            ("filter", "status:200"),
+            ("filter", "mime:text/html"),
+            ("from", str(year)),
+            ("to", str(year)),
+            ("limit", str(limit)),
+        ]
+    )
+
+
+def preindex_arquivo_pt_prefix_candidates(
+    connection: sqlite3.Connection,
+    *,
+    publisher: str,
+    year: int,
+    rows: Iterable[dict[str, object]],
+    maximum_candidates: int = ARQUIVO_PT_MAXIMUM_CANDIDATES,
+) -> dict[str, int]:
+    if publisher not in ARQUIVO_PT_PREFIX_URLS:
+        raise ValueError(f"unsupported Arquivo.pt prefix publisher: {publisher}")
+    if maximum_candidates < 1:
+        raise ValueError("maximum_candidates must be positive")
+    capture_rows = connection.execute(
+        """
+        SELECT canonical_url, published_at, candidates_json
+        FROM captures
+        WHERE publisher=?
+          AND SUBSTR(COALESCE(published_at, ''), 1, 4)=?
+          AND status IN ('pending', 'error', 'downloading')
+        """,
+        (publisher, str(year)),
+    ).fetchall()
+    targets = {
+        _archive_url_match_key(str(canonical_url)): (
+            str(canonical_url),
+            str(published_at or ""),
+            str(candidates_json),
+        )
+        for canonical_url, published_at, candidates_json in capture_rows
+    }
+    candidates_by_url: dict[str, list[CaptureCandidate]] = {}
+    rows_read = 0
+    rows_matched = 0
+    for row in rows:
+        rows_read += 1
+        if not isinstance(row, dict):
+            continue
+        original = str(row.get("url") or row.get("original") or "").strip()
+        target = targets.get(_archive_url_match_key(original))
+        timestamp = str(row.get("timestamp") or "").strip()
+        mime_type = str(
+            row.get("mime") or row.get("mimetype") or ""
+        ).strip()
+        archived_status = str(
+            row.get("status") or row.get("statuscode") or ""
+        ).strip()
+        if (
+            target is None
+            or not _same_article_url(original, target[0])
+            or not re.fullmatch(r"\d{14}", timestamp)
+            or not timestamp.startswith(str(year))
+            or archived_status != "200"
+            or mime_type.casefold() != "text/html"
+        ):
+            continue
+        rows_matched += 1
+        candidates_by_url.setdefault(target[0], []).append(
+            CaptureCandidate(
+                provider=CaptureProvider.ARQUIVO_PT,
+                snapshot_url=(
+                    f"{ARQUIVO_PT_REPLAY_ENDPOINT}/{timestamp}/{original}"
+                ),
+                captured_at=_wayback_datetime(timestamp),
+                digest=_optional_string(row.get("digest")),
+                mime_type=mime_type,
+                status_code=200,
+                byte_count=_optional_int(row.get("length")),
+            )
+        )
+
+    updates: list[tuple[str, str, str]] = []
+    selected_candidates = 0
+    for canonical_url, candidates in candidates_by_url.items():
+        _, published_at, candidates_json = targets[
+            _archive_url_match_key(canonical_url)
+        ]
+        deduplicated: list[CaptureCandidate] = []
+        seen: set[str] = set()
+        for candidate in sorted(
+            candidates,
+            key=lambda value: _timemap_candidate_sort_key(
+                value,
+                published_at=published_at,
+            ),
+        ):
+            key = candidate.digest or candidate.snapshot_url
+            if key in seen:
+                continue
+            seen.add(key)
+            deduplicated.append(candidate)
+            if len(deduplicated) >= maximum_candidates:
+                break
+        try:
+            parsed_existing = json.loads(candidates_json)
+        except (TypeError, ValueError):
+            parsed_existing = []
+        if not isinstance(parsed_existing, list):
+            parsed_existing = []
+        existing = [
+            value
+            for value in parsed_existing
+            if not (
+                isinstance(value, dict)
+                and value.get("provider") == CaptureProvider.ARQUIVO_PT.value
+            )
+        ]
+        serialized = [
+            candidate.model_dump(
+                mode="json",
+                by_alias=True,
+                exclude_none=True,
+            )
+            for candidate in deduplicated
+        ]
+        selected_candidates += len(serialized)
+        updates.append(
+            (
+                json.dumps(
+                    [*serialized, *existing],
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                _now_iso(),
+                canonical_url,
+            )
+        )
+    with connection:
+        connection.executemany(
+            """
+            UPDATE captures
+            SET candidates_json=?, updated_at=?
+            WHERE canonical_url=?
+            """,
+            updates,
+        )
+    return {
+        "rowsRead": rows_read,
+        "rowsMatched": rows_matched,
+        "targetsMatched": len(candidates_by_url),
+        "capturesUpdated": len(updates),
+        "candidatesSelected": selected_candidates,
+    }
 
 
 def discover_arquivo_pt_candidates(
@@ -5308,16 +5481,15 @@ def _fetch_limited_archive(
 
 
 def _same_article_url(first: str, second: str) -> bool:
-    first_parts = urlsplit(first)
-    second_parts = urlsplit(second)
-    first_host = (first_parts.hostname or "").casefold().removeprefix("www.")
-    second_host = (second_parts.hostname or "").casefold().removeprefix("www.")
-    return (
-        first_host == second_host
-        and bool(first_host)
-        and _archive_article_path(first_host, first_parts.path)
-        == _archive_article_path(second_host, second_parts.path)
-    )
+    first_key = _archive_url_match_key(first)
+    second_key = _archive_url_match_key(second)
+    return bool(first_key[0]) and first_key == second_key
+
+
+def _archive_url_match_key(value: str) -> tuple[str, str]:
+    parts = urlsplit(value)
+    host = (parts.hostname or "").casefold().removeprefix("www.")
+    return host, _archive_article_path(host, parts.path)
 
 
 def _archive_article_path(host: str, path: str) -> str:

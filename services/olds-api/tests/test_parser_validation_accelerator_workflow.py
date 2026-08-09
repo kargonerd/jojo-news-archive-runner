@@ -49,6 +49,21 @@ def test_accelerator_enables_archive_fallbacks_for_wsj() -> None:
     assert "--enable-common-crawl-fallback" in workflow
 
 
+def test_accelerator_preindexes_bounded_wsj_arquivo_catalog_nonfatally() -> None:
+    workflow = _workflow_text()
+    section = workflow[
+        workflow.index("Pre-index WSJ Arquivo.pt prefix candidates")
+        : workflow.index("Pre-index validated FT mirror candidates")
+    ]
+
+    assert "inputs.publisher == 'wsj'" in section
+    assert "preindex_arquivo_pt_catalog.py" in section
+    assert '--year "$SAMPLE_YEAR"' in section
+    assert '--state "$LOCAL_ROOT/raw/capture.sqlite3"' in section
+    assert "if ! python" in section
+    assert "continuing with exact URL fallbacks" in section
+
+
 def test_accelerator_retains_existing_content_addressed_raw_objects() -> None:
     workflow = _workflow_text()
 
