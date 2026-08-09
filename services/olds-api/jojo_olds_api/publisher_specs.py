@@ -233,7 +233,7 @@ PUBLISHER_SPECS = {
     ),
     "npr": PublisherSpec(
         publisher="npr",
-        parser_version="npr-parser/0.1.11",
+        parser_version="npr-parser/0.1.12",
         domains=("npr.org", "www.npr.org"),
         default_language="en",
         edition="us",

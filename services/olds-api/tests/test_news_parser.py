@@ -15261,7 +15261,7 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_preserves_short_audio_story_mp3():
@@ -15301,7 +15301,7 @@ def test_npr_parser_preserves_short_audio_story_mp3():
     assert [
         block.embed_url for block in result.blocks if block.type.value == "embed"
     ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_classifies_unavailable_short_audio_story():
@@ -15325,7 +15325,7 @@ def test_npr_parser_classifies_unavailable_short_audio_story():
     assert result.quality.status.value == "partial"
     assert result.plain_text == "A short audio introduction."
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_accepts_legacy_metadata_only_audio_story():
@@ -15363,7 +15363,7 @@ def test_npr_parser_accepts_legacy_metadata_only_audio_story():
     assert "Unrelated recommended story" not in result.plain_text
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_accepts_legacy_unavailable_audio_story():
@@ -15413,7 +15413,7 @@ def test_npr_parser_accepts_legacy_unavailable_audio_story():
     assert "body-too-short" not in result.quality.warnings
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
@@ -15450,7 +15450,7 @@ def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
     assert "A short introduction to the segment." not in result.plain_text
     assert "noncommercial use" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
@@ -15484,7 +15484,7 @@ def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
     assert result.images[0].should_archive is True
     assert "onthetrail_01.jpg" in result.images[0].original_url
     assert "promo.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_recovers_image_led_double_take_cartoon():
@@ -15531,7 +15531,7 @@ def test_npr_parser_recovers_image_led_double_take_cartoon():
     ]
     assert all(image.should_archive for image in result.images)
     assert "related-cartoon.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_recovers_legacy_music_flash_interactive():
@@ -15585,7 +15585,7 @@ def test_npr_parser_recovers_legacy_music_flash_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://www.npr.org/music/memoriam_2010/memoriam.swf"]
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_removes_legacy_read_more_bucket():
@@ -15621,7 +15621,7 @@ def test_npr_parser_removes_legacy_read_more_bucket():
     assert "second substantive paragraph" in result.plain_text
     assert "Read More" not in result.plain_text
     assert "Related report part one" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_recovers_legacy_iframe_interactive():
@@ -15657,7 +15657,7 @@ def test_npr_parser_recovers_legacy_iframe_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://election-maps.example/results/embed?state=us"]
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_npr_parser_recovers_legacy_program_audio_download():
@@ -15705,7 +15705,37 @@ def test_npr_parser_recovers_legacy_program_audio_download():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://pd.npr.org/audio/prediction.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.11"
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
+
+
+def test_npr_parser_does_not_infer_audio_from_plain_primary_bucket():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta name="date" content="Sun, 08 Jan 2012 12:00:00 -0500">
+          <meta property="og:title" content="Brief NPR update">
+        </head><body class="tmplNewsStory type1">
+          <div id="storyspan02" class="storylocation">
+            <div class="bucketwrap primary">
+              <p class="date">January 8, 2012</p>
+              <p>Ordinary story metadata without an audio player.</p>
+            </div>
+          </div>
+          <div id="storytext">
+            <p>A deliberately short ordinary text update.</p>
+          </div>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2012/01/08/144900000/brief-update"
+        ),
+    )
+
+    assert result.quality.status.value == "partial"
+    assert result.content_type.value == "article"
+    assert not any(block.type.value == "embed" for block in result.blocks)
+    assert result.extraction.parser_version == "npr-parser/0.1.12"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():

@@ -6016,22 +6016,31 @@ def _axios_embedded_content_type(body: Tag) -> ContentType | None:
 
 def _npr_audio_story_nodes(soup: BeautifulSoup) -> list[Tag]:
     """Return story-level players without matching NPR's global live audio."""
-    return [
-        node
-        for node in soup.select(
-            "#primaryaudio, #headlineaudio, article.resaudio, .audio-module, "
-            "#storyspan02 .bucketwrap.primary"
+    result: list[Tag] = []
+    for node in soup.select(
+        "#primaryaudio, #headlineaudio, article.resaudio, .audio-module, "
+        "#storyspan02 .bucketwrap.primary"
+    ):
+        if not isinstance(node, Tag):
+            continue
+        legacy_primary = (
+            "bucketwrap" in {
+                str(value).casefold()
+                for value in (node.get("class") or [])
+            }
+            and node.find_parent(id="storyspan02") is not None
         )
-        if isinstance(node, Tag)
-        and (
+        if legacy_primary and (
             node.select_one(".avcontent.listen") is None
             or node.select_one(
                 ".avcontent.listen a[href*='NPR.Player.openPlayer'], "
                 ".audiotools a.download[href]"
             )
-            is not None
-        )
-    ]
+            is None
+        ):
+            continue
+        result.append(node)
+    return result
 
 
 def _npr_legacy_transcript_body(
