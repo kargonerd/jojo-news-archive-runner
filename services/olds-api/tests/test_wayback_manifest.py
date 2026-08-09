@@ -774,6 +774,52 @@ def test_discovery_keeps_three_best_candidates_and_exports_generic_manifest(
     assert ready_summary["captureReady"] is True
 
 
+def test_wsj_export_rejects_legacy_asset_rows(tmp_path: Path):
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2023,
+        to_year=2023,
+    )
+    article_url = (
+        "https://www.wsj.com/articles/"
+        "markets-rally-on-new-economic-data-a1b2c3d4"
+    )
+    asset_url = (
+        "https://www.wsj.com/articles/"
+        "B3-BY423_health_PREVIEW_20181003165352.jpg"
+    )
+    connection.executemany(
+        """
+        INSERT INTO candidates(
+            canonical_url, published_at, timestamp, original_url,
+            digest, mimetype, status_code, byte_count, rank_score
+        ) VALUES (?, '2023-06-01T00:00:00+00:00', '20230602000000',
+                  ?, 'digest', 'text/html', 200, 10000, 1)
+        """,
+        ((article_url, article_url), (asset_url, asset_url)),
+    )
+
+    destination = tmp_path / "manifest.jsonl.gz"
+    summary = export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=destination,
+        from_year=2023,
+        to_year=2023,
+        capture_minimum_per_year=1,
+    )
+
+    assert wsj_catalog_count_for_year(connection, 2023) == 1
+    assert summary["articles"] == 1
+    assert summary["yearCounts"] == {"2023": 1}
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        rows = [json.loads(line) for line in handle]
+    assert [row["canonicalUrl"] for row in rows] == [article_url]
+
+
 def test_discovery_queries_follow_configured_order_not_lexical_order():
     spec = archive_source_spec("wsj")
     connection = sqlite3.connect(":memory:")

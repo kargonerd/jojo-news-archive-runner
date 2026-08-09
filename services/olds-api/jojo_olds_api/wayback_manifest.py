@@ -18,6 +18,7 @@ import httpx
 
 from .archive_sources import (
     ArchiveSourceSpec,
+    archive_source_spec,
     normalize_article_url,
     wsj_article_publication_datetime,
 )
@@ -1358,6 +1359,8 @@ def process_wsj_bluesky_page(
 def wsj_catalog_count_for_year(
     connection: sqlite3.Connection,
     year: int,
+    *,
+    spec: ArchiveSourceSpec | None = None,
 ) -> int:
     selects = [
         """
@@ -1402,16 +1405,19 @@ def wsj_catalog_count_for_year(
             """
         )
         parameters.append(str(year))
-    return int(
-        connection.execute(
+    effective_spec = spec or archive_source_spec("wsj")
+    return sum(
+        normalize_article_url(effective_spec, str(canonical_url))
+        == str(canonical_url)
+        for (canonical_url,) in connection.execute(
             f"""
-            SELECT COUNT(DISTINCT canonical_url)
+            SELECT DISTINCT canonical_url
             FROM (
                 {" UNION ".join(selects)}
             )
             """,
             parameters,
-        ).fetchone()[0]
+        )
     )
 
 
@@ -1421,9 +1427,11 @@ def wsj_catalog_ready_for_capture(
     from_year: int,
     to_year: int,
     minimum_catalog: int = PARSER_VALIDATION_CATALOG_MINIMUM_PER_YEAR,
+    spec: ArchiveSourceSpec | None = None,
 ) -> bool:
     return all(
-        wsj_catalog_count_for_year(connection, year) >= minimum_catalog
+        wsj_catalog_count_for_year(connection, year, spec=spec)
+        >= minimum_catalog
         for year in range(from_year, to_year + 1)
     )
 
@@ -1671,7 +1679,9 @@ def export_capture_manifest(
         current_published_at: str | None = None
         candidates: list[dict] = []
         for row in rows:
-            canonical_url = row[0]
+            canonical_url = str(row[0])
+            if normalize_article_url(spec, canonical_url) != canonical_url:
+                continue
             if current_url is not None and canonical_url != current_url:
                 if current_url in external_articles:
                     current_published_at = external_articles[current_url]
@@ -1750,6 +1760,8 @@ def export_capture_manifest(
         for canonical_url, published_at in sorted(external_articles.items()):
             if canonical_url in written_urls:
                 continue
+            if normalize_article_url(spec, canonical_url) != canonical_url:
+                continue
             candidates = _approximate_wayback_candidates(
                 canonical_url,
                 published_at=published_at,
@@ -1795,7 +1807,11 @@ def export_capture_manifest(
     if wsj_infini_direct_should_continue(connection):
         incomplete += 1
     year_counts = {
-        str(year): wsj_catalog_count_for_year(connection, year)
+        str(year): wsj_catalog_count_for_year(
+            connection,
+            year,
+            spec=spec,
+        )
         for year in range(from_year, to_year + 1)
     }
     return {
@@ -1808,6 +1824,7 @@ def export_capture_manifest(
             from_year=from_year,
             to_year=to_year,
             minimum_catalog=capture_minimum_per_year,
+            spec=spec,
         ),
         "captureMinimumPerYear": capture_minimum_per_year,
         "yearCounts": year_counts,
