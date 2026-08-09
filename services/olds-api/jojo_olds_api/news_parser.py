@@ -557,6 +557,7 @@ def parse_article(
         _ap_wire_keyword_headline(news_article)
         if spec.publisher == "ap"
         else None,
+        _ap_hosted_headline(soup) if spec.publisher == "ap" else None,
         _wsj_legacy_headline(soup)
         if spec.publisher == "wsj"
         else None,
@@ -604,6 +605,8 @@ def parse_article(
     ):
         description = None
     authors = _extract_authors(news_article, soup)
+    if spec.publisher == "ap" and not authors:
+        authors = _ap_hosted_authors(soup)
     metadata_authors = nyt_preloaded_metadata.get("authors")
     if isinstance(metadata_authors, list) and metadata_authors:
         authors = [
@@ -627,6 +630,9 @@ def parse_article(
                 "analyticsAttributes.articleDate",
             ),
             _meta_content(soup, "name", "sailthru.date"),
+            _ap_hosted_published_at(soup)
+            if spec.publisher == "ap"
+            else None,
             (
                 _bloomberg_legacy_published_at(soup)
                 if spec.publisher == "bloomberg"
@@ -3976,6 +3982,46 @@ def _ap_carousel_gallery(soup: BeautifulSoup) -> Tag | None:
         if len(article.select("figure")) >= 3:
             return article
     return None
+
+
+def _ap_hosted_headline(soup: BeautifulSoup) -> str | None:
+    """Extract the headline from AP's pre-BigStory hosted-news template."""
+    return _tag_text(
+        soup.select_one(
+            ".ap-story-table .headline.entry-title, "
+            ".ap-story-table .entry-title"
+        )
+    )
+
+
+def _ap_hosted_authors(soup: BeautifulSoup) -> list[Author]:
+    """Extract bylines from AP's legacy hNews/vCard markup."""
+    result: list[Author] = []
+    seen: set[str] = set()
+    for node in soup.select(
+        ".ap-story-table .byline .author .fn, "
+        ".ap-story-table .byline .vcard .fn"
+    ):
+        name = _clean_text(node.get_text(" ", strip=True))
+        key = name.casefold()
+        if name and key not in seen:
+            result.append(Author(name=name))
+            seen.add(key)
+    return result
+
+
+def _ap_hosted_published_at(soup: BeautifulSoup) -> str | None:
+    """Return the machine-readable AP legacy timestamp, when present."""
+    return _tag_attribute(
+        soup.select_one(
+            ".ap-story-table .timestamp.updated[title], "
+            ".ap-story-table time.updated[datetime]"
+        ),
+        "title",
+    ) or _tag_attribute(
+        soup.select_one(".ap-story-table time.updated[datetime]"),
+        "datetime",
+    )
 
 
 def _ap_structured_race_call_body(

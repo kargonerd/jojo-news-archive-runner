@@ -10435,7 +10435,71 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert "___" not in result.plain_text
     assert "<button" not in result.body_html
     assert "data-ap-readmore" not in result.body_html
-    assert result.extraction.parser_version == "ap-parser/0.6.17"
+    assert result.extraction.parser_version == "ap-parser/0.6.18"
+
+
+def test_ap_parser_extracts_hosted_ap_legacy_story_template():
+    html = b"""
+    <html><body>
+      <table class="ap-story-table hnews hentry item">
+        <tr><td><div class="body">
+          <div class="timestamp updated" title="2011-01-11T1221Z">
+            Jan 11, 12:21 PM EST
+          </div>
+          <p class="body">
+            <span class="headline entry-title">
+              4 dead as forces raid Ivory Coast neighborhood
+            </span>
+          </p>
+          <span class="byline">By <span class="author vcard">
+            <span class="fn">RUKMINI CALLIMACHI</span>
+          </span></span>
+        </div></td></tr>
+        <tr><td><span class="entry-content">
+          <img src="https://analytics.apnewsregistry.com/pixel.gif"
+               width="1" height="1" alt="">
+          <p class="ap-story-p">ABIDJAN, Ivory Coast (AP) -- Security
+          forces cordoned off a neighborhood before residents described
+          sustained gunfire and several deaths during the operation.</p>
+          <p class="ap-story-p">United Nations peacekeepers arriving in a
+          convoy were forced to turn around while witnesses described the
+          confrontation and its aftermath in detail.</p>
+          <p class="ap-story-p">---</p>
+          <p class="ap-story-p">Associated Press writer Example Reporter
+          contributed to this report.</p>
+        </span>
+        <p class="ap-story-p">Copyright boilerplate outside the story.</p>
+        </td></tr>
+      </table>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url=(
+            "http://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST"
+            "?SITE=AP&CTIME=2011-01-11-12-21-19"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.headline == (
+        "4 dead as forces raid Ivory Coast neighborhood"
+    )
+    assert result.published_at is not None
+    assert result.published_at.isoformat() == "2011-01-11T12:21:00+00:00"
+    assert [author.name for author in result.authors] == [
+        "RUKMINI CALLIMACHI"
+    ]
+    assert "Security forces cordoned off" in result.plain_text
+    assert "contributed to this report" in result.plain_text
+    assert "Copyright boilerplate" not in result.plain_text
+    assert "---" not in result.plain_text
+    assert len(result.images) == 1
+    assert result.images[0].role.value == "tracking"
+    assert result.images[0].should_archive is False
+    assert result.extraction.parser_version == "ap-parser/0.6.18"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -10478,7 +10542,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.17"
+    assert article.extraction.parser_version == "ap-parser/0.6.18"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -10512,7 +10576,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.17"
+    assert result.extraction.parser_version == "ap-parser/0.6.18"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -14018,7 +14082,7 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
         block.text in {"_", "——————————", "<"}
         for block in result.blocks
     )
-    assert result.extraction.parser_version == "ap-parser/0.6.17"
+    assert result.extraction.parser_version == "ap-parser/0.6.18"
 
 
 def test_ap_parser_deduplicates_dims_variants_by_underlying_asset():

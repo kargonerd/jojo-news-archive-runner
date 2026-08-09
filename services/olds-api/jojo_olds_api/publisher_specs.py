@@ -39,14 +39,15 @@ class PublisherSpec:
 PUBLISHER_SPECS = {
     "ap": PublisherSpec(
         publisher="ap",
-        parser_version="ap-parser/0.6.17",
-        domains=("apnews.com",),
+        parser_version="ap-parser/0.6.18",
+        domains=("apnews.com", "hosted.ap.org", "hosted2.ap.org"),
         default_language="en",
         edition="us",
         body_selectors=(
             "[data-key='article']",
             ".RichTextStoryBody",
             "[data-testid='article-body']",
+            ".ap-story-table .entry-content",
             "article",
         ),
         preferred_image_hosts=("dims.apnews.com", "storage.googleapis.com"),
