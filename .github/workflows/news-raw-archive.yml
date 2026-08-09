@@ -70,6 +70,11 @@ on:
         required: true
         default: true
         type: boolean
+      stop_when_validation_ready:
+        description: "Release the runner once every validation year passes 800-sample QA."
+        required: true
+        default: false
+        type: boolean
       runner_os:
         description: "Standard GitHub-hosted runner network used for capture."
         required: true
@@ -610,6 +615,12 @@ jobs:
               "$LOCAL_ROOT/catalog/discovery.sqlite3"
             )
           fi
+          if [ "${{ inputs.stop_when_validation_ready }}" = "true" ]; then
+            args+=(
+              --stop-when-validation-ready
+              --stop-when-validation-target-reached
+            )
+          fi
           set +e
           python services/olds-api/tools/capture_archive_batch.py "${args[@]}" &
           capture_pid=$!
@@ -742,6 +753,10 @@ jobs:
         if: >-
           ${{
             inputs.auto_continue &&
+            (
+              !inputs.stop_when_validation_ready ||
+              steps.after.outputs.validation_ready != 'true'
+            ) &&
             steps.catalog.outputs.exit_code == '0' &&
             (
               steps.catalog.outputs.should_continue == 'true' ||
@@ -773,6 +788,7 @@ jobs:
               -f workers="$DOWNLOAD_WORKERS" \
               -f max_runtime_minutes="$MAX_RUNTIME_MINUTES" \
               -f auto_continue=true \
+              -f stop_when_validation_ready="${{ inputs.stop_when_validation_ready }}" \
               -f runner_os="${{ inputs.runner_os }}"; then
               exit 0
             fi

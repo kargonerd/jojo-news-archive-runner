@@ -46,3 +46,23 @@ def test_archive_continuation_drains_actionable_captures_before_discovery() -> N
     assert 'if [[ "$actionable" =~ ^[1-9][0-9]*$ ]]; then' in continuation_section
     assert "next_discovery_pages=0" in continuation_section
     assert '-f max_discovery_pages="$next_discovery_pages"' in continuation_section
+
+
+def test_validation_only_archive_chain_releases_runner_at_ready_gate() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    capture_section = workflow[
+        workflow.index("- name: Capture bounded raw HTML batch") :
+        workflow.index("- name: Checkpoint capture state")
+    ]
+    continuation_section = workflow[
+        workflow.index("- name: Dispatch next bounded run") :
+    ]
+
+    assert "stop_when_validation_ready:" in workflow
+    assert "--stop-when-validation-ready" in capture_section
+    assert "--stop-when-validation-target-reached" in capture_section
+    assert "steps.after.outputs.validation_ready != 'true'" in continuation_section
+    assert (
+        '-f stop_when_validation_ready="${{ inputs.stop_when_validation_ready }}"'
+        in continuation_section
+    )
