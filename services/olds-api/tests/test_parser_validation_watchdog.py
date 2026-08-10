@@ -393,6 +393,39 @@ def test_watchdog_requires_disjoint_wsj_holdout_after_validation(
     assert complete_cell["ready"] is True
 
 
+def test_watchdog_requires_wsj_holdout_for_legacy_source_summary(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "wsj/2010-2015/wayback-urlkey/state/summary.json",
+        publisher="wsj",
+        year=2013,
+        evaluated=835,
+        qa_revision=0,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["wsj"],
+        available_source_shards={"wsj/2010-2015/wayback-urlkey"},
+    )
+
+    assert plan["readyCells"] == 0
+    assert plan["tasks"][0]["year"] == 2013
+    assert plan["tasks"][0]["cohort"] == "holdout-v1"
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["year"] == 2013
+    )
+    assert cell["requiredCohort"] == "holdout-v1"
+    assert cell["evaluated"] == 0
+    assert cell["replayableEvaluated"] == 835
+
+
 def test_watchdog_prioritizes_stale_corpus_for_parser_replay(
     tmp_path: Path,
 ):

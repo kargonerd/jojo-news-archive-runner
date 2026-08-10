@@ -23,7 +23,7 @@ def test_accelerator_uses_every_available_prior_holdout_exclusion() -> None:
     assert "break" not in exclusion_section
 
 
-def test_accelerator_never_uses_source_capture_as_validation_exclusion() -> None:
+def test_accelerator_uses_legacy_validation_state_as_bounded_exclusion() -> None:
     workflow = _workflow_text()
     restore_section = workflow[
         workflow.index("Restore filtered manifest and validation checkpoint")
@@ -32,7 +32,13 @@ def test_accelerator_never_uses_source_capture_as_validation_exclusion() -> None
         )
     ]
 
-    assert '"${SOURCE_ROOT}/state/capture.sqlite3.gz"' not in restore_section
+    assert '"${SOURCE_ROOT}/state/capture.sqlite3.gz"' in restore_section
+    assert '"${LEGACY_SOURCE_ROOT}/state/capture.sqlite3.gz"' in restore_section
+    import_section = workflow[
+        workflow.index("Import original-cohort exclusions")
+        : workflow.index("Seed validation from source archive")
+    ]
+    assert '--sample-year "$SAMPLE_YEAR"' in import_section
 
 
 def test_accelerator_does_not_silently_relax_exclusions() -> None:

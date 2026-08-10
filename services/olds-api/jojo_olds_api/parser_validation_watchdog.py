@@ -119,6 +119,7 @@ def plan_validation_dispatch(
             "parserVersion": None,
             "summaryPaths": [],
             "cohortRows": {},
+            "rotationBaselineCohorts": set(),
         }
         for publisher in publisher_order
         for year in TARGET_YEARS
@@ -171,6 +172,14 @@ def plan_validation_dispatch(
             if isinstance(paths, list):
                 paths.append(summary_path.relative_to(state_root).as_posix())
             if (
+                row.get("parserVersion") == versions[publisher]
+                and _integer(row.get("evaluated")) > 0
+                and cohort in {"source", "validation"}
+            ):
+                baselines = cell["rotationBaselineCohorts"]
+                assert isinstance(baselines, set)
+                baselines.add(cohort)
+            if (
                 row.get("parserVersion") != versions[publisher]
                 or _integer(row.get("qaRevision"))
                 != qa_revisions[publisher]
@@ -188,9 +197,11 @@ def plan_validation_dispatch(
     for (publisher, _year), cell in progress.items():
         cohort_rows = cell["cohortRows"]
         assert isinstance(cohort_rows, dict)
+        baselines = cell["rotationBaselineCohorts"]
+        assert isinstance(baselines, set)
         required_cohort = (
             REQUIRED_HOLDOUT_COHORTS.get(publisher)
-            if "validation" in cohort_rows
+            if baselines
             else None
         )
         selected_cohort = required_cohort
