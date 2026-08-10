@@ -213,7 +213,14 @@ ARCHIVE_SOURCE_SPECS = {
             "www.aljazeera.com/features/{year}/*",
             "www.aljazeera.com/opinions/{year}/*",
         ),
-        accepted_path_patterns=_patterns(r"^/(?:news|features|opinions)/20\d{2}/"),
+        # The official article sitemap contains many editorial desks beyond
+        # news/features/opinions (for example economy, sports and
+        # investigations). A dated one- or two-level section path plus a
+        # non-empty slug is the stable canonical article shape.
+        accepted_path_patterns=_patterns(
+            r"^/(?:[a-z0-9-]+/){1,2}20\d{2}/"
+            r"\d{1,2}/\d{1,2}/[^/]+$",
+        ),
         rejected_path_patterns=_patterns(r"^/(?:video|program|podcasts?)(?:/|$)"),
     ),
     "scmp": ArchiveSourceSpec(

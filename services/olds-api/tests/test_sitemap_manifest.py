@@ -669,6 +669,84 @@ def test_index_and_url_sitemap_parsing():
     assert parse_url_sitemap(URL_XML)[0][1] == "2020-01-14T10:00:00Z"
 
 
+def test_aljazeera_archive_and_daily_sitemap_indexes_are_combined():
+    archive_index = b"""<?xml version="1.0"?>
+    <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <sitemap><loc>https://www.aljazeera.com/sitemaps/article-archive/2012/01.xml</loc></sitemap>
+      <sitemap><loc>https://www.aljazeera.com/sitemaps/article-archive/2009/12.xml</loc></sitemap>
+    </sitemapindex>
+    """
+    daily_index = b"""<?xml version="1.0"?>
+    <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <sitemap><loc>https://www.aljazeera.com/sitemaps/article-new/10-08-2026.xml</loc></sitemap>
+      <sitemap><loc>https://www.aljazeera.com/sitemaps/article-new/31-12-2025.xml</loc></sitemap>
+    </sitemapindex>
+    """
+    source = sitemap_source("aljazeera")
+    assert parse_sitemap_index(
+        archive_index,
+        source=source,
+        from_year=2010,
+        to_year=2026,
+    ) == [
+        (
+            "https://www.aljazeera.com/sitemaps/"
+            "article-archive/2012/01.xml",
+            2012,
+            1,
+        )
+    ]
+    assert parse_sitemap_index(
+        daily_index,
+        source=source,
+        from_year=2026,
+        to_year=2026,
+    ) == [
+        (
+            "https://www.aljazeera.com/sitemaps/"
+            "article-new/10-08-2026.xml",
+            2026,
+            8,
+        )
+    ]
+
+    connection = sqlite3.connect(":memory:")
+    initialize_sitemap_schema(
+        connection,
+        source=source,
+        from_year=2010,
+        to_year=2026,
+        sitemap_index=archive_index,
+        supplemental_sitemap_indexes=(daily_index,),
+    )
+    assert connection.execute(
+        """
+        SELECT sitemap_url, year, month
+        FROM sitemap_queries
+        ORDER BY year, month, sitemap_url
+        """
+    ).fetchall() == [
+        (
+            "https://www.aljazeera.com/sitemaps/"
+            "article-archive/2012/01.xml",
+            2012,
+            1,
+        ),
+        (
+            "https://www.aljazeera.com/sitemaps/"
+            "article-new/31-12-2025.xml",
+            2025,
+            12,
+        ),
+        (
+            "https://www.aljazeera.com/sitemaps/"
+            "article-new/10-08-2026.xml",
+            2026,
+            8,
+        ),
+    ]
+
+
 def test_repairs_known_historical_sitemap_xml_defects():
     content = b"""<?xml version="1.0" encoding="UTF-8"?>
     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

@@ -891,6 +891,21 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "https://www.aljazeera.com/news/2020/1/2/example",
     ) == "https://www.aljazeera.com/news/2020/1/2/example"
     assert normalize_article_url(
+        archive_source_spec("aljazeera"),
+        "https://www.aljazeera.com/economy/2012/1/31/example",
+    ) == "https://www.aljazeera.com/economy/2012/1/31/example"
+    assert normalize_article_url(
+        archive_source_spec("aljazeera"),
+        "https://www.aljazeera.com/news/liveblog/2026/8/10/example",
+    ) == "https://www.aljazeera.com/news/liveblog/2026/8/10/example"
+    assert normalize_article_url(
+        archive_source_spec("aljazeera"),
+        (
+            "https://www.aljazeera.com/news/2010/07/"
+            "www.aljazeera.com/news/asia/2012/07/example.html"
+        ),
+    ) is None
+    assert normalize_article_url(
         archive_source_spec("scmp"),
         "https://www.scmp.com/article/721725/corrections-clarifications",
     ) == "https://www.scmp.com/article/721725/corrections-clarifications"

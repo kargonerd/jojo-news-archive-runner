@@ -72,6 +72,18 @@ jobs:
             manifest_mode: wayback-urlkey
             discovery_units: "5"
             runner_os: ubuntu-latest
+          - publisher: aljazeera
+            from_year: "2010"
+            to_year: "2015"
+            manifest_mode: sitemap-wayback
+            discovery_units: "24"
+            runner_os: ubuntu-latest
+          - publisher: aljazeera
+            from_year: "2016"
+            to_year: "2026"
+            manifest_mode: sitemap-wayback
+            discovery_units: "24"
+            runner_os: ubuntu-latest
     steps:
       - name: Advance archive shard
         env:

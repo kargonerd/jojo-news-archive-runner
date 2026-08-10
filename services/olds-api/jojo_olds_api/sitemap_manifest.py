@@ -43,6 +43,8 @@ class SitemapSource:
     publisher: str
     index_url: str
     child_pattern: re.Pattern[str]
+    supplemental_index_urls: tuple[str, ...] = ()
+    daily_child_pattern: re.Pattern[str] | None = None
 
 
 SITEMAP_SOURCES = {
@@ -65,6 +67,21 @@ SITEMAP_SOURCES = {
         publisher="ft",
         index_url="https://www.ft.com/sitemaps/index.xml",
         child_pattern=re.compile(r"archive-(20\d{2})-(\d{1,2})\.xml$"),
+    ),
+    "aljazeera": SitemapSource(
+        publisher="aljazeera",
+        index_url=(
+            "https://www.aljazeera.com/sitemaps/article-archive.xml"
+        ),
+        child_pattern=re.compile(
+            r"/article-archive/(20\d{2})/(\d{2})\.xml$"
+        ),
+        supplemental_index_urls=(
+            "https://www.aljazeera.com/sitemaps/article-new.xml",
+        ),
+        daily_child_pattern=re.compile(
+            r"/article-new/(\d{2})-(\d{2})-(20\d{2})\.xml$"
+        ),
     ),
 }
 
@@ -145,10 +162,19 @@ def parse_sitemap_index(
             continue
         url = node.text.strip()
         match = source.child_pattern.search(urlsplit(url).path)
-        if not match:
+        if match:
+            year = int(match.group(1))
+            month = int(match.group(2))
+        elif source.daily_child_pattern is not None:
+            daily_match = source.daily_child_pattern.search(
+                urlsplit(url).path
+            )
+            if daily_match is None:
+                continue
+            month = int(daily_match.group(2))
+            year = int(daily_match.group(3))
+        else:
             continue
-        year = int(match.group(1))
-        month = int(match.group(2))
         if from_year <= year <= to_year and 1 <= month <= 12:
             result.append((url, year, month))
     return sorted(set(result), key=lambda value: (value[1], value[2], value[0]))
@@ -188,6 +214,7 @@ def initialize_sitemap_schema(
     from_year: int,
     to_year: int,
     sitemap_index: bytes,
+    supplemental_sitemap_indexes: tuple[bytes, ...] = (),
 ) -> None:
     connection.executescript(
         """
@@ -217,14 +244,19 @@ def initialize_sitemap_schema(
         );
         """
     )
+    fingerprint_payload: dict[str, object] = {
+        "publisher": source.publisher,
+        "indexUrl": source.index_url,
+        "fromYear": from_year,
+        "toYear": to_year,
+    }
+    if source.supplemental_index_urls:
+        fingerprint_payload["supplementalIndexUrls"] = (
+            source.supplemental_index_urls
+        )
     fingerprint = hashlib.sha256(
         json.dumps(
-            {
-                "publisher": source.publisher,
-                "indexUrl": source.index_url,
-                "fromYear": from_year,
-                "toYear": to_year,
-            },
+            fingerprint_payload,
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
@@ -250,11 +282,21 @@ def initialize_sitemap_schema(
             "fingerprint": fingerprint,
         }.items(),
     )
-    children = parse_sitemap_index(
-        sitemap_index,
-        source=source,
-        from_year=from_year,
-        to_year=to_year,
+    children = sorted(
+        {
+            child
+            for index_content in (
+                sitemap_index,
+                *supplemental_sitemap_indexes,
+            )
+            for child in parse_sitemap_index(
+                index_content,
+                source=source,
+                from_year=from_year,
+                to_year=to_year,
+            )
+        },
+        key=lambda value: (value[1], value[2], value[0]),
     )
     connection.executemany(
         """

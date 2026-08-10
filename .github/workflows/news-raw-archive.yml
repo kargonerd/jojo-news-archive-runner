@@ -170,8 +170,8 @@ jobs:
             exit 2
           fi
           if [ "$MANIFEST_MODE" = "sitemap-wayback" ] &&
-             [[ ! "$PUBLISHER" =~ ^(ap|bloomberg|nyt|ft)$ ]]; then
-            echo "sitemap-wayback supports AP, Bloomberg, NYT, and FT." >&2
+             [[ ! "$PUBLISHER" =~ ^(ap|bloomberg|nyt|ft|aljazeera)$ ]]; then
+            echo "sitemap-wayback supports AP, Bloomberg, NYT, FT, and Al Jazeera." >&2
             exit 2
           fi
           shard="${PUBLISHER}/${FROM_YEAR}-${TO_YEAR}/${MANIFEST_MODE}"

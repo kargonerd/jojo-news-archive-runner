@@ -24,7 +24,7 @@ from jojo_olds_api.parser_source_shards import parser_source_manifest_shard
         ("npr", 2020, "npr/2016-2026/wayback-urlkey"),
         ("nikkei", 2012, "nikkei/2010-2015/wayback-urlkey"),
         ("zaobao", 2024, "zaobao/2016-2026/wayback-urlkey"),
-        ("aljazeera", 2018, "aljazeera/2016-2026/wayback-urlkey"),
+        ("aljazeera", 2018, "aljazeera/2016-2026/sitemap-wayback"),
         ("scmp", 2015, "scmp/2010-2015/wayback-urlkey"),
         ("caixin", 2021, "caixin/2016-2026/wayback-urlkey"),
     ],

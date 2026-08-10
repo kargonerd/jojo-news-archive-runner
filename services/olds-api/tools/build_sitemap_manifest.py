@@ -102,6 +102,10 @@ def main() -> int:
             from_year=args.from_year,
             to_year=args.to_year,
             sitemap_index=index,
+            supplemental_sitemap_indexes=tuple(
+                client.fetch_xml(index_url)
+                for index_url in source.supplemental_index_urls
+            ),
         )
         while processed < args.max_sitemaps:
             query = next_sitemap_query(connection)
