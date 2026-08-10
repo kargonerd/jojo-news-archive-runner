@@ -341,7 +341,7 @@ def next_prefix_query(
                 substr(pattern, instr(pattern, '/20') + 1, 4)
                 AS INTEGER
             ),
-            collection_id,
+            collection_id DESC,
             pattern,
             updated_at
         LIMIT 1

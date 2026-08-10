@@ -248,6 +248,18 @@ headline, publication date, complete-body threshold, and visible Wall Street
 Journal attribution all pass. Failed provenance checks never enter the parser
 validation sample.
 
+Axios uses a separate, resumable Common Crawl prefix catalog for 2017–2026.
+The catalog checks recent collections first, because current Axios URLs retain
+their publication year while older collection/prefix pairs are frequently
+empty. Both successful pages and empty page-count queries are checkpointed;
+each run has independent page and query limits, so a broad prefix cannot turn a
+nominally bounded run into an unbounded scan. Only normalized official Axios
+article paths with a URL-derived matching publication year and exact WARC
+coordinates enter the supplemental manifest. Parser validation merges that
+manifest with the Wayback URL-key source, then applies the same fresh-cohort,
+zero-overlap 800-article gate; Common Crawl catalog capacity alone is never
+treated as parser convergence.
+
 FT discovery also augments sparse Wayback results with licensed partner
 copies. It searches Infini-News' CC-News index for the exact visible
 `Copyright The Financial Times Limited` attribution, samples occurrences

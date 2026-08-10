@@ -6,33 +6,30 @@ WORKFLOW = (
     REPOSITORY_ROOT
     / ".github"
     / "workflows"
-    / "npr-common-crawl-catalog.yml"
+    / "axios-common-crawl-catalog.yml"
 )
 
 
 def test_catalog_is_bounded_checkpointed_and_private() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "build_common_crawl_prefix_manifest.py" in workflow
-    assert "sudo apt-get install -y rclone" in workflow
-    assert "--collection-from-year 2014" in workflow
+    assert "--publisher axios" in workflow
+    assert "--from-year 2017" in workflow
+    assert "--to-year 2026" in workflow
+    assert "--collection-from-year 2017" in workflow
     assert '--max-pages "$MAX_PAGES"' in workflow
     assert '--max-queries "$MAX_QUERIES"' in workflow
-    assert "--min-request-interval 3" in workflow
+    assert "--page-size 1" in workflow
     assert "verify_b2_private_bucket.py" in workflow
     assert "checkpoint_capture_state.py" in workflow
-    assert "commoncrawl-prefix" in workflow
-    assert "discovery.sqlite3.gz" in workflow
-    assert "manifest.jsonl.gz" in workflow
+    assert "news-archive/v1/axios/2017-2026/commoncrawl-prefix" in workflow
 
 
-def test_catalog_continues_after_bounded_empty_query_batch() -> None:
+def test_catalog_auto_continuation_is_checkpoint_bounded() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
-
     dispatch = workflow[workflow.index("Dispatch next bounded run") :]
+
     assert "steps.discovery.outputs.should_continue == 'true'" in dispatch
     assert "steps.discovery.outputs.advances != '0'" in dispatch
     assert '-f max_queries="$MAX_QUERIES"' in dispatch
-    assert "auto_continue=true" in dispatch
     assert '--ref "$GITHUB_REF_NAME"' in dispatch
-    assert 'GITHUB_SHA' not in dispatch

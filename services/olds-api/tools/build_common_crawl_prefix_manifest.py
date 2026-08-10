@@ -39,6 +39,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-pages", type=int, default=10)
+    parser.add_argument(
+        "--max-queries",
+        type=int,
+        default=100,
+        help=(
+            "Maximum prefix-query state advances in this run, including "
+            "empty page-count queries."
+        ),
+    )
     parser.add_argument("--max-errors", type=int, default=3)
     parser.add_argument("--min-request-interval", type=float, default=2.0)
     parser.add_argument("--timeout", type=float, default=45.0)
@@ -117,8 +126,10 @@ def main() -> int:
     args = parse_args()
     if args.from_year > args.to_year:
         raise SystemExit("--from-year must not be after --to-year")
-    if args.max_pages < 1 or args.max_errors < 1:
-        raise SystemExit("--max-pages and --max-errors must be positive")
+    if args.max_pages < 1 or args.max_queries < 1 or args.max_errors < 1:
+        raise SystemExit(
+            "--max-pages, --max-queries, and --max-errors must be positive"
+        )
     if args.page_size is not None and args.page_size < 1:
         raise SystemExit("--page-size must be positive")
     spec = archive_source_spec(args.publisher)
@@ -131,6 +142,8 @@ def main() -> int:
     args.state.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(args.state, timeout=60)
     pages = 0
+    queries = 0
+    advances = 0
     errors = 0
     try:
         collection_refresh = initialize_with_collection_refresh(
@@ -141,10 +154,15 @@ def main() -> int:
             to_year=args.to_year,
             collection_from_year=args.collection_from_year,
         )
-        while pages < args.max_pages and errors < args.max_errors:
+        while (
+            pages < args.max_pages
+            and queries < args.max_queries
+            and errors < args.max_errors
+        ):
             query = next_prefix_query(connection)
             if query is None:
                 break
+            queries += 1
             collection_id, index_url, pattern, total_pages, next_page = query
             try:
                 if total_pages is None:
@@ -158,6 +176,7 @@ def main() -> int:
                         pattern=pattern,
                         total_pages=total_pages,
                     )
+                    advances += 1
                     if total_pages == 0:
                         continue
                 page = client.page(
@@ -174,6 +193,7 @@ def main() -> int:
                     total_pages=total_pages,
                     page=page,
                 )
+                advances += 1
                 pages += 1
                 print(
                     json.dumps(
@@ -215,6 +235,8 @@ def main() -> int:
         summary = {
             **prefix_summary(connection),
             "pagesThisRun": pages,
+            "queriesThisRun": queries,
+            "stateAdvancesThisRun": advances,
             "errorsThisRun": errors,
             "collectionRefresh": collection_refresh,
             "manifest": manifest,
@@ -232,6 +254,8 @@ def main() -> int:
                     f"should_continue={str(summary['shouldContinue']).lower()}\n"
                 )
                 handle.write(f"pages={pages}\n")
+                handle.write(f"queries={queries}\n")
+                handle.write(f"advances={advances}\n")
                 handle.write(f"errors={errors}\n")
         return 0
     finally:

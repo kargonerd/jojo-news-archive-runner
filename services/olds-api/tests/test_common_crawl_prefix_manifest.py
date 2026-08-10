@@ -115,6 +115,25 @@ def test_prefix_schema_adds_new_collections_without_resetting_progress():
     ).fetchone()[0] == "complete"
 
 
+def test_prefix_queries_prioritize_recent_collections():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("npr")
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(
+            _collection("CC-MAIN-2014-10"),
+            _collection("CC-MAIN-2026-30"),
+        ),
+    )
+
+    collection_id, _, _, _, _ = next_prefix_query(connection)
+
+    assert collection_id == "CC-MAIN-2026-30"
+
+
 def test_collection_refresh_timeout_reuses_checkpoint_queries():
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("npr")

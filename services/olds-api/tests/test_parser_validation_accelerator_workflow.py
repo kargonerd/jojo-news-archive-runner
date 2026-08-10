@@ -121,6 +121,20 @@ def test_accelerator_merges_npr_common_crawl_supplemental_manifest() -> None:
     assert '--input "$supplemental_source_manifest"' in workflow
 
 
+def test_accelerator_merges_axios_common_crawl_supplemental_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "axios" ]; then' in workflow
+    assert (
+        "news-archive/v1/axios/${source_window}/commoncrawl-prefix"
+        in workflow
+    )
+    assert (
+        '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz"'
+        in workflow
+    )
+
+
 def test_accelerator_merges_ap_legacy_supplemental_manifest() -> None:
     workflow = _workflow_text()
 

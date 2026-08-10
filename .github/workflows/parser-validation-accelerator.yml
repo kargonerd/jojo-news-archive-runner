@@ -192,6 +192,9 @@ jobs:
           if [ "$PUBLISHER" = "npr" ]; then
             source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
             supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/${source_window}/commoncrawl-prefix"
+          elif [ "$PUBLISHER" = "axios" ]; then
+            source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
+            supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/axios/${source_window}/commoncrawl-prefix"
           elif [ "$PUBLISHER" = "ap" ]; then
             source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
             supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/ap/${source_window}/legacy-archive"
