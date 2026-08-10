@@ -960,6 +960,20 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
     ) == "https://www.aljazeera.com/news/liveblog/2026/8/10/example"
     assert normalize_article_url(
         archive_source_spec("aljazeera"),
+        "https://www.aljazeera.com/news/2010/02/2010212134228827506.html",
+    ) == (
+        "https://www.aljazeera.com/news/2010/02/"
+        "2010212134228827506.html"
+    )
+    assert normalize_article_url(
+        archive_source_spec("aljazeera"),
+        "https://www.aljazeera.com/news/asia/2012/07/20127181234567890.html",
+    ) == (
+        "https://www.aljazeera.com/news/asia/2012/07/"
+        "20127181234567890.html"
+    )
+    assert normalize_article_url(
+        archive_source_spec("aljazeera"),
         (
             "https://www.aljazeera.com/news/2010/07/"
             "www.aljazeera.com/news/asia/2012/07/example.html"
@@ -991,6 +1005,10 @@ def test_date_inference_and_candidate_ranking_prefers_after_publication():
         "https://www.reuters.com/article/"
         "01cyberaton-brief-idUSFWN0U201D20141218"
     ) == "2014-12-18T00:00:00+00:00"
+    assert infer_published_at(
+        "https://www.aljazeera.com/news/2010/02/"
+        "2010212134228827506.html"
+    ) == "2010-02-01T00:00:00+00:00"
     assert infer_published_at(
         "https://www.wsj.com/article/"
         "0,,BT-CO-20130516-704945,00.html"

@@ -2513,6 +2513,28 @@ def infer_published_at(canonical_url: str) -> str | None:
     if hostname == "zaobao.com.sg":
         patterns.append(r"/story(20\d{2})(\d{2})(\d{2})(?:[-/]|$)")
     if hostname == "aljazeera.com":
+        # The legacy Al Jazeera CMS encoded the exact day inside a compact
+        # numeric story id whose boundary is ambiguous for single-digit
+        # days.  The surrounding URL still supplies an authoritative year
+        # and month, which is sufficient for year-stratified discovery and
+        # selecting a publication-near archive capture.  Use the first day
+        # of that month as the conservative catalog timestamp; the article
+        # parser recovers the precise visible/structured timestamp later.
+        legacy_match = re.search(
+            r"/(?:[a-z0-9-]+/){1,2}(20\d{2})/(\d{2})/"
+            r"20\d{6,}\.html(?:/|$)",
+            canonical_url,
+        )
+        if legacy_match is not None:
+            try:
+                return datetime(
+                    int(legacy_match.group(1)),
+                    int(legacy_match.group(2)),
+                    1,
+                    tzinfo=timezone.utc,
+                ).isoformat()
+            except ValueError:
+                return None
         patterns.append(
             r"/(?:news|features|opinions)/(20\d{2})/"
             r"(\d{1,2})/(\d{1,2})(?:/|$)"

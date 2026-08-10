@@ -225,6 +225,14 @@ ARCHIVE_SOURCE_SPECS = {
         accepted_path_patterns=_patterns(
             r"^/(?:[a-z0-9-]+/){1,2}20\d{2}/"
             r"\d{1,2}/\d{1,2}/[^/]+$",
+            # Al Jazeera's pre-migration CMS used compact numeric story ids
+            # below a year/month path, for example
+            # `/news/2010/02/2010212134228827506.html`.  The id starts with
+            # the publication year but has no separate day path component.
+            # Requiring the numeric year prefix keeps malformed nested URL
+            # keys and ordinary HTML assets outside the article catalog.
+            r"^/(?:[a-z0-9-]+/){1,2}20\d{2}/\d{2}/"
+            r"20\d{6,}\.html$",
         ),
         rejected_path_patterns=_patterns(r"^/(?:video|program|podcasts?)(?:/|$)"),
     ),
