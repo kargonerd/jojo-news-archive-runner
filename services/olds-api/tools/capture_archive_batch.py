@@ -304,6 +304,10 @@ def main() -> int:
             prioritize_parser_validation=bool(
                 args.validation_sample_per_year
             ),
+            parser_validation_only=bool(
+                args.stop_when_validation_ready
+                or args.stop_when_validation_target_reached
+            ),
             validation_from_year=args.validation_from_year,
             validation_to_year=args.validation_to_year,
         )

@@ -500,26 +500,33 @@ def pending_captures(
     maximum: int | None,
     maximum_record_attempts: int,
     prioritize_parser_validation: bool = False,
+    parser_validation_only: bool = False,
     validation_from_year: int | None = None,
     validation_to_year: int | None = None,
 ) -> list[ManifestItem]:
     if maximum_record_attempts < 1:
         raise ValueError("maximum_record_attempts must be positive")
-    repair_limit = -1 if maximum is None else maximum
-    priority_urls = [
-        str(row[0])
-        for row in connection.execute(
-            """
-            SELECT canonical_url
-            FROM captures
-            WHERE status='pending'
-              AND last_error LIKE 'quality-recheck:%'
-            ORDER BY updated_at, canonical_url
-            LIMIT ?
-            """,
-            (repair_limit,),
+    if parser_validation_only and not prioritize_parser_validation:
+        raise ValueError(
+            "parser_validation_only requires prioritize_parser_validation"
         )
-    ]
+    repair_limit = -1 if maximum is None else maximum
+    priority_urls = []
+    if not parser_validation_only:
+        priority_urls = [
+            str(row[0])
+            for row in connection.execute(
+                """
+                SELECT canonical_url
+                FROM captures
+                WHERE status='pending'
+                  AND last_error LIKE 'quality-recheck:%'
+                ORDER BY updated_at, canonical_url
+                LIMIT ?
+                """,
+                (repair_limit,),
+            )
+        ]
     if prioritize_parser_validation:
         from .parser_validation import pending_parser_validation_urls
 
@@ -559,6 +566,11 @@ def pending_captures(
         }
         priority_rows = [
             rows_by_url[url] for url in priority_urls if url in rows_by_url
+        ]
+
+    if parser_validation_only:
+        return [
+            _manifest_item_from_capture_row(row) for row in priority_rows
         ]
 
     remaining = (

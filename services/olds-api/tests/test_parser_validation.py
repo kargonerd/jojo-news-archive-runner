@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import sqlite3
 
+import pytest
+
 from jojo_olds_api.news_models import (
     CaptureCandidate,
     CaptureProvider,
@@ -706,6 +708,79 @@ def test_pending_validation_can_focus_on_one_year(tmp_path: Path):
 
     assert len(selected) == 2
     assert {item.published_at[:4] for item in selected} == {"2021"}
+
+
+def test_validation_only_does_not_fill_batch_from_excluded_old_cohort(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path, publisher="wsj")
+    initialize_parser_validation_schema(connection)
+    old_cohort_url = connection.execute(
+        """
+        SELECT canonical_url
+        FROM captures
+        WHERE published_at >= '2020-01-01'
+          AND published_at < '2021-01-01'
+        ORDER BY canonical_url
+        LIMIT 1
+        """
+    ).fetchone()[0]
+    connection.execute(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        ) VALUES (?, 'validation-v2', '2026-08-10T00:00:00Z')
+        """,
+        (old_cohort_url,),
+    )
+    connection.commit()
+    ensure_parser_validation_plan(
+        connection,
+        publisher="wsj",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    selected = pending_captures(
+        connection,
+        retry_errors=True,
+        maximum=20,
+        maximum_record_attempts=3,
+        prioritize_parser_validation=True,
+        parser_validation_only=True,
+        validation_from_year=2020,
+        validation_to_year=2020,
+    )
+
+    assert len(selected) == 1
+    assert selected[0].canonical_url != old_cohort_url
+    assert connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM parser_validation_samples
+        WHERE canonical_url=?
+        """,
+        (selected[0].canonical_url,),
+    ).fetchone()[0] == 1
+
+
+def test_validation_only_requires_validation_prioritization(tmp_path: Path):
+    connection = _state_with_years(tmp_path)
+
+    with pytest.raises(
+        ValueError,
+        match="parser_validation_only requires prioritize_parser_validation",
+    ):
+        pending_captures(
+            connection,
+            retry_errors=False,
+            maximum=1,
+            maximum_record_attempts=3,
+            parser_validation_only=True,
+        )
 
 
 def test_bloomberg_plan_randomly_prefers_exact_wayback_captures(
