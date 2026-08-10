@@ -372,7 +372,7 @@ def main() -> int:
                     spec=spec,
                     http_client=http_client,
                     maximum=max(1, args.max_pages or 5) * 100,
-                    workers=8,
+                    workers=4,
                     minimum_request_interval=args.min_request_interval,
                 )
                 wsj_infini_documents_this_run = int(
