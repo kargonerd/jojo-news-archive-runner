@@ -11,6 +11,7 @@ import pytest
 from jojo_olds_api.news_models import (
     ArticleStatus,
     BlobReference,
+    BlockType,
     CaptureCandidate,
     CaptureProvider,
     ContentType,
@@ -16985,3 +16986,110 @@ def test_zaobao_parser_extracts_embedded_rsc_publication_date():
     assert result.published_at is not None
     assert result.published_at.isoformat() == "2016-01-20T18:38:00+08:00"
     assert result.extraction.parser_version == "zaobao-parser/0.1.1"
+
+
+def test_aljazeera_parser_classifies_short_embedded_video_report():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="US accused of plot to occupy Yemen">
+          <meta property="article:published_time" content="2010-01-08T00:00:00Z">
+        </head><body>
+          <div class="wysiwyg wysiwyg--all-content">
+            <p><div class="jetpack-video-wrapper">
+              <iframe src="https://www.youtube.com/embed/FBnUNOj4Boo"></iframe>
+            </div></p>
+            <p>The United States has classified a prominent Yemeni religious
+            leader as a specially designated global terrorist for alleged
+            ties to al-Qaeda.</p>
+            <p>Others accuse him of stoking anti-American feeling and
+            inspiring a new generation of suicide bombers.</p>
+            <p>He says the growing interest in activities in Yemen is part of
+            a plot to occupy the country. Al Jazeera reports from Yemen.</p>
+          </div>
+        </body></html>
+        """,
+        publisher="aljazeera",
+        canonical_url=(
+            "https://www.aljazeera.com/news/2010/1/8/"
+            "us-accused-of-plot-to-occupy-yemen"
+        ),
+    )
+
+    assert result.content_type == ContentType.VIDEO
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert any(
+        block.type == BlockType.EMBED
+        and block.embed_url == "https://www.youtube.com/embed/FBnUNOj4Boo"
+        for block in result.blocks
+    )
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.2"
+
+
+def test_aljazeera_parser_marks_short_timeline_shell_as_interactive_partial():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Timeline: Haiti after the quake">
+          <meta property="article:published_time" content="2010-01-24T00:00:00Z">
+        </head><body>
+          <div class="wysiwyg wysiwyg--all-content">
+            <p>Days after a 7.0 magnitude earthquake devastated Haiti,
+            relief workers are still struggling to help thousands of people
+            affected.</p>
+          </div>
+        </body></html>
+        """,
+        publisher="aljazeera",
+        canonical_url=(
+            "https://www.aljazeera.com/news/2010/1/24/"
+            "timeline-haiti-after-the-quake"
+        ),
+    )
+
+    assert result.content_type == ContentType.INTERACTIVE
+    assert result.quality.status == ArticleStatus.PARTIAL
+    assert "body-too-short" in result.quality.warnings
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.2"
+
+
+def test_aljazeera_parser_extracts_migrated_gallery_figures():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Gallery: Haiti survivors struggle">
+          <meta property="article:published_time" content="2010-01-23T00:00:00Z">
+        </head><body>
+          <div class="gallery-content wysiwyg wysiwyg--all-content"></div>
+          <div class="gallery-images">
+            <figure class="gallery-image">
+              <img src="/wp-content/uploads/2010/01/haiti-1.jpeg"
+                   alt="Haiti survivors gather outside">
+              <figcaption>Survivors gather after the earthquake [Reuters]</figcaption>
+            </figure>
+            <figure class="gallery-image">
+              <img src="/wp-content/uploads/2010/01/haiti-2.jpeg"
+                   alt="Aid reaches the capital">
+              <figcaption>Aid reaches Port-au-Prince [Reuters]</figcaption>
+            </figure>
+          </div>
+        </body></html>
+        """,
+        publisher="aljazeera",
+        canonical_url=(
+            "https://www.aljazeera.com/gallery/2010/1/23/"
+            "gallery-haiti-survivors-struggle"
+        ),
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert len(result.images) == 2
+    assert [block.type for block in result.blocks] == [
+        BlockType.IMAGE,
+        BlockType.IMAGE,
+    ]
+    assert result.images[0].caption == (
+        "Survivors gather after the earthquake [Reuters]"
+    )
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.2"

@@ -277,6 +277,14 @@ def parse_article(
             structured_image_gallery_selected = True
     if body is None:
         body = _select_body(soup, spec)
+    if spec.publisher == "aljazeera":
+        gallery_body = _aljazeera_gallery_body(
+            soup,
+            canonical_url=canonical_url,
+        )
+        if gallery_body is not None:
+            body = gallery_body
+            structured_image_gallery_selected = True
     if spec.publisher == "npr":
         legacy_interactive = (
             _npr_legacy_election_results_body(
@@ -992,6 +1000,13 @@ def parse_article(
     )
     body_html = _inner_html(clean_body)
     images = list(images_by_url.values())
+    if spec.publisher == "aljazeera":
+        content_type = _aljazeera_body_content_type(
+            default=content_type,
+            headline=headline,
+            plain_text=plain_text,
+            blocks=blocks,
+        )
     if (
         spec.publisher == "ft"
         and content_type == ContentType.ARTICLE
@@ -1092,6 +1107,12 @@ def parse_article(
         if (
             spec.publisher == "wsj"
             and content_type == ContentType.ARTICLE
+        )
+        else 500
+        if (
+            spec.publisher == "aljazeera"
+            and content_type
+            in {ContentType.ARTICLE, ContentType.INTERACTIVE}
         )
         else _MINIMUM_BODY_CHARACTERS
     )
@@ -6483,6 +6504,65 @@ def _axios_embedded_content_type(body: Tag) -> ContentType | None:
     return ContentType.INTERACTIVE
 
 
+def _aljazeera_body_content_type(
+    *,
+    default: ContentType,
+    headline: str | None,
+    plain_text: str,
+    blocks: list[ContentBlock],
+) -> ContentType:
+    """Classify short Al Jazeera media reports after blocks are available.
+
+    Migrated legacy video reports retain an iframe and only a short written
+    synopsis, while migrated timeline packages may retain only an intro.  The
+    generic JSON-LD on both page shapes still says ``NewsArticle``.
+    """
+
+    if default != ContentType.ARTICLE:
+        return default
+    normalized_headline = _clean_text(headline or "").casefold()
+    if normalized_headline.startswith("timeline:") and len(plain_text) < 500:
+        return ContentType.INTERACTIVE
+    if len(plain_text) >= 1_000:
+        return default
+    video_embed_markers = (
+        "youtube.com/",
+        "youtu.be/",
+        "vimeo.com/",
+        "dailymotion.com/",
+        "brightcove.net/",
+        "jwplatform.com/",
+    )
+    if any(
+        block.type == BlockType.EMBED
+        and block.embed_url
+        and any(
+            marker in block.embed_url.casefold()
+            for marker in video_embed_markers
+        )
+        for block in blocks
+    ):
+        return ContentType.VIDEO
+    return default
+
+
+def _aljazeera_gallery_body(
+    soup: BeautifulSoup,
+    *,
+    canonical_url: str,
+) -> Tag | None:
+    """Select migrated Al Jazeera gallery figures over an empty text shell."""
+
+    if "/gallery/" not in canonical_url.casefold():
+        return None
+    candidate = soup.select_one(".gallery-images")
+    if not isinstance(candidate, Tag):
+        return None
+    if len(candidate.select("figure img[src]")) < 2:
+        return None
+    return candidate
+
+
 def _npr_audio_story_nodes(soup: BeautifulSoup) -> list[Tag]:
     """Return story-level players without matching NPR's global live audio."""
     result: list[Tag] = []
@@ -11797,6 +11877,12 @@ def _has_selected_ancestor(node: Tag, body: BeautifulSoup) -> bool:
     }
     parent = node.parent
     while isinstance(parent, Tag) and parent is not body:
+        if node.name == "iframe" and parent.name in {"p", "pre"}:
+            # Some migrated CMS pages emit invalid ``<p><div><iframe>``
+            # markup.  Keep the media block even though its paragraph shell
+            # is also a selected block; the shell has no textual payload.
+            parent = parent.parent
+            continue
         if (
             parent.name == "figure"
             and parent.select_one("img") is None
