@@ -18,6 +18,7 @@ from jojo_olds_api.common_crawl_prefix_manifest import (
     next_prefix_query,
     prefix_patterns,
     prefix_summary,
+    process_prefix_date_hydration,
     record_prefix_page,
     record_prefix_page_count,
     reconcile_prefix_year_targets,
@@ -42,6 +43,9 @@ CANONICAL_URL = (
     "https://www.npr.org/2010/03/06/124385712/"
     "actor-tony-shalhoub-plays-not-my-job"
 )
+NIKKEI_URL = (
+    "https://www.nikkei.com/article/DGXNASFE22044_X10C13A5TY5000"
+)
 
 
 def _collection(identifier: str = "CC-MAIN-2014-10") -> PrefixCollection:
@@ -64,6 +68,75 @@ def _index_row(timestamp: str, *, offset: int) -> dict[str, object]:
         "offset": str(offset),
         "filename": WARC_FILENAME,
     }
+
+
+def _nikkei_index_row(timestamp: str, *, length: int) -> dict[str, object]:
+    return {
+        "url": NIKKEI_URL + "/?n_cid=test",
+        "timestamp": timestamp,
+        "status": "200",
+        "mime": "text/html",
+        "digest": "nikkei-digest",
+        "length": str(length),
+        "offset": "500",
+        "filename": WARC_FILENAME,
+    }
+
+
+def _warc_record(target_url: str, content: bytes) -> bytes:
+    response = (
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Type: text/html; charset=utf-8\r\n"
+        + f"Content-Length: {len(content)}\r\n".encode()
+        + b"\r\n"
+        + content
+    )
+    record = (
+        b"WARC/1.0\r\n"
+        b"WARC-Type: response\r\n"
+        + f"WARC-Target-URI: {target_url}\r\n".encode()
+        + f"Content-Length: {len(response)}\r\n".encode()
+        + b"\r\n"
+        + response
+        + b"\r\n\r\n"
+    )
+    return gzip.compress(record, mtime=0)
+
+
+class _RangeClient:
+    def __init__(self, compressed: bytes) -> None:
+        self.compressed = compressed
+
+    def fetch_range(
+        self,
+        url: str,
+        *,
+        offset: int,
+        length: int,
+        maximum_bytes: int,
+    ) -> tuple[int, dict[str, str], bytes, str]:
+        assert offset == 500
+        assert length == len(self.compressed)
+        assert maximum_bytes == 25_000_000
+        return 206, {"content-type": "application/octet-stream"}, self.compressed, url
+
+
+class _MappedRangeClient:
+    def __init__(self, records: dict[int, bytes]) -> None:
+        self.records = records
+
+    def fetch_range(
+        self,
+        url: str,
+        *,
+        offset: int,
+        length: int,
+        maximum_bytes: int,
+    ) -> tuple[int, dict[str, str], bytes, str]:
+        compressed = self.records[offset]
+        assert length == len(compressed)
+        assert maximum_bytes == 25_000_000
+        return 206, {"content-type": "application/octet-stream"}, compressed, url
 
 
 def test_npr_prefix_patterns_include_www_and_bare_hosts():
@@ -334,6 +407,198 @@ def test_records_caps_and_exports_common_crawl_candidates(tmp_path: Path):
         for candidate in item.candidates
     )
     assert item.candidates[0].warc_length == 9000
+
+
+def test_hydrates_nikkei_publication_date_from_common_crawl_warc(
+    tmp_path: Path,
+):
+    body = "市場と企業の動きを詳しく分析する記事本文です。" * 40
+    html = f"""
+        <html><head>
+          <script type="application/ld+json">
+            {{"@type":"NewsArticle","headline":"日経テスト記事",
+              "datePublished":"2013-05-26T08:00:00+09:00"}}
+          </script>
+        </head><body><article><h1>日経テスト記事</h1><p>{body}</p></article></body></html>
+    """.encode()
+    compressed = _warc_record(NIKKEI_URL, html)
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("nikkei")
+    collection = _collection()
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2012,
+        to_year=2014,
+        collections=(collection,),
+    )
+    pattern = "www.nikkei.com/article/"
+    record_prefix_page_count(
+        connection,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        total_pages=1,
+    )
+    result = record_prefix_page(
+        connection,
+        spec=spec,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        page_number=0,
+        total_pages=1,
+        page=PrefixIndexPage(
+            rows=(
+                _nikkei_index_row(
+                    "20140830021036",
+                    length=len(compressed),
+                ),
+            )
+        ),
+    )
+
+    assert result == {
+        "seen": 1,
+        "accepted": 1,
+        "datedAccepted": 0,
+        "undatedAccepted": 1,
+        "complete": True,
+    }
+    before = prefix_summary(connection)
+    assert before["articlesByYear"] == {}
+    assert before["dateHydration"]["remaining"] == 1
+    assert before["shouldContinue"] is True
+
+    hydration = process_prefix_date_hydration(
+        connection,
+        spec=spec,
+        archive_client=_RangeClient(compressed),
+        maximum=1,
+    )
+
+    assert hydration == {
+        "attempted": 1,
+        "found": 1,
+        "outOfWindow": 0,
+        "noDate": 0,
+        "failed": 0,
+        "remaining": 0,
+        "errors": [],
+    }
+    after = prefix_summary(connection)
+    assert after["articlesByYear"] == {"2013": 1}
+    assert after["dateHydration"]["complete"] == 1
+    assert after["shouldContinue"] is False
+    destination = tmp_path / "nikkei.jsonl.gz"
+    export_prefix_manifest(
+        connection,
+        spec=spec,
+        destination=destination,
+    )
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        exported = json.loads(handle.readline())
+    assert exported["canonicalUrl"] == NIKKEI_URL
+    assert exported["publishedAt"] == "2013-05-26T08:00:00+09:00"
+    assert exported["candidates"][0]["provider"] == "commoncrawl"
+
+
+def test_new_nikkei_candidate_reopens_a_prior_no_date_result():
+    body = "企業の動きを伝える日経記事の本文です。" * 40
+    no_date_html = (
+        f"<html><body><article><h1>日経記事</h1><p>{body}</p>"
+        "</article></body></html>"
+    ).encode()
+    dated_html = f"""
+        <html><head><meta property="article:published_time"
+          content="2013-05-26T08:00:00+09:00"></head>
+        <body><article><h1>日経記事</h1><p>{body}</p></article></body></html>
+    """.encode()
+    first_record = _warc_record(NIKKEI_URL, no_date_html)
+    second_record = _warc_record(NIKKEI_URL, dated_html)
+    records = {500: first_record, 501: second_record}
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("nikkei")
+    first = _collection("CC-MAIN-2014-10")
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2012,
+        to_year=2014,
+        collections=(first,),
+    )
+    pattern = "www.nikkei.com/article/"
+    record_prefix_page_count(
+        connection,
+        collection_id=first.identifier,
+        pattern=pattern,
+        total_pages=1,
+    )
+    record_prefix_page(
+        connection,
+        spec=spec,
+        collection_id=first.identifier,
+        pattern=pattern,
+        page_number=0,
+        total_pages=1,
+        page=PrefixIndexPage(
+            rows=(
+                _nikkei_index_row(
+                    "20140307033634",
+                    length=len(first_record),
+                ),
+            )
+        ),
+    )
+    first_hydration = process_prefix_date_hydration(
+        connection,
+        spec=spec,
+        archive_client=_MappedRangeClient(records),
+        maximum=1,
+    )
+    assert first_hydration["noDate"] == 1
+    assert prefix_summary(connection)["shouldContinue"] is False
+
+    second = _collection("CC-MAIN-2014-11")
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2012,
+        to_year=2014,
+        collections=(first, second),
+    )
+    record_prefix_page_count(
+        connection,
+        collection_id=second.identifier,
+        pattern=pattern,
+        total_pages=1,
+    )
+    second_row = {
+        **_nikkei_index_row(
+            "20140407033634",
+            length=len(second_record),
+        ),
+        "offset": "501",
+        "digest": "nikkei-digest-2",
+    }
+    record_prefix_page(
+        connection,
+        spec=spec,
+        collection_id=second.identifier,
+        pattern=pattern,
+        page_number=0,
+        total_pages=1,
+        page=PrefixIndexPage(rows=(second_row,)),
+    )
+
+    assert prefix_summary(connection)["dateHydration"]["remaining"] == 1
+    second_hydration = process_prefix_date_hydration(
+        connection,
+        spec=spec,
+        archive_client=_MappedRangeClient(records),
+        maximum=1,
+    )
+
+    assert second_hydration["found"] == 1
+    assert prefix_summary(connection)["articlesByYear"] == {"2013": 1}
 
 
 def test_prefix_client_uses_page_count_then_ndjson_page():

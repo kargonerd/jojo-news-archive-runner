@@ -18,11 +18,19 @@ from .common_crawl import (
     COLLECTION_INFO_URL,
     DATA_BASE_URL,
     MAXIMUM_COMPRESSED_WARC_BYTES,
+    CommonCrawlClient,
+    fetch_common_crawl_candidate,
 )
-from .wayback_manifest import candidate_rank, infer_published_at
+from .news_models import CaptureCandidate, CaptureProvider
+from .news_parser import parse_article
+from .wayback_manifest import (
+    ARCHIVED_DATE_HYDRATION_PUBLISHERS,
+    candidate_rank,
+    infer_published_at,
+)
 
 
-SCHEMA_VERSION = "jojo-common-crawl-prefix-discovery/1"
+SCHEMA_VERSION = "jojo-common-crawl-prefix-discovery/2"
 MANIFEST_FORMAT_VERSION = "jojo-capture-manifest/1"
 RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
 
@@ -281,6 +289,44 @@ def initialize_prefix_schema(
 
         CREATE INDEX IF NOT EXISTS idx_prefix_candidates_rank
             ON prefix_candidates(canonical_url, rank_score, timestamp);
+
+        CREATE TABLE IF NOT EXISTS prefix_undated_candidates (
+            canonical_url TEXT NOT NULL,
+            collection_id TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            original_url TEXT NOT NULL,
+            digest TEXT NOT NULL DEFAULT '',
+            mimetype TEXT NOT NULL,
+            status_code INTEGER NOT NULL,
+            byte_count INTEGER NOT NULL,
+            warc_filename TEXT NOT NULL,
+            warc_offset INTEGER NOT NULL,
+            warc_length INTEGER NOT NULL,
+            rank_score INTEGER NOT NULL,
+            PRIMARY KEY(canonical_url, warc_filename, warc_offset)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_prefix_undated_candidates_rank
+            ON prefix_undated_candidates(
+                canonical_url, rank_score, timestamp
+            );
+
+        CREATE TABLE IF NOT EXISTS prefix_date_hydration (
+            canonical_url TEXT PRIMARY KEY,
+            publisher TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            published_at TEXT,
+            parser_status TEXT,
+            body_characters INTEGER,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_prefix_date_hydration_status
+            ON prefix_date_hydration(
+                publisher, status, attempts, updated_at
+            );
         """
     )
     fingerprint = _fingerprint(
@@ -488,14 +534,24 @@ def record_prefix_page(
     )
     start = f"{int(window['from_year']):04d}-01-01"
     end = f"{int(window['to_year']) + 1:04d}-01-01"
-    rows: list[tuple[object, ...]] = []
-    touched_urls: set[str] = set()
+    dated_rows: list[tuple[object, ...]] = []
+    undated_rows: list[tuple[object, ...]] = []
+    dated_urls: set[str] = set()
+    undated_urls: set[str] = set()
     for value in page.rows:
         original_url = str(value.get("url") or "").strip()
         canonical_url = normalize_article_url(spec, original_url)
         if canonical_url is None:
             continue
         published_at = infer_published_at(canonical_url)
+        if published_at is None:
+            existing_date = connection.execute(
+                "SELECT published_at FROM prefix_candidates "
+                "WHERE canonical_url=? LIMIT 1",
+                (canonical_url,),
+            ).fetchone()
+            if existing_date is not None:
+                published_at = str(existing_date[0])
         timestamp = str(value.get("timestamp") or "").strip()
         captured_at = _parse_crawl_timestamp(timestamp)
         status_code = _optional_int(value.get("status"))
@@ -504,9 +560,7 @@ def record_prefix_page(
         warc_offset = _optional_int(value.get("offset"))
         warc_filename = str(value.get("filename") or "").strip()
         if (
-            published_at is None
-            or not start <= published_at < end
-            or captured_at is None
+            captured_at is None
             or status_code != 200
             or mimetype.casefold() != "text/html"
             or byte_count is None
@@ -516,25 +570,47 @@ def record_prefix_page(
             or not warc_filename.startswith("crawl-data/")
         ):
             continue
-        rows.append(
-            (
-                canonical_url,
-                published_at,
-                collection_id,
-                timestamp,
-                original_url,
-                str(value.get("digest") or ""),
-                mimetype,
-                status_code,
-                byte_count,
-                warc_filename,
-                warc_offset,
-                byte_count,
-                candidate_rank(timestamp, published_at=published_at),
-            )
+        common_values = (
+            canonical_url,
+            collection_id,
+            timestamp,
+            original_url,
+            str(value.get("digest") or ""),
+            mimetype,
+            status_code,
+            byte_count,
+            warc_filename,
+            warc_offset,
+            byte_count,
         )
-        touched_urls.add(canonical_url)
+        if published_at is not None:
+            if not start <= published_at < end:
+                continue
+            dated_rows.append(
+                (
+                    canonical_url,
+                    published_at,
+                    *common_values[1:],
+                    candidate_rank(timestamp, published_at=published_at),
+                )
+            )
+            dated_urls.add(canonical_url)
+        elif spec.publisher in ARCHIVED_DATE_HYDRATION_PUBLISHERS:
+            undated_rows.append(
+                (*common_values, candidate_rank(timestamp, published_at=None))
+            )
+            undated_urls.add(canonical_url)
     with connection:
+        undated_counts_before = {
+            canonical_url: int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM prefix_undated_candidates "
+                    "WHERE canonical_url=?",
+                    (canonical_url,),
+                ).fetchone()[0]
+            )
+            for canonical_url in undated_urls
+        }
         before = connection.total_changes
         connection.executemany(
             """
@@ -544,30 +620,68 @@ def record_prefix_page(
                 warc_filename, warc_offset, warc_length, rank_score
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            rows,
+            dated_rows,
         )
-        accepted = connection.total_changes - before
-        if touched_urls:
-            placeholders = ",".join("?" for _ in touched_urls)
+        dated_accepted = connection.total_changes - before
+        before = connection.total_changes
+        connection.executemany(
+            """
+            INSERT OR IGNORE INTO prefix_undated_candidates(
+                canonical_url, collection_id, timestamp, original_url,
+                digest, mimetype, status_code, byte_count, warc_filename,
+                warc_offset, warc_length, rank_score
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            undated_rows,
+        )
+        undated_accepted = connection.total_changes - before
+        connection.executemany(
+            """
+            INSERT OR IGNORE INTO prefix_date_hydration(
+                canonical_url, publisher, updated_at
+            ) VALUES (?, ?, ?)
+            """,
+            (
+                (canonical_url, spec.publisher, _now_iso())
+                for canonical_url in sorted(undated_urls)
+            ),
+        )
+        newly_expanded_urls = {
+            canonical_url
+            for canonical_url, prior_count in undated_counts_before.items()
+            if int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM prefix_undated_candidates "
+                    "WHERE canonical_url=?",
+                    (canonical_url,),
+                ).fetchone()[0]
+            )
+            > prior_count
+        }
+        if newly_expanded_urls:
+            placeholders = ",".join("?" for _ in newly_expanded_urls)
             connection.execute(
                 f"""
-                DELETE FROM prefix_candidates
-                WHERE rowid IN (
-                    SELECT rowid FROM (
-                        SELECT rowid,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY canonical_url
-                                ORDER BY rank_score, timestamp,
-                                         collection_id, warc_filename,
-                                         warc_offset
-                            ) AS candidate_number
-                        FROM prefix_candidates
-                        WHERE canonical_url IN ({placeholders})
-                    ) WHERE candidate_number > 3
-                )
+                UPDATE prefix_date_hydration
+                SET status='pending', attempts=0, last_error=NULL,
+                    updated_at=?
+                WHERE canonical_url IN ({placeholders})
+                  AND status IN ('no-date', 'failed')
                 """,
-                sorted(touched_urls),
+                (_now_iso(), *sorted(newly_expanded_urls)),
             )
+        _trim_prefix_candidates(
+            connection,
+            table="prefix_candidates",
+            canonical_urls=dated_urls,
+        )
+        _trim_prefix_candidates(
+            connection,
+            table="prefix_undated_candidates",
+            canonical_urls=undated_urls,
+            maximum=9,
+        )
+        accepted = dated_accepted + undated_accepted
         next_page = page_number + 1
         connection.execute(
             """
@@ -587,10 +701,299 @@ def record_prefix_page(
                 pattern,
             ),
         )
-    return {
+    result: dict[str, int | bool] = {
         "seen": len(page.rows),
         "accepted": accepted,
         "complete": next_page >= total_pages,
+    }
+    if undated_accepted:
+        result["datedAccepted"] = dated_accepted
+        result["undatedAccepted"] = undated_accepted
+    return result
+
+
+def _trim_prefix_candidates(
+    connection: sqlite3.Connection,
+    *,
+    table: str,
+    canonical_urls: set[str],
+    maximum: int = 3,
+) -> None:
+    if table not in {"prefix_candidates", "prefix_undated_candidates"}:
+        raise ValueError("unsupported Common Crawl candidate table")
+    if not canonical_urls:
+        return
+    if maximum < 1:
+        raise ValueError("candidate maximum must be positive")
+    placeholders = ",".join("?" for _ in canonical_urls)
+    connection.execute(
+        f"""
+        DELETE FROM {table}
+        WHERE rowid IN (
+            SELECT rowid FROM (
+                SELECT rowid,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY canonical_url
+                        ORDER BY rank_score, timestamp,
+                                 collection_id, warc_filename, warc_offset
+                    ) AS candidate_number
+                FROM {table}
+                WHERE canonical_url IN ({placeholders})
+            ) WHERE candidate_number > ?
+        )
+        """,
+        (*sorted(canonical_urls), maximum),
+    )
+
+
+def process_prefix_date_hydration(
+    connection: sqlite3.Connection,
+    *,
+    spec: ArchiveSourceSpec,
+    archive_client: CommonCrawlClient,
+    maximum: int,
+    maximum_html_bytes: int = 15_000_000,
+    maximum_attempts: int = 3,
+) -> dict[str, object]:
+    """Recover publication dates for canonical URLs without a date key."""
+    if spec.publisher not in ARCHIVED_DATE_HYDRATION_PUBLISHERS:
+        raise ValueError(
+            "Common Crawl date hydration is not supported for "
+            f"{spec.publisher!r}"
+        )
+    if maximum < 1 or maximum_html_bytes < 1 or maximum_attempts < 1:
+        raise ValueError("hydration limits must be positive")
+    rows = connection.execute(
+        """
+        SELECT canonical_url, attempts
+        FROM prefix_date_hydration
+        WHERE publisher=?
+          AND status IN ('pending', 'retry')
+          AND attempts < ?
+        ORDER BY attempts, updated_at, canonical_url
+        LIMIT ?
+        """,
+        (spec.publisher, maximum_attempts, maximum),
+    ).fetchall()
+    window = dict(
+        connection.execute(
+            """
+            SELECT key, value FROM prefix_metadata
+            WHERE key IN ('from_year', 'to_year')
+            """
+        )
+    )
+    start = f"{int(window['from_year']):04d}-01-01"
+    end = f"{int(window['to_year']) + 1:04d}-01-01"
+    found = 0
+    outside_window = 0
+    no_date = 0
+    failed = 0
+    errors: list[str] = []
+    for canonical_url_value, prior_attempts in rows:
+        canonical_url = str(canonical_url_value)
+        candidate_rows = connection.execute(
+            """
+            SELECT collection_id, timestamp, original_url, digest, mimetype,
+                   status_code, byte_count, warc_filename, warc_offset,
+                   warc_length
+            FROM prefix_undated_candidates
+            WHERE canonical_url=?
+            ORDER BY rank_score, timestamp, collection_id
+            LIMIT 3
+            OFFSET ?
+            """,
+            (canonical_url, int(prior_attempts) * 3),
+        ).fetchall()
+        published_at: str | None = None
+        parser_status: str | None = None
+        body_characters: int | None = None
+        successful_response = False
+        request_errors: list[str] = []
+        for candidate_row in candidate_rows:
+            captured_at = _parse_crawl_timestamp(str(candidate_row[1]))
+            if captured_at is None:
+                request_errors.append("ValueError: invalid crawl timestamp")
+                continue
+            candidate = CaptureCandidate(
+                provider=CaptureProvider.COMMON_CRAWL,
+                snapshot_url=DATA_BASE_URL + str(candidate_row[7]),
+                source_url=str(candidate_row[2]),
+                captured_at=captured_at,
+                digest=str(candidate_row[3]) or None,
+                mime_type=str(candidate_row[4]),
+                status_code=int(candidate_row[5]),
+                byte_count=int(candidate_row[6]),
+                warc_filename=str(candidate_row[7]),
+                warc_offset=int(candidate_row[8]),
+                warc_length=int(candidate_row[9]),
+            )
+            try:
+                status, _, content, _ = fetch_common_crawl_candidate(
+                    candidate,
+                    archive_client=archive_client,
+                    maximum_html_bytes=maximum_html_bytes,
+                )
+                if status != 200 or not content:
+                    raise ValueError(
+                        f"embedded Common Crawl response returned HTTP {status}"
+                    )
+                article = parse_article(
+                    content,
+                    publisher=spec.publisher,
+                    canonical_url=canonical_url,
+                )
+                successful_response = True
+                parser_status = article.quality.status.value
+                body_characters = article.quality.body_characters
+                if article.published_at is not None:
+                    published_at = article.published_at.isoformat()
+                    break
+            except Exception as exc:
+                request_errors.append(f"{type(exc).__name__}: {exc}")
+        attempts = int(prior_attempts) + 1
+        if published_at is not None and start <= published_at < end:
+            status = "complete"
+            error = None
+            found += 1
+        elif published_at is not None:
+            status = "out-of-window"
+            error = None
+            outside_window += 1
+        elif successful_response and not request_errors:
+            status = "no-date"
+            error = None
+            no_date += 1
+        elif attempts >= maximum_attempts:
+            status = "failed"
+            error = "; ".join(request_errors) or "no usable WARC response"
+            failed += 1
+        else:
+            status = "retry"
+            error = "; ".join(request_errors) or "no usable WARC response"
+        if error:
+            errors.append(f"{canonical_url}: {error}")
+        with connection:
+            connection.execute(
+                """
+                UPDATE prefix_date_hydration
+                SET status=?, attempts=?, published_at=?, parser_status=?,
+                    body_characters=?, last_error=?, updated_at=?
+                WHERE canonical_url=? AND publisher=?
+                """,
+                (
+                    status,
+                    attempts,
+                    published_at,
+                    parser_status,
+                    body_characters,
+                    error,
+                    _now_iso(),
+                    canonical_url,
+                    spec.publisher,
+                ),
+            )
+            if status == "complete" and published_at is not None:
+                _promote_undated_candidates(
+                    connection,
+                    canonical_url=canonical_url,
+                    published_at=published_at,
+                )
+    remaining = int(
+        connection.execute(
+            """
+            SELECT COUNT(*) FROM prefix_date_hydration
+            WHERE publisher=?
+              AND status IN ('pending', 'retry')
+              AND attempts < ?
+            """,
+            (spec.publisher, maximum_attempts),
+        ).fetchone()[0]
+    )
+    return {
+        "attempted": len(rows),
+        "found": found,
+        "outOfWindow": outside_window,
+        "noDate": no_date,
+        "failed": failed,
+        "remaining": remaining,
+        "errors": errors,
+    }
+
+
+def _promote_undated_candidates(
+    connection: sqlite3.Connection,
+    *,
+    canonical_url: str,
+    published_at: str,
+) -> None:
+    rows = connection.execute(
+        """
+        SELECT collection_id, timestamp, original_url, digest, mimetype,
+               status_code, byte_count, warc_filename, warc_offset,
+               warc_length
+        FROM prefix_undated_candidates
+        WHERE canonical_url=?
+        """,
+        (canonical_url,),
+    ).fetchall()
+    connection.executemany(
+        """
+        INSERT OR IGNORE INTO prefix_candidates(
+            canonical_url, published_at, collection_id, timestamp,
+            original_url, digest, mimetype, status_code, byte_count,
+            warc_filename, warc_offset, warc_length, rank_score
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            (
+                canonical_url,
+                published_at,
+                *row,
+                candidate_rank(str(row[1]), published_at=published_at),
+            )
+            for row in rows
+        ),
+    )
+    connection.execute(
+        "DELETE FROM prefix_undated_candidates WHERE canonical_url=?",
+        (canonical_url,),
+    )
+    _trim_prefix_candidates(
+        connection,
+        table="prefix_candidates",
+        canonical_urls={canonical_url},
+    )
+
+
+def prefix_date_hydration_summary(
+    connection: sqlite3.Connection,
+) -> dict[str, int] | None:
+    total = int(
+        connection.execute(
+            "SELECT COUNT(*) FROM prefix_date_hydration"
+        ).fetchone()[0]
+    )
+    if total == 0:
+        return None
+    row = connection.execute(
+        """
+        SELECT
+            SUM(status='complete'),
+            SUM(status='out-of-window'),
+            SUM(status='no-date'),
+            SUM(status='failed'),
+            SUM(status IN ('pending', 'retry') AND attempts < 3)
+        FROM prefix_date_hydration
+        """
+    ).fetchone()
+    return {
+        "total": total,
+        "complete": int(row[0] or 0),
+        "outOfWindow": int(row[1] or 0),
+        "noDate": int(row[2] or 0),
+        "failed": int(row[3] or 0),
+        "remaining": int(row[4] or 0),
     }
 
 
@@ -691,13 +1094,20 @@ def prefix_summary(connection: sqlite3.Connection) -> dict[str, object]:
             "WHERE status NOT IN ('complete', 'target-complete')"
         ).fetchone()[0]
     )
-    return {
+    hydration = prefix_date_hydration_summary(connection)
+    result: dict[str, object] = {
         "formatVersion": SCHEMA_VERSION,
         "queryStatus": query_status,
         "articlesByYear": years,
         "queriesRemaining": remaining,
-        "shouldContinue": remaining > 0,
+        "shouldContinue": (
+            remaining > 0
+            or bool(hydration and hydration["remaining"] > 0)
+        ),
     }
+    if hydration is not None:
+        result["dateHydration"] = hydration
+    return result
 
 
 def _query_parameters(

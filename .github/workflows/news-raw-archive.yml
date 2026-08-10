@@ -374,10 +374,12 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
-      - name: Merge NPR or Axios Common Crawl supplemental manifest
+      - name: Merge NPR, Axios, or Nikkei Common Crawl supplemental manifest
         if: >-
           ${{
-            (inputs.publisher == 'npr' || inputs.publisher == 'axios') &&
+            (inputs.publisher == 'npr' ||
+             inputs.publisher == 'axios' ||
+             inputs.publisher == 'nikkei') &&
             inputs.manifest_mode == 'wayback-urlkey'
           }}
         shell: bash

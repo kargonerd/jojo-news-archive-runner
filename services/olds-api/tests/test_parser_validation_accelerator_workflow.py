@@ -178,6 +178,20 @@ def test_accelerator_merges_axios_common_crawl_supplemental_manifest() -> None:
         "news-archive/v1/axios/${source_window}/commoncrawl-prefix"
         in workflow
     )
+
+
+def test_accelerator_merges_nikkei_common_crawl_supplemental_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "nikkei" ]; then' in workflow
+    assert (
+        "news-archive/v1/nikkei/${source_window}/commoncrawl-prefix"
+        in workflow
+    )
+    assert (
+        '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz"'
+        in workflow
+    )
     assert (
         '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz"'
         in workflow

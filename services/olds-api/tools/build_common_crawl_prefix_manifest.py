@@ -13,12 +13,14 @@ if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
 from jojo_olds_api.archive_sources import ArchiveSourceSpec, archive_source_spec
+from jojo_olds_api.bloomberg_archive_download import ArchiveClient
 from jojo_olds_api.common_crawl_prefix_manifest import (
     CommonCrawlPrefixClient,
     export_prefix_manifest,
     initialize_prefix_schema,
     next_prefix_query,
     prefix_summary,
+    process_prefix_date_hydration,
     record_prefix_error,
     record_prefix_page,
     record_prefix_page_count,
@@ -37,6 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--from-year", type=int, required=True)
     parser.add_argument("--to-year", type=int, required=True)
     parser.add_argument("--collection-from-year", type=int, default=2012)
+    parser.add_argument("--collection-to-year", type=int)
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-pages", type=int, default=10)
@@ -62,6 +65,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=45.0)
     parser.add_argument("--attempts", type=int, default=4)
     parser.add_argument(
+        "--max-date-hydrations",
+        type=int,
+        default=0,
+        help=(
+            "Maximum WARC pages used to recover publication dates for URL "
+            "families whose canonical keys do not contain a date."
+        ),
+    )
+    parser.add_argument("--data-min-request-interval", type=float, default=0.5)
+    parser.add_argument("--maximum-html-bytes", type=int, default=15_000_000)
+    parser.add_argument(
         "--page-size",
         type=int,
         help=(
@@ -82,6 +96,7 @@ def initialize_with_collection_refresh(
     from_year: int,
     to_year: int,
     collection_from_year: int,
+    collection_to_year: int | None = None,
 ) -> dict[str, object]:
     """Refresh Common Crawl indexes without stranding a saved checkpoint."""
     initialize_prefix_schema(
@@ -96,6 +111,10 @@ def initialize_with_collection_refresh(
             collection
             for collection in client.collections()
             if collection.to_at.year >= collection_from_year
+            and (
+                collection_to_year is None
+                or collection.from_at.year <= collection_to_year
+            )
             and collection.from_at <= datetime.now(timezone.utc)
         )
     except (RuntimeError, ValueError) as exc:
@@ -139,6 +158,19 @@ def main() -> int:
         raise SystemExit(
             "--max-pages, --max-queries, and --max-errors must be positive"
         )
+    if args.max_date_hydrations < 0:
+        raise SystemExit("--max-date-hydrations must not be negative")
+    if args.data_min_request_interval < 0:
+        raise SystemExit("--data-min-request-interval must not be negative")
+    if args.maximum_html_bytes < 1:
+        raise SystemExit("--maximum-html-bytes must be positive")
+    if (
+        args.collection_to_year is not None
+        and args.collection_from_year > args.collection_to_year
+    ):
+        raise SystemExit(
+            "--collection-from-year must not exceed --collection-to-year"
+        )
     if args.page_size is not None and args.page_size < 1:
         raise SystemExit("--page-size must be positive")
     if (
@@ -159,6 +191,7 @@ def main() -> int:
     queries = 0
     advances = 0
     errors = 0
+    archive_client: ArchiveClient | None = None
     try:
         collection_refresh = initialize_with_collection_refresh(
             connection,
@@ -167,6 +200,7 @@ def main() -> int:
             from_year=args.from_year,
             to_year=args.to_year,
             collection_from_year=args.collection_from_year,
+            collection_to_year=args.collection_to_year,
         )
         queries_completed_by_target = reconcile_prefix_year_targets(
             connection,
@@ -251,6 +285,20 @@ def main() -> int:
                     ),
                     flush=True,
                 )
+        hydration = None
+        if args.max_date_hydrations:
+            archive_client = ArchiveClient(
+                timeout=args.timeout,
+                minimum_interval=args.data_min_request_interval,
+                attempts=args.attempts,
+            )
+            hydration = process_prefix_date_hydration(
+                connection,
+                spec=spec,
+                archive_client=archive_client,
+                maximum=args.max_date_hydrations,
+                maximum_html_bytes=args.maximum_html_bytes,
+            )
         manifest = export_prefix_manifest(
             connection,
             spec=spec,
@@ -267,6 +315,7 @@ def main() -> int:
             "targetArticlesPerYear": args.target_articles_per_year,
             "errorsThisRun": errors,
             "collectionRefresh": collection_refresh,
+            **({"dateHydrationThisRun": hydration} if hydration else {}),
             "manifest": manifest,
         }
         if args.summary is not None:
@@ -285,10 +334,16 @@ def main() -> int:
                 handle.write(f"queries={queries}\n")
                 handle.write(f"advances={advances}\n")
                 handle.write(f"errors={errors}\n")
+                handle.write(
+                    "hydration_attempted="
+                    f"{hydration['attempted'] if hydration else 0}\n"
+                )
         return 0
     finally:
         connection.close()
         client.close()
+        if archive_client is not None:
+            archive_client.close()
 
 
 if __name__ == "__main__":
