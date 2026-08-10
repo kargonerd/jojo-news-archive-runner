@@ -81,6 +81,7 @@ jobs:
           # formal validation stores only its selected canonical raw samples,
           # while catalog discovery itself stays compact and resumable.
           queue='[
+            {"publisher":"wsj","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"30","runner":"ubuntu-latest"},
             {"publisher":"wsj","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"30","runner":"ubuntu-latest"},
             {"publisher":"nikkei","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"30","runner":"ubuntu-latest"},
             {"publisher":"scmp","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"30","runner":"ubuntu-latest"},

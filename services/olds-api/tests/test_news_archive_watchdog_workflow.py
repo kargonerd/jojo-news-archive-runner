@@ -33,7 +33,11 @@ def test_archive_watchdog_is_catalog_only_and_skips_complete_shards() -> None:
 def test_archive_watchdog_prioritizes_required_legacy_catalogs() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    wsj = workflow.index(
+    current_wsj = workflow.index(
+        '{"publisher":"wsj","fromYear":"2016","toYear":"2026",'
+        '"mode":"wayback-urlkey"'
+    )
+    legacy_wsj = workflow.index(
         '{"publisher":"wsj","fromYear":"2010","toYear":"2015"'
     )
     nikkei = workflow.index(
@@ -42,7 +46,7 @@ def test_archive_watchdog_prioritizes_required_legacy_catalogs() -> None:
     scmp = workflow.index(
         '{"publisher":"scmp","fromYear":"2010","toYear":"2015"'
     )
-    assert wsj < nikkei < scmp
+    assert current_wsj < legacy_wsj < nikkei < scmp
     assert '"publisher":"zaobao"' in workflow
     assert '"publisher":"aljazeera"' in workflow
     assert '"publisher":"caixin"' in workflow
