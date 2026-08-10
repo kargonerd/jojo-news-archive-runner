@@ -133,6 +133,7 @@ def plan_validation_dispatch(
             "evaluated": 0,
             "replayableEvaluated": 0,
             "eligibleCandidates": None,
+            "eligibleCandidateUpperBound": None,
             "target": MINIMUM_SAMPLES,
             "completeRate": 0.0,
             "qaPassRate": 0.0,
@@ -282,6 +283,15 @@ def plan_validation_dispatch(
                 publisher=publisher,
                 year=year,
             )
+        if cell["eligibleCandidates"] is None:
+            cell["eligibleCandidateUpperBound"] = (
+                _eligible_candidate_upper_bound(
+                    publisher=publisher,
+                    year=year,
+                    observed_rows=observed_rows,
+                    source_year_capacities=source_year_capacities,
+                )
+            )
         cell["requiredCohort"] = required_cohort
         cell["selectedCohort"] = selected_cohort
 
@@ -301,8 +311,9 @@ def plan_validation_dispatch(
     capacity_deficient_cells = {
         cell
         for cell, values in progress.items()
-        if values["eligibleCandidates"] is not None
-        and int(values["eligibleCandidates"]) < int(values["target"])
+        if _effective_candidate_capacity(values) is not None
+        and int(_effective_candidate_capacity(values))
+        < int(values["target"])
         and int(values["evaluated"]) < int(values["target"])
     }
     candidates = [
@@ -349,6 +360,9 @@ def plan_validation_dispatch(
             "eligibleCandidates": progress[(publisher, year)][
                 "eligibleCandidates"
             ],
+            "eligibleCandidateUpperBound": progress[(publisher, year)][
+                "eligibleCandidateUpperBound"
+            ],
             "completeRate": float(
                 progress[(publisher, year)]["completeRate"]
             ),
@@ -387,6 +401,65 @@ def plan_validation_dispatch(
         "cellProgress": cell_progress,
         "tasks": tasks,
     }
+
+
+def _effective_candidate_capacity(
+    cell: Mapping[str, object],
+) -> int | None:
+    exact = cell.get("eligibleCandidates")
+    if exact is not None:
+        return int(exact)
+    upper_bound = cell.get("eligibleCandidateUpperBound")
+    return None if upper_bound is None else int(upper_bound)
+
+
+def _eligible_candidate_upper_bound(
+    *,
+    publisher: str,
+    year: int,
+    observed_rows: list[object],
+    source_year_capacities: Mapping[str, Mapping[int, int]] | None,
+) -> int | None:
+    if source_year_capacities is None:
+        return None
+    try:
+        source_shard = parser_source_manifest_shard(publisher, year)
+    except ValueError:
+        return None
+    year_counts = source_year_capacities.get(source_shard)
+    if year_counts is None or year not in year_counts:
+        return None
+    current_manifest_capacity = int(year_counts[year])
+    evidence: list[tuple[int, int, int]] = []
+    for item in observed_rows:
+        if not isinstance(item, dict):
+            continue
+        cohort = item.get("cohort")
+        row = item.get("row")
+        if not isinstance(cohort, str) or not isinstance(row, dict):
+            continue
+        if (
+            "eligibleCandidates" not in row
+            or "excludedCandidates" not in row
+        ):
+            continue
+        eligible = _integer(row.get("eligibleCandidates"))
+        excluded = _integer(row.get("excludedCandidates"))
+        observed_capacity = eligible + excluded
+        growth = max(0, current_manifest_capacity - observed_capacity)
+        cohort_number = _cohort_number(cohort)
+        evidence.append(
+            (
+                cohort_number if cohort_number is not None else 0,
+                _integer(row.get("evaluated")),
+                eligible + growth,
+            )
+        )
+    if not evidence:
+        return None
+    # The newest cohort has the broadest exclusion union. Within the same
+    # cohort, prefer its most advanced checkpoint.
+    return max(evidence, key=lambda item: (item[0], item[1]))[2]
 
 
 def _publisher_from_summary_path(
