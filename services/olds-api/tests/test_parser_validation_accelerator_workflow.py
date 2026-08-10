@@ -23,7 +23,7 @@ def test_accelerator_uses_every_available_prior_holdout_exclusion() -> None:
     assert "break" not in exclusion_section
 
 
-def test_accelerator_uses_legacy_validation_state_as_bounded_exclusion() -> None:
+def test_accelerator_uses_all_original_validation_states_as_exclusions() -> None:
     workflow = _workflow_text()
     restore_section = workflow[
         workflow.index("Restore filtered manifest and validation checkpoint")
@@ -32,8 +32,24 @@ def test_accelerator_uses_legacy_validation_state_as_bounded_exclusion() -> None
         )
     ]
 
+    assert (
+        '"$RUNNER_TEMP/exclusion-validation-v2.sqlite3.gz"'
+        in restore_section
+    )
     assert '"${SOURCE_ROOT}/state/capture.sqlite3.gz"' in restore_section
+    assert (
+        '"$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz"'
+        in restore_section
+    )
     assert '"${LEGACY_SOURCE_ROOT}/state/capture.sqlite3.gz"' in restore_section
+    assert (
+        '"$RUNNER_TEMP/exclusion-validation-legacy.sqlite3.gz"'
+        in restore_section
+    )
+    assert (
+        'if [ ! -f "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" ]'
+        not in restore_section
+    )
     import_section = workflow[
         workflow.index("Import original-cohort exclusions")
         : workflow.index("Seed validation from source archive")

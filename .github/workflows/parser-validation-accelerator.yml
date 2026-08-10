@@ -350,31 +350,41 @@ jobs:
           fi
           if [[ "$COHORT" =~ ^holdout-v([1-9][0-9]*)$ ]]; then
             cohort_number="${BASH_REMATCH[1]}"
+            # Import every place an original validation cohort may have lived.
+            # A newer v2 placeholder can legitimately exist with zero samples;
+            # it must not suppress the older v1 source checkpoint containing
+            # the samples that this holdout is required to exclude.
             restore_if_present \
               "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v2/validation-state/validation/${PUBLISHER}/${SAMPLE_YEAR}/state/capture.sqlite3.gz" \
+              "$RUNNER_TEMP/exclusion-validation-v2.sqlite3.gz"
+            # Older formal validation cohorts lived in the canonical v1
+            # source checkpoint before execution state moved to v2. They
+            # remain mandatory exclusions; otherwise a holdout can silently
+            # reuse the exact samples it is meant to independently test.
+            restore_if_present \
+              "${SOURCE_ROOT}/state/capture.sqlite3.gz" \
               "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz"
-            if [ ! -f "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" ]; then
-              # Older formal validation cohorts lived in the canonical v1
-              # source checkpoint before execution state moved to v2. They
-              # remain mandatory exclusions; otherwise a holdout can silently
-              # reuse the exact samples it is meant to independently test.
-              restore_if_present \
-                "${SOURCE_ROOT}/state/capture.sqlite3.gz" \
-                "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz"
-            fi
-            if [ ! -f "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" ] && \
-               [ -n "$LEGACY_SOURCE_ROOT" ]; then
+            if [ -n "$LEGACY_SOURCE_ROOT" ]; then
               restore_if_present \
                 "${LEGACY_SOURCE_ROOT}/state/capture.sqlite3.gz" \
-                "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz"
+                "$RUNNER_TEMP/exclusion-validation-legacy.sqlite3.gz"
             fi
-            if [ -f "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" ]; then
-              gzip -dc "$RUNNER_TEMP/exclusion-validation-v1.sqlite3.gz" \
-                > "$RUNNER_TEMP/exclusion-validation-v1.sqlite3"
-            elif [ "$SAMPLE_YEAR" -ge 2016 ]; then
+            shopt -s nullglob
+            original_exclusion_gzips=(
+              "$RUNNER_TEMP"/exclusion-validation-*.sqlite3.gz
+            )
+            for exclusion_gzip in "${original_exclusion_gzips[@]}"; do
+              gzip -dc "$exclusion_gzip" \
+                > "${exclusion_gzip%.gz}"
+            done
+            original_exclusion_states=(
+              "$RUNNER_TEMP"/exclusion-validation-*.sqlite3
+            )
+            if [ "${#original_exclusion_states[@]}" -eq 0 ] && \
+               [ "$SAMPLE_YEAR" -ge 2016 ]; then
               echo "Original validation state required for 2016+ disjoint holdout." >&2
               exit 1
-            else
+            elif [ "${#original_exclusion_states[@]}" -eq 0 ]; then
               echo "::notice::No original validation state exists for this pre-2016 cell."
             fi
             if [ "$cohort_number" -gt 1 ]; then
