@@ -20,6 +20,7 @@ from jojo_olds_api.common_crawl_prefix_manifest import (
     prefix_summary,
     record_prefix_page,
     record_prefix_page_count,
+    reconcile_prefix_year_targets,
 )
 from jojo_olds_api.news_models import CaptureProvider
 from jojo_olds_api.raw_archive_capture import manifest_item_from_row
@@ -132,6 +133,56 @@ def test_prefix_queries_prioritize_recent_collections():
     collection_id, _, _, _, _ = next_prefix_query(connection)
 
     assert collection_id == "CC-MAIN-2026-30"
+
+
+def test_prefix_year_target_skips_and_can_reopen_pending_queries():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("npr")
+    first = _collection("CC-MAIN-2025-30")
+    second = _collection("CC-MAIN-2026-30")
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(first, second),
+    )
+    pattern = "www.npr.org/2010/"
+    record_prefix_page_count(
+        connection,
+        collection_id=second.identifier,
+        pattern=pattern,
+        total_pages=1,
+    )
+    record_prefix_page(
+        connection,
+        spec=spec,
+        collection_id=second.identifier,
+        pattern=pattern,
+        page_number=0,
+        total_pages=1,
+        page=PrefixIndexPage(rows=(_index_row("20260701000000", offset=1),)),
+    )
+
+    completed = reconcile_prefix_year_targets(
+        connection,
+        target_articles_per_year=1,
+    )
+
+    assert completed == 3
+    assert prefix_summary(connection)["queryStatus"] == {
+        "complete": 1,
+        "target-complete": 3,
+    }
+    assert next_prefix_query(connection) is None
+
+    reconcile_prefix_year_targets(
+        connection,
+        target_articles_per_year=2,
+    )
+
+    assert next_prefix_query(connection) is not None
+    assert prefix_summary(connection)["queriesRemaining"] == 3
 
 
 def test_collection_refresh_timeout_reuses_checkpoint_queries():

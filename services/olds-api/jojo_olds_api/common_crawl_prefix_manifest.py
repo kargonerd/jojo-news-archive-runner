@@ -334,7 +334,7 @@ def next_prefix_query(
         """
         SELECT collection_id, index_url, pattern, total_pages, next_page
         FROM prefix_queries
-        WHERE status != 'complete'
+        WHERE status NOT IN ('complete', 'target-complete')
         ORDER BY
             attempts,
             CAST(
@@ -350,6 +350,76 @@ def next_prefix_query(
     if row is None:
         return None
     return str(row[0]), str(row[1]), str(row[2]), row[3], int(row[4])
+
+
+def reconcile_prefix_year_targets(
+    connection: sqlite3.Connection,
+    *,
+    target_articles_per_year: int | None,
+) -> int:
+    if target_articles_per_year is not None and target_articles_per_year < 1:
+        raise ValueError("target_articles_per_year must be positive")
+    with connection:
+        existing_row = connection.execute(
+            "SELECT value FROM prefix_metadata "
+            "WHERE key='target_articles_per_year'"
+        ).fetchone()
+        existing_target = str(existing_row[0]) if existing_row else None
+        requested_target = (
+            str(target_articles_per_year)
+            if target_articles_per_year is not None
+            else None
+        )
+        if existing_target != requested_target:
+            connection.execute(
+                """
+                UPDATE prefix_queries
+                SET status='pending', updated_at=?
+                WHERE status='target-complete'
+                """,
+                (_now_iso(),),
+            )
+            if requested_target is None:
+                connection.execute(
+                    "DELETE FROM prefix_metadata "
+                    "WHERE key='target_articles_per_year'"
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO prefix_metadata(key, value)
+                    VALUES ('target_articles_per_year', ?)
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                    """,
+                    (requested_target,),
+                )
+        if target_articles_per_year is None:
+            return 0
+        satisfied_years = [
+            str(year)
+            for year, count in connection.execute(
+                """
+                SELECT substr(published_at, 1, 4),
+                       COUNT(DISTINCT canonical_url)
+                FROM prefix_candidates
+                GROUP BY substr(published_at, 1, 4)
+                HAVING COUNT(DISTINCT canonical_url) >= ?
+                """,
+                (target_articles_per_year,),
+            )
+        ]
+        before = connection.total_changes
+        for year in satisfied_years:
+            connection.execute(
+                """
+                UPDATE prefix_queries
+                SET status='target-complete', last_error=NULL, updated_at=?
+                WHERE status NOT IN ('complete', 'target-complete')
+                  AND substr(pattern, instr(pattern, '/20') + 1, 4)=?
+                """,
+                (_now_iso(), year),
+            )
+        return connection.total_changes - before
 
 
 def record_prefix_page_count(
@@ -617,7 +687,8 @@ def prefix_summary(connection: sqlite3.Connection) -> dict[str, object]:
     }
     remaining = int(
         connection.execute(
-            "SELECT COUNT(*) FROM prefix_queries WHERE status != 'complete'"
+            "SELECT COUNT(*) FROM prefix_queries "
+            "WHERE status NOT IN ('complete', 'target-complete')"
         ).fetchone()[0]
     )
     return {

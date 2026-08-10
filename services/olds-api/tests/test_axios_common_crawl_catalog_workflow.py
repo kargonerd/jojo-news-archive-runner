@@ -20,6 +20,7 @@ def test_catalog_is_bounded_checkpointed_and_private() -> None:
     assert '--max-pages "$MAX_PAGES"' in workflow
     assert '--max-queries "$MAX_QUERIES"' in workflow
     assert "--page-size 1" in workflow
+    assert "--target-articles-per-year 10000" in workflow
     assert "verify_b2_private_bucket.py" in workflow
     assert "checkpoint_capture_state.py" in workflow
     assert "news-archive/v1/axios/2017-2026/commoncrawl-prefix" in workflow

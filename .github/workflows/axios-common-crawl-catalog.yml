@@ -121,6 +121,7 @@ jobs:
             --max-pages "$MAX_PAGES" \
             --max-queries "$MAX_QUERIES" \
             --max-errors 3 \
+            --target-articles-per-year 10000 \
             --min-request-interval 3 \
             --timeout 45 \
             --attempts 4 \

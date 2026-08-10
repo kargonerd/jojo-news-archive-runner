@@ -22,6 +22,7 @@ from jojo_olds_api.common_crawl_prefix_manifest import (
     record_prefix_error,
     record_prefix_page,
     record_prefix_page_count,
+    reconcile_prefix_year_targets,
 )
 
 
@@ -49,6 +50,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--max-errors", type=int, default=3)
+    parser.add_argument(
+        "--target-articles-per-year",
+        type=int,
+        help=(
+            "Stop pending index queries for a publication year after this "
+            "many distinct canonical URLs have been cataloged."
+        ),
+    )
     parser.add_argument("--min-request-interval", type=float, default=2.0)
     parser.add_argument("--timeout", type=float, default=45.0)
     parser.add_argument("--attempts", type=int, default=4)
@@ -132,6 +141,11 @@ def main() -> int:
         )
     if args.page_size is not None and args.page_size < 1:
         raise SystemExit("--page-size must be positive")
+    if (
+        args.target_articles_per_year is not None
+        and args.target_articles_per_year < 1
+    ):
+        raise SystemExit("--target-articles-per-year must be positive")
     spec = archive_source_spec(args.publisher)
     client = CommonCrawlPrefixClient(
         minimum_interval=args.min_request_interval,
@@ -153,6 +167,10 @@ def main() -> int:
             from_year=args.from_year,
             to_year=args.to_year,
             collection_from_year=args.collection_from_year,
+        )
+        queries_completed_by_target = reconcile_prefix_year_targets(
+            connection,
+            target_articles_per_year=args.target_articles_per_year,
         )
         while (
             pages < args.max_pages
@@ -195,6 +213,12 @@ def main() -> int:
                 )
                 advances += 1
                 pages += 1
+                queries_completed_by_target += reconcile_prefix_year_targets(
+                    connection,
+                    target_articles_per_year=(
+                        args.target_articles_per_year
+                    ),
+                )
                 print(
                     json.dumps(
                         {
@@ -237,6 +261,10 @@ def main() -> int:
             "pagesThisRun": pages,
             "queriesThisRun": queries,
             "stateAdvancesThisRun": advances,
+            "queriesCompletedByTargetThisRun": (
+                queries_completed_by_target
+            ),
+            "targetArticlesPerYear": args.target_articles_per_year,
             "errorsThisRun": errors,
             "collectionRefresh": collection_refresh,
             "manifest": manifest,
