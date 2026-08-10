@@ -67,7 +67,7 @@ PUBLISHER_SPECS = {
     ),
     "wsj": PublisherSpec(
         publisher="wsj",
-        parser_version="wsj-parser/0.8.45",
+        parser_version="wsj-parser/0.8.46",
         domains=("wsj.com", "www.wsj.com"),
         default_language="en",
         edition="us",
@@ -224,7 +224,7 @@ PUBLISHER_SPECS = {
     ),
     "axios": PublisherSpec(
         publisher="axios",
-        parser_version="axios-parser/0.1.8",
+        parser_version="axios-parser/0.1.9",
         domains=("axios.com", "www.axios.com"),
         default_language="en",
         edition="us",

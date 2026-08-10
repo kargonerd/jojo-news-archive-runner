@@ -291,7 +291,7 @@ def test_axios_visual_fallback_replaces_metadata_placeholder():
     selected = [image for image in result.images if image.should_archive]
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "axios-parser/0.1.8"
+    assert result.extraction.parser_version == "axios-parser/0.1.9"
     assert len(selected) == 1
     assert selected[0].role == ImageRole.CHART
     assert selected[0].original_url == (
@@ -401,6 +401,11 @@ def test_axios_next_story_restores_twitter_embeds_and_images():
     ("headline", "expected_type", "expected_status"),
     [
         ("Axios AM (beta)", ContentType.NEWSLETTER, ArticleStatus.COMPLETE),
+        (
+            "Today's Trump Top 5: Crashing a wedding",
+            ContentType.NEWSLETTER,
+            ArticleStatus.COMPLETE,
+        ),
         ("An ordinary empty story", ContentType.ARTICLE, ArticleStatus.PARTIAL),
     ],
 )
@@ -448,6 +453,92 @@ def test_axios_only_accepts_structurally_proven_empty_newsletters(
         assert "body-too-short" not in result.quality.warnings
     else:
         assert "body-too-short" in result.quality.warnings
+
+
+def test_axios_accepts_only_wordcount_matched_short_am_newsletter():
+    canonical_url = "https://www.axios.com/2017/12/16/axios-am-debut-gif"
+    body_text = "Testing into graf. This is into copy ..."
+    story = {
+        "headline": "Axios AM: Debut GIF",
+        "permalink": canonical_url,
+        "published_date": "2017-01-06T23:24:48Z",
+        "wordcount": 8,
+        "authors": [
+            {
+                "display_name": "Mike Allen",
+                "subscription": {"name": "Axios AM", "slug": "axios-am"},
+            }
+        ],
+        "blocks": {
+            "blocks": [{"type": "unstyled", "text": body_text, "data": {}}],
+            "entityMap": [],
+        },
+        "bodyHtml": {
+            "beforeKeepReading": f"<p>{body_text}</p>",
+            "afterKeepReading": "",
+        },
+    }
+    next_data = {
+        "props": {"pageProps": {"pageProps": {"data": {"story": story}}}}
+    }
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":"Axios AM: Debut GIF",
+      "datePublished":"2017-12-16T01:33:42Z"
+    }}</script></head><body><main id="main-content">
+      <div class="DraftjsBlocks_draftjs__example"><p>{body_text}</p></div>
+    </main><script id="__NEXT_DATA__" type="application/json">
+    {json.dumps(next_data)}</script></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.content_type == ContentType.NEWSLETTER
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.plain_text == body_text
+    assert result.published_at == datetime(
+        2017, 1, 6, 23, 24, 48, tzinfo=timezone.utc
+    )
+    assert "structured-short-newsletter" in result.quality.warnings
+    assert "body-too-short" not in result.quality.warnings
+
+
+def test_wsj_removes_underscore_only_press_release_rule():
+    canonical_url = "https://www.wsj.com/articles/example-release-01667509523"
+    prose = " ".join(
+        f"Sentence {index} reports a concrete product detail with enough "
+        "editorial context for the archived release."
+        for index in range(8)
+    )
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":"A complete archived release",
+      "datePublished":"2022-11-03T20:15:00Z"
+    }}</script></head><body>
+      <div data-type="article-body">
+        <p>{prose}</p>
+        <p>________________________________</p>
+        <p>Contact: Example Communications example@example.com</p>
+      </div>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("wsj", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "________________________________" not in result.plain_text
+    assert all(block.text != "________________________________" for block in result.blocks)
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_wsj_parser_extracts_structured_image_gallery_in_order():
@@ -519,7 +610,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -680,7 +771,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -777,7 +868,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
@@ -850,7 +941,7 @@ def test_wsj_parser_accepts_complete_short_report_matching_declared_words():
     assert "Northrop completed" in result.plain_text
     assert "The two missiles" in result.plain_text
     assert "Copyright" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_wsj_parser_does_not_treat_deliver_in_url_as_liveblog():
@@ -879,7 +970,7 @@ def test_wsj_parser_does_not_treat_deliver_in_url_as_liveblog():
     assert result.content_type.value == "article"
     assert result.quality.status.value == "partial"
     assert "body-too-short" in result.quality.warnings
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_wsj_parser_does_not_treat_facebook_live_story_as_liveblog():
@@ -906,7 +997,7 @@ def test_wsj_parser_does_not_treat_facebook_live_story_as_liveblog():
     assert result.content_type.value == "article"
     assert result.quality.status.value == "partial"
     assert "body-too-short" in result.quality.warnings
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_wsj_parser_rejects_legacy_sign_in_snippet():
@@ -1350,7 +1441,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
@@ -1392,7 +1483,7 @@ def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
     assert "Most Popular news" not in result.plain_text
     assert "Recommended Videos" not in result.plain_text
     assert "Unrelated popular headline" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_wsj_parser_removes_legacy_more_in_and_top_news_modules():
@@ -1604,7 +1695,7 @@ def test_wsj_parser_removes_legacy_more_in_and_top_news_modules():
     assert "More Journal Reports" not in result.plain_text
     assert "See All" not in result.plain_text
     assert "Top News" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
@@ -13147,7 +13238,7 @@ def test_wsj_parser_accepts_complete_short_editorial_letter():
     assert result.quality.status.value == "complete"
     assert "body-too-short" not in result.quality.warnings
     assert "Warren Tunwall" in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_nyt_parser_preserves_image_led_legacy_interactive():
@@ -13868,7 +13959,7 @@ def test_wsj_parser_recovers_legacy_video_headline_from_at_vars():
     )
     assert result.content_type.value == "video"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_wsj_parser_preserves_legacy_video_transcript():
@@ -14413,7 +14504,7 @@ def test_wsj_parser_removes_buy_side_recommendation_widget():
     assert "Biography" not in result.plain_text
     assert "reporter@wsj.com" not in result.plain_text
     assert "<button" not in result.body_html
-    assert result.extraction.parser_version == "wsj-parser/0.8.45"
+    assert result.extraction.parser_version == "wsj-parser/0.8.46"
 
 
 def test_ap_parser_removes_legacy_terminal_period_paragraph():

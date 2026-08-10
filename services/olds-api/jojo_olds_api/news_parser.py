@@ -585,6 +585,11 @@ def parse_article(
         headline = re.sub(r"(?i)\s*:\s*NPR\s*$", "", headline).strip()
     description = _first_text(
         _string_or_none(nyt_preloaded_metadata.get("description")),
+        (
+            _string_or_none(axios_next_story.get("og_description"))
+            if axios_next_story is not None
+            else None
+        ),
         _string_or_none(news_article.get("description")) if news_article else None,
         _meta_content(soup, "name", "description"),
         _meta_content(soup, "property", "og:description"),
@@ -626,6 +631,11 @@ def parse_article(
     published_at = _parse_datetime(
         _first_text(
             _string_or_none(nyt_preloaded_metadata.get("published_at")),
+            (
+                _string_or_none(axios_next_story.get("published_date"))
+                if axios_next_story is not None
+                else None
+            ),
             _string_or_none(news_article.get("datePublished"))
             if news_article
             else None,
@@ -1068,6 +1078,10 @@ def parse_article(
         spec.publisher == "axios"
         and _axios_empty_newsletter_story(axios_next_story)
     )
+    structured_short_newsletter = bool(
+        spec.publisher == "axios"
+        and _axios_short_newsletter_story(axios_next_story)
+    )
     minimum_body_characters = (
         _MINIMUM_BODY_CHARACTERS
         if (
@@ -1088,6 +1102,7 @@ def parse_article(
         and not publisher_notice
         and not structured_short_record
         and not structured_empty_newsletter
+        and not structured_short_newsletter
     ):
         warnings.append("body-too-short")
     if publisher_notice:
@@ -1096,6 +1111,8 @@ def parse_article(
         warnings.append("structured-short-record")
     if structured_empty_newsletter:
         warnings.append("structured-empty-newsletter")
+    if structured_short_newsletter:
+        warnings.append("structured-short-newsletter")
     if spec.publisher == "ft" and _ft_explicit_truncation_notice(soup):
         warnings.append("truncated-body")
     if spec.publisher == "bloomberg" and _bloomberg_teaser_shell(soup):
@@ -6285,11 +6302,17 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
 
 
 def _axios_empty_newsletter_story(story: dict[str, Any] | None) -> bool:
-    """Identify native Axios AM/PM records whose publisher body is empty."""
+    """Identify exact recurring briefing records with no publisher body."""
     if not isinstance(story, dict):
         return False
     headline = _clean_text(str(story.get("headline") or ""))
-    if not re.fullmatch(r"(?i)Axios\s+(?:AM|PM)(?:\s*\(beta\))?", headline):
+    if not re.fullmatch(
+        r"(?i)(?:"
+        r"Axios\s+(?:AM|PM)(?:\s*\(beta\))?"
+        r"|Today's\s+Trump\s+Top\s+5:\s+.+"
+        r")",
+        headline,
+    ):
         return False
     if story.get("wordcount") not in {0, "0"}:
         return False
@@ -6311,10 +6334,75 @@ def _axios_empty_newsletter_story(story: dict[str, Any] | None) -> bool:
     )
 
 
+def _axios_short_newsletter_story(story: dict[str, Any] | None) -> bool:
+    """Accept a complete publisher-authored short Axios AM test item.
+
+    This deliberately requires the Axios AM subscription relationship and an
+    exact agreement between the structured word count, Draft.js text, and
+    rendered body. Ordinary short stories remain subject to the normal body
+    threshold.
+    """
+    if not isinstance(story, dict):
+        return False
+    headline = _clean_text(str(story.get("headline") or ""))
+    if not re.fullmatch(r"(?i)Axios\s+AM:\s+.+", headline):
+        return False
+    authors = story.get("authors")
+    if not isinstance(authors, list) or not any(
+        isinstance(author, dict)
+        and isinstance(author.get("subscription"), dict)
+        and _clean_text(
+            str(author["subscription"].get("slug") or "")
+        ).casefold()
+        == "axios-am"
+        for author in authors
+    ):
+        return False
+    try:
+        wordcount = int(story.get("wordcount"))
+    except (TypeError, ValueError):
+        return False
+    if not 1 <= wordcount <= 50:
+        return False
+    blocks = story.get("blocks")
+    values = blocks.get("blocks") if isinstance(blocks, dict) else None
+    if not isinstance(values, list) or not values:
+        return False
+    block_text = _clean_text(
+        " ".join(
+            str(block.get("text") or "")
+            for block in values
+            if isinstance(block, dict)
+        )
+    )
+    if not block_text or len(block_text.split()) != wordcount:
+        return False
+    body_html = story.get("bodyHtml")
+    fragments = (
+        [body_html]
+        if isinstance(body_html, str)
+        else [
+            value
+            for value in body_html.values()
+            if isinstance(value, str)
+        ]
+        if isinstance(body_html, dict)
+        else []
+    )
+    rendered_text = _clean_text(
+        BeautifulSoup("".join(fragments), "html.parser").get_text(
+            " ", strip=True
+        )
+    )
+    return rendered_text == block_text
+
+
 def _axios_next_story_content_type(
     story: dict[str, Any] | None,
 ) -> ContentType | None:
-    if _axios_empty_newsletter_story(story):
+    if _axios_empty_newsletter_story(story) or _axios_short_newsletter_story(
+        story
+    ):
         return ContentType.NEWSLETTER
     if not isinstance(story, dict):
         return None
@@ -7749,13 +7837,14 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         if text in _EXACT_NOISE_TEXT:
             node.decompose()
         elif (
-            spec.publisher == "npr"
+            spec.publisher in {"npr", "wsj"}
             and len(text) >= 2
             and set(text) == {"_"}
         ):
-            # NPR legacy and transcript pages use underscore-only paragraphs
-            # as visual rules.  They are interface separators, not article
-            # copy, and otherwise survive as ordinary text blocks.
+            # NPR legacy/transcript pages and WSJ press-release feeds use
+            # underscore-only paragraphs as visual rules. They are interface
+            # separators, not article copy, and otherwise survive as ordinary
+            # text blocks.
             node.decompose()
         elif (
             spec.publisher == "npr"
