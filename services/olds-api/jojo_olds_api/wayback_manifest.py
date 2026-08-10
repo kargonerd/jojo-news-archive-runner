@@ -614,12 +614,22 @@ def initialize_archived_date_schema(
             ON archived_date_hydration(publisher, status, attempts, updated_at);
         """
     )
-    undated_urls = [
-        (str(row[0]), publisher, _now_iso())
+    spec = archive_source_spec(publisher)
+    candidate_urls = [
+        str(row[0])
         for row in connection.execute(
             "SELECT DISTINCT canonical_url FROM candidates"
         )
-        if infer_published_at(str(row[0])) is None
+    ]
+    valid_urls = {
+        canonical_url
+        for canonical_url in candidate_urls
+        if normalize_article_url(spec, canonical_url) == canonical_url
+    }
+    undated_urls = [
+        (canonical_url, publisher, _now_iso())
+        for canonical_url in valid_urls
+        if infer_published_at(canonical_url) is None
     ]
     connection.executemany(
         """
@@ -628,6 +638,18 @@ def initialize_archived_date_schema(
         ) VALUES (?, ?, ?)
         """,
         undated_urls,
+    )
+    # A stricter URL family may be deployed after a resumable CDX checkpoint
+    # was first written.  Such stale rows are already excluded at manifest
+    # export; exclude them from hydration as well so we do not spend archived
+    # requests trying to extract dates from prefix keys or static assets.
+    invalid_urls = set(candidate_urls) - valid_urls
+    connection.executemany(
+        """
+        DELETE FROM archived_date_hydration
+        WHERE canonical_url=? AND publisher=?
+        """,
+        [(canonical_url, publisher) for canonical_url in invalid_urls],
     )
     # A capture timestamp is not publication-date evidence. Permanently
     # rejected or exhausted rows must never leak back into a yearly manifest.

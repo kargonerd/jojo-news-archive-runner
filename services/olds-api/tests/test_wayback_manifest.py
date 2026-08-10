@@ -174,6 +174,51 @@ def test_nikkei_archived_date_hydration_withholds_capture_year(
     assert row["publishedAt"] == "2013-09-11T00:00:00+09:00"
 
 
+def test_nikkei_archived_date_hydration_skips_stale_prefix_keys():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("nikkei")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+    valid_url = (
+        "https://www.nikkei.com/article/DGXNASFS1102U_R10C13A9PP8000"
+    )
+    stale_urls = (
+        "https://www.nikkei.com/article/D",
+        "https://www.nikkei.com/article/"
+        "DGKDASDC1600A_Y3A211C1FF2000/asset.js",
+    )
+    for index, canonical_url in enumerate((valid_url, *stale_urls)):
+        connection.execute(
+            """
+            INSERT INTO candidates(
+                canonical_url, published_at, timestamp, original_url,
+                digest, mimetype, status_code, byte_count, rank_score
+            ) VALUES (?, ?, ?, ?, ?, 'text/html', 200, 1234, 0)
+            """,
+            (
+                canonical_url,
+                "2014-02-01T10:00:00+00:00",
+                f"2014020110000{index}",
+                canonical_url,
+                f"digest-{index}",
+            ),
+        )
+
+    initialize_archived_date_schema(connection, publisher="nikkei")
+
+    assert connection.execute(
+        """
+        SELECT canonical_url FROM archived_date_hydration
+        ORDER BY canonical_url
+        """
+    ).fetchall() == [(valid_url,)]
+
+
 def test_scmp_archived_date_hydration_withholds_capture_year(tmp_path: Path):
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("scmp")
