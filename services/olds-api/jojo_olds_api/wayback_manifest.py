@@ -1866,6 +1866,7 @@ def next_discovery_query(
                 THEN 0
                 ELSE 1
             END,
+            CASE WHEN failures=0 THEN 0 ELSE 1 END,
             CASE
                 WHEN (
                     SELECT value

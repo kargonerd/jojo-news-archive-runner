@@ -1415,6 +1415,29 @@ def test_failed_pre_2014_legacy_query_rotates_to_other_patterns():
     assert failure == (1, "Wayback CDX query failed after 2 attempts")
 
 
+def test_failed_urlkey_query_does_not_starve_healthy_patterns():
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2020,
+        to_year=2020,
+        collapse="urlkey",
+    )
+    failed_pattern, _ = next_discovery_query(connection)
+
+    record_discovery_failure(
+        connection,
+        pattern=failed_pattern,
+        error="temporary failure",
+    )
+    next_pattern, _ = next_discovery_query(connection)
+
+    assert failed_pattern == "www.wsj.com/articles/a*"
+    assert next_pattern == "www.wsj.com/articles/b*"
+
+
 def test_successful_legacy_page_resets_failure_priority():
     spec = archive_source_spec("wsj")
     connection = sqlite3.connect(":memory:")
