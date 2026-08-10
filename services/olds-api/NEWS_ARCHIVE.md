@@ -16,15 +16,14 @@ publisher catalog
 ```
 
 The raw stage normally stores response bytes before Beautiful Soup or any other
-parser changes them. The one explicit exception is the FT `infini-news`
-fallback: when a mapped live partner page and archive captures are unusable, it
-stores deterministic HTML adapted from the complete extracted CC-News row.
-Those records are marked `representation: derived-html`, retain the dataset row
-URL, partner URL, WARC filename, and content hash in provenance, and can be
-excluded from raw-DOM studies. Ordinary responses remain `raw-html`. Image URLs
-are recorded only by the parser. Images are not downloaded by
-`capture_archive_batch.py`; derived Infini rows contain no images unless a
-separate validated page supplies them.
+parser changes them. The explicit exceptions are validated FT and WSJ
+`infini-news` candidates: they store deterministic HTML adapted from a complete
+extracted CC-News row. Those records are marked `representation: derived-html`,
+retain the dataset-row URL, official or partner source URL, WARC filename, and
+content hash in provenance, and can be excluded from raw-DOM studies. Ordinary
+responses remain `raw-html`. Image URLs are recorded only by the parser. Images
+are not downloaded by `capture_archive_batch.py`; derived Infini rows contain
+no images unless a separate validated page supplies them.
 
 Parser readiness is measured on a reproducible, publisher-and-year-stratified
 random sample. The archive workflow uses a stable SHA-256 pseudo-random
@@ -224,11 +223,14 @@ publication metadata contained in the archived page.
 For WSJ years 2016–2023, the URL-key shard also searches Infini-News for
 historical WSJ paywall/copyright templates, draws a reproducible random sample
 across every matching shard, and accepts only normalized official `wsj.com`
-article URLs with matching-year metadata. Infini-News supplies URL discovery
-metadata only; its extracted text is never used as the raw article. Each
-official URL still goes through the normal publication-near Wayback capture and
-the same 800-article parser gate. This avoids treating other Dow Jones
-publications that share the copyright template as WSJ articles.
+article URLs with matching-year metadata. Rows with at least 1,000 extracted
+body characters are exported as direct `infini-news` candidates ahead of
+publication-near Wayback captures. Capture re-fetches the manifest-bound
+dataset row, validates URL, headline, year, length, and WARC provenance, and
+stores deterministic `derived-html`; incomplete previews fail closed. The
+derived representation passes through the same parser and 800-article QA gate
+but remains distinguishable from original HTML. This avoids treating other Dow
+Jones publications that share the copyright template as WSJ articles.
 
 For the sparse 2016–2018 WSJ years, the same catalog also performs bounded,
 resumable scans of Infini-News' year-partitioned Parquet metadata. It reads only
@@ -237,10 +239,10 @@ columns until each year has 1,600 strict official-origin candidates. A row is
 accepted only when the metadata hostname and URL hostname agree on an official
 WSJ host, URL normalization accepts an article path, the year agrees, the
 headline and text-length gates pass, the language is English, and the WARC is a
-`CC-NEWS-*.warc.gz` object. The remote Parquet files and extracted article text
-are never copied to B2; only the small resumable catalog state and manifest are
-stored. As with the text-query catalog, the discovered URL must still produce a
-usable archived page before it can enter parser validation.
+`CC-NEWS-*.warc.gz` object. The remote Parquet files are never copied to B2;
+only the small resumable catalog state, manifest, and selected validation
+captures are stored. A selected row can enter parser validation through a
+validated Infini `derived-html` capture or another usable page candidate.
 
 For WSJ articles from 2023 onward, the same shard also enumerates the public
 Wall Street Journal category on To Vima, resolves each licensed-copy headline
