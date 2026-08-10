@@ -186,7 +186,7 @@ def test_build_tool_processes_direct_and_query_catalogs_in_each_run():
     tool = BUILD_TOOL.read_text(encoding="utf-8")
 
     assert "maximum_files=max(1, args.max_pages or 5) * 10" in tool
-    assert "workers=8" in tool
+    assert tool.count("workers=8") == 2
     assert "maximum=max(1, args.max_pages or 5) * 100" in tool
     assert '"status": "deferred-for-direct-catalog"' not in tool
 
