@@ -604,7 +604,11 @@ def parse_article(
         )
     ):
         description = None
-    authors = _extract_authors(news_article, soup)
+    authors = _extract_authors(
+        news_article,
+        soup,
+        publisher=spec.publisher,
+    )
     if spec.publisher == "ap" and not authors:
         authors = _ap_hosted_authors(soup)
     metadata_authors = nyt_preloaded_metadata.get("authors")
@@ -643,6 +647,16 @@ def parse_article(
             (
                 _wsj_legacy_published_at(soup)
                 if spec.publisher == "wsj"
+                else None
+            ),
+            (
+                _nikkei_legacy_published_at(soup)
+                if spec.publisher == "nikkei"
+                else None
+            ),
+            (
+                _scmp_legacy_published_at(soup)
+                if spec.publisher == "scmp"
                 else None
             ),
             _tag_attribute(
@@ -12362,6 +12376,8 @@ def _dedupe_lines(value: str) -> str:
 def _extract_authors(
     article: dict[str, Any],
     soup: BeautifulSoup,
+    *,
+    publisher: str,
 ) -> list[Author]:
     values: list[str] = []
     source = article.get("author") if article else None
@@ -12383,6 +12399,19 @@ def _extract_authors(
         meta = _meta_content(soup, "name", "author")
         if meta:
             values.extend(part.strip() for part in meta.split(","))
+    if not values and publisher == "scmp":
+        legacy_byline = _tag_text(
+            soup.select_one(".field-name-field-byline")
+        )
+        if legacy_byline:
+            clean_byline = re.sub(
+                r"(?i)\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b",
+                "",
+                legacy_byline,
+            )
+            clean_byline = _clean_text(clean_byline).strip(" ,;|")
+            if clean_byline:
+                values.append(clean_byline)
     result: list[Author] = []
     seen: set[str] = set()
     for value in values:
@@ -12564,6 +12593,62 @@ def _wsj_legacy_published_at(soup: BeautifulSoup) -> str | None:
         )
         if match:
             return match.group("date")
+    return None
+
+
+def _nikkei_legacy_published_at(soup: BeautifulSoup) -> str | None:
+    """Read the print-edition date rendered by Nikkei's legacy template."""
+    value = _tag_text(soup.select_one(".cmnc-publish"))
+    if not value:
+        return None
+    match = re.search(
+        r"(?P<year>20\d{2})\s*(?:/|年)\s*"
+        r"(?P<month>\d{1,2})\s*(?:/|月)\s*"
+        r"(?P<day>\d{1,2})(?:日)?",
+        value,
+    )
+    if match is None:
+        return None
+    try:
+        parsed = datetime(
+            int(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+            tzinfo=timezone(timedelta(hours=9)),
+        )
+    except ValueError:
+        return None
+    return parsed.isoformat()
+
+
+def _scmp_legacy_published_at(soup: BeautifulSoup) -> str | None:
+    """Read SCMP's pre-JSON-LD human-readable article timestamp."""
+    value = _tag_text(
+        soup.select_one(".pane-node-created .pane-content, .pane-node-created")
+    )
+    if not value:
+        return None
+    match = re.search(
+        r"(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+),?\s+"
+        r"(?P<year>20\d{2}),?\s+"
+        r"(?P<time>\d{1,2}:\d{2}\s*[ap]m)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    normalized = (
+        f"{match.group('day')} {match.group('month')} "
+        f"{match.group('year')} {match.group('time').replace(' ', '')}"
+    )
+    for format_string in ("%d %B %Y %I:%M%p", "%d %b %Y %I:%M%p"):
+        try:
+            parsed = datetime.strptime(normalized, format_string)
+        except ValueError:
+            continue
+        return parsed.replace(
+            tzinfo=timezone(timedelta(hours=8))
+        ).isoformat()
     return None
 
 

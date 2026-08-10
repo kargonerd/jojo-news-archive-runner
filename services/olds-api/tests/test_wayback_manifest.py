@@ -655,6 +655,27 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "https://www.nikkei.com/article/DGXZQOCD00001/",
     ) == "https://www.nikkei.com/article/DGXZQOCD00001"
     assert normalize_article_url(
+        archive_source_spec("nikkei"),
+        (
+            "https://www.nikkei.com/article/article/"
+            "DGXBZO40155290U2A400C1000000"
+        ),
+    ) == (
+        "https://www.nikkei.com/article/"
+        "DGXBZO40155290U2A400C1000000"
+    )
+    assert normalize_article_url(
+        archive_source_spec("nikkei"),
+        "https://www.nikkei.com/article/DG",
+    ) is None
+    assert normalize_article_url(
+        archive_source_spec("nikkei"),
+        (
+            "https://www.nikkei.com/article/"
+            "DGKDASDG0401Y_V01C11A2CR0000/nkds.graph.min.js"
+        ),
+    ) is None
+    assert normalize_article_url(
         archive_source_spec("zaobao"),
         "https://www.zaobao.com.sg/news/singapore/story20240102-1234567",
     ) == "https://www.zaobao.com.sg/news/singapore/story20240102-1234567"

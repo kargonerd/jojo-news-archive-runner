@@ -186,7 +186,14 @@ ARCHIVE_SOURCE_SPECS = {
         publisher="nikkei",
         canonical_host="www.nikkei.com",
         wayback_patterns=("www.nikkei.com/article/*",),
-        accepted_path_patterns=_patterns(r"^/article/"),
+        # URL-key CDX pages also contain every intermediate prefix and static
+        # asset requested below an article URL. A real Nikkei article uses a
+        # long alphanumeric story id; accepting the directory alone inflated
+        # the catalog with `/article/D`, JavaScript files, and similar keys.
+        accepted_path_patterns=_patterns(
+            r"^/article/(?:[A-Z]{8}\d{5}|[A-Z]{6}\d{7}|"
+            r"[A-Z0-9_]{15,})/?$",
+        ),
     ),
     "zaobao": ArchiveSourceSpec(
         publisher="zaobao",
@@ -256,6 +263,14 @@ def normalize_article_url(
     if hostname not in allowed_hosts:
         return None
     path = re.sub(r"/+", "/", parsed.path or "/")
+    if (
+        spec.publisher == "nikkei"
+        and path.startswith("/article/article/")
+    ):
+        # Three legacy CDX keys repeat the article directory but otherwise
+        # contain a valid Nikkei story id. Normalize them instead of either
+        # losing the article or preserving a non-canonical duplicate.
+        path = "/article/" + path.removeprefix("/article/article/")
     if spec.publisher == "npr":
         # CDX indexes occasionally contain scraper-added line endings or a
         # trailing assignment marker. Neither can be part of NPR's article

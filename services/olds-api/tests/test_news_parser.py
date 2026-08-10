@@ -16651,3 +16651,88 @@ def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
     assert "<button" not in result.body_html
     assert "Skip advertisement" not in result.plain_text
     assert result.extraction.parser_version == "nyt-parser/0.8.55"
+
+
+def test_nikkei_legacy_parser_extracts_print_date_and_article_text():
+    result = parse_article(
+        """
+        <html lang="ja"><head>
+          <meta property="og:title"
+            content="ドコモ参入 競争激化 新端末を発売">
+        </head><body>
+          <h4 class="cmn-article_title">ドコモ参入 競争激化</h4>
+          <dl class="cmn-article_status">
+            <dd class="cmnc-publish">2013/9/11付</dd>
+          </dl>
+          <div class="cmn-article_text JSID_key_fonttxt">
+            <p>
+            【シリコンバレー＝岡田信行】米企業は新しい端末を発表した。
+            国内の通信各社も販売方針を明らかにし、価格や通信料金をめぐる
+            競争が激しくなる可能性がある。利用者向けの新サービスも相次いで
+            導入され、市場全体の動向が注目されている。各社は販売網の整備と
+            サポート体制の拡充を進め、今後の需要増加に備えるとしている。
+            専門家は競争の進展によって端末の選択肢が広がる一方、料金体系の
+            分かりやすさと長期的なサービス品質が重要になると指摘している。
+            販売開始後の利用状況を確認しながら追加施策を検討する方針だ。
+            </p>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url=(
+            "https://www.nikkei.com/article/"
+            "DGKDAS0010003_R10C13A9MM0000"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.published_at.isoformat() == "2013-09-11T00:00:00+09:00"
+    assert "価格や通信料金" in result.plain_text
+    assert result.quality.body_characters >= 100
+    assert result.extraction.parser_version == "nikkei-parser/0.1.1"
+
+
+def test_scmp_legacy_parser_extracts_body_date_and_byline():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title"
+            content="Change at media group raises concern">
+        </head><body>
+          <div class="panel-pane pane-node-created pos-6">
+            <div class="pane-content">
+              Wednesday, 15 August, 2012, 2:10pm
+            </div>
+          </div>
+          <div class="field field-name-field-byline">
+            <p>Choi Chi-yuk
+              <a href="mailto:chiyuk.choi@scmp.com">
+                chiyuk.choi@scmp.com
+              </a>
+            </p>
+          </div>
+          <div class="panel-pane pane-entity-field pane-node-body">
+            <div class="field field-name-body">
+              <p>The appointment of an outsider as the top party official
+              raised concern about whether editors would face tighter
+              restrictions at the outspoken media group.</p>
+              <p>Journalists said the organization had built its reputation
+              through independent reporting and careful scrutiny of public
+              affairs. They expected its editorial standards to continue.</p>
+            </div>
+          </div>
+        </body></html>
+        """,
+        publisher="scmp",
+        canonical_url=(
+            "https://www.scmp.com/article/1000041/"
+            "change-media-group-raises-concern"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.published_at.isoformat() == "2012-08-15T14:10:00+08:00"
+    assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
+    assert "chiyuk.choi@scmp.com" not in result.plain_text
+    assert "independent reporting" in result.plain_text
+    assert result.extraction.parser_version == "scmp-parser/0.1.1"
