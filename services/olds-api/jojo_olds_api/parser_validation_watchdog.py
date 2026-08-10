@@ -132,6 +132,7 @@ def plan_validation_dispatch(
             "ready": False,
             "evaluated": 0,
             "replayableEvaluated": 0,
+            "eligibleCandidates": None,
             "target": MINIMUM_SAMPLES,
             "completeRate": 0.0,
             "qaPassRate": 0.0,
@@ -271,6 +272,10 @@ def plan_validation_dispatch(
             )
             cell["qaRevision"] = _integer(selected.get("qaRevision"))
             cell["parserVersion"] = selected.get("parserVersion")
+            if "eligibleCandidates" in selected:
+                cell["eligibleCandidates"] = _integer(
+                    selected.get("eligibleCandidates")
+                )
             cell["ready"] = _year_ready(
                 selected,
                 cohort=selected_cohort,
@@ -293,10 +298,19 @@ def plan_validation_dispatch(
     ready_cells = {
         cell for cell, values in progress.items() if values["ready"]
     }
+    capacity_deficient_cells = {
+        cell
+        for cell, values in progress.items()
+        if values["eligibleCandidates"] is not None
+        and int(values["eligibleCandidates"]) < int(values["target"])
+        and int(values["evaluated"]) < int(values["target"])
+    }
     candidates = [
         cell
         for cell in progress
-        if cell not in ready_cells and cell not in active_cells
+        if cell not in ready_cells
+        and cell not in active_cells
+        and cell not in capacity_deficient_cells
     ]
     order = {
         publisher: index
@@ -332,6 +346,9 @@ def plan_validation_dispatch(
             "replayableEvaluated": int(
                 progress[(publisher, year)]["replayableEvaluated"]
             ),
+            "eligibleCandidates": progress[(publisher, year)][
+                "eligibleCandidates"
+            ],
             "completeRate": float(
                 progress[(publisher, year)]["completeRate"]
             ),
@@ -346,6 +363,9 @@ def plan_validation_dispatch(
             "selectedCohort": progress[(publisher, year)]["selectedCohort"],
             "ready": (publisher, year) in ready_cells,
             "active": (publisher, year) in active_cells,
+            "capacityDeficient": (
+                (publisher, year) in capacity_deficient_cells
+            ),
         }
         for publisher in publisher_order
         for year in TARGET_YEARS
@@ -357,6 +377,7 @@ def plan_validation_dispatch(
         "targetCells": len(progress),
         "readyCells": len(ready_cells),
         "activeCells": len(active_cells),
+        "capacityDeficientCells": len(capacity_deficient_cells),
         "pendingCells": len(progress) - len(ready_cells),
         "summariesRead": summaries_read,
         "invalidSummaries": invalid_summaries,

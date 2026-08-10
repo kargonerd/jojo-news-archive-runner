@@ -25,6 +25,7 @@ def _write_summary(
     unbound_capture_inputs: int = 0,
     qa_revision: int | None = None,
     parser_version: str | None = None,
+    eligible_candidates: int | None = None,
 ) -> None:
     path = root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -55,6 +56,10 @@ def _write_summary(
                     }
                 }
             }
+    if eligible_candidates is not None:
+        payload["parserValidation"]["years"][str(year)][
+            "eligibleCandidates"
+        ] = eligible_candidates
     path.write_text(
         json.dumps(payload),
         encoding="utf-8",
@@ -155,6 +160,7 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "target": 800,
         "evaluated": 800,
         "replayableEvaluated": 800,
+        "eligibleCandidates": None,
         "completeRate": 1.0,
         "qaPassRate": 1.0,
         "errors": 0,
@@ -165,6 +171,7 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "selectedCohort": "source",
         "ready": True,
         "active": False,
+        "capacityDeficient": False,
     }
 
 
@@ -652,6 +659,46 @@ def test_watchdog_requires_wsj_holdout_for_legacy_source_summary(
     assert cell["requiredCohort"] == "holdout-v1"
     assert cell["evaluated"] == 0
     assert cell["replayableEvaluated"] == 835
+
+
+def test_watchdog_does_not_redispatch_exhausted_independent_holdout(
+    tmp_path: Path,
+):
+    shard = "wsj/2010-2015/wayback-urlkey"
+    _write_summary(
+        tmp_path,
+        f"{shard}/state/summary.json",
+        publisher="wsj",
+        year=2013,
+        evaluated=835,
+        qa_revision=0,
+    )
+    _write_summary(
+        tmp_path,
+        "holdout-v1/wsj/2013/state/summary.json",
+        publisher="wsj",
+        year=2013,
+        evaluated=265,
+        eligible_candidates=381,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["wsj"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2013: 1225}},
+    )
+
+    assert plan["tasks"] == []
+    assert plan["capacityDeficientCells"] == 1
+    assert plan["targetCells"] == 1
+    cell = plan["cellProgress"][0]
+    assert cell["evaluated"] == 265
+    assert cell["replayableEvaluated"] == 835
+    assert cell["eligibleCandidates"] == 381
+    assert cell["capacityDeficient"] is True
 
 
 def test_watchdog_excludes_years_below_manifest_capacity(tmp_path: Path):

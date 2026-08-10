@@ -1406,6 +1406,15 @@ def parser_validation_summary(
         ORDER BY sample_year
         """
     ).fetchall()
+    has_captures = bool(
+        connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type='table' AND name='captures'
+            """
+        ).fetchone()
+    )
     for sample_year, target_size, parser_version, qa_revision in configs:
         row = connection.execute(
             """
@@ -1456,6 +1465,46 @@ def parser_validation_summary(
                 (sample_year,),
             ).fetchone()[0]
         )
+        capacity: dict[str, int] = {}
+        if has_captures:
+            start = f"{int(sample_year):04d}-01-01"
+            end = f"{int(sample_year) + 1:04d}-01-01"
+            capacity["eligibleCandidates"] = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM captures AS capture
+                    WHERE capture.published_at >= ?
+                      AND capture.published_at < ?
+                      AND (
+                        capture.status != 'complete'
+                        OR capture.raw_path IS NOT NULL
+                      )
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM parser_validation_exclusions AS exclusion
+                        WHERE exclusion.canonical_url=capture.canonical_url
+                      )
+                    """,
+                    (start, end),
+                ).fetchone()[0]
+            )
+            capacity["excludedCandidates"] = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM captures AS capture
+                    WHERE capture.published_at >= ?
+                      AND capture.published_at < ?
+                      AND EXISTS (
+                        SELECT 1
+                        FROM parser_validation_exclusions AS exclusion
+                        WHERE exclusion.canonical_url=capture.canonical_url
+                      )
+                    """,
+                    (start, end),
+                ).fetchone()[0]
+            )
         issue_counts: Counter[str] = Counter()
         failure_examples: list[dict[str, object]] = []
         failure_rows = connection.execute(
@@ -1514,6 +1563,7 @@ def parser_validation_summary(
             "parserVersion": str(parser_version),
             "qaRevision": int(qa_revision),
             "planned": planned,
+            **capacity,
             "evaluated": evaluated,
             "targetReached": target_reached,
             "qaPassed": int(row[1]),

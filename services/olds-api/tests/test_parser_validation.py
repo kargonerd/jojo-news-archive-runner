@@ -765,6 +765,9 @@ def test_validation_only_does_not_fill_batch_from_excluded_old_cohort(
         """,
         (selected[0].canonical_url,),
     ).fetchone()[0] == 1
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2020"]["eligibleCandidates"] == 9
+    assert summary["years"]["2020"]["excludedCandidates"] == 1
 
 
 def test_validation_only_requires_validation_prioritization(tmp_path: Path):
