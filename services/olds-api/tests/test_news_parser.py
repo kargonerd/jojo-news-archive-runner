@@ -291,7 +291,7 @@ def test_axios_visual_fallback_replaces_metadata_placeholder():
     selected = [image for image in result.images if image.should_archive]
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "axios-parser/0.1.7"
+    assert result.extraction.parser_version == "axios-parser/0.1.8"
     assert len(selected) == 1
     assert selected[0].role == ImageRole.CHART
     assert selected[0].original_url == (
@@ -323,6 +323,131 @@ def test_axios_legacy_short_news_card_is_not_treated_as_truncated():
 
     assert result.quality.status.value == "complete"
     assert "structured-short-record" in result.quality.warnings
+
+
+def test_axios_next_story_restores_twitter_embeds_and_images():
+    canonical_url = "https://www.axios.com/2017/12/16/twitter-story"
+    story = {
+        "headline": "A Twitter-led update",
+        "permalink": canonical_url,
+        "published_date": "2017-05-30T19:14:25Z",
+        "wordcount": 0,
+        "blocks": {
+            "blocks": [
+                {
+                    "type": "embed",
+                    "text": "",
+                    "data": {
+                        "type": "twitter",
+                        "url": "https://twitter.com/example/status/1",
+                        "oembed": {
+                            "html": (
+                                "<blockquote class='twitter-tweet'><p>"
+                                "The complete archived post text."
+                                "</p><a href='https://twitter.com/example/status/1'>"
+                                "May 30, 2017</a></blockquote>"
+                            )
+                        },
+                    },
+                },
+                {
+                    "type": "image",
+                    "text": "",
+                    "data": {
+                        "src": "https://images.axios.com/example.jpg",
+                        "alt_text": "An archived chart",
+                    },
+                },
+            ],
+            "entityMap": [],
+        },
+        "bodyHtml": {
+            "beforeKeepReading": (
+                "<blockquote class='twitter-tweet'><a "
+                "href='https://twitter.com/example/status/1'></a></blockquote>"
+                "<figure><img src='https://images.axios.com/example.jpg' "
+                "alt='An archived chart'></figure>"
+            ),
+            "afterKeepReading": "",
+        },
+    }
+    next_data = {
+        "props": {"pageProps": {"pageProps": {"data": {"story": story}}}}
+    }
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":"A Twitter-led update",
+      "datePublished":"2017-05-30T19:14:25Z"
+    }}</script></head><body><main id="main-content">
+      <div class="DraftjsBlocks_draftjs__example"></div>
+    </main><script id="__NEXT_DATA__" type="application/json">
+    {json.dumps(next_data)}</script></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.content_type == ContentType.INTERACTIVE
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "The complete archived post text." in result.plain_text
+    assert any(image.should_archive for image in result.images)
+
+
+@pytest.mark.parametrize(
+    ("headline", "expected_type", "expected_status"),
+    [
+        ("Axios AM (beta)", ContentType.NEWSLETTER, ArticleStatus.COMPLETE),
+        ("An ordinary empty story", ContentType.ARTICLE, ArticleStatus.PARTIAL),
+    ],
+)
+def test_axios_only_accepts_structurally_proven_empty_newsletters(
+    headline: str,
+    expected_type: ContentType,
+    expected_status: ArticleStatus,
+):
+    canonical_url = "https://www.axios.com/2017/12/16/empty-story"
+    story = {
+        "headline": headline,
+        "permalink": canonical_url,
+        "published_date": "2017-07-06T20:24:43Z",
+        "wordcount": 0,
+        "blocks": {"blocks": [], "entityMap": []},
+        "bodyHtml": {
+            "beforeKeepReading": "<span id='midStoryAd'></span>",
+            "afterKeepReading": "",
+        },
+    }
+    next_data = {
+        "props": {"pageProps": {"pageProps": {"data": {"story": story}}}}
+    }
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":{json.dumps(headline)},
+      "datePublished":"2017-07-06T20:24:43Z"
+    }}</script></head><body><main id="main-content">
+      <div class="DraftjsBlocks_draftjs__example"></div>
+    </main><script id="__NEXT_DATA__" type="application/json">
+    {json.dumps(next_data)}</script></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.content_type == expected_type
+    assert result.quality.status == expected_status
+    if expected_type == ContentType.NEWSLETTER:
+        assert "structured-empty-newsletter" in result.quality.warnings
+        assert "body-too-short" not in result.quality.warnings
+    else:
+        assert "body-too-short" in result.quality.warnings
 
 
 def test_wsj_parser_extracts_structured_image_gallery_in_order():

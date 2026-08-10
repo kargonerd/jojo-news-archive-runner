@@ -128,6 +128,9 @@ def parse_article(
         if spec.publisher == "nyt"
         else {}
     )
+    axios_next_story = (
+        _axios_next_story(soup) if spec.publisher == "axios" else None
+    )
     body = None
     structured_image_gallery_selected = False
     nyt_interactive_body_selected = False
@@ -214,6 +217,8 @@ def parse_article(
         puzzle_body = _wsj_puzzle_body(soup, canonical_url=canonical_url)
         if puzzle_body is not None:
             body = puzzle_body
+    if spec.publisher == "axios" and axios_next_story is not None:
+        body = _axios_next_story_body(axios_next_story)
     if (
         body is None
         and spec.publisher == "nyt"
@@ -745,6 +750,9 @@ def parse_article(
     ):
         content_type = ContentType.INTERACTIVE
     if spec.publisher == "axios":
+        axios_content_type = _axios_next_story_content_type(axios_next_story)
+        if axios_content_type is not None:
+            content_type = axios_content_type
         axios_embedded_content_type = _axios_embedded_content_type(clean_body)
         if axios_embedded_content_type is not None:
             content_type = axios_embedded_content_type
@@ -1056,6 +1064,10 @@ def parse_article(
         headline=headline,
         plain_text=plain_text,
     )
+    structured_empty_newsletter = bool(
+        spec.publisher == "axios"
+        and _axios_empty_newsletter_story(axios_next_story)
+    )
     minimum_body_characters = (
         _MINIMUM_BODY_CHARACTERS
         if (
@@ -1075,12 +1087,15 @@ def parse_article(
         and not embedded_nontext_content
         and not publisher_notice
         and not structured_short_record
+        and not structured_empty_newsletter
     ):
         warnings.append("body-too-short")
     if publisher_notice:
         warnings.append("publisher-notice")
     if structured_short_record:
         warnings.append("structured-short-record")
+    if structured_empty_newsletter:
+        warnings.append("structured-empty-newsletter")
     if spec.publisher == "ft" and _ft_explicit_truncation_notice(soup):
         warnings.append("truncated-body")
     if spec.publisher == "bloomberg" and _bloomberg_teaser_shell(soup):
@@ -6111,6 +6126,219 @@ def _nyt_preloaded_article_metadata(
             _string_or_none(target.get("lastMajorModification")),
         ),
     }
+
+
+def _axios_next_story(soup: BeautifulSoup) -> dict[str, Any] | None:
+    """Return Axios's server-rendered story payload when it is present."""
+    script = soup.select_one("script#__NEXT_DATA__")
+    if not isinstance(script, Tag):
+        return None
+    try:
+        payload = json.loads(script.string or script.get_text())
+    except (json.JSONDecodeError, TypeError):
+        return None
+    for item in _walk_json_objects(payload):
+        blocks = item.get("blocks")
+        permalink = _string_or_none(item.get("permalink"))
+        if (
+            isinstance(item.get("headline"), str)
+            and isinstance(blocks, dict)
+            and isinstance(blocks.get("blocks"), list)
+            and permalink
+            and "axios.com/" in permalink.casefold()
+            and any(
+                key in item
+                for key in ("published_date", "first_published", "last_published")
+            )
+        ):
+            return item
+    return None
+
+
+def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
+    """Restore Axios body HTML and media hidden in ``__NEXT_DATA__``.
+
+    Axios's 2022-era shell sometimes server-renders an empty Draft.js wrapper
+    even though the complete historical payload remains in ``bodyHtml`` and
+    the structured Draft.js blocks.  Prefer the publisher's rendered HTML,
+    then supplement media embeds whose visible text was stripped from it.
+    """
+    document = BeautifulSoup(
+        "<article data-jojo-source='axios-next-story'></article>",
+        "html.parser",
+    )
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+
+    body_html = story.get("bodyHtml")
+    html_parts: list[str] = []
+    if isinstance(body_html, str):
+        html_parts.append(body_html)
+    elif isinstance(body_html, dict):
+        for key in ("beforeKeepReading", "keepReadingData", "afterKeepReading"):
+            value = body_html.get(key)
+            if isinstance(value, str):
+                html_parts.append(value)
+            elif isinstance(value, dict):
+                html_parts.extend(
+                    nested
+                    for nested in value.values()
+                    if isinstance(nested, str)
+                )
+    if html_parts:
+        parsed = BeautifulSoup("".join(html_parts), "html.parser")
+        for child in list((parsed.body or parsed).children):
+            article.append(child)
+
+    structured_blocks = story.get("blocks", {}).get("blocks", [])
+    if not isinstance(structured_blocks, list):
+        structured_blocks = []
+
+    def append_fragment(value: str) -> None:
+        parsed = BeautifulSoup(value, "html.parser")
+        for node in parsed.select("script, style"):
+            node.decompose()
+        for child in list((parsed.body or parsed).children):
+            article.append(child)
+
+    existing_text = _clean_text(article.get_text(" ", strip=True)).casefold()
+    existing_images = {
+        _string_or_none(node.get("src"))
+        for node in article.select("img[src]")
+    }
+    existing_images.discard(None)
+    has_rendered_text = bool(existing_text)
+
+    for block in structured_blocks:
+        if not isinstance(block, dict):
+            continue
+        block_type = _clean_text(str(block.get("type") or "")).casefold()
+        text = _clean_text(str(block.get("text") or ""))
+        data = block.get("data")
+        if not isinstance(data, dict):
+            data = {}
+
+        if block_type == "image":
+            source = _string_or_none(data.get("src"))
+            if source and source not in existing_images:
+                figure = document.new_tag("figure")
+                image = document.new_tag("img", src=source)
+                alt = _string_or_none(data.get("alt_text"))
+                if alt:
+                    image["alt"] = alt
+                figure.append(image)
+                article.append(figure)
+                existing_images.add(source)
+            continue
+
+        if block_type == "embed":
+            oembed = data.get("oembed")
+            embed_html = (
+                _string_or_none(oembed.get("html"))
+                if isinstance(oembed, dict)
+                else None
+            )
+            embed_text = (
+                _clean_text(
+                    BeautifulSoup(embed_html, "html.parser").get_text(
+                        " ", strip=True
+                    )
+                )
+                if embed_html
+                else ""
+            )
+            if embed_html and (
+                not embed_text
+                or embed_text.casefold() not in existing_text
+            ):
+                append_fragment(embed_html)
+                existing_text = _clean_text(
+                    article.get_text(" ", strip=True)
+                ).casefold()
+            elif not embed_html:
+                source = _string_or_none(data.get("url"))
+                if source:
+                    article.append(document.new_tag("iframe", src=source))
+            continue
+
+        if text and (not has_rendered_text or text.casefold() not in existing_text):
+            tag_name = (
+                "blockquote"
+                if "quote" in block_type
+                else "h2"
+                if block_type.startswith("header")
+                else "li"
+                if "list-item" in block_type
+                else "p"
+            )
+            node = document.new_tag(tag_name)
+            node.string = text
+            article.append(node)
+            existing_text = f"{existing_text} {text.casefold()}".strip()
+
+    if article.select_one(
+        "p, h2, h3, h4, h5, h6, blockquote, li, table, iframe, img[src]"
+    ):
+        return article
+    return None
+
+
+def _axios_empty_newsletter_story(story: dict[str, Any] | None) -> bool:
+    """Identify native Axios AM/PM records whose publisher body is empty."""
+    if not isinstance(story, dict):
+        return False
+    headline = _clean_text(str(story.get("headline") or ""))
+    if not re.fullmatch(r"(?i)Axios\s+(?:AM|PM)(?:\s*\(beta\))?", headline):
+        return False
+    if story.get("wordcount") not in {0, "0"}:
+        return False
+    blocks = story.get("blocks")
+    if not isinstance(blocks, dict) or blocks.get("blocks") != []:
+        return False
+    body_html = story.get("bodyHtml")
+    fragments: list[str] = []
+    if isinstance(body_html, str):
+        fragments.append(body_html)
+    elif isinstance(body_html, dict):
+        fragments.extend(
+            value for value in body_html.values() if isinstance(value, str)
+        )
+    return not _clean_text(
+        BeautifulSoup("".join(fragments), "html.parser").get_text(
+            " ", strip=True
+        )
+    )
+
+
+def _axios_next_story_content_type(
+    story: dict[str, Any] | None,
+) -> ContentType | None:
+    if _axios_empty_newsletter_story(story):
+        return ContentType.NEWSLETTER
+    if not isinstance(story, dict):
+        return None
+    blocks = story.get("blocks")
+    values = blocks.get("blocks") if isinstance(blocks, dict) else None
+    if not isinstance(values, list):
+        return None
+    embed_types = {
+        _clean_text(str(data.get("type") or "")).casefold()
+        for block in values
+        if isinstance(block, dict)
+        and block.get("type") == "embed"
+        and isinstance((data := block.get("data")), dict)
+    }
+    if embed_types & {"video", "youtube", "vimeo", "jwplayer"}:
+        return ContentType.VIDEO
+    if embed_types:
+        return ContentType.INTERACTIVE
+    if values and all(
+        isinstance(block, dict) and block.get("type") == "image"
+        for block in values
+    ):
+        return ContentType.GALLERY
+    return None
 
 
 def _axios_embedded_content_type(body: Tag) -> ContentType | None:
