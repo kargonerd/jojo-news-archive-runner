@@ -325,36 +325,39 @@ def initialize_discovery_schema(
         """,
         [(pattern, _now_iso()) for pattern in patterns],
     )
-    if spec.publisher in {"reuters", "wsj"}:
-        corrected_rows: list[tuple[str, int, str, str, str]] = []
-        for canonical_url, timestamp, digest, published_at in connection.execute(
-            """
-            SELECT canonical_url, timestamp, digest, published_at
-            FROM candidates
-            """
-        ):
-            inferred = infer_published_at(str(canonical_url))
-            if inferred and inferred != published_at:
-                corrected_rows.append(
-                    (
-                        inferred,
-                        candidate_rank(
-                            str(timestamp),
-                            published_at=inferred,
-                        ),
-                        str(canonical_url),
+    # URL inference evolves as additional publisher URL families are found.
+    # Reclassify persisted candidates whenever a stronger publication date is
+    # now available so an old capture timestamp cannot masquerade as an
+    # article publication year in a resumed discovery database.
+    corrected_rows: list[tuple[str, int, str, str, str]] = []
+    for canonical_url, timestamp, digest, published_at in connection.execute(
+        """
+        SELECT canonical_url, timestamp, digest, published_at
+        FROM candidates
+        """
+    ):
+        inferred = infer_published_at(str(canonical_url))
+        if inferred and inferred != published_at:
+            corrected_rows.append(
+                (
+                    inferred,
+                    candidate_rank(
                         str(timestamp),
-                        str(digest),
-                    )
+                        published_at=inferred,
+                    ),
+                    str(canonical_url),
+                    str(timestamp),
+                    str(digest),
                 )
-        connection.executemany(
-            """
-            UPDATE candidates
-            SET published_at=?, rank_score=?
-            WHERE canonical_url=? AND timestamp=? AND digest=?
-            """,
-            corrected_rows,
-        )
+            )
+    connection.executemany(
+        """
+        UPDATE candidates
+        SET published_at=?, rank_score=?
+        WHERE canonical_url=? AND timestamp=? AND digest=?
+        """,
+        corrected_rows,
+    )
     connection.execute(
         """
         DELETE FROM candidates
@@ -2065,16 +2068,26 @@ def infer_published_at(canonical_url: str) -> str | None:
     ap_hosted_published = ap_hosted_publication_datetime(canonical_url)
     if ap_hosted_published is not None:
         return ap_hosted_published.isoformat()
-    patterns = [
+    hostname = (parsed.hostname or "").casefold().removeprefix("www.")
+    patterns: list[str] = []
+    if hostname in {"caixin.com", "magazine.caixin.com"}:
+        patterns.append(r"/(20\d{2})-(\d{2})-(\d{2})(?:/|$)")
+    if hostname == "zaobao.com.sg":
+        patterns.append(r"/story(20\d{2})(\d{2})(\d{2})(?:[-/]|$)")
+    if hostname == "aljazeera.com":
+        patterns.append(
+            r"/(?:news|features|opinions)/(20\d{2})/"
+            r"(\d{1,2})/(\d{1,2})(?:/|$)"
+        )
+    patterns.extend([
         r"/article/(?:0(?:%2C|,){2})?BT-CO-"
         r"(20\d{2})(\d{2})(\d{2})-",
         r"/(20\d{2})/(\d{2})/(\d{2})(?:/|$)",
         r"/articles/(20\d{2})-(\d{2})-(\d{2})(?:/|$)",
         r"-(20\d{2})-(\d{2})-(\d{2})(?:/|$)",
-    ]
+    ])
     if (
-        (parsed.hostname or "").casefold().removeprefix("www.")
-        == "reuters.com"
+        hostname == "reuters.com"
         and parsed.path.startswith("/article/")
     ):
         patterns.insert(
@@ -2096,8 +2109,7 @@ def infer_published_at(canonical_url: str) -> str | None:
             return None
         return value.isoformat()
     if (
-        (parsed.hostname or "").casefold().removeprefix("www.")
-        == "wsj.com"
+        hostname == "wsj.com"
     ):
         published = wsj_article_publication_datetime(canonical_url)
         if published is not None:

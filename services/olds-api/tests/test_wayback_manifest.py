@@ -706,6 +706,15 @@ def test_date_inference_and_candidate_ranking_prefers_after_publication():
         "abbott-beats-forecasts-on-strong-covid-19-testing-"
         "business-151594900170"
     ) == "2020-07-16T00:00:00+00:00"
+    assert infer_published_at(
+        "https://magazine.caixin.com/2010-01-08/100106588.html"
+    ) == "2010-01-08T00:00:00+00:00"
+    assert infer_published_at(
+        "https://www.zaobao.com.sg/news/singapore/story20240102-1234567"
+    ) == "2024-01-02T00:00:00+00:00"
+    assert infer_published_at(
+        "https://www.aljazeera.com/news/2020/1/2/example"
+    ) == "2020-01-02T00:00:00+00:00"
 
 
 def test_reuters_discovery_reclassifies_legacy_ids_by_publication_date():
@@ -743,6 +752,40 @@ def test_reuters_discovery_reclassifies_legacy_ids_by_publication_date():
         "SELECT published_at FROM candidates WHERE canonical_url=?",
         (url,),
     ).fetchone() == ("2012-06-07T00:00:00+00:00",)
+
+
+def test_resumed_caixin_discovery_reclassifies_capture_date():
+    spec = archive_source_spec("caixin")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+    )
+    url = "https://magazine.caixin.com/2010-01-08/100106588.html"
+    connection.execute(
+        """
+        INSERT INTO candidates(
+            canonical_url, published_at, timestamp, original_url,
+            digest, mimetype, status_code, byte_count, rank_score
+        ) VALUES (?, '2012-07-04T06:58:15+00:00', '20120704065815',
+                  ?, 'digest', 'text/html', 200, 13459, 1)
+        """,
+        (url, url),
+    )
+
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+    )
+
+    assert connection.execute(
+        "SELECT published_at FROM candidates WHERE canonical_url=?",
+        (url,),
+    ).fetchone() == ("2010-01-08T00:00:00+00:00",)
 
 
 def test_discovery_keeps_three_best_candidates_and_exports_generic_manifest(
