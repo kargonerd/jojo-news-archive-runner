@@ -77,7 +77,7 @@ WSJ_RSS_ENDPOINTS = (
 )
 PARSER_VALIDATION_CATALOG_MINIMUM_PER_YEAR = 750
 WSJ_LEGACY_DATE_HYDRATIONS_PER_RUN = 100
-ARCHIVED_DATE_HYDRATION_PUBLISHERS = {"scmp"}
+ARCHIVED_DATE_HYDRATION_PUBLISHERS = {"nikkei", "scmp"}
 ARCHIVED_DATE_HYDRATIONS_PER_RUN = 100
 
 
@@ -840,11 +840,43 @@ def extract_archived_published_at(
     *,
     publisher: str,
 ) -> str | None:
-    if publisher != "scmp":
+    if publisher not in ARCHIVED_DATE_HYDRATION_PUBLISHERS:
         raise ValueError(
             f"archived date extraction is not supported for {publisher!r}"
         )
+    # Prefer publisher-provided structured timestamps when present. Both
+    # Nikkei and SCMP have used JSON-LD/Open Graph on newer archived
+    # templates, while their older templates need the visible selectors
+    # below. Keeping both families here prevents a template transition from
+    # being mistaken for an undated article.
+    structured = extract_wsj_legacy_published_at(html)
+    if structured is not None:
+        return structured
     soup = BeautifulSoup(html, "html.parser")
+    if publisher == "nikkei":
+        node = soup.select_one(".cmnc-publish")
+        value = (
+            " ".join(node.get_text(" ", strip=True).split()) if node else ""
+        )
+        match = re.search(
+            r"(?P<year>20\d{2})\s*(?:/|年)\s*"
+            r"(?P<month>\d{1,2})\s*(?:/|月)\s*"
+            r"(?P<day>\d{1,2})(?:日)?",
+            value,
+        )
+        if match is None:
+            return None
+        try:
+            parsed = datetime(
+                int(match.group("year")),
+                int(match.group("month")),
+                int(match.group("day")),
+                tzinfo=timezone(timedelta(hours=9)),
+            )
+        except ValueError:
+            return None
+        return parsed.isoformat()
+
     node = soup.select_one(
         ".pane-node-created .pane-content, .pane-node-created"
     )

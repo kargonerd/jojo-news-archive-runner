@@ -75,6 +75,105 @@ def test_extract_scmp_archived_published_at_from_legacy_node():
     ) == "2012-08-15T14:10:00+08:00"
 
 
+def test_extract_nikkei_archived_published_at_from_legacy_node():
+    assert extract_archived_published_at(
+        '<dd class="cmnc-publish">2013/9/11付</dd>',
+        publisher="nikkei",
+    ) == "2013-09-11T00:00:00+09:00"
+
+
+def test_extract_nikkei_archived_published_at_from_json_ld():
+    assert extract_archived_published_at(
+        '<script type="application/ld+json">'
+        '{"datePublished":"2015-03-18T05:30:00+09:00"}'
+        "</script>",
+        publisher="nikkei",
+    ) == "2015-03-17T20:30:00+00:00"
+
+
+def test_nikkei_archived_date_hydration_withholds_capture_year(
+    tmp_path: Path,
+):
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("nikkei")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+    connection.execute("UPDATE discovery_queries SET status='complete'")
+    canonical_url = (
+        "https://www.nikkei.com/article/DGXNASFS1102U_R10C13A9PP8000"
+    )
+    connection.execute(
+        """
+        INSERT INTO candidates(
+            canonical_url, published_at, timestamp, original_url,
+            digest, mimetype, status_code, byte_count, rank_score
+        ) VALUES (?, ?, ?, ?, '', 'text/html', 200, 1234, 0)
+        """,
+        (
+            canonical_url,
+            "2014-02-01T10:00:00+00:00",
+            "20140201100000",
+            canonical_url,
+        ),
+    )
+    initialize_archived_date_schema(connection, publisher="nikkei")
+    before = export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=tmp_path / "before.jsonl.gz",
+        from_year=2010,
+        to_year=2015,
+    )
+    assert before["articles"] == 0
+    assert before["complete"] is False
+
+    class Response:
+        status_code = 200
+        text = '<dd class="cmnc-publish">2013/9/11付</dd>'
+
+        def raise_for_status(self):
+            return None
+
+    class Client:
+        def get(self, url):
+            assert "20140201100000id_" in url
+            return Response()
+
+    result = process_archived_dates(
+        connection,
+        publisher="nikkei",
+        http_client=Client(),
+        maximum=1,
+    )
+    assert result == {
+        "attempted": 1,
+        "found": 1,
+        "noDate": 0,
+        "failed": 0,
+        "remaining": 0,
+        "errors": [],
+    }
+    assert wsj_catalog_count_for_year(connection, 2013, spec=spec) == 1
+    assert wsj_catalog_count_for_year(connection, 2014, spec=spec) == 0
+    after_path = tmp_path / "after.jsonl.gz"
+    after = export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=after_path,
+        from_year=2010,
+        to_year=2015,
+    )
+    assert after["articles"] == 1
+    with gzip.open(after_path, "rt", encoding="utf-8") as handle:
+        row = json.loads(next(handle))
+    assert row["publishedAt"] == "2013-09-11T00:00:00+09:00"
+
+
 def test_scmp_archived_date_hydration_withholds_capture_year(tmp_path: Path):
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("scmp")
