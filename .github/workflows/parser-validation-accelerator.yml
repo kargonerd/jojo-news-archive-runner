@@ -893,11 +893,73 @@ jobs:
             --force-existing \
             --summary "$LOCAL_ROOT/raw/summary.json"
 
+      - name: Assess validation state before publication
+        id: rotation_readiness
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python services/olds-api/tools/capture_action_state.py \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+            --stop-at-validation-target \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Audit completed holdout rotation
+        id: rotation_audit
+        if: >-
+          ${{
+            startsWith(inputs.cohort, 'holdout-v') &&
+            steps.rotation_readiness.outputs.validation_ready == 'true'
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          previous_states=("$RUNNER_TEMP"/exclusion-*.sqlite3)
+          if [ "${#previous_states[@]}" -eq 0 ]; then
+            echo "Completed holdout has no earlier cohort checkpoint." >&2
+            exit 2
+          fi
+          audit_args=()
+          for previous_state in "${previous_states[@]}"; do
+            label="$(basename "$previous_state" .sqlite3)"
+            label="${label#exclusion-}"
+            audit_args+=(--previous-state "${label}=${previous_state}")
+          done
+          parser_version="$(
+            python -c 'import os; from jojo_olds_api.publisher_specs import publisher_spec; print(publisher_spec(os.environ["PUBLISHER"]).parser_version)'
+          )"
+          python services/olds-api/tools/audit_parser_validation_holdout.py \
+            "${audit_args[@]}" \
+            --current-state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --publisher "$PUBLISHER" \
+            --expected-parser-version "$parser_version" \
+            --from-year "$SAMPLE_YEAR" \
+            --to-year "$SAMPLE_YEAR" \
+            --target-per-year "$VALIDATION_TARGET" \
+            --require-complete \
+            --output "$LOCAL_ROOT/raw/rotation-audit.json"
+
       - name: Checkpoint validation state
         if: >-
           ${{
             always() &&
             !cancelled() &&
+            steps.rotation_readiness.outcome != 'failure' &&
+            (
+              !startsWith(inputs.cohort, 'holdout-v') ||
+              steps.rotation_readiness.outputs.validation_ready != 'true' ||
+              steps.rotation_audit.outcome == 'success'
+            ) &&
             hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
           }}
         shell: bash
@@ -914,6 +976,12 @@ jobs:
           ${{
             always() &&
             !cancelled() &&
+            steps.rotation_readiness.outcome != 'failure' &&
+            (
+              !startsWith(inputs.cohort, 'holdout-v') ||
+              steps.rotation_readiness.outputs.validation_ready != 'true' ||
+              steps.rotation_audit.outcome == 'success'
+            ) &&
             hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
           }}
         shell: bash
@@ -950,6 +1018,12 @@ jobs:
               "${REMOTE_ROOT}/state/summary.json" \
               --retries 8 --low-level-retries 20
           fi
+          if [ -f "$LOCAL_ROOT/raw/rotation-audit.json" ]; then
+            rclone copyto \
+              "$LOCAL_ROOT/raw/rotation-audit.json" \
+              "${REMOTE_ROOT}/state/rotation-audit.json" \
+              --retries 8 --low-level-retries 20
+          fi
           rclone copyto \
             "$RUNNER_TEMP/capture.sqlite3.gz" \
             "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
@@ -961,6 +1035,12 @@ jobs:
           ${{
             always() &&
             !cancelled() &&
+            steps.rotation_readiness.outcome != 'failure' &&
+            (
+              !startsWith(inputs.cohort, 'holdout-v') ||
+              steps.rotation_readiness.outputs.validation_ready != 'true' ||
+              steps.rotation_audit.outcome == 'success'
+            ) &&
             hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
           }}
         shell: bash
@@ -977,6 +1057,12 @@ jobs:
         if: >-
           ${{
             inputs.auto_continue &&
+            steps.rotation_readiness.outcome != 'failure' &&
+            (
+              !startsWith(inputs.cohort, 'holdout-v') ||
+              steps.rotation_readiness.outputs.validation_ready != 'true' ||
+              steps.rotation_audit.outcome == 'success'
+            ) &&
             steps.capture.outputs.exit_code == '0' &&
             steps.after.outputs.should_continue == 'true'
           }}

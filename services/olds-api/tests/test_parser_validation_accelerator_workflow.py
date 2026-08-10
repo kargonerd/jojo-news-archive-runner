@@ -63,6 +63,38 @@ def test_accelerator_does_not_silently_relax_exclusions() -> None:
     assert "relax_parser_validation_exclusions" not in workflow
 
 
+def test_completed_holdout_requires_union_rotation_audit_before_publish() -> None:
+    workflow = _workflow_text()
+    audit = workflow[
+        workflow.index("Audit completed holdout rotation")
+        : workflow.index("Checkpoint validation state")
+    ]
+
+    assert "audit_parser_validation_holdout.py" in audit
+    assert '("$RUNNER_TEMP"/exclusion-*.sqlite3)' in audit
+    assert '--previous-state "${label}=${previous_state}"' in audit
+    assert "--require-complete" in audit
+    assert '--target-per-year "$VALIDATION_TARGET"' in audit
+    assert 'outputs.validation_ready == \'true\'' in audit
+    assert "rotation-audit.json" in audit
+
+
+def test_rotation_audit_failure_blocks_checkpoint_publish_and_chaining() -> None:
+    workflow = _workflow_text()
+
+    assert workflow.count(
+        "steps.rotation_readiness.outcome != 'failure'"
+    ) == 4
+    assert workflow.count(
+        "steps.rotation_audit.outcome == 'success'"
+    ) == 4
+    publish = workflow[
+        workflow.index("Publish validation objects and checkpoint")
+        : workflow.index("Report validation state")
+    ]
+    assert '"${REMOTE_ROOT}/state/rotation-audit.json"' in publish
+
+
 def test_accelerator_enables_archive_fallbacks_for_wsj() -> None:
     workflow = _workflow_text()
 
