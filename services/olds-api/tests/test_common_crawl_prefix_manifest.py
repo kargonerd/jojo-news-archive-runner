@@ -220,6 +220,28 @@ def test_prefix_queries_prioritize_recent_collections():
     assert collection_id == "CC-MAIN-2026-30"
 
 
+def test_prefix_queries_can_prioritize_oldest_collections():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("nikkei")
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+        collections=(
+            _collection("CC-MAIN-2013-48"),
+            _collection("CC-MAIN-2016-50"),
+        ),
+    )
+
+    collection_id, _, _, _, _ = next_prefix_query(
+        connection,
+        collection_order="oldest",
+    )
+
+    assert collection_id == "CC-MAIN-2013-48"
+
+
 def test_prefix_year_target_skips_and_can_reopen_pending_queries():
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("npr")

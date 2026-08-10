@@ -40,6 +40,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--to-year", type=int, required=True)
     parser.add_argument("--collection-from-year", type=int, default=2012)
     parser.add_argument("--collection-to-year", type=int)
+    parser.add_argument(
+        "--collection-order",
+        choices=("newest", "oldest"),
+        default="newest",
+    )
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-pages", type=int, default=10)
@@ -211,7 +216,10 @@ def main() -> int:
             and queries < args.max_queries
             and errors < args.max_errors
         ):
-            query = next_prefix_query(connection)
+            query = next_prefix_query(
+                connection,
+                collection_order=args.collection_order,
+            )
             if query is None:
                 break
             queries += 1

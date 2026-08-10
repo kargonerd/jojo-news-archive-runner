@@ -158,6 +158,7 @@ jobs:
             --to-year "$TO_YEAR" \
             --collection-from-year "$COLLECTION_FROM_YEAR" \
             --collection-to-year "$COLLECTION_TO_YEAR" \
+            --collection-order oldest \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
             --summary "$LOCAL_ROOT/state/summary.json" \

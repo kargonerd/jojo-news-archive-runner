@@ -375,9 +375,14 @@ def initialize_prefix_schema(
 
 def next_prefix_query(
     connection: sqlite3.Connection,
+    *,
+    collection_order: str = "newest",
 ) -> tuple[str, str, str, int | None, int] | None:
+    if collection_order not in {"newest", "oldest"}:
+        raise ValueError("collection_order must be 'newest' or 'oldest'")
+    collection_direction = "DESC" if collection_order == "newest" else "ASC"
     row = connection.execute(
-        """
+        f"""
         SELECT collection_id, index_url, pattern, total_pages, next_page
         FROM prefix_queries
         WHERE status NOT IN ('complete', 'target-complete')
@@ -387,7 +392,7 @@ def next_prefix_query(
                 substr(pattern, instr(pattern, '/20') + 1, 4)
                 AS INTEGER
             ),
-            collection_id DESC,
+            collection_id {collection_direction},
             pattern,
             updated_at
         LIMIT 1

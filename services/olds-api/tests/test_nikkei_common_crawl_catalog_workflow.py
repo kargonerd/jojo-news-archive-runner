@@ -17,6 +17,7 @@ def test_catalog_hydrates_dates_and_checkpoints_private_state() -> None:
     assert "--publisher nikkei" in workflow
     assert '--collection-from-year "$COLLECTION_FROM_YEAR"' in workflow
     assert '--collection-to-year "$COLLECTION_TO_YEAR"' in workflow
+    assert "--collection-order oldest" in workflow
     assert '--max-date-hydrations "$MAX_HYDRATIONS"' in workflow
     assert "--data-min-request-interval 0.5" in workflow
     assert "--page-size 1000" in workflow
