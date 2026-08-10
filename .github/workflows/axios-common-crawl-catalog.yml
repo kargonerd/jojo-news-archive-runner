@@ -110,6 +110,10 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
+          # A single unavailable index often affects the bare-host and
+          # www-host queries together. Keep the batch bounded at 80 query
+          # advances, but tolerate a short cluster of transient failures so
+          # one collection outage cannot strand the automatic chain.
           python services/olds-api/tools/build_common_crawl_prefix_manifest.py \
             --publisher axios \
             --from-year 2017 \
@@ -120,7 +124,7 @@ jobs:
             --summary "$LOCAL_ROOT/state/summary.json" \
             --max-pages "$MAX_PAGES" \
             --max-queries "$MAX_QUERIES" \
-            --max-errors 3 \
+            --max-errors 12 \
             --target-articles-per-year 10000 \
             --min-request-interval 3 \
             --timeout 45 \
