@@ -123,17 +123,46 @@ jobs:
             fi
 
             source_root="${publisher}/${from_year}-${to_year}/${mode}"
-            summary="$RUNNER_TEMP/manifest-summary.json"
+            status="$RUNNER_TEMP/catalog-status-${publisher}-${from_year}-${to_year}-${mode}.json"
+            summary="$RUNNER_TEMP/manifest-summary-${publisher}-${from_year}-${to_year}-${mode}.json"
+            catalog_complete=false
             if rclone copyto \
+                "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/status.json" \
+                "$status" \
+                --timeout 20s --contimeout 10s \
+                --retries 1 --low-level-retries 1 \
+                >/dev/null 2>&1; then
+              if jq -e \
+                  --arg publisher "$publisher" \
+                  --argjson from_year "$from_year" \
+                  --argjson to_year "$to_year" \
+                  --arg mode "$mode" \
+                  '.formatVersion == "jojo-source-catalog-status/1"
+                    and .publisher == $publisher
+                    and .fromYear == $from_year
+                    and .toYear == $to_year
+                    and .manifestMode == $mode
+                    and .complete == true
+                    and .shouldContinue == false' \
+                  "$status" >/dev/null; then
+                catalog_complete=true
+              fi
+            elif rclone copyto \
                 "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest-summary.json" \
                 "$summary" \
                 --timeout 20s --contimeout 10s \
                 --retries 1 --low-level-retries 1 \
                 >/dev/null 2>&1; then
+              # Compatibility for any pre-status sidecar that explicitly
+              # carried a completion bit. Ordinary manifest summaries only
+              # describe capacity and must not be treated as completion.
               if jq -e '.complete == true' "$summary" >/dev/null; then
-                echo "Catalog already complete: $title"
-                continue
+                catalog_complete=true
               fi
+            fi
+            if [ "$catalog_complete" = true ]; then
+              echo "Catalog already complete: $title"
+              continue
             fi
 
             gh workflow run news-raw-archive.yml \

@@ -28,6 +28,9 @@ def test_archive_watchdog_is_catalog_only_and_skips_complete_shards() -> None:
 
     assert '-f max_captures=0' in workflow
     assert "formal validation stores only its selected canonical raw samples" in workflow
+    assert "catalog/status.json" in workflow
+    assert 'jojo-source-catalog-status/1' in workflow
+    assert ".shouldContinue == false" in workflow
     assert "manifest-summary.json" in workflow
     assert "jq -e '.complete == true'" in workflow
 
