@@ -34,11 +34,21 @@ PUBLISHER_ORDER = (
     "caixin",
 )
 # WSJ's current validation states were migrated/replayed from earlier parser
-# cohorts.  They are useful exclusion sources, but are not independent
-# convergence evidence.  Require a disjoint holdout before marking a WSJ cell
-# ready; publishers can be added here when the same provenance audit proves a
-# replayed cohort was reused after a parser repair.
-REQUIRED_HOLDOUT_COHORTS = {"wsj": "holdout-v1"}
+# cohorts. They remain useful exclusion sources, but validation/source alone is
+# not independent convergence evidence even when its parser version is current.
+REQUIRED_HOLDOUT_PUBLISHERS = {"wsj"}
+# These validation-named cells were independently audited against their older
+# source cohort and proved zero-overlap. Keep the exception narrow and
+# evidence-backed; every other stale-version baseline automatically rotates to
+# a new numbered holdout.
+PROVEN_ROTATED_VALIDATION_CELLS = {
+    ("ft", 2016),
+    ("npr", 2010),
+    ("npr", 2011),
+    ("npr", 2012),
+    ("npr", 2013),
+    ("npr", 2026),
+}
 ACTIVE_TITLE_RE = re.compile(
     r"^parser-(?:qa|validation|holdout-v[1-9][0-9]*)-"
     r"(aljazeera|ap|axios|bloomberg|caixin|ft|nikkei|npr|nyt|reuters|scmp|wsj|zaobao)-"
@@ -119,7 +129,7 @@ def plan_validation_dispatch(
             "parserVersion": None,
             "summaryPaths": [],
             "cohortRows": {},
-            "rotationBaselineCohorts": set(),
+            "observedRows": [],
         }
         for publisher in publisher_order
         for year in TARGET_YEARS
@@ -172,13 +182,11 @@ def plan_validation_dispatch(
             if isinstance(paths, list):
                 paths.append(summary_path.relative_to(state_root).as_posix())
             if (
-                row.get("parserVersion") == versions[publisher]
-                and _integer(row.get("evaluated")) > 0
-                and cohort in {"source", "validation"}
+                _integer(row.get("evaluated")) > 0
             ):
-                baselines = cell["rotationBaselineCohorts"]
-                assert isinstance(baselines, set)
-                baselines.add(cohort)
+                observed = cell["observedRows"]
+                assert isinstance(observed, list)
+                observed.append({"cohort": cohort, "row": row})
             if (
                 row.get("parserVersion") != versions[publisher]
                 or _integer(row.get("qaRevision"))
@@ -194,22 +202,22 @@ def plan_validation_dispatch(
             ):
                 cohort_rows[cohort] = row
 
-    for (publisher, _year), cell in progress.items():
+    for (publisher, year), cell in progress.items():
         cohort_rows = cell["cohortRows"]
         assert isinstance(cohort_rows, dict)
-        baselines = cell["rotationBaselineCohorts"]
-        assert isinstance(baselines, set)
-        required_cohort = (
-            REQUIRED_HOLDOUT_COHORTS.get(publisher)
-            if baselines
-            else None
+        observed_rows = cell["observedRows"]
+        assert isinstance(observed_rows, list)
+        required_cohort = _required_holdout_cohort(
+            publisher=publisher,
+            year=year,
+            observed_rows=observed_rows,
+            current_rows=cohort_rows,
+            parser_version=versions[publisher],
+            qa_revision=qa_revisions[publisher],
         )
         selected_cohort = required_cohort
         if selected_cohort is None and cohort_rows:
-            selected_cohort = max(
-                cohort_rows,
-                key=lambda name: _integer(cohort_rows[name].get("evaluated")),
-            )
+            selected_cohort = _select_current_cohort(cohort_rows)
         selected = cohort_rows.get(selected_cohort, {})
         if isinstance(selected, dict) and selected:
             cell["evaluated"] = _integer(selected.get("evaluated"))
@@ -372,6 +380,89 @@ def _dispatch_cohort(cell: dict[str, object]) -> str:
     ):
         return selected
     return "validation"
+
+
+def _required_holdout_cohort(
+    *,
+    publisher: str,
+    year: int,
+    observed_rows: list[object],
+    current_rows: dict[str, object],
+    parser_version: str,
+    qa_revision: int,
+) -> str | None:
+    if (
+        (publisher, year) in PROVEN_ROTATED_VALIDATION_CELLS
+        and any(name in {"source", "validation"} for name in current_rows)
+    ):
+        return None
+    stale_numbers: list[int] = []
+    observed_numbers: list[int] = []
+    observed_baseline = False
+    for item in observed_rows:
+        if not isinstance(item, dict):
+            continue
+        cohort = item.get("cohort")
+        row = item.get("row")
+        if not isinstance(cohort, str) or not isinstance(row, dict):
+            continue
+        number = _cohort_number(cohort)
+        if number is None:
+            continue
+        observed_numbers.append(number)
+        observed_baseline = observed_baseline or cohort in {
+            "source",
+            "validation",
+        }
+        if (
+            row.get("parserVersion") != parser_version
+            or _integer(row.get("qaRevision")) != qa_revision
+        ):
+            stale_numbers.append(number)
+    current_holdouts = {
+        number: cohort
+        for cohort in current_rows
+        if (number := _cohort_number(cohort)) is not None and number > 0
+    }
+    if stale_numbers:
+        newest_stale = max(stale_numbers)
+        if current_holdouts and max(current_holdouts) > newest_stale:
+            return current_holdouts[max(current_holdouts)]
+        next_number = max(observed_numbers, default=0) + 1
+        return f"holdout-v{max(1, next_number)}"
+    if publisher in REQUIRED_HOLDOUT_PUBLISHERS and observed_baseline:
+        if current_holdouts:
+            return current_holdouts[max(current_holdouts)]
+        return "holdout-v1"
+    return None
+
+
+def _select_current_cohort(current_rows: dict[str, object]) -> str:
+    holdouts = {
+        number: cohort
+        for cohort in current_rows
+        if (number := _cohort_number(cohort)) is not None and number > 0
+    }
+    if holdouts:
+        return holdouts[max(holdouts)]
+    for cohort in ("validation", "source"):
+        if cohort in current_rows:
+            return cohort
+    return max(
+        current_rows,
+        key=lambda name: _integer(
+            current_rows[name].get("evaluated")
+            if isinstance(current_rows[name], dict)
+            else 0
+        ),
+    )
+
+
+def _cohort_number(cohort: str) -> int | None:
+    if cohort in {"source", "validation"}:
+        return 0
+    match = re.fullmatch(r"holdout-v([1-9][0-9]*)", cohort)
+    return int(match.group(1)) if match is not None else None
 
 
 def _integer(value: object) -> int:

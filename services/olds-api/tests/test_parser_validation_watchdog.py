@@ -242,6 +242,143 @@ def test_watchdog_rejects_ready_stale_parser_or_qa_revision(
         assert row["ready"] is False
 
 
+def test_watchdog_rotates_stale_nyt_parser_to_next_holdout(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "validation/nyt/2018/state/summary.json",
+        publisher="nyt",
+        year=2018,
+        evaluated=800,
+        parser_version="nyt-parser/0.8.52",
+    )
+    _write_summary(
+        tmp_path,
+        "holdout-v3/nyt/2018/state/summary.json",
+        publisher="nyt",
+        year=2018,
+        evaluated=800,
+        parser_version="nyt-parser/0.8.54",
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["nyt"],
+        available_source_shards={"nyt/2016-2026/sitemap-wayback"},
+    )
+
+    assert plan["tasks"][0]["cohort"] == "holdout-v4"
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["publisher"] == "nyt" and row["year"] == 2018
+    )
+    assert cell["requiredCohort"] == "holdout-v4"
+    assert cell["evaluated"] == 0
+
+
+def test_watchdog_accepts_current_holdout_after_stale_cohorts(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "holdout-v2/axios/2017/state/summary.json",
+        publisher="axios",
+        year=2017,
+        evaluated=327,
+        parser_version="axios-parser/0.1.6",
+    )
+    _write_summary(
+        tmp_path,
+        "holdout-v3/axios/2017/state/summary.json",
+        publisher="axios",
+        year=2017,
+        evaluated=800,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["axios"],
+        available_source_shards={"axios/2017-2026/wayback-urlkey"},
+    )
+
+    assert plan["readyCells"] == 1
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["publisher"] == "axios" and row["year"] == 2017
+    )
+    assert cell["requiredCohort"] == "holdout-v3"
+    assert cell["selectedCohort"] == "holdout-v3"
+    assert cell["ready"] is True
+
+
+def test_watchdog_requires_npr_holdout_for_unaudited_stale_source(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "npr/2010-2015/wayback-urlkey/state/summary.json",
+        publisher="npr",
+        year=2014,
+        evaluated=800,
+        parser_version="npr-parser/0.1.17",
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["npr"],
+        available_source_shards={"npr/2010-2015/wayback-urlkey"},
+    )
+
+    assert plan["tasks"][0]["year"] == 2014
+    assert plan["tasks"][0]["cohort"] == "holdout-v1"
+
+
+def test_watchdog_retains_audited_rotated_validation_cell(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "ft/2016-2026/sitemap-wayback/state/summary.json",
+        publisher="ft",
+        year=2016,
+        evaluated=524,
+        parser_version="ft-parser/0.8.29",
+    )
+    _write_summary(
+        tmp_path,
+        "validation/ft/2016/state/summary.json",
+        publisher="ft",
+        year=2016,
+        evaluated=800,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["ft"],
+        available_source_shards={"ft/2016-2026/sitemap-wayback"},
+    )
+
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["publisher"] == "ft" and row["year"] == 2016
+    )
+    assert cell["requiredCohort"] is None
+    assert cell["selectedCohort"] == "validation"
+    assert cell["ready"] is True
+
+
 def test_watchdog_only_plans_cells_with_readable_source_manifests(
     tmp_path: Path,
 ):
@@ -455,7 +592,7 @@ def test_watchdog_prioritizes_stale_corpus_for_parser_replay(
     assert plan["tasks"][0]["year"] == 2016
     assert plan["tasks"][0]["currentEvaluated"] == 0
     assert plan["tasks"][0]["replayableEvaluated"] == 519
-    assert plan["tasks"][0]["cohort"] == "validation"
+    assert plan["tasks"][0]["cohort"] == "holdout-v1"
 
 
 def test_watchdog_requires_all_quality_gates(tmp_path: Path):
