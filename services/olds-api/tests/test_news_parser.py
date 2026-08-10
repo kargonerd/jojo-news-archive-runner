@@ -16906,7 +16906,95 @@ def test_nikkei_legacy_parser_extracts_print_date_and_article_text():
     assert result.published_at.isoformat() == "2013-09-11T00:00:00+09:00"
     assert "価格や通信料金" in result.plain_text
     assert result.quality.body_characters >= 100
-    assert result.extraction.parser_version == "nikkei-parser/0.1.1"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.3"
+
+
+def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
+    result = parse_article(
+        """
+        <html><head>
+          <title>パナソニック、汐留ビル売却を検討 ：日本経済新聞</title>
+        </head><body>
+          <div class="cmnc-publish">2012/12/13</div>
+          <div class="cmn-article_text JSID_key_fonttxt">
+            <p>パナソニックは東京の拠点であるビルを売却する検討に入った。
+            金額や売却先は未定。巨額の赤字で現預金が流出しており、
+            資産売却を加速して手元資金の厚みを増すのが狙いだ。
+            売却後も賃貸…</p>
+          </div>
+          <p>会員限定です。電子版に登録すると続きをお読みいただけます。</p>
+        </body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url=(
+            "https://www.nikkei.com/article/"
+            "DGKDZO49326620Y2A201C1TJ1000"
+        ),
+    )
+
+    assert result.headline == "パナソニック、汐留ビル売却を検討"
+    assert result.published_at is not None
+    assert result.published_at.isoformat() == "2012-12-13T00:00:00+09:00"
+    assert result.quality.status == ArticleStatus.PARTIAL
+    assert "truncated-body" in result.quality.warnings
+    assert result.extraction.parser_version == "nikkei-parser/0.1.3"
+
+
+def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
+    image_path = (
+        "https%3A%2F%2Fimgix-proxy.n8s.jp%2F"
+        "DSKDZO7601153022082014PPE000-3.jpg"
+    )
+    result = parse_article(
+        f"""
+        <html lang="ja"><head>
+          <script type="application/ld+json">{{
+            "@type": "NewsArticle",
+            "headline": "子ども1人にかかる教育費は？",
+            "image": [
+              "https://article-image-ix.nikkei.com/{image_path}?w=1200&amp;s=one",
+              "https://article-image-ix.nikkei.com/{image_path}?w=600&amp;s=two"
+            ]
+          }}</script>
+        </head><body><main><article>
+          <k-lock-banner><p>この記事は会員限定記事です</p></k-lock-banner>
+          <header><h1>子ども1人にかかる教育費は？</h1>
+            <p>公立で1000万円、貯蓄早めに</p></header>
+          <k-action-bar><p>メールで送る リンクをコピーする</p>
+            <p>日経の記事利用サービスについて</p></k-action-bar>
+          <section data-track-article-content>
+            <p>残暑厳しい中、鯛吉は早朝から事務所に出勤し、
+            なにやら調べ物をしています。</p>
+            <p>一息つこうとインスタントのアイスコーヒーを作っている
+            ところに、新衣紗がやって来ました。</p>
+            <p>この間、友達との旅行で休んだ分、出勤してくれるんだっけ...</p>
+          </section>
+          <div class="paywall_generated" data-k2-component-name="k2-paywall-container">
+            <p>この記事は会員限定です。登録すると続きをお読みいただけます。</p>
+            <p>残り1902文字</p>
+            <figure><img src="/.resources/k-components/banner/paid-banner.png"
+              alt="有料会員向け機能"><figcaption>日経電子版 紙面ビューアー</figcaption></figure>
+          </div>
+          <div class="relatedArticles_generated"><p>こちらもおすすめ(自動検索)</p></div>
+        </article></main></body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url=(
+            "https://www.nikkei.com/article/"
+            "DGKDZO76011510S4A820C1PPE000"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.PARTIAL
+    assert "truncated-body" in result.quality.warnings
+    assert "残暑厳しい中" in result.plain_text
+    assert "メールで送る" not in result.plain_text
+    assert "この記事は会員限定です" not in result.plain_text
+    assert "こちらもおすすめ" not in result.plain_text
+    assert "paid-banner" not in result.body_html
+    assert len(result.images) == 1
+    assert len(result.images[0].candidate_urls) == 2
+    assert result.extraction.parser_version == "nikkei-parser/0.1.3"
 
 
 def test_scmp_legacy_parser_extracts_body_date_and_byline():

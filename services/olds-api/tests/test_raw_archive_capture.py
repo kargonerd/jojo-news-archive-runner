@@ -43,6 +43,7 @@ from jojo_olds_api.raw_archive_capture import (
     _common_crawl_discovery_urls,
     _decode_archived_html_content,
     _ft_capture_parser_evidence,
+    _nikkei_capture_parser_evidence,
     _wsj_capture_parser_evidence,
     archive_fallback_policy,
     arquivo_pt_cdx_url,
@@ -171,9 +172,66 @@ def test_candidate_rejection_reasons_explain_npr_parser_rejection():
     assert reasons == ("npr-parser-unusable",)
 
 
+def test_nikkei_capture_parser_evidence_rejects_member_excerpt():
+    usable, evidence = _nikkei_capture_parser_evidence(
+        """
+        <html><head>
+          <title>パナソニック、汐留ビル売却を検討 ：日本経済新聞</title>
+        </head><body>
+          <div class="cmn-article_text">
+            <p>パナソニックは東京の拠点であるビルを売却する検討に入った。
+            巨額の赤字で現預金が流出しており、資産売却を加速して手元資金の
+            厚みを増すのが狙いだ。売却後も賃貸…</p>
+          </div>
+          <p>会員限定です。電子版に登録すると続きをお読みいただけます。</p>
+        </body></html>
+        """.encode(),
+        canonical_url=(
+            "https://www.nikkei.com/article/"
+            "DGKDZO49326620Y2A201C1TJ1000"
+        ),
+    )
+
+    assert usable is False
+    assert evidence["nikkeiCaptureParserUsable"] is False
+    assert evidence["nikkeiCaptureExtractionStatus"] == "partial"
+    assert evidence["nikkeiCaptureBodyCharacters"] > 0
+
+
+def test_nikkei_capture_parser_evidence_rejects_modern_paywall_excerpt():
+    usable, evidence = _nikkei_capture_parser_evidence(
+        """
+        <html><head><title>子ども1人にかかる教育費は？ ：日本経済新聞</title>
+        </head><body><article>
+          <section data-track-article-content>
+            <p>残暑厳しい中、教育費について家族が話し合った。</p>
+            <p>今後の支出を確認しながら準備を進めることにした...</p>
+          </section>
+          <div data-k2-component-name="k2-paywall-container">
+            <p>この記事は会員限定です。登録すると続きをお読みいただけます。</p>
+            <p>残り1902文字</p>
+          </div>
+        </article></body></html>
+        """.encode(),
+        canonical_url=(
+            "https://www.nikkei.com/article/"
+            "DGKDZO76011510S4A820C1PPE000"
+        ),
+    )
+
+    assert usable is False
+    assert evidence["nikkeiCaptureParserUsable"] is False
+    assert evidence["nikkeiCaptureExtractionStatus"] == "partial"
+
+
 def test_wsj_archive_capture_supports_secondary_archive_fallbacks():
     assert "wsj" in COMMON_CRAWL_FALLBACK_PUBLISHERS
     assert "wsj" in ARQUIVO_PT_FALLBACK_PUBLISHERS
+
+
+def test_nikkei_archive_capture_supports_secondary_archive_fallbacks():
+    assert "nikkei" in COMMON_CRAWL_FALLBACK_PUBLISHERS
+    assert "nikkei" in ARQUIVO_PT_FALLBACK_PUBLISHERS
 
 
 def test_bloomberg_common_crawl_discovery_prefers_legacy_news_url():

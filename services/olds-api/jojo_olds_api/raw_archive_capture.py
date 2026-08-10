@@ -57,6 +57,7 @@ CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.4",
     "bloomberg": "bloomberg-capture/0.10.3",
     "ft": "ft-capture/0.20.2",
+    "nikkei": "nikkei-capture/0.1.0",
     "nyt": "nyt-capture/0.9.0",
     "npr": "npr-capture/1.2",
     "reuters": "reuters-capture/0.7.2",
@@ -68,6 +69,7 @@ WAYBACK_TIMEMAP_MAXIMUM_BYTES = 2_000_000
 WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES = 8
 WAYBACK_TIMEMAP_FALLBACK_PUBLISHERS = {
     "bloomberg",
+    "nikkei",
     "npr",
     "nyt",
     "reuters",
@@ -119,8 +121,8 @@ NYT_TRUSTED_WORDPRESS_ENDPOINTS = (
 NYT_HEADLINE_WORDPRESS_ENDPOINTS = (
     "https://dnyuz.com/wp-json/wp/v2/posts",
 )
-COMMON_CRAWL_FALLBACK_PUBLISHERS = {"ft", "wsj"}
-ARQUIVO_PT_FALLBACK_PUBLISHERS = {"ft", "wsj"}
+COMMON_CRAWL_FALLBACK_PUBLISHERS = {"ft", "nikkei", "wsj"}
+ARQUIVO_PT_FALLBACK_PUBLISHERS = {"ft", "nikkei", "wsj"}
 ARQUIVO_PT_CDX_ENDPOINT = "https://arquivo.pt/wayback/cdx"
 ARQUIVO_PT_REPLAY_ENDPOINT = "https://arquivo.pt/noFrame/replay"
 ARQUIVO_PT_INDEX_MAXIMUM_BYTES = 2_000_000
@@ -2159,6 +2161,15 @@ def _fetch_usable_candidate(
             canonical_url=canonical_url,
         )
         signals = signals | npr_evidence
+    nikkei_parser_usable = True
+    if publisher == "nikkei" and signals["looksLikeHtml"]:
+        nikkei_parser_usable, nikkei_evidence = (
+            _nikkei_capture_parser_evidence(
+                content,
+                canonical_url=canonical_url,
+            )
+        )
+        signals = signals | nikkei_evidence
     ft_parser_usable = True
     if publisher == "ft" and signals["looksLikeHtml"]:
         ft_parser_usable, ft_evidence = _ft_capture_parser_evidence(
@@ -2193,6 +2204,7 @@ def _fetch_usable_candidate(
         reuters_parser_usable=reuters_parser_usable,
         npr_parser_usable=npr_parser_usable,
         ft_parser_usable=ft_parser_usable,
+        nikkei_parser_usable=nikkei_parser_usable,
     )
     if rejection_reasons:
         return (
@@ -2252,6 +2264,7 @@ def _candidate_rejection_reasons(
     reuters_parser_usable: bool,
     npr_parser_usable: bool,
     ft_parser_usable: bool,
+    nikkei_parser_usable: bool = True,
 ) -> tuple[str, ...]:
     """Return stable diagnostics for every candidate rejection predicate."""
 
@@ -2292,6 +2305,8 @@ def _candidate_rejection_reasons(
         reasons.append("npr-parser-unusable")
     if not ft_parser_usable:
         reasons.append("ft-parser-unusable")
+    if not nikkei_parser_usable:
+        reasons.append("nikkei-parser-unusable")
     return tuple(reasons)
 
 
@@ -6214,6 +6229,40 @@ def _ft_capture_parser_evidence(
     }
 
 
+def _nikkei_capture_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="nikkei",
+            canonical_url=canonical_url,
+            allow_generic_syndication=False,
+        )
+    except Exception as exc:
+        return False, {
+            "nikkeiCaptureParserUsable": False,
+            "nikkeiCaptureParserError": type(exc).__name__,
+        }
+    nontext = article.content_type in {
+        ContentType.INTERACTIVE,
+        ContentType.VIDEO,
+        ContentType.AUDIO,
+        ContentType.GALLERY,
+    }
+    usable = article.quality.status == ArticleStatus.COMPLETE or nontext
+    return usable, {
+        "nikkeiCaptureParserUsable": usable,
+        "nikkeiCaptureExtractionStatus": article.quality.status.value,
+        "nikkeiCaptureContentType": article.content_type.value,
+        "nikkeiCaptureBodyCharacters": article.quality.body_characters,
+    }
+
+
 def score_raw_capture(
     content: bytes,
     *,
@@ -6863,6 +6912,13 @@ def completed_capture_rejection_reason(
         )
         if not usable:
             return "ft-capture-parser-incomplete"
+    if capture.publisher == "nikkei":
+        usable, _ = _nikkei_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "nikkei-capture-parser-incomplete"
     if (
         capture.publisher == "bloomberg"
         and capture.selected_candidate.provider == CaptureProvider.OTHER

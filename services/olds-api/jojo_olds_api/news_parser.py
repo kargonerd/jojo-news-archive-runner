@@ -516,6 +516,9 @@ def parse_article(
         _trim_wsj_roadblock_tail(clean_body)
     if spec.publisher == "nyt":
         _trim_nyt_access_shell_tail(clean_body)
+    if spec.publisher == "nikkei":
+        _trim_nikkei_paywall_tail(clean_body)
+        _remove_nikkei_body_chrome(clean_body)
     if spec.publisher == "npr":
         _remove_npr_body_chrome(clean_body)
     _remove_noise(clean_body, spec)
@@ -573,6 +576,9 @@ def parse_article(
         _ap_hosted_headline(soup) if spec.publisher == "ap" else None,
         _wsj_legacy_headline(soup)
         if spec.publisher == "wsj"
+        else None,
+        _nikkei_legacy_headline(soup)
+        if spec.publisher == "nikkei"
         else None,
         _meta_content(soup, "property", "og:title"),
         _meta_content(soup, "name", "twitter:title"),
@@ -869,6 +875,11 @@ def parse_article(
             # chrome logo as metadata.
             continue
         if (
+            spec.publisher == "nikkei"
+            and _nikkei_non_editorial_image_url(url)
+        ):
+            continue
+        if (
             spec.publisher == "bloomberg"
             and (
                 _bloomberg_author_avatar_url(url)
@@ -901,6 +912,11 @@ def parse_article(
             if (
                 spec.publisher == "npr"
                 and _npr_non_editorial_image_url(image.original_url)
+            ):
+                continue
+            if (
+                spec.publisher == "nikkei"
+                and _nikkei_non_editorial_image_url(image.original_url)
             ):
                 continue
             if (
@@ -1135,6 +1151,14 @@ def parse_article(
     if structured_short_newsletter:
         warnings.append("structured-short-newsletter")
     if spec.publisher == "ft" and _ft_explicit_truncation_notice(soup):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "nikkei"
+        and _nikkei_truncated_body(
+            soup,
+            plain_text=plain_text,
+        )
+    ):
         warnings.append("truncated-body")
     if spec.publisher == "bloomberg" and _bloomberg_teaser_shell(soup):
         warnings.append("truncated-body")
@@ -11642,6 +11666,60 @@ def _trim_nyt_access_shell_tail(soup: BeautifulSoup) -> None:
     marker.decompose()
 
 
+def _trim_nikkei_paywall_tail(soup: BeautifulSoup) -> None:
+    """Drop the signed-out paywall and all recirculation after the excerpt."""
+
+    marker = soup.select_one(
+        "[data-k2-component-name='k2-paywall-container'], "
+        "[data-optimizely-selector='paywall-container'], "
+        "[class*='paywall' i]"
+    )
+    if not isinstance(marker, Tag):
+        marker = next(
+            (
+                node
+                for node in soup.select("p, div")
+                if _clean_text(node.get_text(" ", strip=True)).startswith(
+                    (
+                        "この記事は会員限定です。登録すると続きをお読みいただけます。",
+                        "会員限定です。電子版に登録すると続きをお読みいただけます。",
+                    )
+                )
+            ),
+            None,
+        )
+    if not isinstance(marker, Tag):
+        return
+    top = soup.find()
+    if not isinstance(top, Tag):
+        return
+    tail = marker
+    while isinstance(tail.parent, Tag):
+        for sibling in list(tail.next_siblings):
+            if isinstance(sibling, Tag):
+                sibling.decompose()
+            else:
+                sibling.extract()
+        if tail.parent is top:
+            break
+        tail = tail.parent
+    marker.decompose()
+
+
+def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove modern Nikkei article controls that wrap ordinary text nodes."""
+
+    for selector in (
+        "k-image-viewer",
+        "k-lock-banner",
+        "k-action-bar",
+        "header",
+        "[class*='openAppLink' i]",
+    ):
+        for node in list(soup.select(selector)):
+            node.decompose()
+
+
 def _extract_blocks(
     body: BeautifulSoup,
     *,
@@ -12306,6 +12384,41 @@ def _image_identity(url: str) -> str:
         )
         if bloomberg_asset is not None:
             return f"bloomberg-image:{bloomberg_asset.group(1).casefold()}"
+    if host == "article-image-ix.nikkei.com":
+        nested = unquote(parts.path.lstrip("/"))
+        nested_parts = urlsplit(nested)
+        if (
+            nested_parts.scheme in {"http", "https"}
+            and nested_parts.netloc
+        ):
+            return urlunsplit(
+                (
+                    nested_parts.scheme.casefold(),
+                    nested_parts.netloc.casefold(),
+                    nested_parts.path,
+                    "",
+                    "",
+                )
+            )
+        return urlunsplit(
+            (
+                parts.scheme.casefold(),
+                parts.netloc.casefold(),
+                parts.path,
+                "",
+                "",
+            )
+        )
+    if host == "imgix-proxy.n8s.jp":
+        return urlunsplit(
+            (
+                parts.scheme.casefold(),
+                parts.netloc.casefold(),
+                parts.path,
+                "",
+                "",
+            )
+        )
     if host == "int.nyt.com" and "/newsgraphics/" in parts.path:
         responsive_path = re.sub(
             r"_(?:300|480|720|800|945)_v(?=\d+\.[a-z0-9]+$)",
@@ -12364,6 +12477,18 @@ def _image_identity(url: str) -> str:
                 f"{legacy_wsj_image.group(3).casefold()}"
             )
     return url
+
+
+def _nikkei_non_editorial_image_url(url: str) -> bool:
+    decoded = unquote(url).casefold()
+    return any(
+        marker in decoded
+        for marker in (
+            "/.resources/k-components/icon/",
+            "/.resources/k-components/banner/",
+            "paid-banner",
+        )
+    )
 
 
 def _nyt_generic_branding_image(url: str) -> bool:
@@ -13058,6 +13183,46 @@ def _scmp_legacy_published_at(soup: BeautifulSoup) -> str | None:
             tzinfo=timezone(timedelta(hours=8))
         ).isoformat()
     return None
+
+
+def _nikkei_legacy_headline(soup: BeautifulSoup) -> str | None:
+    """Recover old Nikkei headlines that only survive in ``<title>``."""
+
+    if soup.title is None:
+        return None
+    title = _clean_text(soup.title.get_text(" ", strip=True))
+    title = re.sub(
+        r"\s*[：:]\s*日本経済新聞(?:\s*電子版)?\s*$",
+        "",
+        title,
+    ).strip()
+    return title or None
+
+
+def _nikkei_truncated_body(
+    soup: BeautifulSoup,
+    *,
+    plain_text: str,
+) -> bool:
+    """Detect signed-out Nikkei excerpts in legacy and current shells."""
+
+    if not plain_text:
+        return False
+    page_text = _clean_text(soup.get_text(" ", strip=True))
+    if (
+        "会員限定です。電子版に登録すると続きをお読みいただけます。"
+        in page_text
+        or re.search(r"残り\s*[\d,]+\s*文字", page_text)
+    ):
+        return True
+    if len(plain_text) >= 2_000:
+        return False
+    return (
+        "この記事は会員限定です。登録すると続きをお読みいただけます。"
+        in page_text
+        or "有料登録すると続きをお読みいただけます。" in page_text
+        or plain_text.rstrip().endswith(("…", "..."))
+    )
 
 
 def _zaobao_embedded_published_at(soup: BeautifulSoup) -> str | None:
