@@ -16736,3 +16736,36 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
     assert result.extraction.parser_version == "scmp-parser/0.1.1"
+
+
+def test_zaobao_parser_extracts_embedded_rsc_publication_date():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Zaobao archive report">
+        </head><body>
+          <article>
+            <p>This is a sufficiently long archived report paragraph with
+            enough meaningful article text to satisfy the parser threshold.
+            It represents the first part of the historical report.</p>
+            <p>The second paragraph contains additional reporting and context
+            so the fixture is treated as a complete article body.</p>
+          </article>
+          <script>
+            self.__next_f.push([1,
+              "\\\"publication_date\\\",\\\"2016-01-20T18:38:00\\\""
+            ]);
+          </script>
+        </body></html>
+        """,
+        publisher="zaobao",
+        canonical_url=(
+            "https://www.zaobao.com.sg/realtime/singapore/"
+            "story20160120-573139"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.published_at is not None
+    assert result.published_at.isoformat() == "2016-01-20T18:38:00+08:00"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.1"

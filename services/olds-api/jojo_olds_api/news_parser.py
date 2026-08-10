@@ -659,6 +659,11 @@ def parse_article(
                 if spec.publisher == "scmp"
                 else None
             ),
+            (
+                _zaobao_embedded_published_at(soup)
+                if spec.publisher == "zaobao"
+                else None
+            ),
             _tag_attribute(
                 soup.select_one(
                     '[itemprop="datePublished"][datetime], '
@@ -12649,6 +12654,33 @@ def _scmp_legacy_published_at(soup: BeautifulSoup) -> str | None:
         return parsed.replace(
             tzinfo=timezone(timedelta(hours=8))
         ).isoformat()
+    return None
+
+
+def _zaobao_embedded_published_at(soup: BeautifulSoup) -> str | None:
+    """Read the local publication timestamp from Zaobao's RSC payload."""
+    for script in soup.select("script"):
+        value = script.string or script.get_text()
+        if "publication_date" not in value.casefold():
+            continue
+        # Next.js serializes the Drupal article payload inside a quoted RSC
+        # frame, so field names and values commonly appear as \"...\".
+        # Removing only escaped quote delimiters leaves other escape sequences
+        # untouched and makes both flattened pairs and ordinary JSON match.
+        normalized = value.replace(r'\"', '"')
+        match = re.search(
+            r'''["']publication_date["']\s*(?::|,)\s*["']'''
+            r'''(?P<date>20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}'''
+            r'''(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)["']''',
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            continue
+        published_at = match.group("date")
+        if not re.search(r"(?:Z|[+-]\d{2}:?\d{2})$", published_at):
+            published_at += "+08:00"
+        return published_at
     return None
 
 
