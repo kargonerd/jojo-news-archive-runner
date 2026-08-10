@@ -1,0 +1,187 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+from typing import Iterable
+
+
+FORMAT_VERSION = "jojo-source-catalog-watchdog/1"
+CATALOG_STATUS_FORMAT_VERSION = "jojo-source-catalog-status/1"
+
+
+@dataclass(frozen=True)
+class SourceCatalogTarget:
+    publisher: str
+    from_year: int
+    to_year: int
+    manifest_mode: str
+    max_discovery_pages: int
+
+    @property
+    def shard(self) -> str:
+        return (
+            f"{self.publisher}/{self.from_year}-{self.to_year}/"
+            f"{self.manifest_mode}"
+        )
+
+    @property
+    def run_title(self) -> str:
+        return (
+            f"news-raw-{self.publisher}-{self.from_year}-{self.to_year}-"
+            f"{self.manifest_mode}"
+        )
+
+
+# These publishers cannot enter parser validation until their historical
+# source manifests are completed. Official sitemap catalogs are cheap and go
+# first; resumable Wayback URL-key catalogs follow. Each dispatched workflow
+# auto-chains until its own durable catalog state reports complete.
+SOURCE_CATALOG_TARGETS = (
+    SourceCatalogTarget("aljazeera", 2010, 2015, "sitemap-wayback", 30),
+    SourceCatalogTarget("aljazeera", 2016, 2026, "sitemap-wayback", 30),
+    SourceCatalogTarget("zaobao", 2016, 2026, "sitemap-wayback", 30),
+    SourceCatalogTarget("nikkei", 2010, 2015, "wayback-urlkey", 10),
+    SourceCatalogTarget("scmp", 2010, 2015, "wayback-urlkey", 10),
+    SourceCatalogTarget("caixin", 2010, 2015, "wayback-urlkey", 10),
+    SourceCatalogTarget("nikkei", 2016, 2026, "wayback-urlkey", 10),
+    SourceCatalogTarget("scmp", 2016, 2026, "wayback-urlkey", 10),
+    SourceCatalogTarget("caixin", 2016, 2026, "wayback-urlkey", 10),
+)
+
+
+def plan_source_catalog_dispatch(
+    *,
+    status_root: Path,
+    active_titles: Iterable[str],
+    max_dispatch: int,
+    available_source_shards: Iterable[str] | None = None,
+    targets: Iterable[SourceCatalogTarget] = SOURCE_CATALOG_TARGETS,
+) -> dict[str, object]:
+    if max_dispatch < 0:
+        raise ValueError("max_dispatch must be non-negative")
+    active = {title.strip() for title in active_titles if title.strip()}
+    available = (
+        None
+        if available_source_shards is None
+        else {
+            shard.strip()
+            for shard in available_source_shards
+            if shard.strip()
+        }
+    )
+    rows: list[dict[str, object]] = []
+    invalid_statuses: list[str] = []
+    for priority, target in enumerate(targets):
+        status_path = status_root / target.shard / "catalog" / "status.json"
+        status: dict[str, object] | None = None
+        if status_path.is_file():
+            try:
+                candidate = json.loads(status_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                candidate = None
+            if _status_matches_target(candidate, target=target):
+                assert isinstance(candidate, dict)
+                status = candidate
+            else:
+                invalid_statuses.append(
+                    status_path.relative_to(status_root).as_posix()
+                )
+        manifest_available = (
+            None if available is None else target.shard in available
+        )
+        complete = bool(
+            status is not None
+            and status.get("complete") is True
+            and status.get("shouldContinue") is False
+        )
+        rows.append(
+            {
+                "target": target,
+                "priority": priority,
+                "statusPath": (
+                    status_path.relative_to(status_root).as_posix()
+                    if status_path.is_file()
+                    else None
+                ),
+                "manifestAvailable": manifest_available,
+                "complete": complete,
+                "active": target.run_title in active,
+                "shouldContinue": (
+                    status.get("shouldContinue") if status is not None else None
+                ),
+            }
+        )
+
+    pending = [
+        row
+        for row in rows
+        if not bool(row["complete"]) and not bool(row["active"])
+    ]
+    pending.sort(
+        key=lambda row: (
+            # Bootstrap a completely missing source before refreshing an old
+            # manifest whose completion status predates the sidecar.
+            0 if row["manifestAvailable"] is False else 1,
+            int(row["priority"]),
+        )
+    )
+    selected = pending[:max_dispatch]
+    tasks = [_task(row["target"]) for row in selected]
+    progress = [
+        {
+            "publisher": target.publisher,
+            "fromYear": target.from_year,
+            "toYear": target.to_year,
+            "manifestMode": target.manifest_mode,
+            "sourceManifestShard": target.shard,
+            "manifestAvailable": row["manifestAvailable"],
+            "statusPath": row["statusPath"],
+            "complete": bool(row["complete"]),
+            "active": bool(row["active"]),
+            "shouldContinue": row["shouldContinue"],
+        }
+        for row in rows
+        for target in [row["target"]]
+    ]
+    return {
+        "formatVersion": FORMAT_VERSION,
+        "targetCatalogs": len(rows),
+        "completeCatalogs": sum(bool(row["complete"]) for row in rows),
+        "activeCatalogs": sum(bool(row["active"]) for row in rows),
+        "pendingCatalogs": sum(not bool(row["complete"]) for row in rows),
+        "invalidStatuses": invalid_statuses,
+        "catalogProgress": progress,
+        "tasks": tasks,
+    }
+
+
+def _status_matches_target(
+    payload: object,
+    *,
+    target: SourceCatalogTarget,
+) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return bool(
+        payload.get("formatVersion") == CATALOG_STATUS_FORMAT_VERSION
+        and payload.get("publisher") == target.publisher
+        and payload.get("fromYear") == target.from_year
+        and payload.get("toYear") == target.to_year
+        and payload.get("manifestMode") == target.manifest_mode
+        and isinstance(payload.get("complete"), bool)
+        and isinstance(payload.get("captureReady"), bool)
+        and isinstance(payload.get("shouldContinue"), bool)
+    )
+
+
+def _task(target: SourceCatalogTarget) -> dict[str, object]:
+    return {
+        "publisher": target.publisher,
+        "fromYear": target.from_year,
+        "toYear": target.to_year,
+        "manifestMode": target.manifest_mode,
+        "sourceManifestShard": target.shard,
+        "maxDiscoveryPages": target.max_discovery_pages,
+        "runnerOs": "ubuntu-latest",
+    }

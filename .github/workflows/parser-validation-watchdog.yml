@@ -106,7 +106,9 @@ jobs:
           )
           available_source_shards="$RUNNER_TEMP/available-source-shards.txt"
           source_capacity_root="$RUNNER_TEMP/source-capacity"
+          source_catalog_status_root="$RUNNER_TEMP/source-catalog-status"
           mkdir -p "$source_capacity_root"
+          mkdir -p "$source_catalog_status_root"
           : > "$available_source_shards"
           for source_root in "${source_roots[@]}"; do
             copy_summary \
@@ -133,6 +135,18 @@ jobs:
                 rclone copyto "$capacity_remote" "$capacity_local" \
                   --retries 8 --low-level-retries 20
               fi
+            fi
+            status_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/status.json"
+            if status_listing="$(
+              rclone lsl "$status_remote" \
+                --timeout 30s --contimeout 10s \
+                --retries 1 --low-level-retries 1 \
+                2>/dev/null
+            )" && [ -n "$status_listing" ]; then
+              status_local="${source_catalog_status_root}/${source_root}/catalog/status.json"
+              mkdir -p "$(dirname "$status_local")"
+              rclone copyto "$status_remote" "$status_local" \
+                --retries 8 --low-level-retries 20
             fi
           done
           # Formal parser-validation summaries are execution state under v2,
@@ -195,41 +209,94 @@ jobs:
             dispatches="$MAX_DISPATCH_PER_RUN"
           fi
           python \
+            services/olds-api/tools/plan_source_catalog_watchdog.py \
+            --status-root "$RUNNER_TEMP/source-catalog-status" \
+            --active-titles "$active" \
+            --available-source-shards \
+              "$RUNNER_TEMP/available-source-shards.txt" \
+            --max-dispatch "$dispatches" \
+            --output "$RUNNER_TEMP/source-catalog-plan.json"
+          catalog_dispatches="$(
+            jq '.tasks | length' "$RUNNER_TEMP/source-catalog-plan.json"
+          )"
+          validation_dispatches=$((dispatches - catalog_dispatches))
+          if [ "$validation_dispatches" -lt 0 ]; then
+            validation_dispatches=0
+          fi
+          python \
             services/olds-api/tools/plan_parser_validation_watchdog.py \
             --state-root "$RUNNER_TEMP/archive-state" \
             --active-titles "$active" \
             --available-source-shards \
               "$RUNNER_TEMP/available-source-shards.txt" \
             --source-capacity-root "$RUNNER_TEMP/source-capacity" \
-            --max-dispatch "$dispatches" \
+            --max-dispatch "$validation_dispatches" \
             --publishers $VALIDATION_PUBLISHERS \
             --output "$RUNNER_TEMP/validation-plan.json"
-          echo "tasks=$(jq -c '.tasks' \
+          echo "catalog_tasks=$(jq -c '.tasks' \
+            "$RUNNER_TEMP/source-catalog-plan.json")" >> "$GITHUB_OUTPUT"
+          echo "validation_tasks=$(jq -c '.tasks' \
             "$RUNNER_TEMP/validation-plan.json")" >> "$GITHUB_OUTPUT"
           {
             echo "### Parser validation watchdog"
             echo
             echo '```json'
-            jq '{
-              targetCells,
-              readyCells,
-              activeCells,
-              pendingCells,
-              summariesRead,
-              unresolved: [
-                .cellProgress[]
-                | select(.ready == false)
-              ],
-              tasks
-            }' "$RUNNER_TEMP/validation-plan.json"
+            jq -n \
+              --slurpfile catalogs "$RUNNER_TEMP/source-catalog-plan.json" \
+              --slurpfile validations "$RUNNER_TEMP/validation-plan.json" \
+              '{
+                sourceCatalogs: $catalogs[0],
+                parserValidation: {
+                  targetCells: $validations[0].targetCells,
+                  readyCells: $validations[0].readyCells,
+                  activeCells: $validations[0].activeCells,
+                  pendingCells: $validations[0].pendingCells,
+                  summariesRead: $validations[0].summariesRead,
+                  unresolved: [
+                    $validations[0].cellProgress[]
+                    | select(.ready == false)
+                  ],
+                  tasks: $validations[0].tasks
+                }
+              }'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Dispatch missing publisher years
-        if: ${{ steps.plan.outputs.tasks != '[]' }}
+      - name: Dispatch missing or incomplete source catalogs
+        if: ${{ steps.plan.outputs.catalog_tasks != '[]' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          TASKS: ${{ steps.plan.outputs.tasks }}
+          TASKS: ${{ steps.plan.outputs.catalog_tasks }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r task; do
+            publisher="$(jq -r '.publisher' <<<"$task")"
+            from_year="$(jq -r '.fromYear' <<<"$task")"
+            to_year="$(jq -r '.toYear' <<<"$task")"
+            mode="$(jq -r '.manifestMode' <<<"$task")"
+            pages="$(jq -r '.maxDiscoveryPages' <<<"$task")"
+            runner="$(jq -r '.runnerOs' <<<"$task")"
+            gh workflow run news-raw-archive.yml \
+              --ref "$DEFAULT_BRANCH" \
+              -f publisher="$publisher" \
+              -f from_year="$from_year" \
+              -f to_year="$to_year" \
+              -f manifest_mode="$mode" \
+              -f max_discovery_pages="$pages" \
+              -f max_captures=0 \
+              -f workers=1 \
+              -f max_runtime_minutes=300 \
+              -f auto_continue=true \
+              -f stop_when_validation_ready=false \
+              -f runner_os="$runner"
+            echo "Dispatched source catalog $publisher/$from_year-$to_year/$mode."
+          done < <(jq -c '.[]' <<<"$TASKS")
+
+      - name: Dispatch missing publisher years
+        if: ${{ steps.plan.outputs.validation_tasks != '[]' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TASKS: ${{ steps.plan.outputs.validation_tasks }}
         run: |
           set -euo pipefail
           while IFS= read -r task; do

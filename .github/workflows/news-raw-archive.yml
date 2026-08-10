@@ -483,6 +483,28 @@ jobs:
             --publisher "$PUBLISHER" \
             --output "$LOCAL_ROOT/catalog/manifest-summary.json"
 
+      - name: Write source catalog completion status
+        if: >-
+          ${{
+            !cancelled() &&
+            inputs.manifest_mode != 'committed-bloomberg-2020' &&
+            steps.catalog.outputs.exit_code == '0' &&
+            hashFiles('.archive-work/**/catalog/manifest.jsonl.gz') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python services/olds-api/tools/write_source_catalog_status.py \
+            --publisher "$PUBLISHER" \
+            --from-year "$FROM_YEAR" \
+            --to-year "$TO_YEAR" \
+            --manifest-mode "$MANIFEST_MODE" \
+            --complete "${{ steps.catalog.outputs.complete }}" \
+            --capture-ready "${{ steps.catalog.outputs.capture_ready }}" \
+            --should-continue "${{ steps.catalog.outputs.should_continue }}" \
+            --output "$LOCAL_ROOT/catalog/status.json"
+
       - name: Checkpoint discovery
         if: >-
           ${{
@@ -533,6 +555,12 @@ jobs:
             rclone copyto \
               "$LOCAL_ROOT/catalog/manifest-summary.json" \
               "${REMOTE_ROOT}/catalog/manifest-summary.json" \
+              --retries 8 --low-level-retries 20
+          fi
+          if [ -f "$LOCAL_ROOT/catalog/status.json" ]; then
+            rclone copyto \
+              "$LOCAL_ROOT/catalog/status.json" \
+              "${REMOTE_ROOT}/catalog/status.json" \
               --retries 8 --low-level-retries 20
           fi
           rclone copyto \
