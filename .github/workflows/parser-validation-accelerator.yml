@@ -81,6 +81,7 @@ concurrency:
 
 env:
   PYTHONUNBUFFERED: "1"
+  PYTHONPATH: ${{ github.workspace }}/services/olds-api
   B2_ARCHIVE_KEY_ID: ${{ secrets.B2_ARCHIVE_KEY_ID }}
   B2_ARCHIVE_APPLICATION_KEY: ${{ secrets.B2_ARCHIVE_APPLICATION_KEY }}
   B2_ARCHIVE_BUCKET: ${{ secrets.B2_ARCHIVE_BUCKET }}
