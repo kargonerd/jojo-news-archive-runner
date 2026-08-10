@@ -78,10 +78,12 @@ allows multiple years to run concurrently without two Actions jobs writing the
 same SQLite checkpoint. It is an accelerator, not a second archive or a
 replacement for the full archive shard.
 
-The watchdog workflows are intentionally manual while the archive is under
-cost review. Before automatic scheduling is re-enabled, B2 must have a
-lifecycle policy that removes hidden object versions and the validation
-workflow must remain raw-copy-free.
+The watchdogs share a controlled budget of at most two sustained catalog or
+validation runs. Parser validation stores its selected canonical raw samples
+without duplicating them below validation state. The archive watchdog is
+catalog-only (`max_captures=0`), so automatic source expansion cannot silently
+restart a full raw-corpus download. B2 must retain its keep-latest lifecycle
+policy so superseded checkpoints do not accumulate as hidden object versions.
 
 HTML objects are addressed by the SHA-256 of the uncompressed response or
 explicitly derived representation. Gzip is deterministic (`mtime=0`), so
@@ -320,6 +322,10 @@ Reuters uses two catalog shards because its URL design changed:
   discovery provenance and try Wayback before a live-origin fallback; urlscan
   metadata is never treated as article content.
 
-`News archive watchdog` is currently manual-only during the storage cost
-review. When it is re-enabled, it must retain its per-shard concurrency lock
-and only dispatch a run after the B2 lifecycle and storage guard checks pass.
+`News archive watchdog` runs at 7 and 37 minutes past each hour, offset from
+the parser-validation watchdog. A single dispatcher counts active
+`news-raw-*` and `parser-*` runs, fills only the available portion of the
+two-run budget, skips shards whose B2 manifest summary is already complete,
+and advances incomplete shards in explicit research-priority order. It always
+uses catalog-only mode; any future full-corpus capture must be a separate,
+deliberate operation with a new storage-cost review.
