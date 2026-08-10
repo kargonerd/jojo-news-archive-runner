@@ -84,6 +84,16 @@ def parse_args() -> argparse.Namespace:
             "fingerprint no longer matches the requested publisher window."
         ),
     )
+    parser.add_argument(
+        "--continue-after-capture-ready",
+        action="store_true",
+        help=(
+            "Keep advancing CDX after the current catalog reaches the "
+            "minimum capture-ready threshold. Use this for catalog-only "
+            "capacity expansion; capture runs still pause discovery so they "
+            "can drain already actionable URLs first."
+        ),
+    )
     parser.add_argument("--github-output", type=Path)
     return parser.parse_args()
 
@@ -467,10 +477,13 @@ def main() -> int:
                     "WSJ legacy date hydration: "
                     f"{type(exc).__name__}: {exc}"
                 )
-        if wsj_catalog_ready_for_capture(
-            connection,
-            from_year=args.from_year,
-            to_year=args.to_year,
+        if (
+            not args.continue_after_capture_ready
+            and wsj_catalog_ready_for_capture(
+                connection,
+                from_year=args.from_year,
+                to_year=args.to_year,
+            )
         ):
             cdx_paused_for_google_news = True
     if (

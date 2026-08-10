@@ -55,6 +55,26 @@ def test_wsj_catalog_only_uses_bounded_two_per_second_metadata_rate() -> None:
     assert '--min-request-interval "$discovery_interval"' in wayback_section
 
 
+def test_catalog_only_wayback_keeps_expanding_after_capture_ready() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    wayback_section = workflow[
+        workflow.index('elif [ "$MANIFEST_MODE" = "wayback-urlkey" ]; then') :
+        workflow.index(
+            "else",
+            workflow.index(
+                'elif [ "$MANIFEST_MODE" = "wayback-urlkey" ]; then'
+            ),
+        )
+    ]
+
+    assert 'if [ "$MAX_CAPTURES" = "0" ]; then' in wayback_section
+    assert (
+        'wayback_catalog_args+=(--continue-after-capture-ready)'
+        in wayback_section
+    )
+    assert '"${wayback_catalog_args[@]}"' in wayback_section
+
+
 def test_npr_and_axios_merge_common_crawl_without_duplicate_raw_root() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     merge_section = workflow[

@@ -317,6 +317,13 @@ jobs:
                 # traffic.
                 discovery_interval=0.5
               fi
+              wayback_catalog_args=()
+              if [ "$MAX_CAPTURES" = "0" ]; then
+                # A catalog-only run exists to expand independent holdout
+                # capacity. Reaching the smaller capture-ready threshold must
+                # not pause CDX while unresolved discovery queries remain.
+                wayback_catalog_args+=(--continue-after-capture-ready)
+              fi
               # A timed-out CDX page remains resumable in discovery state;
               # retry it in a later bounded run instead of holding a scarce
               # runner slot for the command defaults (90 seconds x 6).
@@ -333,6 +340,7 @@ jobs:
                 --attempts 2 \
                 --collapse urlkey \
                 --reset-incompatible-state \
+                "${wayback_catalog_args[@]}" \
                 --github-output "$GITHUB_OUTPUT"
             else
               python services/olds-api/tools/build_wayback_manifest.py \
