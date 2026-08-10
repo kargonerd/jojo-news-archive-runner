@@ -43,6 +43,7 @@ from jojo_olds_api.wayback_manifest import (
     process_wsj_google_news_feed,
     process_wsj_rss_feeds,
     record_discovery_page,
+    record_discovery_failure,
     wsj_catalog_count_for_year,
     wsj_catalog_ready_for_capture,
     wsj_google_news_is_only_catalog_gap,
@@ -1384,6 +1385,67 @@ def test_pre_2014_wsj_discovery_prioritizes_legacy_article_urls():
     pattern, _ = next_discovery_query(connection)
 
     assert pattern == "online.wsj.com/article/*"
+
+
+def test_failed_pre_2014_legacy_query_rotates_to_other_patterns():
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+    legacy_pattern, _ = next_discovery_query(connection)
+
+    record_discovery_failure(
+        connection,
+        pattern=legacy_pattern,
+        error="Wayback CDX query failed after 2 attempts",
+    )
+    next_pattern, _ = next_discovery_query(connection)
+
+    assert legacy_pattern == "online.wsj.com/article/*"
+    assert next_pattern == "www.wsj.com/articles/a*"
+    failure = connection.execute(
+        "SELECT failures, last_error FROM discovery_queries WHERE pattern=?",
+        (legacy_pattern,),
+    ).fetchone()
+    assert failure == (1, "Wayback CDX query failed after 2 attempts")
+
+
+def test_successful_legacy_page_resets_failure_priority():
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+    legacy_pattern, _ = next_discovery_query(connection)
+    record_discovery_failure(
+        connection,
+        pattern=legacy_pattern,
+        error="temporary failure",
+    )
+    record_discovery_page(
+        connection,
+        spec=spec,
+        pattern=legacy_pattern,
+        page=CDXPage(captures=(), resume_key="resume-2"),
+    )
+
+    selected_pattern, resume_key = next_discovery_query(connection)
+
+    assert selected_pattern == legacy_pattern
+    assert resume_key == "resume-2"
+    assert connection.execute(
+        "SELECT failures, last_error FROM discovery_queries WHERE pattern=?",
+        (legacy_pattern,),
+    ).fetchone() == (0, None)
 
 
 class StubBlueskyResponse:

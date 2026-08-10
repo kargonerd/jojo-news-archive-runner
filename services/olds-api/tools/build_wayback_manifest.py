@@ -32,6 +32,7 @@ from jojo_olds_api.wayback_manifest import (
     process_wsj_google_news_feed,
     process_wsj_legacy_dates,
     process_wsj_rss_feeds,
+    record_discovery_failure,
     record_discovery_page,
     wsj_bluesky_should_continue,
     wsj_catalog_ready_for_capture,
@@ -566,6 +567,11 @@ def main() -> int:
             except RuntimeError as exc:
                 deferred_error = str(exc)
                 deferred_errors.append(deferred_error)
+                record_discovery_failure(
+                    connection,
+                    pattern=pattern,
+                    error=deferred_error,
+                )
                 print(
                     json.dumps(
                         {

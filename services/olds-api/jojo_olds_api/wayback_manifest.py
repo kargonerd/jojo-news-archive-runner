@@ -245,6 +245,8 @@ def initialize_discovery_schema(
             pages INTEGER NOT NULL DEFAULT 0,
             rows_seen INTEGER NOT NULL DEFAULT 0,
             rows_accepted INTEGER NOT NULL DEFAULT 0,
+            failures INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
             updated_at TEXT NOT NULL
         );
 
@@ -396,6 +398,19 @@ def initialize_wsj_legacy_date_schema(
             ON wsj_legacy_date_hydration(status, attempts, updated_at);
         """
     )
+    query_columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(discovery_queries)")
+    }
+    if "failures" not in query_columns:
+        connection.execute(
+            "ALTER TABLE discovery_queries "
+            "ADD COLUMN failures INTEGER NOT NULL DEFAULT 0"
+        )
+    if "last_error" not in query_columns:
+        connection.execute(
+            "ALTER TABLE discovery_queries ADD COLUMN last_error TEXT"
+        )
     undated_urls = [
         (str(row[0]), _now_iso())
         for row in connection.execute(
@@ -1842,6 +1857,7 @@ def next_discovery_query(
         ORDER BY
             CASE
                 WHEN pattern='online.wsj.com/article/*'
+                     AND failures=0
                      AND CAST((
                          SELECT value
                          FROM discovery_metadata
@@ -1864,6 +1880,25 @@ def next_discovery_query(
         """
     ).fetchone()
     return (row[0], row[1]) if row else None
+
+
+def record_discovery_failure(
+    connection: sqlite3.Connection,
+    *,
+    pattern: str,
+    error: str,
+) -> None:
+    with connection:
+        connection.execute(
+            """
+            UPDATE discovery_queries
+            SET failures=failures+1,
+                last_error=?,
+                updated_at=?
+            WHERE pattern=?
+            """,
+            (error, _now_iso(), pattern),
+        )
 
 
 def record_discovery_page(
@@ -1971,6 +2006,8 @@ def record_discovery_page(
                 pages=pages+1,
                 rows_seen=rows_seen+?,
                 rows_accepted=rows_accepted+?,
+                failures=0,
+                last_error=NULL,
                 updated_at=?
             WHERE pattern=?
             """,
