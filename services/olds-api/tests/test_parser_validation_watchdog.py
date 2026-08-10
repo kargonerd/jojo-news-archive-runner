@@ -646,6 +646,39 @@ def test_watchdog_requires_wsj_holdout_for_legacy_source_summary(
     assert cell["replayableEvaluated"] == 835
 
 
+def test_watchdog_excludes_years_below_manifest_capacity(tmp_path: Path):
+    shard = "caixin/2010-2015/wayback-urlkey"
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=10,
+        publishers=["caixin"],
+        available_source_shards={shard},
+        source_year_capacities={
+            shard: {
+                2010: 1069,
+                2011: 1268,
+                2012: 1238,
+                2013: 1103,
+                2014: 2837,
+                2015: 1,
+            }
+        },
+    )
+
+    assert plan["targetCells"] == 5
+    assert {
+        (row["publisher"], row["year"])
+        for row in plan["cellProgress"]
+    } == {
+        ("caixin", 2010),
+        ("caixin", 2011),
+        ("caixin", 2012),
+        ("caixin", 2013),
+        ("caixin", 2014),
+    }
+
+
 def test_watchdog_prioritizes_stale_corpus_for_parser_replay(
     tmp_path: Path,
 ):

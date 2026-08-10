@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from .publisher_specs import publisher_spec
 from .parser_qa_policy import qa_policy_revision
@@ -61,15 +61,26 @@ def _source_year_is_available(
     year: int,
     *,
     available_source_shards: set[str] | None,
+    source_year_capacities: Mapping[str, Mapping[int, int]] | None,
 ) -> bool:
     try:
         source_shard = parser_source_manifest_shard(publisher, year)
     except ValueError:
         return False
-    return (
-        available_source_shards is None
-        or source_shard in available_source_shards
-    )
+    if (
+        available_source_shards is not None
+        and source_shard not in available_source_shards
+    ):
+        return False
+    if source_year_capacities is None:
+        return True
+    year_counts = source_year_capacities.get(source_shard)
+    if year_counts is None:
+        # Capacity sidecars are rolling out shard by shard. Preserve the
+        # existing availability behavior until a manifest-bound summary is
+        # present, then use it as an authoritative impossibility filter.
+        return True
+    return int(year_counts.get(year, 0)) >= MINIMUM_SAMPLES
 
 
 def plan_validation_dispatch(
@@ -78,6 +89,7 @@ def plan_validation_dispatch(
     active_titles: Iterable[str],
     max_dispatch: int,
     available_source_shards: Iterable[str] | None = None,
+    source_year_capacities: Mapping[str, Mapping[int, int]] | None = None,
     publishers: Iterable[str] | None = None,
 ) -> dict[str, object]:
     if max_dispatch < 0:
@@ -137,6 +149,7 @@ def plan_validation_dispatch(
             publisher,
             year,
             available_source_shards=available_shards,
+            source_year_capacities=source_year_capacities,
         )
     }
     summaries_read = 0

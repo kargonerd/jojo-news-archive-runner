@@ -106,6 +106,8 @@ jobs:
             "caixin/2016-2026/wayback-urlkey"
           )
           available_source_shards="$RUNNER_TEMP/available-source-shards.txt"
+          source_capacity_root="$RUNNER_TEMP/source-capacity"
+          mkdir -p "$source_capacity_root"
           : > "$available_source_shards"
           for source_root in "${source_roots[@]}"; do
             copy_summary \
@@ -120,6 +122,18 @@ jobs:
                 2>/dev/null
             )" && [ -n "$object_listing" ]; then
               echo "$source_root" >> "$available_source_shards"
+              capacity_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest-summary.json"
+              if capacity_listing="$(
+                rclone lsl "$capacity_remote" \
+                  --timeout 30s --contimeout 10s \
+                  --retries 1 --low-level-retries 1 \
+                  2>/dev/null
+              )" && [ -n "$capacity_listing" ]; then
+                capacity_local="${source_capacity_root}/${source_root}/manifest-summary.json"
+                mkdir -p "$(dirname "$capacity_local")"
+                rclone copyto "$capacity_remote" "$capacity_local" \
+                  --retries 8 --low-level-retries 20
+              fi
             fi
           done
           # Formal parser-validation summaries are execution state under v2,
@@ -187,6 +201,7 @@ jobs:
             --active-titles "$active" \
             --available-source-shards \
               "$RUNNER_TEMP/available-source-shards.txt" \
+            --source-capacity-root "$RUNNER_TEMP/source-capacity" \
             --max-dispatch "$dispatches" \
             --publishers $VALIDATION_PUBLISHERS \
             --output "$RUNNER_TEMP/validation-plan.json"

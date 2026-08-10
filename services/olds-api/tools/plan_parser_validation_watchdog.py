@@ -31,6 +31,14 @@ def parse_args() -> argparse.Namespace:
             "readable from B2."
         ),
     )
+    parser.add_argument(
+        "--source-capacity-root",
+        type=Path,
+        help=(
+            "Optional root containing <source-shard>/manifest-summary.json "
+            "capacity sidecars."
+        ),
+    )
     parser.add_argument("--max-dispatch", type=int, required=True)
     parser.add_argument(
         "--publishers",
@@ -62,6 +70,9 @@ def main() -> int:
             and args.available_source_shards.is_file()
             else None
         ),
+        source_year_capacities=_load_source_year_capacities(
+            args.source_capacity_root
+        ),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_suffix(args.output.suffix + ".tmp")
@@ -88,6 +99,31 @@ def main() -> int:
         )
     )
     return 0
+
+
+def _load_source_year_capacities(
+    root: Path | None,
+) -> dict[str, dict[int, int]] | None:
+    if root is None or not root.is_dir():
+        return None
+    capacities: dict[str, dict[int, int]] = {}
+    for path in sorted(root.rglob("manifest-summary.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("formatVersion") != "jojo-capture-manifest-summary/1":
+            raise ValueError(f"unsupported capacity summary: {path}")
+        year_counts = payload.get("yearCounts")
+        if not isinstance(year_counts, dict):
+            raise ValueError(f"capacity summary has no yearCounts: {path}")
+        shard = path.parent.relative_to(root).as_posix()
+        publisher = shard.split("/", 1)[0]
+        if payload.get("publisher") != publisher:
+            raise ValueError(f"capacity summary publisher mismatch: {path}")
+        capacities[shard] = {
+            int(year): int(count)
+            for year, count in year_counts.items()
+            if str(year).isdigit() and int(count) >= 0
+        }
+    return capacities
 
 
 if __name__ == "__main__":
