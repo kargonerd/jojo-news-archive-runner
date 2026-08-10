@@ -28,16 +28,16 @@ def _write_summary(
 ) -> None:
     path = root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
+    effective_parser_version = (
+        parser_version or publisher_spec(publisher).parser_version
+    )
+    payload = {
                 "parserValidation": {
                     "years": {
                         str(year): {
                             "target": 800,
                             "parserVersion": (
-                                parser_version
-                                or publisher_spec(publisher).parser_version
+                                effective_parser_version
                             ),
                             "evaluated": evaluated,
                             "completeRate": complete_rate,
@@ -55,9 +55,45 @@ def _write_summary(
                     }
                 }
             }
-        ),
+    path.write_text(
+        json.dumps(payload),
         encoding="utf-8",
     )
+    if (
+        relative_path.startswith("holdout-v")
+        and evaluated >= 800
+        and complete_rate >= 0.95
+        and qa_rate == 1.0
+        and errors == 0
+        and unbound_capture_inputs == 0
+    ):
+        audit_path = path.with_name("rotation-audit.json")
+        audit_path.write_text(
+            json.dumps(
+                {
+                    "formatVersion": (
+                        "jojo-parser-validation-holdout-audit/1"
+                    ),
+                    "publisher": publisher,
+                    "expectedParserVersion": effective_parser_version,
+                    "targetPerYear": 800,
+                    "requireComplete": True,
+                    "passed": True,
+                    "issues": [],
+                    "years": {
+                        str(year): {
+                            "previousUniqueEvaluated": 800,
+                            "currentEvaluated": evaluated,
+                            "priorCohortOverlap": 0,
+                            "exclusionOverlap": 0,
+                            "missingPriorExclusions": 0,
+                            "wrongExclusionCohortLabels": 0,
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
 
 
 def test_watchdog_accepts_ready_full_or_accelerator_summary(
@@ -316,6 +352,53 @@ def test_watchdog_accepts_current_holdout_after_stale_cohorts(
     assert cell["requiredCohort"] == "holdout-v3"
     assert cell["selectedCohort"] == "holdout-v3"
     assert cell["ready"] is True
+
+
+def test_watchdog_rotates_ready_holdout_with_missing_or_failed_audit(
+    tmp_path: Path,
+):
+    relative = "holdout-v1/nyt/2019/state/summary.json"
+    _write_summary(
+        tmp_path,
+        relative,
+        publisher="nyt",
+        year=2019,
+        evaluated=800,
+    )
+    (tmp_path / relative).with_name("rotation-audit.json").unlink()
+
+    missing = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["nyt"],
+        available_source_shards={"nyt/2016-2026/sitemap-wayback"},
+    )
+    assert missing["readyCells"] == 0
+    assert missing["tasks"][0]["cohort"] == "holdout-v2"
+
+    _write_summary(
+        tmp_path,
+        relative,
+        publisher="nyt",
+        year=2019,
+        evaluated=800,
+    )
+    audit_path = (tmp_path / relative).with_name("rotation-audit.json")
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    audit["passed"] = False
+    audit["issues"] = ["2019:prior-cohort-overlap"]
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+
+    failed = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["nyt"],
+        available_source_shards={"nyt/2016-2026/sitemap-wayback"},
+    )
+    assert failed["readyCells"] == 0
+    assert failed["tasks"][0]["cohort"] == "holdout-v2"
 
 
 def test_watchdog_requires_npr_holdout_for_unaudited_stale_source(

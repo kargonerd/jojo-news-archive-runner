@@ -141,6 +141,7 @@ def plan_validation_dispatch(
     }
     summaries_read = 0
     invalid_summaries: list[str] = []
+    invalid_rotation_audits: list[str] = []
     for summary_path in sorted(state_root.rglob("summary.json")):
         publisher = _publisher_from_summary_path(
             summary_path,
@@ -156,6 +157,24 @@ def plan_validation_dispatch(
             )
             continue
         summaries_read += 1
+        rotation_audit: dict[str, object] | None = None
+        rotation_audit_path = summary_path.with_name("rotation-audit.json")
+        if rotation_audit_path.exists():
+            try:
+                candidate_audit = json.loads(
+                    rotation_audit_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                invalid_rotation_audits.append(
+                    rotation_audit_path.relative_to(state_root).as_posix()
+                )
+            else:
+                if isinstance(candidate_audit, dict):
+                    rotation_audit = candidate_audit
+                else:
+                    invalid_rotation_audits.append(
+                        rotation_audit_path.relative_to(state_root).as_posix()
+                    )
         cohort = _cohort_from_summary_path(
             summary_path,
             state_root=state_root,
@@ -173,6 +192,10 @@ def plan_validation_dispatch(
             row = years.get(str(year))
             if not isinstance(row, dict):
                 continue
+            evidence_row = {
+                **row,
+                "_rotationAudit": rotation_audit,
+            }
             cell = progress[cell_key]
             cell["replayableEvaluated"] = max(
                 int(cell["replayableEvaluated"]),
@@ -186,7 +209,7 @@ def plan_validation_dispatch(
             ):
                 observed = cell["observedRows"]
                 assert isinstance(observed, list)
-                observed.append({"cohort": cohort, "row": row})
+                observed.append({"cohort": cohort, "row": evidence_row})
             if (
                 row.get("parserVersion") != versions[publisher]
                 or _integer(row.get("qaRevision"))
@@ -200,7 +223,7 @@ def plan_validation_dispatch(
             if not isinstance(previous, dict) or evaluated >= _integer(
                 previous.get("evaluated")
             ):
-                cohort_rows[cohort] = row
+                cohort_rows[cohort] = evidence_row
 
     for (publisher, year), cell in progress.items():
         cohort_rows = cell["cohortRows"]
@@ -235,7 +258,12 @@ def plan_validation_dispatch(
             )
             cell["qaRevision"] = _integer(selected.get("qaRevision"))
             cell["parserVersion"] = selected.get("parserVersion")
-            cell["ready"] = _year_ready(selected)
+            cell["ready"] = _year_ready(
+                selected,
+                cohort=selected_cohort,
+                publisher=publisher,
+                year=year,
+            )
         cell["requiredCohort"] = required_cohort
         cell["selectedCohort"] = selected_cohort
 
@@ -319,6 +347,7 @@ def plan_validation_dispatch(
         "pendingCells": len(progress) - len(ready_cells),
         "summariesRead": summaries_read,
         "invalidSummaries": invalid_summaries,
+        "invalidRotationAudits": invalid_rotation_audits,
         "currentParserVersions": versions,
         "currentQaRevisions": qa_revisions,
         "cellProgress": cell_progress,
@@ -358,7 +387,7 @@ def _cohort_from_summary_path(
     return "source"
 
 
-def _year_ready(row: dict[str, object]) -> bool:
+def _quality_gates_ready(row: dict[str, object]) -> bool:
     evaluated = _integer(row.get("evaluated"))
     target = max(MINIMUM_SAMPLES, _integer(row.get("target")))
     return bool(
@@ -367,6 +396,54 @@ def _year_ready(row: dict[str, object]) -> bool:
         and float(row.get("qaPassRate") or 0) >= MINIMUM_QA_PASS_RATE
         and _integer(row.get("errors")) == 0
         and _integer(row.get("unboundCaptureInputs")) == 0
+    )
+
+
+def _year_ready(
+    row: dict[str, object],
+    *,
+    cohort: str | None,
+    publisher: str,
+    year: int,
+) -> bool:
+    if not _quality_gates_ready(row):
+        return False
+    if not isinstance(cohort, str) or not cohort.startswith("holdout-v"):
+        return True
+    return _holdout_audit_passes(
+        row,
+        publisher=publisher,
+        year=year,
+    )
+
+
+def _holdout_audit_passes(
+    row: dict[str, object],
+    *,
+    publisher: str,
+    year: int,
+) -> bool:
+    audit = row.get("_rotationAudit")
+    if not isinstance(audit, dict):
+        return False
+    years = audit.get("years")
+    year_row = years.get(str(year)) if isinstance(years, dict) else None
+    target = max(MINIMUM_SAMPLES, _integer(row.get("target")))
+    return bool(
+        audit.get("formatVersion")
+        == "jojo-parser-validation-holdout-audit/1"
+        and audit.get("passed") is True
+        and audit.get("publisher") == publisher
+        and audit.get("expectedParserVersion") == row.get("parserVersion")
+        and audit.get("requireComplete") is True
+        and _integer(audit.get("targetPerYear")) == target
+        and isinstance(year_row, dict)
+        and _integer(year_row.get("previousUniqueEvaluated")) > 0
+        and _integer(year_row.get("currentEvaluated")) >= target
+        and _integer(year_row.get("priorCohortOverlap")) == 0
+        and _integer(year_row.get("exclusionOverlap")) == 0
+        and _integer(year_row.get("missingPriorExclusions")) == 0
+        and _integer(year_row.get("wrongExclusionCohortLabels")) == 0
     )
 
 
@@ -424,6 +501,18 @@ def _required_holdout_cohort(
         for cohort in current_rows
         if (number := _cohort_number(cohort)) is not None and number > 0
     }
+    for number, cohort in current_holdouts.items():
+        row = current_rows.get(cohort)
+        if (
+            isinstance(row, dict)
+            and _quality_gates_ready(row)
+            and not _holdout_audit_passes(
+                row,
+                publisher=publisher,
+                year=year,
+            )
+        ):
+            stale_numbers.append(number)
     if stale_numbers:
         newest_stale = max(stale_numbers)
         if current_holdouts and max(current_holdouts) > newest_stale:
