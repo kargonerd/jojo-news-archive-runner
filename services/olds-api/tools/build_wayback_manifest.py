@@ -16,15 +16,18 @@ if str(SERVICE_ROOT) not in sys.path:
 
 from jojo_olds_api.archive_sources import archive_source_spec
 from jojo_olds_api.wayback_manifest import (
+    ARCHIVED_DATE_HYDRATION_PUBLISHERS,
     WaybackCDXClient,
     discovery_summary,
     export_capture_manifest,
+    initialize_archived_date_schema,
     initialize_discovery_schema,
     initialize_wsj_bluesky_schema,
     initialize_wsj_google_news_schema,
     initialize_wsj_legacy_date_schema,
     initialize_wsj_rss_schema,
     next_discovery_query,
+    process_archived_dates,
     process_wsj_bluesky_page,
     process_wsj_google_news_feed,
     process_wsj_legacy_dates,
@@ -133,6 +136,7 @@ def main() -> int:
     wsj_infini_queries_this_run = 0
     wsj_infini_documents_this_run = 0
     wsj_infini_direct_files_this_run = 0
+    archived_dates_this_run = 0
     cdx_paused_for_google_news = False
     deferred_errors: list[str] = []
     if args.publisher == "wsj" and args.collapse == "urlkey":
@@ -469,6 +473,55 @@ def main() -> int:
             to_year=args.to_year,
         ):
             cdx_paused_for_google_news = True
+    if (
+        args.publisher in ARCHIVED_DATE_HYDRATION_PUBLISHERS
+        and args.collapse == "urlkey"
+    ):
+        initialize_archived_date_schema(
+            connection,
+            publisher=args.publisher,
+        )
+        with httpx.Client(
+            headers={
+                "User-Agent": (
+                    "JOJO-News-Archive-Research/0.1 "
+                    "(nonprofit academic archive; contact via repository)"
+                )
+            },
+            follow_redirects=True,
+            timeout=args.timeout,
+        ) as http_client:
+            try:
+                archived_dates = process_archived_dates(
+                    connection,
+                    publisher=args.publisher,
+                    http_client=http_client,
+                    maximum=max(1, args.max_pages or 5) * 20,
+                    minimum_request_interval=args.min_request_interval,
+                )
+                archived_dates_this_run = int(archived_dates["attempted"])
+                archived_date_errors = archived_dates.pop("errors")
+                deferred_errors.extend(
+                    f"{args.publisher} archived date: {error}"
+                    for error in archived_date_errors
+                )
+                print(
+                    json.dumps(
+                        {
+                            "event": "archived-date-hydration",
+                            "publisher": args.publisher,
+                            **archived_dates,
+                            "errors": len(archived_date_errors),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+            except Exception as exc:
+                deferred_errors.append(
+                    f"{args.publisher} archived date hydration: "
+                    f"{type(exc).__name__}: {exc}"
+                )
     client = WaybackCDXClient(
         minimum_interval=args.min_request_interval,
         timeout=args.timeout,
@@ -536,6 +589,18 @@ def main() -> int:
     finally:
         client.close()
 
+    if (
+        args.publisher in ARCHIVED_DATE_HYDRATION_PUBLISHERS
+        and args.collapse == "urlkey"
+    ):
+        # New CDX rows still contain capture-time placeholders. Register them
+        # before export so they stay out of yearly manifests until a later
+        # bounded run proves their actual publication timestamp.
+        initialize_archived_date_schema(
+            connection,
+            publisher=args.publisher,
+        )
+
     manifest = export_capture_manifest(
         connection,
         spec=spec,
@@ -557,6 +622,7 @@ def main() -> int:
         "wsjInfiniQueriesThisRun": wsj_infini_queries_this_run,
         "wsjInfiniDocumentsThisRun": wsj_infini_documents_this_run,
         "wsjInfiniDirectFilesThisRun": wsj_infini_direct_files_this_run,
+        "archivedDatesThisRun": archived_dates_this_run,
         "cdxPausedForGoogleNews": cdx_paused_for_google_news,
         "deferredError": (
             "; ".join(deferred_errors) if deferred_errors else None

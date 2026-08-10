@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 from xml.etree import ElementTree
 
 import httpx
+from bs4 import BeautifulSoup
 
 from .archive_sources import (
     ArchiveSourceSpec,
@@ -76,6 +77,8 @@ WSJ_RSS_ENDPOINTS = (
 )
 PARSER_VALIDATION_CATALOG_MINIMUM_PER_YEAR = 750
 WSJ_LEGACY_DATE_HYDRATIONS_PER_RUN = 100
+ARCHIVED_DATE_HYDRATION_PUBLISHERS = {"scmp"}
+ARCHIVED_DATE_HYDRATIONS_PER_RUN = 100
 
 
 @dataclass(frozen=True)
@@ -583,6 +586,291 @@ def wsj_legacy_date_summary(
         "noDate": int(row[2] or 0),
         "remaining": int(row[3] or 0),
     }
+
+
+def initialize_archived_date_schema(
+    connection: sqlite3.Connection,
+    *,
+    publisher: str,
+) -> None:
+    """Track URL families whose publication year is absent from the URL."""
+    if publisher not in ARCHIVED_DATE_HYDRATION_PUBLISHERS:
+        raise ValueError(
+            f"archived date hydration is not supported for {publisher!r}"
+        )
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS archived_date_hydration (
+            canonical_url TEXT PRIMARY KEY,
+            publisher TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            published_at TEXT,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_archived_date_hydration_status
+            ON archived_date_hydration(publisher, status, attempts, updated_at);
+        """
+    )
+    undated_urls = [
+        (str(row[0]), publisher, _now_iso())
+        for row in connection.execute(
+            "SELECT DISTINCT canonical_url FROM candidates"
+        )
+        if infer_published_at(str(row[0])) is None
+    ]
+    connection.executemany(
+        """
+        INSERT OR IGNORE INTO archived_date_hydration(
+            canonical_url, publisher, updated_at
+        ) VALUES (?, ?, ?)
+        """,
+        undated_urls,
+    )
+    # A capture timestamp is not publication-date evidence. Permanently
+    # rejected or exhausted rows must never leak back into a yearly manifest.
+    connection.execute(
+        """
+        DELETE FROM candidates
+        WHERE canonical_url IN (
+            SELECT canonical_url
+            FROM archived_date_hydration
+            WHERE publisher=? AND status IN ('no-date', 'failed')
+        )
+        """,
+        (publisher,),
+    )
+    connection.commit()
+
+
+def process_archived_dates(
+    connection: sqlite3.Connection,
+    *,
+    publisher: str,
+    http_client: httpx.Client,
+    maximum: int = ARCHIVED_DATE_HYDRATIONS_PER_RUN,
+    minimum_request_interval: float = 0.0,
+) -> dict[str, object]:
+    """Recover exact publication dates from archived publisher markup."""
+    if maximum < 1:
+        raise ValueError("maximum must be positive")
+    initialize_archived_date_schema(connection, publisher=publisher)
+    rows = connection.execute(
+        """
+        SELECT canonical_url, attempts
+        FROM archived_date_hydration
+        WHERE publisher=?
+          AND status IN ('pending', 'retry')
+          AND attempts < 3
+        ORDER BY attempts, updated_at, canonical_url
+        LIMIT ?
+        """,
+        (publisher, maximum),
+    ).fetchall()
+    limiter = GlobalRateLimiter(minimum_request_interval)
+    found = 0
+    rejected = 0
+    failed = 0
+    errors: list[str] = []
+    window = dict(
+        connection.execute(
+            """
+            SELECT key, value FROM discovery_metadata
+            WHERE key IN ('from_year', 'to_year')
+            """
+        )
+    )
+    for canonical_url, prior_attempts in rows:
+        candidates = connection.execute(
+            """
+            SELECT timestamp, original_url
+            FROM candidates
+            WHERE canonical_url=?
+            ORDER BY rank_score, timestamp
+            LIMIT 3
+            """,
+            (canonical_url,),
+        ).fetchall()
+        published_at = None
+        successful_response = False
+        request_errors: list[str] = []
+        for timestamp, original_url in candidates:
+            snapshot_url = (
+                f"https://web.archive.org/web/{timestamp}id_/"
+                f"{original_url}"
+            )
+            try:
+                limiter.wait()
+                response = http_client.get(snapshot_url)
+                response.raise_for_status()
+                successful_response = True
+                published_at = extract_archived_published_at(
+                    response.text,
+                    publisher=publisher,
+                )
+                if published_at is not None:
+                    break
+            except Exception as exc:
+                request_errors.append(f"{type(exc).__name__}: {exc}")
+        attempts = int(prior_attempts) + 1
+        if published_at is not None:
+            status = "complete"
+            error = None
+            found += 1
+        elif successful_response and not request_errors:
+            status = "no-date"
+            error = None
+            rejected += 1
+        elif attempts >= 3:
+            status = "failed"
+            error = "; ".join(request_errors) or "no usable archived page"
+            failed += 1
+        else:
+            status = "retry"
+            error = "; ".join(request_errors) or "no usable archived page"
+        if error:
+            errors.append(f"{canonical_url}: {error}")
+        with connection:
+            connection.execute(
+                """
+                UPDATE archived_date_hydration
+                SET status=?, attempts=?, published_at=?, last_error=?,
+                    updated_at=?
+                WHERE canonical_url=? AND publisher=?
+                """,
+                (
+                    status,
+                    attempts,
+                    published_at,
+                    error,
+                    _now_iso(),
+                    canonical_url,
+                    publisher,
+                ),
+            )
+            if published_at is not None:
+                candidate_rows = connection.execute(
+                    """
+                    SELECT timestamp, digest FROM candidates
+                    WHERE canonical_url=?
+                    """,
+                    (canonical_url,),
+                ).fetchall()
+                connection.executemany(
+                    """
+                    UPDATE candidates SET published_at=?, rank_score=?
+                    WHERE canonical_url=? AND timestamp=? AND digest=?
+                    """,
+                    [
+                        (
+                            published_at,
+                            candidate_rank(
+                                str(candidate_timestamp),
+                                published_at=published_at,
+                            ),
+                            canonical_url,
+                            candidate_timestamp,
+                            digest,
+                        )
+                        for candidate_timestamp, digest in candidate_rows
+                    ],
+                )
+                if not (
+                    f"{int(window['from_year']):04d}-01-01"
+                    <= published_at
+                    < f"{int(window['to_year']) + 1:04d}-01-01"
+                ):
+                    connection.execute(
+                        "DELETE FROM candidates WHERE canonical_url=?",
+                        (canonical_url,),
+                    )
+            elif status in {"no-date", "failed"}:
+                connection.execute(
+                    "DELETE FROM candidates WHERE canonical_url=?",
+                    (canonical_url,),
+                )
+    remaining = connection.execute(
+        """
+        SELECT COUNT(*) FROM archived_date_hydration
+        WHERE publisher=?
+          AND status IN ('pending', 'retry')
+          AND attempts < 3
+        """,
+        (publisher,),
+    ).fetchone()[0]
+    return {
+        "attempted": len(rows),
+        "found": found,
+        "noDate": rejected,
+        "failed": failed,
+        "remaining": int(remaining),
+        "errors": errors,
+    }
+
+
+def archived_date_summary(
+    connection: sqlite3.Connection,
+) -> dict[str, int] | None:
+    if not _table_exists(connection, "archived_date_hydration"):
+        return None
+    row = connection.execute(
+        """
+        SELECT
+            COUNT(*),
+            SUM(status='complete'),
+            SUM(status='no-date'),
+            SUM(status='failed'),
+            SUM(status IN ('pending', 'retry') AND attempts < 3)
+        FROM archived_date_hydration
+        """
+    ).fetchone()
+    return {
+        "total": int(row[0] or 0),
+        "complete": int(row[1] or 0),
+        "noDate": int(row[2] or 0),
+        "failed": int(row[3] or 0),
+        "remaining": int(row[4] or 0),
+    }
+
+
+def extract_archived_published_at(
+    html: str,
+    *,
+    publisher: str,
+) -> str | None:
+    if publisher != "scmp":
+        raise ValueError(
+            f"archived date extraction is not supported for {publisher!r}"
+        )
+    soup = BeautifulSoup(html, "html.parser")
+    node = soup.select_one(
+        ".pane-node-created .pane-content, .pane-node-created"
+    )
+    value = " ".join(node.get_text(" ", strip=True).split()) if node else ""
+    match = re.search(
+        r"(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+),?\s+"
+        r"(?P<year>20\d{2}),?\s+"
+        r"(?P<time>\d{1,2}:\d{2}\s*[ap]m)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    normalized = (
+        f"{match.group('day')} {match.group('month')} "
+        f"{match.group('year')} {match.group('time').replace(' ', '')}"
+    )
+    for format_string in ("%d %B %Y %I:%M%p", "%d %b %Y %I:%M%p"):
+        try:
+            parsed = datetime.strptime(normalized, format_string)
+        except ValueError:
+            continue
+        return parsed.replace(
+            tzinfo=timezone(timedelta(hours=8))
+        ).isoformat()
+    return None
 
 
 def extract_wsj_legacy_published_at(html: str) -> str | None:
@@ -1367,11 +1655,22 @@ def wsj_catalog_count_for_year(
     *,
     spec: ArchiveSourceSpec | None = None,
 ) -> int:
-    selects = [
+    hydration_filter = (
         """
+          AND canonical_url NOT IN (
+              SELECT canonical_url FROM archived_date_hydration
+              WHERE status != 'complete'
+          )
+        """
+        if _table_exists(connection, "archived_date_hydration")
+        else ""
+    )
+    selects = [
+        f"""
         SELECT canonical_url
         FROM candidates
         WHERE substr(published_at, 1, 4)=?
+        {hydration_filter}
         """
     ]
     parameters: list[object] = [str(year)]
@@ -1651,8 +1950,18 @@ def export_capture_manifest(
     if capture_minimum_per_year < 1:
         raise ValueError("capture_minimum_per_year must be positive")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    rows = connection.execute(
+    hydration_filter = (
         """
+          AND canonical_url NOT IN (
+              SELECT canonical_url FROM archived_date_hydration
+              WHERE status != 'complete'
+          )
+        """
+        if _table_exists(connection, "archived_date_hydration")
+        else ""
+    )
+    rows = connection.execute(
+        f"""
         SELECT
             canonical_url,
             published_at,
@@ -1665,6 +1974,7 @@ def export_capture_manifest(
         FROM candidates
         WHERE published_at >= ?
           AND published_at < ?
+          {hydration_filter}
         ORDER BY canonical_url, rank_score, timestamp, digest
         """,
         (
@@ -1812,6 +2122,9 @@ def export_capture_manifest(
     incomplete = connection.execute(
         "SELECT COUNT(*) FROM discovery_queries WHERE status != 'complete'"
     ).fetchone()[0]
+    archived_dates = archived_date_summary(connection)
+    if archived_dates is not None and archived_dates["remaining"] > 0:
+        incomplete += 1
     if _table_exists(connection, "wsj_bluesky_state"):
         bluesky_status = connection.execute(
             "SELECT status FROM wsj_bluesky_state WHERE singleton=1"
@@ -1873,6 +2186,16 @@ def discovered_wayback_articles(
         str,
         tuple[str | None, list[dict[str, object]]],
     ] = {}
+    hydration_filter = (
+        """
+          AND canonical_url NOT IN (
+              SELECT canonical_url FROM archived_date_hydration
+              WHERE status != 'complete'
+          )
+        """
+        if _table_exists(connection, "archived_date_hydration")
+        else ""
+    )
     for (
         canonical_url,
         published_at,
@@ -1883,7 +2206,7 @@ def discovered_wayback_articles(
         status_code,
         byte_count,
     ) in connection.execute(
-        """
+        f"""
         SELECT
             canonical_url,
             published_at,
@@ -1896,6 +2219,7 @@ def discovered_wayback_articles(
         FROM candidates
         WHERE published_at >= ?
           AND published_at < ?
+          {hydration_filter}
         ORDER BY canonical_url, rank_score, timestamp, digest
         """,
         (
@@ -2060,6 +2384,12 @@ def discovery_summary(connection: sqlite3.Connection) -> dict[str, object]:
         result["shouldContinue"] = bool(
             result["shouldContinue"]
         ) or legacy_dates["remaining"] > 0
+    archived_dates = archived_date_summary(connection)
+    if archived_dates is not None:
+        result["archivedDates"] = archived_dates
+        result["shouldContinue"] = bool(
+            result["shouldContinue"]
+        ) or archived_dates["remaining"] > 0
     return result
 
 

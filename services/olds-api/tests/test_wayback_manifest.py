@@ -27,15 +27,18 @@ from jojo_olds_api.wayback_manifest import (
     candidate_rank,
     discovery_summary,
     export_capture_manifest,
+    extract_archived_published_at,
     extract_wsj_legacy_published_at,
     infer_published_at,
     initialize_discovery_schema,
+    initialize_archived_date_schema,
     initialize_wsj_legacy_date_schema,
     initialize_wsj_bluesky_schema,
     initialize_wsj_google_news_schema,
     initialize_wsj_rss_schema,
     next_discovery_query,
     parse_cdx_json,
+    process_archived_dates,
     process_wsj_bluesky_page,
     process_wsj_google_news_feed,
     process_wsj_rss_feeds,
@@ -57,6 +60,111 @@ def test_extract_wsj_legacy_published_at_from_json_ld():
     assert extract_wsj_legacy_published_at(
         """<script>{"datePublished":"2014-06-03T12:34:56Z"}</script>"""
     ) == "2014-06-03T12:34:56+00:00"
+
+
+def test_extract_scmp_archived_published_at_from_legacy_node():
+    assert extract_archived_published_at(
+        """
+        <div class="panel-pane pane-node-created pos-6">
+          <div class="pane-content">
+            Wednesday, 15 August, 2012, 2:10pm
+          </div>
+        </div>
+        """,
+        publisher="scmp",
+    ) == "2012-08-15T14:10:00+08:00"
+
+
+def test_scmp_archived_date_hydration_withholds_capture_year(tmp_path: Path):
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("scmp")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+    connection.execute("UPDATE discovery_queries SET status='complete'")
+    canonical_url = (
+        "https://www.scmp.com/article/1000041/"
+        "change-media-group-raises-concern"
+    )
+    connection.execute(
+        """
+        INSERT INTO candidates(
+            canonical_url, published_at, timestamp, original_url,
+            digest, mimetype, status_code, byte_count, rank_score
+        ) VALUES (?, ?, ?, ?, '', 'text/html', 200, 1234, 0)
+        """,
+        (
+            canonical_url,
+            "2013-06-15T17:27:27+00:00",
+            "20130615172727",
+            canonical_url,
+        ),
+    )
+    initialize_archived_date_schema(connection, publisher="scmp")
+    before = export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=tmp_path / "before.jsonl.gz",
+        from_year=2010,
+        to_year=2015,
+    )
+    assert before["articles"] == 0
+    assert before["complete"] is False
+
+    class Response:
+        status_code = 200
+        text = """
+        <div class="pane-node-created">
+          <div class="pane-content">
+            Wednesday, 15 August, 2012, 2:10pm
+          </div>
+        </div>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    class Client:
+        def get(self, url):
+            assert "20130615172727id_" in url
+            return Response()
+
+    result = process_archived_dates(
+        connection,
+        publisher="scmp",
+        http_client=Client(),
+        maximum=1,
+    )
+    assert result == {
+        "attempted": 1,
+        "found": 1,
+        "noDate": 0,
+        "failed": 0,
+        "remaining": 0,
+        "errors": [],
+    }
+    assert connection.execute(
+        "SELECT published_at FROM candidates WHERE canonical_url=?",
+        (canonical_url,),
+    ).fetchone()[0] == "2012-08-15T14:10:00+08:00"
+    assert wsj_catalog_count_for_year(connection, 2012, spec=spec) == 1
+    assert wsj_catalog_count_for_year(connection, 2013, spec=spec) == 0
+    after_path = tmp_path / "after.jsonl.gz"
+    after = export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=after_path,
+        from_year=2010,
+        to_year=2015,
+    )
+    assert after["articles"] == 1
+    with gzip.open(after_path, "rt", encoding="utf-8") as handle:
+        row = json.loads(next(handle))
+    assert row["publishedAt"] == "2012-08-15T14:10:00+08:00"
 
 
 def test_discovery_schema_accepts_additive_wayback_patterns():
