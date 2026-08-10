@@ -887,6 +887,20 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "https://www.zaobao.com.sg/news/singapore/story20240102-1234567",
     ) == "https://www.zaobao.com.sg/news/singapore/story20240102-1234567"
     assert normalize_article_url(
+        archive_source_spec("zaobao"),
+        (
+            "https://www.zaobao.com.sg/special/zbo/smnews/"
+            "story20160131-577237"
+        ),
+    ) == (
+        "https://www.zaobao.com.sg/special/zbo/smnews/"
+        "story20160131-577237"
+    )
+    assert normalize_article_url(
+        archive_source_spec("zaobao"),
+        "https://www.zaobao.com.sg/realtime/world/story20160131",
+    ) is None
+    assert normalize_article_url(
         archive_source_spec("aljazeera"),
         "https://www.aljazeera.com/news/2020/1/2/example",
     ) == "https://www.aljazeera.com/news/2020/1/2/example"

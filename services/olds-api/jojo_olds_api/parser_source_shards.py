@@ -7,6 +7,7 @@ SUPPORTED_YEARS = range(2010, 2027)
 # and the configured public archive can plausibly contain its own articles.
 _PUBLISHER_MINIMUM_YEARS = {
     "axios": 2017,
+    "zaobao": 2016,
 }
 
 
@@ -30,6 +31,8 @@ def parser_source_manifest_shard(publisher: str, year: int) -> str:
     if publisher == "aljazeera":
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return f"aljazeera/{window}/sitemap-wayback"
+    if publisher == "zaobao":
+        return "zaobao/2016-2026/sitemap-wayback"
     if publisher == "wsj":
         window = "2010-2015" if year <= 2015 else "2016-2026"
         # The URL-key shard is a compact pre-index.  The replay manifest has
@@ -40,7 +43,7 @@ def parser_source_manifest_shard(publisher: str, year: int) -> str:
         return f"wsj/{window}/wayback-urlkey"
     if publisher == "axios":
         return "axios/2017-2026/wayback-urlkey"
-    if publisher in {"npr", "nikkei", "zaobao", "scmp", "caixin"}:
+    if publisher in {"npr", "nikkei", "scmp", "caixin"}:
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return f"{publisher}/{window}/wayback-urlkey"
     raise ValueError(f"unsupported parser publisher: {publisher}")

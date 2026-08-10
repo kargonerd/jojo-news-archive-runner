@@ -202,8 +202,13 @@ ARCHIVE_SOURCE_SPECS = {
         # `* /story*` is not a recursive path glob and returns no captures.
         # Historical articles are published below /news/<section>/storyYYYY….
         wayback_patterns=("www.zaobao.com.sg/news/*",),
-        accepted_path_patterns=_patterns(r"^/[a-z-]+/[a-z-]+/story\d+"),
-        rejected_path_patterns=_patterns(r"^/(?:zvideos|podcast|special)(?:/|$)"),
+        # Official monthly sitemaps include realtime, news, lifestyle and
+        # nested special-report desks. Their shared invariant is a dated
+        # story id, not a fixed section depth.
+        accepted_path_patterns=_patterns(
+            r"^/(?:[a-z0-9-]+/)+story20\d{6}-\d+$"
+        ),
+        rejected_path_patterns=_patterns(r"^/(?:zvideos|podcast)(?:/|$)"),
     ),
     "aljazeera": ArchiveSourceSpec(
         publisher="aljazeera",

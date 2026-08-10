@@ -84,6 +84,12 @@ jobs:
             manifest_mode: sitemap-wayback
             discovery_units: "24"
             runner_os: ubuntu-latest
+          - publisher: zaobao
+            from_year: "2016"
+            to_year: "2026"
+            manifest_mode: sitemap-wayback
+            discovery_units: "24"
+            runner_os: ubuntu-latest
     steps:
       - name: Advance archive shard
         env:

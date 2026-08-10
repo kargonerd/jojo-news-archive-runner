@@ -83,6 +83,11 @@ SITEMAP_SOURCES = {
             r"/article-new/(\d{2})-(\d{2})-(20\d{2})\.xml$"
         ),
     ),
+    "zaobao": SitemapSource(
+        publisher="zaobao",
+        index_url="https://www.zaobao.com.sg/sitemap.xml",
+        child_pattern=re.compile(r"/sitemap-(20\d{2})(\d{2})\.xml$"),
+    ),
 }
 
 

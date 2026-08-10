@@ -747,6 +747,32 @@ def test_aljazeera_archive_and_daily_sitemap_indexes_are_combined():
     ]
 
 
+def test_zaobao_monthly_sitemap_index_is_supported():
+    content = b"""<?xml version="1.0"?>
+    <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <sitemap><loc>https://www.zaobao.com.sg/sitemaps/sitemap-201601.xml</loc></sitemap>
+      <sitemap><loc>https://www.zaobao.com.sg/sitemaps/sitemap-202608.xml</loc></sitemap>
+    </sitemapindex>
+    """
+    assert parse_sitemap_index(
+        content,
+        source=sitemap_source("zaobao"),
+        from_year=2016,
+        to_year=2026,
+    ) == [
+        (
+            "https://www.zaobao.com.sg/sitemaps/sitemap-201601.xml",
+            2016,
+            1,
+        ),
+        (
+            "https://www.zaobao.com.sg/sitemaps/sitemap-202608.xml",
+            2026,
+            8,
+        ),
+    ]
+
+
 def test_repairs_known_historical_sitemap_xml_defects():
     content = b"""<?xml version="1.0" encoding="UTF-8"?>
     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
