@@ -11109,6 +11109,31 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             and "sign up here" in text
         ):
             node.decompose()
+    text_nodes = list(soup.select("p, h2, h3, h4, h5, h6"))
+    for index, node in enumerate(text_nodes):
+        if node.parent is None:
+            continue
+        if (
+            _clean_text(node.get_text(" ", strip=True)).casefold()
+            != "stay informed"
+        ):
+            continue
+        promo_nodes = [node]
+        nearby = "stay informed"
+        for candidate in text_nodes[index + 1 : index + 3]:
+            if candidate.parent is None:
+                continue
+            promo_nodes.append(candidate)
+            nearby += " " + _clean_text(
+                candidate.get_text(" ", strip=True)
+            ).casefold()
+            if (
+                "get a coronavirus briefing" in nearby
+                and "sign up here" in nearby
+            ):
+                for promo_node in promo_nodes:
+                    promo_node.decompose()
+                break
     for node in list(soup.select("p, h2, h3, h4, h5, h6")):
         if node.parent is None:
             continue
