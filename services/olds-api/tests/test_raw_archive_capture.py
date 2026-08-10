@@ -213,6 +213,26 @@ def test_wsj_common_crawl_discovery_includes_http_archive_key():
     )
 
 
+def test_ft_archive_discovery_includes_scheme_and_host_variants():
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "01234567-89ab-cdef-0123-456789abcdef?segmentId=example"
+        ),
+        published_at="2016-09-13T00:00:00Z",
+        section=None,
+        candidates=(),
+    )
+
+    assert _common_crawl_discovery_urls(item) == (
+        item.canonical_url,
+        item.canonical_url.replace("https://", "http://", 1),
+        item.canonical_url.replace("www.ft.com", "ft.com", 1),
+        item.canonical_url.replace("https://www.ft.com", "http://ft.com", 1),
+    )
+
+
 def test_wsj_complete_legacy_video_survives_navigation_auth_marker(
     tmp_path: Path,
 ):

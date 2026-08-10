@@ -5749,6 +5749,30 @@ def _archive_article_path(host: str, path: str) -> str:
 
 
 def _common_crawl_discovery_urls(item: CaptureItem) -> tuple[str, ...]:
+    if item.publisher == "ft":
+        # FT's 2016-era archive records are split across HTTPS/HTTP and
+        # www/bare-host URL keys. Arquivo.pt and Common Crawl perform exact
+        # URL lookups, so query every equivalent origin form while keeping
+        # the manifest canonical URL first.
+        parsed = urlsplit(item.canonical_url)
+        hostname = (parsed.hostname or "").casefold()
+        if hostname in {"ft.com", "www.ft.com"}:
+            alternate_host = (
+                "ft.com" if hostname == "www.ft.com" else "www.ft.com"
+            )
+            variants = [item.canonical_url]
+            for scheme, host in (
+                ("https", hostname),
+                ("http", hostname),
+                ("https", alternate_host),
+                ("http", alternate_host),
+            ):
+                candidate = urlunsplit(
+                    (scheme, host, parsed.path, parsed.query, "")
+                )
+                if candidate not in variants:
+                    variants.append(candidate)
+            return tuple(variants)
     if item.publisher == "wsj":
         # The 2016 WSJ URL-key manifest is normalized to HTTPS, whereas many
         # of the corresponding Wayback, Arquivo.pt, and Common Crawl records
