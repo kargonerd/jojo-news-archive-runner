@@ -63,7 +63,11 @@ jobs:
                 or .status == "requested"
               )
             | .displayTitle
-            | select(startswith("news-raw-") or startswith("parser-"))
+            | select(
+                startswith("news-raw-")
+                or startswith("nikkei-common-crawl-")
+                or startswith("parser-")
+              )
           ' "$runs" > "$active_titles"
           active_count="$(wc -l < "$active_titles")"
           available=$((MAX_STANDARD_CONCURRENCY - active_count))

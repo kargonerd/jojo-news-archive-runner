@@ -16,7 +16,9 @@ def test_archive_watchdog_has_one_global_two_slot_dispatcher() -> None:
     assert 'MAX_DISPATCH_PER_RUN: "2"' in workflow
     assert "strategy:" not in workflow
     assert "matrix:" not in workflow
-    assert 'startswith("news-raw-") or startswith("parser-")' in workflow
+    assert 'startswith("news-raw-")' in workflow
+    assert 'startswith("nikkei-common-crawl-")' in workflow
+    assert 'startswith("parser-")' in workflow
     assert "available=$((MAX_STANDARD_CONCURRENCY - active_count))" in workflow
     assert 'if [ "$dispatched" -ge "$available" ]' in workflow
 
