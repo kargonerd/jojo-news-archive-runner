@@ -131,6 +131,25 @@ def test_catalog_watchdog_reserves_the_other_slot_for_validation(
     assert plan["tasks"] == []
 
 
+def test_catalog_watchdog_counts_non_bootstrap_archive_chain(
+    tmp_path: Path,
+):
+    pending = SourceCatalogTarget(
+        "aljazeera", 2010, 2015, "sitemap-wayback", 30
+    )
+
+    plan = plan_source_catalog_dispatch(
+        status_root=tmp_path,
+        active_titles=["news-raw-wsj-2016-2026-wayback-urlkey"],
+        max_dispatch=1,
+        max_active_catalogs=1,
+        targets=[pending],
+    )
+
+    assert plan["activeCatalogs"] == 1
+    assert plan["tasks"] == []
+
+
 def test_catalog_status_writer_round_trip(tmp_path: Path):
     output = tmp_path / "status.json"
     payload = STATUS_MODULE.write_source_catalog_status(

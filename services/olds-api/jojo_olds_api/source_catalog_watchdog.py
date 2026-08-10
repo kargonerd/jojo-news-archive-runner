@@ -129,7 +129,13 @@ def plan_source_catalog_dispatch(
             int(row["priority"]),
         )
     )
-    active_catalogs = sum(bool(row["active"]) for row in rows)
+    # Count every generic source-archive chain, including publishers such as
+    # WSJ that are already being advanced outside this bootstrap target list.
+    # Otherwise a free slot could start a second catalog and crowd parser
+    # validation out of the global two-run budget.
+    active_catalogs = sum(
+        title.startswith("news-raw-") for title in active
+    )
     catalog_slots = max(0, max_active_catalogs - active_catalogs)
     selected = pending[: min(max_dispatch, catalog_slots)]
     tasks = [_task(row["target"]) for row in selected]
