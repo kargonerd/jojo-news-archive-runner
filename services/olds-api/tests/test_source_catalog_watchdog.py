@@ -76,6 +76,7 @@ def test_catalog_watchdog_prioritizes_missing_sources_and_skips_active(
         active_titles=[active.run_title],
         available_source_shards={complete.shard, active.shard, old_manifest.shard},
         max_dispatch=2,
+        max_active_catalogs=3,
         targets=[complete, active, old_manifest, missing],
     )
 
@@ -106,6 +107,28 @@ def test_catalog_watchdog_retries_invalid_status(tmp_path: Path):
         f"{target.shard}/catalog/status.json"
     ]
     assert plan["tasks"][0]["publisher"] == "zaobao"
+
+
+def test_catalog_watchdog_reserves_the_other_slot_for_validation(
+    tmp_path: Path,
+):
+    active = SourceCatalogTarget(
+        "aljazeera", 2010, 2015, "sitemap-wayback", 30
+    )
+    pending = SourceCatalogTarget(
+        "zaobao", 2016, 2026, "sitemap-wayback", 30
+    )
+
+    plan = plan_source_catalog_dispatch(
+        status_root=tmp_path,
+        active_titles=[active.run_title],
+        max_dispatch=1,
+        max_active_catalogs=1,
+        targets=[active, pending],
+    )
+
+    assert plan["activeCatalogs"] == 1
+    assert plan["tasks"] == []
 
 
 def test_catalog_status_writer_round_trip(tmp_path: Path):

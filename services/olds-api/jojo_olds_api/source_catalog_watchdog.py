@@ -55,11 +55,14 @@ def plan_source_catalog_dispatch(
     status_root: Path,
     active_titles: Iterable[str],
     max_dispatch: int,
+    max_active_catalogs: int = 1,
     available_source_shards: Iterable[str] | None = None,
     targets: Iterable[SourceCatalogTarget] = SOURCE_CATALOG_TARGETS,
 ) -> dict[str, object]:
     if max_dispatch < 0:
         raise ValueError("max_dispatch must be non-negative")
+    if max_active_catalogs < 0:
+        raise ValueError("max_active_catalogs must be non-negative")
     active = {title.strip() for title in active_titles if title.strip()}
     available = (
         None
@@ -126,7 +129,9 @@ def plan_source_catalog_dispatch(
             int(row["priority"]),
         )
     )
-    selected = pending[:max_dispatch]
+    active_catalogs = sum(bool(row["active"]) for row in rows)
+    catalog_slots = max(0, max_active_catalogs - active_catalogs)
+    selected = pending[: min(max_dispatch, catalog_slots)]
     tasks = [_task(row["target"]) for row in selected]
     progress = [
         {
@@ -148,7 +153,7 @@ def plan_source_catalog_dispatch(
         "formatVersion": FORMAT_VERSION,
         "targetCatalogs": len(rows),
         "completeCatalogs": sum(bool(row["complete"]) for row in rows),
-        "activeCatalogs": sum(bool(row["active"]) for row in rows),
+        "activeCatalogs": active_catalogs,
         "pendingCatalogs": sum(not bool(row["complete"]) for row in rows),
         "invalidStatuses": invalid_statuses,
         "catalogProgress": progress,

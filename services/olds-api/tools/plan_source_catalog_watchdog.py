@@ -23,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--active-titles", type=Path, required=True)
     parser.add_argument("--available-source-shards", type=Path)
     parser.add_argument("--max-dispatch", type=int, required=True)
+    parser.add_argument("--max-active-catalogs", type=int, default=1)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -45,6 +46,7 @@ def main() -> int:
             else None
         ),
         max_dispatch=args.max_dispatch,
+        max_active_catalogs=args.max_active_catalogs,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_suffix(args.output.suffix + ".tmp")

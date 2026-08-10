@@ -25,6 +25,10 @@ env:
   # and storage cost have been reviewed.
   MAX_STANDARD_CONCURRENCY: "2"
   MAX_DISPATCH_PER_RUN: "2"
+  # Keep one slot available for parser iteration while long catalog chains
+  # fill the other slot. This avoids blocking all 800-sample work behind the
+  # slowest historical CDX prefix.
+  MAX_CATALOG_CONCURRENCY: "1"
   # Bloomberg has completed the current research acceptance cycle. Reuters is
   # outside the active convergence objective; both remain supported by the
   # generic planner and can be re-enabled by editing this explicit queue.
@@ -215,6 +219,7 @@ jobs:
             --available-source-shards \
               "$RUNNER_TEMP/available-source-shards.txt" \
             --max-dispatch "$dispatches" \
+            --max-active-catalogs "$MAX_CATALOG_CONCURRENCY" \
             --output "$RUNNER_TEMP/source-catalog-plan.json"
           catalog_dispatches="$(
             jq '.tasks | length' "$RUNNER_TEMP/source-catalog-plan.json"
