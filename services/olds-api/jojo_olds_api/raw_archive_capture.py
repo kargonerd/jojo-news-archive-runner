@@ -31,7 +31,7 @@ from .common_crawl import (
     discover_common_crawl_candidates,
     fetch_common_crawl_candidate,
 )
-from .ft_syndication_catalog import (
+from .infini_news import (
     INFINI_DATASET,
     INFINI_DATASET_ROWS_ENDPOINT,
 )
@@ -60,7 +60,7 @@ CAPTURE_POLICY_VERSIONS = {
     "nyt": "nyt-capture/0.9.0",
     "npr": "npr-capture/1.2",
     "reuters": "reuters-capture/0.7.2",
-    "wsj": "wsj-capture/0.8.7",
+    "wsj": "wsj-capture/0.8.8",
 }
 ACCEPTED_HTTP_STATUSES = {200, 206}
 WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"

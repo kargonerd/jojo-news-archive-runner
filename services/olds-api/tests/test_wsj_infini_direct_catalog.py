@@ -182,13 +182,13 @@ def test_direct_catalog_is_bounded_resumable_and_merges_urls(monkeypatch):
     assert combined["shouldContinue"] is True
 
 
-def test_build_tool_bounds_direct_scan_to_ten_files_per_discovery_page():
+def test_build_tool_processes_direct_and_query_catalogs_in_each_run():
     tool = BUILD_TOOL.read_text(encoding="utf-8")
 
     assert "maximum_files=max(1, args.max_pages or 5) * 10" in tool
     assert "workers=8" in tool
-    assert "if wsj_infini_direct_should_continue(connection):" in tool
-    assert '"status": "deferred-for-direct-catalog"' in tool
+    assert "maximum=max(1, args.max_pages or 5) * 100" in tool
+    assert '"status": "deferred-for-direct-catalog"' not in tool
 
 
 def test_completed_direct_catalog_backfills_dataset_rows_and_exports_candidates(

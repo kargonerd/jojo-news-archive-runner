@@ -53,7 +53,6 @@ from jojo_olds_api.wsj_infini_catalog import (
 from jojo_olds_api.wsj_infini_direct_catalog import (
     initialize_wsj_infini_direct_schema,
     process_wsj_infini_direct_catalog,
-    wsj_infini_direct_should_continue,
 )
 
 
@@ -367,54 +366,39 @@ def main() -> int:
                     "WSJ syndication resolution: "
                     f"{type(exc).__name__}: {exc}"
                 )
-            if wsj_infini_direct_should_continue(connection):
+            try:
+                infini_document_result = process_wsj_infini_documents(
+                    connection,
+                    spec=spec,
+                    http_client=http_client,
+                    maximum=max(1, args.max_pages or 5) * 100,
+                    workers=4,
+                    minimum_request_interval=args.min_request_interval,
+                )
+                wsj_infini_documents_this_run = int(
+                    infini_document_result["attempted"]
+                )
+                infini_document_errors = infini_document_result.pop("errors")
+                deferred_errors.extend(
+                    f"WSJ Infini-News document: {error}"
+                    for error in infini_document_errors
+                )
                 print(
                     json.dumps(
                         {
                             "event": "wsj-infini-documents",
-                            "status": "deferred-for-direct-catalog",
-                            "attempted": 0,
-                            "errors": 0,
-                        }
+                            **infini_document_result,
+                            "errors": len(infini_document_errors),
+                        },
+                        ensure_ascii=False,
                     ),
                     flush=True,
                 )
-            else:
-                try:
-                    infini_document_result = process_wsj_infini_documents(
-                        connection,
-                        spec=spec,
-                        http_client=http_client,
-                        maximum=max(1, args.max_pages or 5) * 100,
-                        workers=4,
-                        minimum_request_interval=args.min_request_interval,
-                    )
-                    wsj_infini_documents_this_run = int(
-                        infini_document_result["attempted"]
-                    )
-                    infini_document_errors = infini_document_result.pop(
-                        "errors"
-                    )
-                    deferred_errors.extend(
-                        f"WSJ Infini-News document: {error}"
-                        for error in infini_document_errors
-                    )
-                    print(
-                        json.dumps(
-                            {
-                                "event": "wsj-infini-documents",
-                                **infini_document_result,
-                                "errors": len(infini_document_errors),
-                            },
-                            ensure_ascii=False,
-                        ),
-                        flush=True,
-                    )
-                except Exception as exc:
-                    deferred_errors.append(
-                        "WSJ Infini-News document: "
-                        f"{type(exc).__name__}: {exc}"
-                    )
+            except Exception as exc:
+                deferred_errors.append(
+                    "WSJ Infini-News document: "
+                    f"{type(exc).__name__}: {exc}"
+                )
             while (
                 args.max_pages is None
                 or bluesky_pages_this_run < args.max_pages

@@ -77,6 +77,14 @@ class StubInfiniClient:
         )
 
 
+class StubShortInfiniClient(StubInfiniClient):
+    def post(self, url, json):
+        response = super().post(url, json)
+        if url.endswith("/get_doc") and response.payload["doc_ix"] == 123:
+            response.payload["doc_len"] = 500
+        return response
+
+
 def test_wsj_infini_catalog_adds_only_canonical_origin_urls(
     tmp_path: Path,
 ):
@@ -143,6 +151,61 @@ def test_wsj_infini_catalog_adds_only_canonical_origin_urls(
     assert row["canonicalUrl"] == CANONICAL_URL
     assert row["publishedAt"] == "2017-06-03T00:00:00+00:00"
     assert row["candidates"]
+    derived = row["candidates"][0]
+    assert derived["provider"] == "infini-news"
+    assert "config=year_2017" in derived["snapshotUrl"]
+    assert "offset=123" in derived["snapshotUrl"]
+    assert derived["sourceUrl"] == CANONICAL_URL
+    assert derived["expectedHeadline"] == HEADLINE
+    assert derived["warcFilename"].endswith("00001.warc.gz")
+    assert all(
+        candidate["provider"] == "wayback"
+        for candidate in row["candidates"][1:]
+    )
+
+
+def test_wsj_infini_catalog_does_not_export_short_preview_candidate(
+    tmp_path: Path,
+):
+    spec = archive_source_spec("wsj")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2017,
+        to_year=2017,
+        collapse="urlkey",
+    )
+    initialize_wsj_infini_schema(
+        connection,
+        from_year=2017,
+        to_year=2017,
+    )
+    client = StubShortInfiniClient()
+    process_wsj_infini_queries(
+        connection,
+        http_client=client,
+        maximum_queries=5,
+    )
+    process_wsj_infini_documents(
+        connection,
+        spec=spec,
+        http_client=client,
+        maximum=2,
+        workers=1,
+        minimum_request_interval=0,
+    )
+
+    destination = tmp_path / "manifest.jsonl.gz"
+    export_capture_manifest(
+        connection,
+        spec=spec,
+        destination=destination,
+        from_year=2017,
+        to_year=2017,
+    )
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        row = json.loads(handle.readline())
     assert all(
         candidate["provider"] == "wayback"
         for candidate in row["candidates"]

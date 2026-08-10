@@ -9,13 +9,16 @@ import sqlite3
 
 from .archive_sources import ArchiveSourceSpec, normalize_article_url
 from .bloomberg_archive_download import GlobalRateLimiter
+from .infini_news import infini_news_row_url
+from .news_models import CaptureCandidate, CaptureProvider
 
 
 INFINI_FIND_ENDPOINT = "https://infini-news.uni-graz.at/api/v1/find"
 INFINI_DOCUMENT_ENDPOINT = "https://infini-news.uni-graz.at/api/v1/get_doc"
 WSJ_INFINI_FIRST_YEAR = 2016
 WSJ_INFINI_LAST_YEAR = 2023
-WSJ_INFINI_TARGET_PER_YEAR = 1_000
+WSJ_INFINI_TARGET_PER_YEAR = 4_000
+WSJ_INFINI_MINIMUM_BODY_CHARACTERS = 1_000
 MAXIMUM_OCCURRENCES_PER_QUERY = 4_000
 WSJ_ORIGIN_QUERY_SPECS = (
     (
@@ -151,6 +154,13 @@ def initialize_wsj_infini_schema(
                 status,
                 year,
                 sample_priority
+            );
+        CREATE INDEX IF NOT EXISTS idx_wsj_infini_occurrence_article
+            ON wsj_infini_occurrences(
+                canonical_url,
+                document_index,
+                status,
+                document_length
             );
         CREATE INDEX IF NOT EXISTS idx_wsj_infini_article_year
             ON wsj_infini_articles(published_at);
@@ -437,6 +447,61 @@ def wsj_infini_articles(
             """
         )
     }
+
+
+def wsj_infini_capture_candidates(
+    connection: sqlite3.Connection,
+) -> dict[str, dict[str, object]]:
+    """Export validated dataset rows as derived WSJ capture candidates."""
+    if not _table_exists(connection, "wsj_infini_articles") or not (
+        _table_exists(connection, "wsj_infini_occurrences")
+    ):
+        return {}
+    result: dict[str, dict[str, object]] = {}
+    for (
+        canonical_url,
+        expected_headline,
+        source_year,
+        document_index,
+        warc_source,
+    ) in connection.execute(
+        """
+        SELECT
+            article.canonical_url,
+            article.expected_headline,
+            article.source_year,
+            article.document_index,
+            article.warc_source
+        FROM wsj_infini_articles AS article
+        WHERE article.document_index IS NOT NULL
+          AND EXISTS (
+              SELECT 1
+              FROM wsj_infini_occurrences AS occurrence
+              WHERE occurrence.status='accepted'
+                AND occurrence.canonical_url=article.canonical_url
+                AND occurrence.document_index=article.document_index
+                AND occurrence.document_length>=?
+          )
+        ORDER BY article.canonical_url
+        """,
+        (WSJ_INFINI_MINIMUM_BODY_CHARACTERS,),
+    ):
+        candidate = CaptureCandidate(
+            provider=CaptureProvider.INFINI_NEWS,
+            snapshot_url=infini_news_row_url(
+                int(source_year),
+                int(document_index),
+            ),
+            source_url=str(canonical_url),
+            expected_headline=str(expected_headline),
+            warc_filename=str(warc_source),
+        )
+        result[str(canonical_url)] = candidate.model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=True,
+        )
+    return result
 
 
 def wsj_infini_count_for_year(

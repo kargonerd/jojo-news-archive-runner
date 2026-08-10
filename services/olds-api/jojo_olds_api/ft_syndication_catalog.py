@@ -23,6 +23,11 @@ from .archive_sources import (
     normalize_article_url,
 )
 from .bloomberg_archive_download import GlobalRateLimiter
+from .infini_news import (
+    INFINI_DATASET,
+    INFINI_DATASET_ROWS_ENDPOINT,
+    infini_news_row_url,
+)
 from .news_models import CaptureCandidate, CaptureProvider
 from .wayback_manifest import (
     GOOGLE_NEWS_RSS_ENDPOINT,
@@ -37,10 +42,6 @@ INFINI_FIND_ENDPOINT = (
 INFINI_DOCUMENT_ENDPOINT = (
     "https://infini-news.uni-graz.at/api/v1/get_doc"
 )
-INFINI_DATASET_ROWS_ENDPOINT = (
-    "https://datasets-server.huggingface.co/rows"
-)
-INFINI_DATASET = "ruggsea/infini-news-corpus"
 INFINI_QUERY = "Copyright The Financial Times Limited"
 YAHOO_SEARCH_ENDPOINT = "https://search.yahoo.com/search"
 YAHOO_USER_AGENT = (
@@ -93,22 +94,6 @@ _TRACKING_QUERY_KEYS = {
     "utm_source",
     "utm_term",
 }
-
-
-def infini_news_row_url(year: int, document_index: int) -> str:
-    if year < 1900 or year > 2200:
-        raise ValueError("Infini-News year is outside the supported range")
-    if document_index < 0:
-        raise ValueError("Infini-News document index must be non-negative")
-    return INFINI_DATASET_ROWS_ENDPOINT + "?" + urlencode(
-        {
-            "dataset": INFINI_DATASET,
-            "config": f"year_{year}",
-            "split": "train",
-            "offset": document_index,
-            "length": 1,
-        }
-    )
 
 
 @dataclass(frozen=True)

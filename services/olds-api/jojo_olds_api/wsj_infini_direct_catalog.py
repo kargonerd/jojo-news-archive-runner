@@ -7,7 +7,7 @@ import re
 import sqlite3
 import struct
 from typing import Iterable
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, urlsplit
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -17,9 +17,9 @@ from .archive_sources import (
     normalize_article_url,
     wsj_article_publication_datetime,
 )
+from .infini_news import INFINI_DATASET, infini_news_row_url
 from .news_models import CaptureCandidate, CaptureProvider
 
-INFINI_DATASET = "ruggsea/infini-news-corpus"
 HUGGING_FACE_TREE_ENDPOINT = (
     "https://huggingface.co/api/datasets/"
     f"{INFINI_DATASET}/tree/main"
@@ -27,9 +27,6 @@ HUGGING_FACE_TREE_ENDPOINT = (
 HUGGING_FACE_RESOLVE_ENDPOINT = (
     "https://huggingface.co/datasets/"
     f"{INFINI_DATASET}/resolve/main"
-)
-INFINI_DATASET_ROWS_ENDPOINT = (
-    "https://datasets-server.huggingface.co/rows"
 )
 WSJ_INFINI_DIRECT_FIRST_YEAR = 2016
 WSJ_INFINI_DIRECT_LAST_YEAR = 2018
@@ -46,22 +43,6 @@ MINIMUM_TEXT_CHARACTERS = 1_000
 PARQUET_FOOTER_PROBE_BYTES = 32 * 1024
 _WSJ_HOSTS = {"wsj.com", "www.wsj.com", "online.wsj.com"}
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z0-9]+")
-
-
-def _infini_news_row_url(year: int, document_index: int) -> str:
-    if year < 1900 or year > 2200:
-        raise ValueError("Infini-News year is outside the supported range")
-    if document_index < 0:
-        raise ValueError("Infini-News document index must be non-negative")
-    return INFINI_DATASET_ROWS_ENDPOINT + "?" + urlencode(
-        {
-            "dataset": INFINI_DATASET,
-            "config": f"year_{year}",
-            "split": "train",
-            "offset": document_index,
-            "length": 1,
-        }
-    )
 
 
 def initialize_wsj_infini_direct_schema(
@@ -422,7 +403,7 @@ def wsj_infini_direct_capture_candidates(
     ):
         candidate = CaptureCandidate(
             provider=CaptureProvider.INFINI_NEWS,
-            snapshot_url=_infini_news_row_url(
+            snapshot_url=infini_news_row_url(
                 int(source_year),
                 int(document_index),
             ),

@@ -27,6 +27,7 @@ from .archive_sources import (
 from .bloomberg_archive_download import GlobalRateLimiter
 from .wsj_infini_catalog import (
     wsj_infini_articles,
+    wsj_infini_capture_candidates,
     wsj_infini_should_continue,
     wsj_infini_summary,
 )
@@ -2079,6 +2080,7 @@ def export_capture_manifest(
     article_count = 0
     candidate_count = 0
     external_articles = _wsj_external_articles(connection)
+    infini_candidates = wsj_infini_capture_candidates(connection)
     direct_infini_candidates = wsj_infini_direct_capture_candidates(
         connection
     )
@@ -2093,10 +2095,17 @@ def export_capture_manifest(
             if normalize_article_url(spec, canonical_url) != canonical_url:
                 continue
             if current_url is not None and canonical_url != current_url:
+                preferred_candidates = []
                 if current_url in direct_infini_candidates:
+                    preferred_candidates.append(
+                        direct_infini_candidates[current_url]
+                    )
+                if current_url in infini_candidates:
+                    preferred_candidates.append(infini_candidates[current_url])
+                if preferred_candidates:
                     candidates = _merge_capture_candidates(
+                        preferred_candidates,
                         candidates,
-                        [direct_infini_candidates[current_url]],
                     )
                 if current_url in external_articles:
                     current_published_at = external_articles[current_url]
@@ -2144,10 +2153,15 @@ def export_capture_manifest(
                 }
             )
         if current_url is not None:
+            preferred_candidates = []
             if current_url in direct_infini_candidates:
+                preferred_candidates.append(direct_infini_candidates[current_url])
+            if current_url in infini_candidates:
+                preferred_candidates.append(infini_candidates[current_url])
+            if preferred_candidates:
                 candidates = _merge_capture_candidates(
+                    preferred_candidates,
                     candidates,
-                    [direct_infini_candidates[current_url]],
                 )
             if current_url in external_articles:
                 current_published_at = external_articles[current_url]
@@ -2185,6 +2199,8 @@ def export_capture_manifest(
             candidates = []
             if canonical_url in direct_infini_candidates:
                 candidates.append(direct_infini_candidates[canonical_url])
+            if canonical_url in infini_candidates:
+                candidates.append(infini_candidates[canonical_url])
             candidates = _merge_capture_candidates(
                 candidates,
                 _approximate_wayback_candidates(
