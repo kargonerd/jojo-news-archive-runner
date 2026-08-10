@@ -201,7 +201,11 @@ ARCHIVE_SOURCE_SPECS = {
     "aljazeera": ArchiveSourceSpec(
         publisher="aljazeera",
         canonical_host="www.aljazeera.com",
-        wayback_patterns=("www.aljazeera.com/{year}/*",),
+        wayback_patterns=(
+            "www.aljazeera.com/news/{year}/*",
+            "www.aljazeera.com/features/{year}/*",
+            "www.aljazeera.com/opinions/{year}/*",
+        ),
         accepted_path_patterns=_patterns(r"^/(?:news|features|opinions)/20\d{2}/"),
         rejected_path_patterns=_patterns(r"^/(?:video|program|podcasts?)(?:/|$)"),
     ),

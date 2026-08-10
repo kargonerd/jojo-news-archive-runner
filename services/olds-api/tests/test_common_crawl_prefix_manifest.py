@@ -77,6 +77,18 @@ def test_npr_prefix_patterns_include_www_and_bare_hosts():
     )
 
 
+def test_aljazeera_prefix_patterns_include_article_sections():
+    assert prefix_patterns(
+        archive_source_spec("aljazeera"),
+        from_year=2020,
+        to_year=2020,
+    ) == (
+        "www.aljazeera.com/news/2020/",
+        "www.aljazeera.com/features/2020/",
+        "www.aljazeera.com/opinions/2020/",
+    )
+
+
 def test_prefix_schema_adds_new_collections_without_resetting_progress():
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("npr")
