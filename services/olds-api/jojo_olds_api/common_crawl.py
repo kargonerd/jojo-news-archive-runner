@@ -315,6 +315,13 @@ def _decode_warc_response(
     target_url = warc_headers.get("warc-target-uri", "")
     if not target_url.startswith(("http://", "https://")):
         raise ValueError("Common Crawl WARC target URL is invalid")
+    warc_content_length = _optional_int(warc_headers.get("content-length"))
+    if warc_content_length is not None:
+        if warc_content_length < 1 or warc_content_length > len(payload):
+            raise ValueError("Common Crawl WARC payload is truncated")
+        # A gzip member may be followed by the WARC record separator. Respect
+        # the outer record length before decoding the embedded HTTP response.
+        payload = payload[:warc_content_length]
 
     http_header, content = _split_headers(payload)
     lines = http_header.replace(b"\r\n", b"\n").split(b"\n")
@@ -334,18 +341,52 @@ def _decode_warc_response(
         headers.pop("transfer-encoding", None)
     content_encoding = headers.get("content-encoding", "").casefold()
     if content_encoding in {"gzip", "x-gzip"}:
-        content = gzip.decompress(content)
+        if content.startswith(b"\x1f\x8b"):
+            try:
+                content = gzip.decompress(content)
+            except (EOFError, OSError) as exc:
+                raise ValueError(
+                    "Common Crawl HTTP gzip body is invalid"
+                ) from exc
+        elif not _looks_like_already_decoded_html(content, headers=headers):
+            raise ValueError(
+                "Common Crawl HTTP gzip body has no gzip framing"
+            )
         headers.pop("content-encoding", None)
+        # This length describes the encoded origin response. Some historical
+        # WARC records store a decoded payload but retain the original headers;
+        # in either case it must not truncate the decoded HTML below.
+        headers.pop("content-length", None)
     elif content_encoding == "deflate":
-        try:
-            content = zlib.decompress(content)
-        except zlib.error:
-            content = zlib.decompress(content, -zlib.MAX_WBITS)
+        if not _looks_like_already_decoded_html(content, headers=headers):
+            try:
+                content = zlib.decompress(content)
+            except zlib.error:
+                try:
+                    content = zlib.decompress(content, -zlib.MAX_WBITS)
+                except zlib.error as exc:
+                    raise ValueError(
+                        "Common Crawl HTTP deflate body is invalid"
+                    ) from exc
         headers.pop("content-encoding", None)
+        headers.pop("content-length", None)
     content_length = _optional_int(headers.get("content-length"))
     if content_length is not None and content_length <= len(content):
         content = content[:content_length]
     return status, headers, content, target_url
+
+
+def _looks_like_already_decoded_html(
+    content: bytes,
+    *,
+    headers: dict[str, str],
+) -> bool:
+    content_type = headers.get("content-type", "").casefold()
+    if "html" not in content_type and "xhtml" not in content_type:
+        return False
+    return content.lstrip(b"\x00\x09\x0a\x0c\x0d\x20\xef\xbb\xbf").startswith(
+        b"<"
+    )
 
 
 def _split_headers(content: bytes) -> tuple[bytes, bytes]:

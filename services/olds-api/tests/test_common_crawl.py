@@ -162,11 +162,25 @@ def _index_payload(*, compressed_length: int) -> bytes:
     ).encode()
 
 
-def _warc_record(content: bytes = ARTICLE) -> bytes:
+def _warc_record(
+    content: bytes = ARTICLE,
+    *,
+    content_encoding: str | None = None,
+    declared_content_length: int | None = None,
+) -> bytes:
     payload = (
         b"HTTP/1.1 200 OK\r\n"
         b"Content-Type: text/html; charset=utf-8\r\n"
-        + f"Content-Length: {len(content)}\r\n".encode()
+        + (
+            f"Content-Encoding: {content_encoding}\r\n".encode()
+            if content_encoding
+            else b""
+        )
+        + (
+            "Content-Length: "
+            f"{declared_content_length if declared_content_length is not None else len(content)}"
+            "\r\n"
+        ).encode()
         + b"\r\n"
         + content
     )
@@ -316,6 +330,61 @@ def test_fetches_and_decodes_common_crawl_warc_range():
             25_000_000,
         )
     ]
+
+
+def test_decodes_encoded_common_crawl_http_body_without_truncating_it():
+    encoded = gzip.compress(ARTICLE, mtime=0)
+    compressed = _warc_record(
+        encoded,
+        content_encoding="gzip",
+        declared_content_length=len(encoded),
+    )
+    client = _client_for_record(compressed)
+    candidate = CaptureCandidate(
+        provider=CaptureProvider.COMMON_CRAWL,
+        snapshot_url=WARC_URL,
+        warc_filename=WARC_FILENAME,
+        warc_offset=123456,
+        warc_length=len(compressed),
+    )
+
+    status, headers, content, _ = fetch_common_crawl_candidate(
+        candidate,
+        archive_client=client,
+        maximum_html_bytes=5_000_000,
+    )
+
+    assert status == 200
+    assert content == ARTICLE
+    assert "content-encoding" not in headers
+    assert "content-length" not in headers
+
+
+def test_accepts_common_crawl_body_decoded_with_stale_gzip_headers():
+    compressed = _warc_record(
+        ARTICLE,
+        content_encoding="gzip",
+        declared_content_length=17,
+    )
+    client = _client_for_record(compressed)
+    candidate = CaptureCandidate(
+        provider=CaptureProvider.COMMON_CRAWL,
+        snapshot_url=WARC_URL,
+        warc_filename=WARC_FILENAME,
+        warc_offset=123456,
+        warc_length=len(compressed),
+    )
+
+    status, headers, content, _ = fetch_common_crawl_candidate(
+        candidate,
+        archive_client=client,
+        maximum_html_bytes=5_000_000,
+    )
+
+    assert status == 200
+    assert content == ARTICLE
+    assert "content-encoding" not in headers
+    assert "content-length" not in headers
 
 
 def test_archive_client_sends_bounded_http_range():
