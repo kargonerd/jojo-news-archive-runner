@@ -808,28 +808,14 @@ def pending_parser_validation_urls(
                 ROW_NUMBER() OVER (
                     PARTITION BY sample.sample_year
                     ORDER BY
-                        CASE
-                            WHEN capture.last_error LIKE
-                                 '%server-placeholder-shell%'
-                                THEN 0
-                            WHEN capture.publisher = 'nikkei'
-                              AND capture.status = 'pending'
-                              AND EXISTS (
-                                SELECT 1
-                                FROM json_each(capture.candidates_json)
-                                WHERE json_extract(value, '$.provider')
-                                    = 'commoncrawl'
-                            ) THEN 1
-                            WHEN capture.publisher = 'nikkei'
-                              AND capture.status = 'error' THEN 2
-                            -- Once the finite indexed Common Crawl rows are
-                            -- exhausted, retry failed Nikkei samples with the
-                            -- staged exact-CC/Arquivo fallbacks before
-                            -- spending another attempt on the measured-zero-
-                            -- yield Wayback-only tail.
-                            WHEN capture.publisher = 'nikkei' THEN 3
-                            WHEN capture.status = 'pending' THEN 1
-                            ELSE 2
+                        CASE capture.status
+                            WHEN 'pending' THEN 1
+                            ELSE CASE
+                                WHEN capture.last_error LIKE
+                                     '%server-placeholder-shell%'
+                                    THEN 0
+                                ELSE 2
+                            END
                         END,
                         CASE
                             WHEN capture.publisher != 'wsj' THEN 0
