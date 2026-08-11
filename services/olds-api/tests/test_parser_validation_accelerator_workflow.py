@@ -203,6 +203,21 @@ def test_accelerator_merges_nikkei_common_crawl_supplemental_manifest() -> None:
     )
 
 
+def test_accelerator_merges_caixin_single_year_common_crawl_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "caixin" ]; then' in workflow
+    assert (
+        "news-archive/v1/caixin/${SAMPLE_YEAR}-${SAMPLE_YEAR}/"
+        "commoncrawl-prefix"
+        in workflow
+    )
+    assert (
+        '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz"'
+        in workflow
+    )
+
+
 def test_accelerator_merges_ap_legacy_supplemental_manifest() -> None:
     workflow = _workflow_text()
 
