@@ -7309,6 +7309,7 @@ def _npr_non_editorial_image_url(url: str) -> bool:
         "/chrome/news/nprlogo" in path
         or "/chrome/news/pbs_logo" in path
         or "/images/zag.gif" in path
+        or "/include/images/facebook-default-wide" in path
     )
 
 
@@ -7335,6 +7336,27 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
         )
     ):
         node.decompose()
+    # NPR's 2010-era story wrapper nests player menus, embed-code dialogs,
+    # podcast subscription buttons and retailer forms alongside the prose.
+    # Preserve editorial audio/book copy, but never serialize browser controls
+    # into the canonical article body.
+    for node in list(
+        soup.select(
+            ".audio-module-tools, .audio-embed-overlay, "
+            "li.subscribe, .bucketwrap.ecommerce, .ecommerce, .ecomm_body, "
+            "form, button, input"
+        )
+    ):
+        node.decompose()
+    for node in list(soup.select("p, span")):
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        if text == "read more" or (
+            text.startswith("copyright ©")
+            and "npr. all rights reserved" in text
+        ) or text.startswith(
+            "listen to yesterday's song of the day"
+        ):
+            node.decompose()
     for container in list(soup.select(".container")):
         header = container.select_one(":scope > .conheader")
         header_text = _clean_text(
@@ -12675,9 +12697,21 @@ def _image_from_tag(
             ],
         )
     )
+    noise_context = context
+    if spec.publisher == "npr":
+        # NPR asset directories can be named after a story subject (for
+        # example the film ``/avatar/``).  Only let the filename contribute
+        # URL noise signals so legitimate editorial images are not treated
+        # as author portraits.
+        image_filename = urlsplit(original_url).path.rpartition("/")[2]
+        if not re.search(
+            r"(?i)(?:^|[_.-])avatar(?:[_.-]|$)", image_filename
+        ):
+            image_filename = re.sub(r"(?i)avatar", "", image_filename)
+        noise_context = context.replace(original_url, image_filename)
     reasons = ["inside-article-body"]
     role = ImageRole.BODY
-    if _TRACKING_RE.search(context) or (
+    if _TRACKING_RE.search(noise_context) or (
         width is not None
         and height is not None
         and width <= 2
@@ -12698,14 +12732,14 @@ def _image_from_tag(
         # the site's metadata placeholder as the lead image.
         role = ImageRole.CHART
         reasons.append("axios-visual-fallback")
-    elif _NOISE_RE.search(context):
-        if re.search(r"(?i)(advert|sponsor|promo)", context):
+    elif _NOISE_RE.search(noise_context):
+        if re.search(r"(?i)(advert|sponsor|promo)", noise_context):
             role = ImageRole.ADVERTISEMENT
-        elif re.search(r"(?i)(recommend|related)", context):
+        elif re.search(r"(?i)(recommend|related)", noise_context):
             role = ImageRole.RECOMMENDATION
-        elif re.search(r"(?i)avatar", context):
+        elif re.search(r"(?i)avatar", noise_context):
             role = ImageRole.AUTHOR_AVATAR
-        elif re.search(r"(?i)logo", context):
+        elif re.search(r"(?i)logo", noise_context):
             role = ImageRole.LOGO
         else:
             role = ImageRole.ICON

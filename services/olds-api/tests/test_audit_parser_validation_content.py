@@ -6,6 +6,7 @@ import pytest
 
 from tools.audit_parser_validation_content import (
     _INTERFACE_TEXT_RE,
+    _suspicious_selected_image,
     image_identity,
     normalize_text,
     selected_validation_urls,
@@ -33,6 +34,16 @@ def test_interface_text_detector_does_not_match_ordinary_prose() -> None:
     assert _INTERFACE_TEXT_RE.search(
         "Kafka users can publish data streams or subscribe to them in real time."
     ) is None
+
+
+def test_suspicious_image_detector_distinguishes_movie_from_user_avatar() -> None:
+    assert _suspicious_selected_image(
+        "https://media.example/authors/default-avatar.png"
+    )
+    assert not _suspicious_selected_image(
+        "https://media.npr.org/assets/movies/2009/12/avatar/"
+        "humanandavatar2-f44c267a.jpg"
+    )
 
 
 def test_selects_only_active_qa_passing_complete_sample() -> None:

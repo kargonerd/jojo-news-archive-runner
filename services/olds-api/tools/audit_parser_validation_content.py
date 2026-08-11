@@ -22,9 +22,12 @@ from jojo_olds_api.raw_archive_capture import completed_raw_capture
 
 _SPACE_RE = re.compile(r"\s+")
 _SUSPICIOUS_IMAGE_RE = re.compile(
-    r"(?i)(?:^|[/_.-])(?:advert(?:isement)?|avatar|icon|logo|pixel|"
+    r"(?i)(?:^|[/_.-])(?:advert(?:isement)?|icon|logo|pixel|"
     r"spacer|sprite|tracking|transparent)(?:[/_.-]|$)|"
     r"(?:doubleclick|googlesyndication|scorecardresearch)"
+)
+_SUSPICIOUS_AVATAR_FILENAME_RE = re.compile(
+    r"(?i)(?:^|[_.-])avatar(?:[_.-]|$)"
 )
 _INTERFACE_TEXT_RE = re.compile(
     r"(?i)^(?:advertisement|back to top|click here|follow us|read more:?|"
@@ -35,6 +38,14 @@ _INTERFACE_TEXT_RE = re.compile(
     r"sign up for (?:our|the)|subscribe to (?:our|the)|terms (?:of use|and conditions))"
 )
 _INTERACTIVE_TAGS = {"button", "form", "input", "nav", "script", "style"}
+
+
+def _suspicious_selected_image(value: str) -> bool:
+    filename = urlsplit(value).path.rsplit("/", 1)[-1]
+    return bool(
+        _SUSPICIOUS_IMAGE_RE.search(value)
+        or _SUSPICIOUS_AVATAR_FILENAME_RE.search(filename)
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -245,7 +256,7 @@ def audit_content(
                 selected_images += 1
                 identity = image_identity(image.original_url)
                 selected_image_articles[identity].add(canonical_url)
-                if _SUSPICIOUS_IMAGE_RE.search(identity):
+                if _suspicious_selected_image(identity):
                     hard_anomalies.append(
                         {
                             "type": "suspicious-selected-image",
