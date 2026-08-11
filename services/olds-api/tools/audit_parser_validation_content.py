@@ -29,7 +29,7 @@ _SUSPICIOUS_IMAGE_RE = re.compile(
 _INTERFACE_TEXT_RE = re.compile(
     r"(?i)^(?:advertisement|back to top|click here|follow us|read more:?|"
     r"related stories|share this article|sign in|subscribe|trending stories)$|"
-    r"(?:accept all cookies|all rights reserved|download (?:our|the) app|"
+    r"^(?:accept all cookies|all rights reserved|download (?:our|the) app|"
     r"sign up for (?:our|the)|subscribe to (?:our|the)|terms (?:of use|and conditions))"
 )
 _INTERACTIVE_TAGS = {"button", "form", "input", "nav", "script", "style"}

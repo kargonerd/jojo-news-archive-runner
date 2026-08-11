@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from tools.audit_parser_validation_content import (
+    _INTERFACE_TEXT_RE,
     image_identity,
     normalize_text,
     selected_validation_urls,
@@ -16,6 +17,18 @@ def test_normalizes_text_and_image_identity() -> None:
     assert image_identity("HTTPS://IMG.EXAMPLE/a.jpg?width=1200#x") == (
         "https://img.example/a.jpg"
     )
+
+
+def test_interface_text_detector_does_not_match_ordinary_prose() -> None:
+    assert _INTERFACE_TEXT_RE.search("subscribe") is not None
+    assert _INTERFACE_TEXT_RE.search("subscribe to our daily newsletter") is not None
+    assert _INTERFACE_TEXT_RE.search("terms of use") is not None
+    assert _INTERFACE_TEXT_RE.search(
+        "The court considered whether violating the terms of use was illegal."
+    ) is None
+    assert _INTERFACE_TEXT_RE.search(
+        "Kafka users can publish data streams or subscribe to them in real time."
+    ) is None
 
 
 def test_selects_only_active_qa_passing_complete_sample() -> None:

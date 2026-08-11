@@ -11170,7 +11170,12 @@ def _trim_wsj_roadblock_tail(soup: BeautifulSoup) -> None:
                 for node in soup.select("p, h2, h3, h4")
                 if _clean_text(node.get_text(" ", strip=True))
                 .casefold()
-                .startswith("to read the full story")
+                .startswith(
+                    (
+                        "to read the full story",
+                        "continue reading your article with",
+                    )
+                )
             ),
             None,
         )
@@ -11196,6 +11201,14 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
     """Remove metered-view controls, copyright footers and coupon modules."""
     for button in list(soup.select("button")):
         button.decompose()
+    for form in list(soup.select("form")):
+        # Reader questionnaires and share-by-email dialogs are interactive
+        # controls, not article copy. Removing the whole form also drops its
+        # field labels and consent boilerplate instead of leaving a flattened
+        # pseudo-paragraph in the archived body.
+        form.decompose()
+    for control in list(soup.select("input, select, textarea")):
+        control.decompose()
     for tagline in list(soup.select("p.articleTagLine")):
         if re.fullmatch(
             r"[_=—–-]+",
@@ -11212,10 +11225,20 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             strap.decompose()
     for rich_text in list(soup.select(".media-object-rich-text")):
         heading = rich_text.select_one("h2, h3, h4, h5, h6")
+        heading_text = (
+            _clean_text(heading.get_text(" ", strip=True)).casefold()
+            if isinstance(heading, Tag)
+            else ""
+        )
         if (
             isinstance(heading, Tag)
-            and _clean_text(heading.get_text(" ", strip=True)).casefold()
-            == "share your thoughts"
+            and (
+                heading_text in {"read more", "share your thoughts"}
+                or (
+                    heading_text == "more"
+                    and rich_text.select_one("ul.articleList") is not None
+                )
+            )
         ):
             rich_text.decompose()
     for paragraph in list(soup.select("p")):
@@ -11233,6 +11256,7 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
         soup.select(
             ".coupon-list, [class*='SavingsUnited' i], "
             "[class*='SnippetSignIn' i], .author-links, .author-info, "
+            ".webui-newsletter-inset, #webui_newsletter_inset, "
             "[class*='mobile-modal-author' i], .byline-wrap, "
             ".article__byline, .module.automated-news, "
             ".module.editors-picks, .share-bottom, .printSummary, "
@@ -11298,6 +11322,19 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             and "sign up here" in text
         ):
             node.decompose()
+    for prompt in list(soup.select("p, h2, h3, h4, h5, h6")):
+        text = _clean_text(prompt.get_text(" ", strip=True)).casefold()
+        if text in {"- wsj news exclusive", "wsj news exclusive"}:
+            prompt.decompose()
+            continue
+        if text != "share your thoughts":
+            continue
+        followup = prompt.find_next_sibling()
+        if isinstance(followup, Tag) and "join the conversation" in (
+            _clean_text(followup.get_text(" ", strip=True)).casefold()
+        ):
+            followup.decompose()
+        prompt.decompose()
     text_nodes = list(soup.select("p, h2, h3, h4, h5, h6"))
     for index, node in enumerate(text_nodes):
         if node.parent is None:
