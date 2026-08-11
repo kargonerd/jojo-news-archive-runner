@@ -547,6 +547,8 @@ def parse_article(
         _remove_nikkei_body_chrome(clean_body)
     if spec.publisher == "caixin":
         _remove_caixin_body_chrome(clean_body)
+    if spec.publisher == "axios":
+        _remove_axios_body_chrome(clean_body)
     if spec.publisher == "npr":
         _remove_npr_body_chrome(clean_body)
     _remove_noise(clean_body, spec)
@@ -6455,6 +6457,7 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
             article.append(child)
 
     existing_text = _clean_text(article.get_text(" ", strip=True)).casefold()
+    existing_tokens = _axios_text_tokens(existing_text)
     existing_images = {
         _string_or_none(node.get("src"))
         for node in article.select("img[src]")
@@ -6514,7 +6517,12 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
                     article.append(document.new_tag("iframe", src=source))
             continue
 
-        if text and (not has_rendered_text or text.casefold() not in existing_text):
+        block_tokens = _axios_text_tokens(text)
+        if text and (
+            not has_rendered_text
+            or not block_tokens
+            or block_tokens not in existing_tokens
+        ):
             tag_name = (
                 "blockquote"
                 if "quote" in block_type
@@ -6528,6 +6536,7 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
             node.string = text
             article.append(node)
             existing_text = f"{existing_text} {text.casefold()}".strip()
+            existing_tokens = _axios_text_tokens(existing_text)
 
     image_only = _axios_image_only_story(story)
     if image_only is not None and not article.select_one("img[src]"):
@@ -6548,6 +6557,33 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
     ):
         return article
     return None
+
+
+def _axios_text_tokens(value: str) -> str:
+    """Normalize rendered and Draft.js text for containment comparisons."""
+
+    return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def _remove_axios_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove publisher recirculation labels embedded in Axios story HTML."""
+
+    for text_node in list(soup.find_all(string=True)):
+        if (
+            isinstance(text_node, NavigableString)
+            and _clean_text(str(text_node)).casefold() == "go deeper"
+        ):
+            text_node.extract()
+    for node in list(soup.select("p")):
+        if _clean_text(node.get_text(" ", strip=True)).casefold() not in {
+            "read more",
+            "read more:",
+        }:
+            continue
+        following = node.find_next_sibling()
+        if isinstance(following, Tag) and following.name in {"ul", "ol"}:
+            following.decompose()
+        node.decompose()
 
 
 def _axios_image_only_story(

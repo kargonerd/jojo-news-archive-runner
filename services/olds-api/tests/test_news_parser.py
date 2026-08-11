@@ -296,7 +296,7 @@ def test_axios_visual_fallback_replaces_metadata_placeholder():
     selected = [image for image in result.images if image.should_archive]
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "axios-parser/0.1.10"
+    assert result.extraction.parser_version == "axios-parser/0.1.11"
     assert len(selected) == 1
     assert selected[0].role == ImageRole.CHART
     assert selected[0].original_url == (
@@ -400,6 +400,67 @@ def test_axios_next_story_restores_twitter_embeds_and_images():
     assert result.quality.status == ArticleStatus.COMPLETE
     assert "The complete archived post text." in result.plain_text
     assert any(image.should_archive for image in result.images)
+
+
+def test_axios_next_story_removes_read_more_and_normalized_duplicates():
+    canonical_url = "https://www.axios.com/2018/08/04/example-story"
+    repeated = (
+        "By the numbers: Support has steadily increased. A survey found that "
+        "61% of Americans favor legalization — four percentage points more "
+        "than a year ago."
+    )
+    story = {
+        "headline": "A changing policy landscape",
+        "permalink": canonical_url,
+        "published_date": "2018-08-04T12:00:00Z",
+        "wordcount": 67,
+        "blocks": {
+            "blocks": [
+                {
+                    "type": "unstyled",
+                    "text": repeated.replace("61%", "61 %"),
+                    "data": {},
+                }
+            ],
+            "entityMap": [],
+        },
+        "bodyHtml": {
+            "beforeKeepReading": (
+                f"<p>{repeated}</p>Go deeper"
+                "<p>The proposal will be considered by voters in November, "
+                "after several years of public debate and legislative review."
+                "</p><p><strong>Read more:</strong></p><ul><li>"
+                "<a href='https://www.axios.com/related-story'>A related story"
+                "</a></li></ul>"
+            ),
+            "afterKeepReading": "",
+        },
+    }
+    next_data = {
+        "props": {"pageProps": {"pageProps": {"data": {"story": story}}}}
+    }
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":"A changing policy landscape",
+      "datePublished":"2018-08-04T12:00:00Z"
+    }}</script></head><body><main id="main-content"></main>
+    <script id="__NEXT_DATA__" type="application/json">
+    {json.dumps(next_data)}</script></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.plain_text.count("By the numbers") == 1
+    assert "Read more" not in result.plain_text
+    assert "A related story" not in result.plain_text
+    assert "Go deeper" not in result.body_html
+    assert result.extraction.parser_version == "axios-parser/0.1.11"
 
 
 @pytest.mark.parametrize(
@@ -516,7 +577,7 @@ def test_axios_accepts_structurally_proven_image_only_story():
     assert len(selected) == 1
     assert len(selected[0].candidate_urls) >= 1
     assert result.images[0].credit == "Illustration: Axios Visuals"
-    assert result.extraction.parser_version == "axios-parser/0.1.10"
+    assert result.extraction.parser_version == "axios-parser/0.1.11"
 
 
 def test_axios_accepts_only_wordcount_matched_short_am_newsletter():
