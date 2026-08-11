@@ -1849,13 +1849,28 @@ def _wsj_external_articles(
 
 def next_discovery_query(
     connection: sqlite3.Connection,
+    *,
+    preferred_year: int | None = None,
 ) -> tuple[str, str | None] | None:
+    if preferred_year is not None and not 1900 <= preferred_year <= 2099:
+        raise ValueError("preferred_year must be between 1900 and 2099")
+    dashed_year = f"/{preferred_year}-" if preferred_year is not None else ""
+    slashed_year = f"/{preferred_year}/" if preferred_year is not None else ""
     row = connection.execute(
         """
         SELECT pattern, resume_key
         FROM discovery_queries
         WHERE status != 'complete'
         ORDER BY
+            CASE
+                WHEN ? != ''
+                     AND (
+                         instr(pattern, ?) > 0
+                         OR instr(pattern, ?) > 0
+                     )
+                THEN 0
+                ELSE 1
+            END,
             CASE
                 WHEN pattern='online.wsj.com/article/*'
                      AND failures=0
@@ -1879,7 +1894,8 @@ def next_discovery_query(
             END,
             rowid
         LIMIT 1
-        """
+        """,
+        (dashed_year, dashed_year, slashed_year),
     ).fetchone()
     return (row[0], row[1]) if row else None
 

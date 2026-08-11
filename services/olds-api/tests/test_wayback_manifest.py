@@ -7,6 +7,7 @@ from pathlib import Path
 import sqlite3
 
 import httpx
+import pytest
 
 from jojo_olds_api.archive_sources import (
     archive_source_spec,
@@ -1452,6 +1453,49 @@ def test_urlkey_discovery_round_robins_patterns():
 
     assert next_pattern != first_pattern
     assert next_pattern == "www.wsj.com/articles/b*"
+
+
+def test_urlkey_discovery_can_prioritize_a_publication_year():
+    spec = archive_source_spec("caixin")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+    connection.execute(
+        """
+        UPDATE discovery_queries
+        SET status='complete'
+        WHERE pattern LIKE '%/2010-%'
+           OR pattern LIKE '%/2010/%'
+        """
+    )
+    connection.execute(
+        """
+        UPDATE discovery_queries
+        SET status='pending'
+        WHERE pattern='culture.caixin.com/2010-*'
+        """
+    )
+
+    default_pattern, _ = next_discovery_query(connection)
+    prioritized_pattern, _ = next_discovery_query(
+        connection,
+        preferred_year=2010,
+    )
+
+    assert default_pattern != "culture.caixin.com/2010-*"
+    assert prioritized_pattern == "culture.caixin.com/2010-*"
+
+
+def test_urlkey_discovery_rejects_invalid_priority_year():
+    connection = sqlite3.connect(":memory:")
+
+    with pytest.raises(ValueError, match="preferred_year"):
+        next_discovery_query(connection, preferred_year=99)
 
 
 def test_pre_2014_wsj_discovery_prioritizes_legacy_article_urls():
