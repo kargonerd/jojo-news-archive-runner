@@ -56,6 +56,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.4",
     "bloomberg": "bloomberg-capture/0.10.3",
+    "caixin": "caixin-capture/0.1.0",
     "ft": "ft-capture/0.20.2",
     "nikkei": "nikkei-capture/0.1.0",
     "nyt": "nyt-capture/0.9.0",
@@ -2181,6 +2182,15 @@ def _fetch_usable_candidate(
             )
         )
         signals = signals | nikkei_evidence
+    caixin_parser_usable = True
+    if publisher == "caixin" and signals["looksLikeHtml"]:
+        caixin_parser_usable, caixin_evidence = (
+            _caixin_capture_parser_evidence(
+                content,
+                canonical_url=canonical_url,
+            )
+        )
+        signals = signals | caixin_evidence
     ft_parser_usable = True
     if publisher == "ft" and signals["looksLikeHtml"]:
         ft_parser_usable, ft_evidence = _ft_capture_parser_evidence(
@@ -2216,6 +2226,7 @@ def _fetch_usable_candidate(
         npr_parser_usable=npr_parser_usable,
         ft_parser_usable=ft_parser_usable,
         nikkei_parser_usable=nikkei_parser_usable,
+        caixin_parser_usable=caixin_parser_usable,
     )
     if rejection_reasons:
         return (
@@ -2276,6 +2287,7 @@ def _candidate_rejection_reasons(
     npr_parser_usable: bool,
     ft_parser_usable: bool,
     nikkei_parser_usable: bool = True,
+    caixin_parser_usable: bool = True,
 ) -> tuple[str, ...]:
     """Return stable diagnostics for every candidate rejection predicate."""
 
@@ -2318,6 +2330,8 @@ def _candidate_rejection_reasons(
         reasons.append("ft-parser-unusable")
     if not nikkei_parser_usable:
         reasons.append("nikkei-parser-unusable")
+    if not caixin_parser_usable:
+        reasons.append("caixin-parser-unusable")
     return tuple(reasons)
 
 
@@ -6311,6 +6325,42 @@ def _nikkei_capture_parser_evidence(
     }
 
 
+def _caixin_capture_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    """Reject archived Caixin shells that contain metadata but no full body."""
+
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="caixin",
+            canonical_url=canonical_url,
+            allow_generic_syndication=False,
+        )
+    except Exception as exc:
+        return False, {
+            "caixinCaptureParserUsable": False,
+            "caixinCaptureParserError": type(exc).__name__,
+        }
+    nontext = article.content_type in {
+        ContentType.INTERACTIVE,
+        ContentType.VIDEO,
+        ContentType.AUDIO,
+        ContentType.GALLERY,
+    }
+    usable = article.quality.status == ArticleStatus.COMPLETE or nontext
+    return usable, {
+        "caixinCaptureParserUsable": usable,
+        "caixinCaptureExtractionStatus": article.quality.status.value,
+        "caixinCaptureContentType": article.content_type.value,
+        "caixinCaptureBodyCharacters": article.quality.body_characters,
+    }
+
+
 def score_raw_capture(
     content: bytes,
     *,
@@ -6967,6 +7017,13 @@ def completed_capture_rejection_reason(
         )
         if not usable:
             return "nikkei-capture-parser-incomplete"
+    if capture.publisher == "caixin":
+        usable, _ = _caixin_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "caixin-capture-parser-incomplete"
     if (
         capture.publisher == "bloomberg"
         and capture.selected_candidate.provider == CaptureProvider.OTHER

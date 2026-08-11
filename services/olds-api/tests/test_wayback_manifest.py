@@ -1013,6 +1013,14 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         archive_source_spec("caixin"),
         "https://magazine.caixin.com/2010/cw385/?utm=1",
     ) == "https://magazine.caixin.com/2010/cw385"
+    assert normalize_article_url(
+        archive_source_spec("caixin"),
+        "https://magazine.caixin.com/2010-02-07/100116568_all.html",
+    ) == "https://magazine.caixin.com/2010-02-07/100116568.html"
+    assert normalize_article_url(
+        archive_source_spec("caixin"),
+        "https://magazine.caixin.com/2010-02-07/100116568_3.html",
+    ) == "https://magazine.caixin.com/2010-02-07/100116568.html"
 
 
 def test_date_inference_and_candidate_ranking_prefers_after_publication():

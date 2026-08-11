@@ -13,6 +13,10 @@ if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
 from jojo_olds_api.parser_validation import initialize_parser_validation_schema
+from jojo_olds_api.archive_sources import (
+    archive_source_spec,
+    normalize_article_url,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-state", type=Path, required=True)
     parser.add_argument("--target-state", type=Path, required=True)
     parser.add_argument("--source-cohort", default="validation-v1")
+    parser.add_argument("--publisher")
     parser.add_argument(
         "--sample-year",
         type=int,
@@ -71,6 +76,14 @@ def main() -> int:
                 parameters,
             )
         ]
+        if args.publisher:
+            spec = archive_source_spec(args.publisher)
+            urls = sorted(
+                {
+                    normalize_article_url(spec, url) or url
+                    for url in urls
+                }
+            )
         now = datetime.now(timezone.utc).isoformat()
         with target:
             target.executemany(

@@ -181,3 +181,55 @@ def test_holdout_audit_rejects_empty_previous_union(tmp_path: Path):
 
     assert result["passed"] is False
     assert "2020:no-previous-evaluated-samples" in result["issues"]
+
+
+def test_holdout_audit_normalizes_caixin_pagination_variants(
+    tmp_path: Path,
+):
+    previous_path = tmp_path / "previous.sqlite3"
+    current_path = tmp_path / "current.sqlite3"
+    previous = _state(previous_path)
+    current = _state(current_path)
+    base = "https://magazine.caixin.com/2010-02-07/100116568"
+    try:
+        _config(previous, year=2010, version="caixin-parser/0.1.0")
+        _config(current, year=2010, version="caixin-parser/0.1.1")
+        _sample(
+            previous,
+            url=base + "_all.html",
+            year=2010,
+            version="caixin-parser/0.1.0",
+        )
+        _sample(
+            current,
+            url=(
+                "https://magazine.caixin.com/2010-02-08/100116999.html"
+            ),
+            year=2010,
+            version=None,
+        )
+        current.execute(
+            """
+            INSERT INTO parser_validation_exclusions(
+                canonical_url, source_cohort, excluded_at
+            ) VALUES (?, 'preflight-v1', '2026-08-10T00:00:00Z')
+            """,
+            (base + ".html",),
+        )
+        previous.commit()
+        current.commit()
+    finally:
+        previous.close()
+        current.close()
+
+    result = audit_holdout(
+        previous_states=(("preflight-v1", previous_path),),
+        current_state=current_path,
+        publisher="caixin",
+        expected_parser_version="caixin-parser/0.1.1",
+        from_year=2010,
+        to_year=2010,
+    )
+
+    assert result["passed"] is True
+    assert result["years"]["2010"]["missingPriorExclusions"] == 0

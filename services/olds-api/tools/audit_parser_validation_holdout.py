@@ -13,6 +13,10 @@ SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
+from jojo_olds_api.archive_sources import (
+    archive_source_spec,
+    normalize_article_url,
+)
 from tools.audit_parser_validation_rotation import (
     _closing_connection,
     _materialize_state,
@@ -82,6 +86,14 @@ def audit_holdout(
 
     issues: list[str] = []
     years: dict[str, object] = {}
+    source_spec = archive_source_spec(publisher)
+
+    def normalized(urls: set[str]) -> set[str]:
+        return {
+            normalize_article_url(source_spec, url) or url
+            for url in urls
+        }
+
     with ExitStack() as stack:
         current_path = _materialize_state(current_state, stack=stack)
         current = stack.enter_context(_closing_connection(current_path))
@@ -97,7 +109,8 @@ def audit_holdout(
             for label, path in previous_states
         ]
         exclusions = {
-            str(row[0]): str(row[1])
+            normalize_article_url(source_spec, str(row[0]))
+            or str(row[0]): str(row[1])
             for row in current.execute(
                 "SELECT canonical_url, source_cohort "
                 "FROM parser_validation_exclusions"
@@ -108,7 +121,9 @@ def audit_holdout(
             labels_by_url: dict[str, set[str]] = {}
             previous_versions: dict[str, str | None] = {}
             for label, connection in previous_connections:
-                previous_by_label[label] = _evaluated_urls(connection, year)
+                previous_by_label[label] = normalized(
+                    _evaluated_urls(connection, year)
+                )
                 config = connection.execute(
                     "SELECT parser_version FROM parser_validation_config "
                     "WHERE sample_year=?",
@@ -125,14 +140,16 @@ def audit_holdout(
                 "FROM parser_validation_config WHERE sample_year=?",
                 (year,),
             ).fetchone()
-            current_samples = {
-                str(row[0])
-                for row in current.execute(
-                    "SELECT canonical_url FROM parser_validation_samples "
-                    "WHERE sample_year=?",
-                    (year,),
-                )
-            }
+            current_samples = normalized(
+                {
+                    str(row[0])
+                    for row in current.execute(
+                        "SELECT canonical_url FROM parser_validation_samples "
+                        "WHERE sample_year=?",
+                        (year,),
+                    )
+                }
+            )
             current_evaluated = int(
                 current.execute(
                     """

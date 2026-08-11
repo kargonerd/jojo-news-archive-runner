@@ -278,6 +278,14 @@ def parse_article(
             structured_image_gallery_selected = True
     if body is None:
         body = _select_body(soup, spec)
+    if spec.publisher == "caixin":
+        legacy_body = soup.select_one("#Main_Content_Val")
+        if (
+            isinstance(legacy_body, Tag)
+            and len(_clean_text(legacy_body.get_text(" ", strip=True)))
+            >= _MINIMUM_BODY_CHARACTERS
+        ):
+            body = legacy_body
     if spec.publisher == "nikkei":
         legacy_body = _nikkei_legacy_article_body(
             soup,
@@ -527,6 +535,8 @@ def parse_article(
     if spec.publisher == "nikkei":
         _trim_nikkei_paywall_tail(clean_body)
         _remove_nikkei_body_chrome(clean_body)
+    if spec.publisher == "caixin":
+        _remove_caixin_body_chrome(clean_body)
     if spec.publisher == "npr":
         _remove_npr_body_chrome(clean_body)
     _remove_noise(clean_body, spec)
@@ -888,6 +898,11 @@ def parse_article(
         ):
             continue
         if (
+            spec.publisher == "caixin"
+            and _caixin_non_editorial_image_url(url)
+        ):
+            continue
+        if (
             spec.publisher == "bloomberg"
             and (
                 _bloomberg_author_avatar_url(url)
@@ -925,6 +940,11 @@ def parse_article(
             if (
                 spec.publisher == "nikkei"
                 and _nikkei_non_editorial_image_url(image.original_url)
+            ):
+                continue
+            if (
+                spec.publisher == "caixin"
+                and _caixin_non_editorial_image_url(image.original_url)
             ):
                 continue
             if (
@@ -11911,6 +11931,27 @@ def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
             figure.decompose()
 
 
+def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove legacy Caixin print controls and subscription QR images."""
+
+    for image in list(soup.select("img")):
+        urls = _image_urls(
+            image,
+            base_url="https://www.caixin.com/",
+        )
+        if not urls or not all(
+            _caixin_non_editorial_image_url(url) for url in urls
+        ):
+            continue
+        container = image.find_parent("figure")
+        image.decompose()
+        if (
+            isinstance(container, Tag)
+            and not _clean_text(container.get_text(" ", strip=True))
+        ):
+            container.decompose()
+
+
 def _extract_blocks(
     body: BeautifulSoup,
     *,
@@ -12695,6 +12736,19 @@ def _nikkei_non_editorial_image_url(url: str) -> bool:
             "/.resources/k-components/square.rev-",
             "paid-banner",
         )
+    )
+
+
+def _caixin_non_editorial_image_url(url: str) -> bool:
+    parts = urlsplit(url)
+    host = (parts.hostname or "").casefold()
+    path = unquote(parts.path).casefold()
+    return (
+        host == "file.caing.com"
+        and path.endswith("/images/channel/content/images/fullurl.gif")
+    ) or (
+        host == "file.caixin.com"
+        and path.endswith("/file/vip/images/code.jpg")
     )
 
 

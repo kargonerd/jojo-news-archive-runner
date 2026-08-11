@@ -176,3 +176,50 @@ def test_can_limit_imported_exclusions_to_one_sample_year(tmp_path: Path):
             "ft:2016:ft-parser/0.8.29",
         )
     ]
+
+
+def test_normalizes_caixin_page_variants_before_excluding(tmp_path: Path):
+    source_path = tmp_path / "source.sqlite3"
+    target_path = tmp_path / "target.sqlite3"
+    source = sqlite3.connect(source_path)
+    source.executescript(
+        """
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY
+        );
+        INSERT INTO parser_validation_results VALUES
+            ('https://magazine.caixin.com/2010-02-07/100116568_all.html'),
+            ('https://magazine.caixin.com/2010-02-07/100116568_2.html');
+        """
+    )
+    source.commit()
+    source.close()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(TOOL),
+            "--source-state",
+            str(source_path),
+            "--target-state",
+            str(target_path),
+            "--source-cohort",
+            "preflight-v1",
+            "--publisher",
+            "caixin",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["sourceSamples"] == 1
+    target = sqlite3.connect(target_path)
+    exclusions = target.execute(
+        "SELECT canonical_url FROM parser_validation_exclusions"
+    ).fetchall()
+    target.close()
+    assert exclusions == [
+        ("https://magazine.caixin.com/2010-02-07/100116568.html",)
+    ]

@@ -308,7 +308,7 @@ PUBLISHER_SPECS = {
     ),
     "caixin": PublisherSpec(
         publisher="caixin",
-        parser_version="caixin-parser/0.1.0",
+        parser_version="caixin-parser/0.1.1",
         domains=("caixin.com", "www.caixin.com", "magazine.caixin.com"),
         default_language="zh",
         edition="cn",

@@ -465,6 +465,7 @@ jobs:
               --source-state "$exclusion_state" \
               --target-state "$LOCAL_ROOT/raw/capture.sqlite3" \
               --source-cohort "$source_cohort" \
+              --publisher "$PUBLISHER" \
               --sample-year "$SAMPLE_YEAR"
           done
 

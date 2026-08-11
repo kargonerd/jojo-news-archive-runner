@@ -301,6 +301,16 @@ def normalize_article_url(
             "",
             path,
         ).rstrip("=")
+    if spec.publisher == "caixin":
+        # Legacy magazine articles split long stories into numbered pages and
+        # expose an ``_all`` full-text view. They are representations of one
+        # article, not independent stories.
+        path = re.sub(
+            r"_(?:all|\d+)(\.html)$",
+            r"\1",
+            path,
+            flags=re.IGNORECASE,
+        )
     if spec.publisher == "reuters" and re.search(
         r"[|<>(){}]|%(?:28|29|3c|3e|7b|7c|7d)",
         path,

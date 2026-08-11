@@ -17303,6 +17303,57 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert result.extraction.parser_version == "scmp-parser/0.1.1"
 
 
+def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="银信合作猫鼠游戏">
+          <meta property="article:published_time"
+            content="2010-02-19T08:00:00+08:00">
+          <meta property="og:image"
+            content="http://img.caixin.com/2010-02-19/cover.jpg">
+        </head><body>
+          <div class="content">
+            <div id="Main_Content_Val">
+              <p>商业银行受到日趋严格的信贷规模管制，开始重新采用
+              将信贷资产转至表外的安排，以调整资产负债结构。</p>
+              <p>监管部门要求相关产品不得投资于发行银行自身贷款，
+              多家银行随后调整合作方式并加强风险披露。</p>
+              <p>分析人士认为，只有统一统计口径并提高透明度，
+              才能准确评估资金流向和潜在风险。</p>
+            </div>
+            <h3>打印 意见反馈</h3>
+            <ul><li>推荐新闻一</li><li>排行榜新闻二</li></ul>
+            <img src="http://file.caing.com/images/channel/content/images/fullUrl.gif">
+            <img src="http://file.caixin.com/file/vip/images/code.jpg">
+            <h3>iphone rss 腾讯微博 新浪微博</h3>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://magazine.caixin.com/2010-02-19/100117960.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "商业银行受到日趋严格" in result.plain_text
+    assert "准确评估资金流向" in result.plain_text
+    assert "打印 意见反馈" not in result.plain_text
+    assert "推荐新闻" not in result.plain_text
+    assert "iphone rss" not in result.plain_text
+    assert "fullUrl.gif" not in result.body_html
+    assert "code.jpg" not in result.body_html
+    assert len(result.images) == 1
+    assert result.images[0].original_url.endswith("cover.jpg")
+    assert [block.type for block in result.blocks] == [
+        BlockType.PARAGRAPH,
+        BlockType.PARAGRAPH,
+        BlockType.PARAGRAPH,
+    ]
+    assert result.extraction.parser_version == "caixin-parser/0.1.1"
+
+
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():
     result = parse_article(
         b"""
