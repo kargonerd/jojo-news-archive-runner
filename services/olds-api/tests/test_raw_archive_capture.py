@@ -250,6 +250,59 @@ def test_caixin_capture_parser_evidence_rejects_metadata_only_shell():
     assert evidence["caixinCaptureBodyCharacters"] < 100
 
 
+def test_caixin_capture_parser_evidence_accepts_complete_single_page_gallery():
+    usable, evidence = _caixin_capture_parser_evidence(
+        """
+        <html><body>
+          <h1>外资投行正在逐渐进入经纪业务领域</h1>
+          <div class="focusBody">
+            <ul id="pic_content"><li><table><tr><td>
+              <div class="imgBox"><table>
+                <tr><td><img src="http://img.caixin.com/photo.jpg"></td></tr>
+                <tr><td style="font-size:12px">完整单页图片报道的图注。</td></tr>
+              </table></div>
+            </td></tr></table></li></ul>
+            <div class="infobox">发表时间：2010年03月21日 20:23</div>
+            <div class="op">发表时间：2010年03月21日 20:23　1 /1</div>
+          </div>
+        </body></html>
+        """.encode(),
+        canonical_url="https://photos.caixin.com/2010-03-21/100128464.html",
+    )
+
+    assert usable is True
+    assert evidence["caixinCaptureParserUsable"] is True
+    assert evidence["caixinCaptureExtractionStatus"] == "complete"
+    assert evidence["caixinCaptureContentType"] == "gallery"
+
+
+def test_caixin_capture_parser_evidence_rejects_incomplete_multipage_gallery():
+    usable, evidence = _caixin_capture_parser_evidence(
+        """
+        <html><body>
+          <h1>多页图片报道</h1>
+          <div class="focusBody">
+            <ul id="pic_content"><li><table><tr><td>
+              <div class="imgBox"><table>
+                <tr><td><img src="http://img.caixin.com/photo.jpg"></td></tr>
+                <tr><td style="font-size:12px">这里只保存了第一张图片。</td></tr>
+              </table></div>
+            </td></tr></table></li></ul>
+            <div class="infobox">发表时间：2010年04月01日 08:05</div>
+            <div class="op">发表时间：2010年04月01日 08:05</div>
+            1 /3
+          </div>
+        </body></html>
+        """.encode(),
+        canonical_url="https://photos.caixin.com/2010-04-01/100130000.html",
+    )
+
+    assert usable is False
+    assert evidence["caixinCaptureParserUsable"] is False
+    assert evidence["caixinCaptureExtractionStatus"] == "partial"
+    assert evidence["caixinCaptureContentType"] == "gallery"
+
+
 def test_wsj_archive_capture_supports_secondary_archive_fallbacks():
     assert "wsj" in COMMON_CRAWL_FALLBACK_PUBLISHERS
     assert "wsj" in ARQUIVO_PT_FALLBACK_PUBLISHERS

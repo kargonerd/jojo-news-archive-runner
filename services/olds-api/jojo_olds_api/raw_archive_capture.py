@@ -6352,13 +6352,11 @@ def _caixin_capture_parser_evidence(
             "caixinCaptureParserUsable": False,
             "caixinCaptureParserError": type(exc).__name__,
         }
-    nontext = article.content_type in {
-        ContentType.INTERACTIVE,
-        ContentType.VIDEO,
-        ContentType.AUDIO,
-        ContentType.GALLERY,
-    }
-    usable = article.quality.status == ArticleStatus.COMPLETE or nontext
+    # Non-text formats still have to be complete. Archived Caixin photo
+    # stories frequently preserve only the first page of a multi-page gallery,
+    # while legacy video pages can be empty player shells. Content type alone
+    # therefore cannot admit a capture to a parser-validation cohort.
+    usable = article.quality.status == ArticleStatus.COMPLETE
     return usable, {
         "caixinCaptureParserUsable": usable,
         "caixinCaptureExtractionStatus": article.quality.status.value,
