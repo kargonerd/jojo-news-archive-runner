@@ -556,16 +556,11 @@ jobs:
             --all-result-files-from \
               "$RUNNER_TEMP/parser-validation-all-files.txt" \
             --github-output "$GITHUB_OUTPUT"
-          {
-            for restored in \
-              "$RUNNER_TEMP/legacy-source-import-files.txt" \
-              "$RUNNER_TEMP/parser-validation-files.txt" \
-              "$RUNNER_TEMP/parser-validation-all-files.txt"; do
-              if [ -f "$restored" ]; then
-                sed -n 's#^objects/##p' "$restored"
-              fi
-            done
-          } | sort -u > "$RUNNER_TEMP/restored-object-excludes.txt"
+          # The upload exclusion set is frozen after the restore step.  A
+          # requested replay path is not proof that the object still exists
+          # in B2; excluding requested-but-missing paths would also suppress a
+          # replacement downloaded later in this run.
+          : > "$RUNNER_TEMP/restored-object-excludes.txt"
 
       - name: Restore previous parser sample HTML
         if: ${{ steps.replay.outputs.replays != '0' }}
@@ -590,6 +585,21 @@ jobs:
               --transfers 16 --checkers 32 \
               --retries 8 --low-level-retries 20 \
               --stats 30s
+          fi
+
+      - name: Freeze restored object exclusions
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/restored-object-excludes.txt"
+          if [ -d "$LOCAL_ROOT/raw/objects" ]; then
+            (
+              cd "$LOCAL_ROOT/raw/objects"
+              find . -type f ! -name '*.tmp' -print \
+                | sed 's#^\./##'
+            ) | sort -u > "$RUNNER_TEMP/restored-object-excludes.txt"
           fi
 
       - name: Replay current parser

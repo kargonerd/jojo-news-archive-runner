@@ -159,6 +159,26 @@ def test_accelerator_reads_wsj_legacy_raw_without_copying_it() -> None:
     ) == 2
 
 
+def test_accelerator_excludes_only_objects_that_were_actually_restored() -> None:
+    workflow = _workflow_text()
+
+    plan = workflow[
+        workflow.index("Plan parser replay") :
+        workflow.index("Restore previous parser sample HTML")
+    ]
+    freeze = workflow[
+        workflow.index("Freeze restored object exclusions") :
+        workflow.index("Replay current parser")
+    ]
+    assert ': > "$RUNNER_TEMP/restored-object-excludes.txt"' in plan
+    assert "parser-validation-all-files.txt" not in plan.split(
+        ': > "$RUNNER_TEMP/restored-object-excludes.txt"', 1
+    )[1]
+    assert 'cd "$LOCAL_ROOT/raw/objects"' in freeze
+    assert "find . -type f ! -name '*.tmp' -print" in freeze
+    assert "sed 's#^\\./##'" in freeze
+
+
 def test_accelerator_merges_npr_common_crawl_supplemental_manifest() -> None:
     workflow = _workflow_text()
 
