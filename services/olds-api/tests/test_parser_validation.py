@@ -1401,6 +1401,117 @@ def test_nikkei_validation_replays_common_crawl_before_wayback(
     assert selected == [common_crawl_url]
 
 
+def test_nikkei_validation_retries_errors_before_wayback_only_tail(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "nikkei-retry-order.jsonl"
+    urls = {
+        "common_crawl": (
+            "https://www.nikkei.com/article/"
+            "DGXNASDD020EN_S2A800C1TJ2000"
+        ),
+        "retry": (
+            "https://www.nikkei.com/article/"
+            "DGKDASDG2003E_Q2A620C1CR8000"
+        ),
+        "wayback": (
+            "https://www.nikkei.com/article/"
+            "DGXNASFS1702J_X10C12A5000000"
+        ),
+    }
+    rows = []
+    for name, canonical_url in urls.items():
+        provider = "commoncrawl" if name == "common_crawl" else "wayback"
+        candidate = {
+            "provider": provider,
+            "snapshotUrl": (
+                "https://data.commoncrawl.org/crawl-data/"
+                "CC-MAIN-2013-20/sample.warc.gz"
+                if provider == "commoncrawl"
+                else (
+                    "https://web.archive.org/web/20120625230643id_/"
+                    + canonical_url
+                )
+            ),
+        }
+        if provider == "commoncrawl":
+            candidate.update(
+                {
+                    "warcFilename": (
+                        "crawl-data/CC-MAIN-2013-20/sample.warc.gz"
+                    ),
+                    "warcOffset": 100,
+                    "warcLength": 200,
+                }
+            )
+        rows.append(
+            {
+                "publisher": "nikkei",
+                "canonicalUrl": canonical_url,
+                "publishedAt": "2012-06-20T00:00:00+09:00",
+                "candidates": [candidate],
+            }
+        )
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="nikkei",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="nikkei",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="nikkei",
+        from_year=2012,
+        to_year=2012,
+        target_per_year=3,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+        seed="nikkei-retry-order",
+    )
+    connection.execute(
+        """
+        UPDATE captures
+        SET status='error', attempts=1,
+            last_error='reject-nikkei-parser-unusable'
+        WHERE canonical_url=?
+        """,
+        (urls["retry"],),
+    )
+    connection.execute(
+        """
+        UPDATE parser_validation_samples
+        SET sample_priority=CASE canonical_url
+            WHEN ? THEN '0000'
+            WHEN ? THEN '8000'
+            ELSE 'ffff'
+        END
+        """,
+        (urls["wayback"], urls["retry"]),
+    )
+    connection.commit()
+
+    selected = pending_parser_validation_urls(
+        connection,
+        maximum=3,
+        maximum_record_attempts=3,
+    )
+
+    assert selected == [
+        urls["common_crawl"],
+        urls["retry"],
+        urls["wayback"],
+    ]
+
+
 def test_validation_plan_retries_server_placeholder_before_fresh_sample(
     tmp_path: Path,
 ):
