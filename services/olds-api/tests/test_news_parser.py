@@ -17431,7 +17431,7 @@ def test_caixin_legacy_parser_extracts_single_page_photo_story():
     assert result.images[0].original_url.endswith("/100128465.jpg")
     assert result.images[0].caption == "外资投行逐渐进入经纪业务领域。东方IC"
     assert result.blocks[0].type == BlockType.IMAGE
-    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
 
 
 def test_caixin_legacy_parser_rejects_incomplete_multipage_photo_story():
@@ -17459,7 +17459,36 @@ def test_caixin_legacy_parser_rejects_incomplete_multipage_photo_story():
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "incomplete-gallery" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
+
+
+def test_caixin_video_parser_reads_visible_chinese_timestamp():
+    result = parse_article(
+        """
+        <html><body>
+          <h1>减排项目的视频调查</h1>
+          <span class="datetime">2010年01月04日 11:34</span>
+          <div id="Main_Content_Val">
+            <p>调查介绍项目如何把工业生产过程中产生的二氧化碳分离，
+            再通过管道输送到适合长期保存的地层，并记录研究人员对成本、
+            安全性和监测方法的说明。这段正文保留视频报道的事实背景。</p>
+            <p>报道随后比较多个试验地点的地质条件、设备规模和运行数据，
+            也说明地方社区、企业和监管机构分别提出的意见以及后续安排。
+            这些文字属于视频稿件正文，不是播放器周边推荐或频道导航。</p>
+            <p>研究团队还将持续公开监测结果，以评估长期封存效果，并根据
+            新数据调整风险控制方案。记者在视频中采访了参与项目的工程师，
+            完整呈现技术路线、现实限制和可能产生的环境影响。</p>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://video.caixin.com/2010-01-04/100103479.html",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.content_type == ContentType.VIDEO
+    assert result.published_at.isoformat() == "2010-01-04T11:34:00+08:00"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
 
 
 def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
@@ -17510,7 +17539,7 @@ def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
         BlockType.PARAGRAPH,
         BlockType.PARAGRAPH,
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
 
 
 def test_caixin_legacy_parser_removes_pagination_and_source_boilerplate():
@@ -17552,7 +17581,7 @@ def test_caixin_legacy_parser_removes_pagination_and_source_boilerplate():
     assert "MarketWatch拥有位于三大洲" not in result.plain_text
     assert "第1页" not in result.plain_text
     assert "yinduBottom" not in result.body_html
-    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
 
 
 def test_caixin_legacy_parser_preserves_direct_body_text_nodes():
@@ -17595,7 +17624,7 @@ def test_caixin_legacy_parser_preserves_direct_body_text_nodes():
     assert "原文地址" in result.plain_text
     assert "MarketWatch拥有位于三大洲" not in result.plain_text
     assert result.blocks[0].type == BlockType.PARAGRAPH
-    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
 
 
 def test_caixin_legacy_parser_rejects_structured_site_logo():
@@ -17631,7 +17660,7 @@ def test_caixin_legacy_parser_rejects_structured_site_logo():
     assert [image.original_url for image in result.images] == [
         "http://img.caixin.com/2010-02-01/hearing.jpg"
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
 
 
 def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
@@ -17672,7 +17701,7 @@ def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
     assert "ranking entry" not in result.plain_text
     assert "<input" not in result.body_html
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
 
 
 def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node():
@@ -17710,7 +17739,7 @@ def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node()
     assert "<input" not in result.body_html
     assert result.blocks == []
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
 
 
 def test_caixin_parser_rejects_common_logo_with_edition_suffix():
@@ -17739,7 +17768,7 @@ def test_caixin_parser_rejects_common_logo_with_edition_suffix():
 
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
 
 
 def test_caixin_legacy_parser_preserves_short_editorial_correction():
@@ -17782,7 +17811,7 @@ def test_caixin_legacy_parser_preserves_short_editorial_correction():
     assert "腾讯微博" not in result.plain_text
     assert result.images == []
     assert "structured-short-record" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+    assert result.extraction.parser_version == "caixin-parser/0.1.8"
 
 
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():

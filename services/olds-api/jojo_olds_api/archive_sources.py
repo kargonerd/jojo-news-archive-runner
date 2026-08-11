@@ -56,6 +56,7 @@ _CAIXIN_EDITORIAL_HOSTS = (
     # family.  Keep the host distinct: its story ids do not alias the text
     # desks, and gallery captures exercise a separate editorial template.
     "photos.caixin.com",
+    "video.caixin.com",
 )
 
 

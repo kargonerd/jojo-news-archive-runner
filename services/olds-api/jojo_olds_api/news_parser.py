@@ -13627,10 +13627,11 @@ def _caixin_legacy_published_at(soup: BeautifulSoup) -> str | None:
     value = _clean_text(
         _tag_text(soup.select_one(".focusBody .infobox"))
         or _tag_text(soup.select_one(".focusBody .op"))
+        or _tag_text(soup.select_one(".datetime"))
         or ""
     )
     match = re.search(
-        r"发表时间\s*[：:]\s*(?P<year>20\d{2})年"
+        r"(?:发表时间\s*[：:]\s*)?(?P<year>20\d{2})年"
         r"(?P<month>\d{1,2})月(?P<day>\d{1,2})日"
         r"(?:\s*(?P<hour>\d{1,2}):(?P<minute>\d{2}))?",
         value,
