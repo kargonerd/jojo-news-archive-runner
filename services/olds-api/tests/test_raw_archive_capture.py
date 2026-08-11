@@ -3883,13 +3883,27 @@ def test_nikkei_validation_keeps_timemap_and_stages_slow_fallbacks():
     ) == (True, True, True)
 
 
-def test_wsj_timemap_mixes_largest_digests_with_nearest_captures():
-    canonical_url = (
-        "https://www.wsj.com/articles/"
-        "example-timemap-selection-11577836800"
-    )
+@pytest.mark.parametrize(
+    ("publisher", "canonical_url"),
+    [
+        (
+            "wsj",
+            "https://www.wsj.com/articles/"
+            "example-timemap-selection-11577836800",
+        ),
+        (
+            "nikkei",
+            "https://www.nikkei.com/article/"
+            "DGXNASGG1701V_X10C12A7EA2000",
+        ),
+    ],
+)
+def test_metered_publishers_timemap_mixes_largest_and_nearest_captures(
+    publisher: str,
+    canonical_url: str,
+):
     item = ManifestItem(
-        publisher="wsj",
+        publisher=publisher,
         canonical_url=canonical_url,
         published_at="2020-01-01T12:00:00Z",
         section=None,

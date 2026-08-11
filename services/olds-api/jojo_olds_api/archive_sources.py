@@ -353,6 +353,18 @@ def article_url_publication_year(
     if spec.publisher == "ap":
         published = ap_hosted_publication_datetime(normalized)
         return published.year if published is not None else None
+    if spec.publisher == "nikkei":
+        # Legacy Nikkei article IDs encode the publication year and month in
+        # segments such as R10C13A9 (2013-09) or Z20C11A4 (2011-04).
+        # Wayback may replay a later generic/member page whose visible date is
+        # the capture year, so use this stable identifier to reject misplaced
+        # validation rows. Newer opaque IDs intentionally return no year.
+        match = re.search(
+            r"[A-Z]\d{2}C(\d{2})A(?:1[0-2]|[1-9])",
+            path,
+            flags=re.IGNORECASE,
+        )
+        return 2000 + int(match.group(1)) if match is not None else None
     if spec.publisher != "reuters":
         return None
     if not path.startswith("/article/"):

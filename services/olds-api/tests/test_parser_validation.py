@@ -479,6 +479,47 @@ def test_plan_prunes_reuters_non_article_endpoints(tmp_path: Path):
     ).fetchone()[0] == 0
 
 
+def test_nikkei_plan_prunes_capture_year_misclassified_article_ids():
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="nikkei",
+        authorization_reference="authorization:test",
+    )
+    initialize_parser_validation_schema(connection)
+    misplaced_url = (
+        "https://www.nikkei.com/article/"
+        "DGKDZO27658310Z20C11A4ML0000"
+    )
+    correct_url = (
+        "https://www.nikkei.com/article/"
+        "DGKKZO84200000Z20C15A4MM8000"
+    )
+    connection.executemany(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2015, '0000', '2026-08-11T00:00:00Z')
+        """,
+        ((misplaced_url,), (correct_url,)),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="nikkei",
+        from_year=2015,
+        to_year=2015,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    assert connection.execute(
+        "SELECT canonical_url FROM parser_validation_samples"
+    ).fetchall() == [(correct_url,)]
+
+
 def test_ft_infini_samples_are_added_even_when_random_plan_is_full(
     tmp_path: Path,
 ):

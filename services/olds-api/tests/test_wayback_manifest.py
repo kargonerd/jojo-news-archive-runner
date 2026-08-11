@@ -874,6 +874,32 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "business-151594900170",
     ) == 2020
 
+    nikkei = archive_source_spec("nikkei")
+    assert article_url_publication_year(
+        nikkei,
+        "https://www.nikkei.com/article/"
+        "DGXNASFS1102U_R10C13A9PP8000",
+    ) == 2013
+    assert article_url_publication_year(
+        nikkei,
+        "https://www.nikkei.com/article/"
+        "DGKKZO79997580R21C14A1NNJP00",
+    ) == 2014
+    assert article_url_publication_year(
+        nikkei,
+        "https://www.nikkei.com/article/"
+        "DGKDZO27658310Z20C11A4ML0000",
+    ) == 2011
+    assert article_url_publication_year(
+        nikkei,
+        "https://www.nikkei.com/article/"
+        "DGXBZO40155290U2A400C1000000",
+    ) is None
+    assert article_url_publication_year(
+        nikkei,
+        "https://www.nikkei.com/article/DGXZQOCD00001",
+    ) is None
+
     ft = archive_source_spec("ft")
     assert normalize_article_url(
         ft,

@@ -2657,14 +2657,14 @@ def discover_wayback_timemap_candidates(
             published_at=item.published_at,
         )
     )
-    if item.publisher != "wsj":
+    if item.publisher not in {"nikkei", "wsj"}:
         return tuple(candidates[:maximum_candidates])
 
-    # WSJ's captures closest to publication are commonly metered previews,
-    # while later, larger digests can contain the complete article. Preserve
-    # temporal proximity for half of the bounded candidate set, but try the
-    # largest distinct captures first. This keeps the fallback bounded while
-    # avoiding eight near-identical five-paragraph preview responses.
+    # WSJ and Nikkei captures closest to publication are commonly metered
+    # previews, while later, larger digests can contain the complete article.
+    # Preserve temporal proximity for half of the bounded candidate set, but
+    # try the largest distinct captures first. This keeps the fallback bounded
+    # while avoiding a batch of near-identical membership excerpts.
     largest = sorted(
         candidates,
         key=lambda candidate: (
