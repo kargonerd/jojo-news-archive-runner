@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import sys
 import time
+from typing import Any
 
 import httpx
 
@@ -153,6 +154,30 @@ def parse_args() -> argparse.Namespace:
         default="user-provided-authorization",
     )
     return parser.parse_args()
+
+
+def _record_validation_if_selected(
+    connection: sqlite3.Connection,
+    *,
+    validation_plan: dict[str, object] | None,
+    capture: Any | None,
+    canonical_url: str,
+    validation_target_reached: bool,
+    archive_root: Path,
+) -> dict[str, object] | None:
+    if (
+        validation_plan is None
+        or capture is None
+        or validation_target_reached
+    ):
+        return None
+    if not is_parser_validation_sample(connection, canonical_url):
+        return None
+    return record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=archive_root,
+    )
 
 
 def main() -> int:
@@ -435,21 +460,17 @@ def main() -> int:
                             "error": f"{type(exc).__name__}: {exc}",
                         }
                     record_capture_result(connection, result)
-                    validation_result = None
                     capture = result.get("capture")
-                    if (
-                        capture is not None
-                        and is_parser_validation_sample(
-                            connection,
-                            item.canonical_url,
-                        )
-                        and not validation_target_reached
-                    ):
-                        validation_result = record_parser_validation(
-                            connection,
-                            capture=capture,
-                            archive_root=args.output_dir,
-                        )
+                    validation_result = _record_validation_if_selected(
+                        connection,
+                        validation_plan=validation_plan,
+                        capture=capture,
+                        canonical_url=item.canonical_url,
+                        validation_target_reached=(
+                            validation_target_reached
+                        ),
+                        archive_root=args.output_dir,
+                    )
                     completed += 1
                     failures += result["status"] == "error"
                     if args.stop_when_validation_ready:
