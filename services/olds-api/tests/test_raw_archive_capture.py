@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import brotli
 import pytest
@@ -58,6 +58,7 @@ from jojo_olds_api.raw_archive_capture import (
     discover_ap_syndication_candidates,
     discover_ft_syndication_candidates,
     discover_reuters_syndication_candidates,
+    discover_wayback_timemap_candidates,
     defer_expensive_archive_fallbacks,
     ft_google_news_headline_search_url,
     ft_google_news_partner_search_url,
@@ -3835,7 +3836,7 @@ def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
         second.wayback_timemap,
         second.common_crawl,
         second.arquivo_pt,
-    ) == (False, False, True)
+    ) == (True, False, True)
     assert (
         third.wayback_timemap,
         third.common_crawl,
@@ -3846,6 +3847,98 @@ def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
         ordinary.common_crawl,
         ordinary.arquivo_pt,
     ) == (True, True, True)
+
+
+def test_wsj_timemap_mixes_largest_digests_with_nearest_captures():
+    canonical_url = (
+        "https://www.wsj.com/articles/"
+        "example-timemap-selection-11577836800"
+    )
+    item = ManifestItem(
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at="2020-01-01T12:00:00Z",
+        section=None,
+        candidates=(),
+    )
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?" + urlencode(
+        {"url": canonical_url}
+    )
+    rows = [
+        [
+            "urlkey",
+            "timestamp",
+            "original",
+            "mimetype",
+            "statuscode",
+            "digest",
+            "length",
+        ]
+    ]
+    for index in range(1, 7):
+        rows.append(
+            [
+                "com,wsj)/articles/example",
+                f"2020010{index}120000",
+                canonical_url,
+                "text/html",
+                "200",
+                f"PREVIEW-{index}",
+                str(100 + index),
+            ]
+        )
+    rows.extend(
+        [
+            [
+                "com,wsj)/articles/example",
+                "20200301120000",
+                canonical_url,
+                "text/html",
+                "200",
+                "FULL-LARGEST",
+                "900",
+            ],
+            [
+                "com,wsj)/articles/example",
+                "20200201120000",
+                canonical_url,
+                "text/html",
+                "200",
+                "FULL-SECOND",
+                "800",
+            ],
+        ]
+    )
+    payload = json.dumps(rows).encode()
+    client = StubArchiveClient(
+        {
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                payload,
+                timemap_url,
+            )
+        }
+    )
+
+    candidates = discover_wayback_timemap_candidates(
+        item,
+        archive_client=client,
+        maximum_candidates=4,
+    )
+
+    assert [candidate.digest for candidate in candidates] == [
+        "FULL-LARGEST",
+        "FULL-SECOND",
+        "PREVIEW-1",
+        "PREVIEW-2",
+    ]
+    assert [candidate.byte_count for candidate in candidates] == [
+        900,
+        800,
+        101,
+        102,
+    ]
 
 
 def test_nyt_capture_uses_exact_timemap_snapshot(tmp_path: Path):

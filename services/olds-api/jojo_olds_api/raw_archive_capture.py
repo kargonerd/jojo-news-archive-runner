@@ -1829,7 +1829,7 @@ def archive_fallback_policy(
         raise ValueError("prior_attempts must not be negative")
     if publisher == "wsj" and parser_validation_enabled:
         return ArchiveFallbackPolicy(
-            wayback_timemap=prior_attempts >= 2,
+            wayback_timemap=prior_attempts >= 1,
             common_crawl=prior_attempts >= 2,
             arquivo_pt=prior_attempts >= 1,
         )
@@ -2646,7 +2646,44 @@ def discover_wayback_timemap_candidates(
             published_at=item.published_at,
         )
     )
-    return tuple(candidates[:maximum_candidates])
+    if item.publisher != "wsj":
+        return tuple(candidates[:maximum_candidates])
+
+    # WSJ's captures closest to publication are commonly metered previews,
+    # while later, larger digests can contain the complete article. Preserve
+    # temporal proximity for half of the bounded candidate set, but try the
+    # largest distinct captures first. This keeps the fallback bounded while
+    # avoiding eight near-identical five-paragraph preview responses.
+    largest = sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate.byte_count is None,
+            -(candidate.byte_count or 0),
+            _timemap_candidate_sort_key(
+                candidate,
+                published_at=item.published_at,
+            ),
+        ),
+    )
+    selected: list[CaptureCandidate] = []
+    seen_urls: set[str] = set()
+
+    def append(candidate: CaptureCandidate) -> None:
+        if (
+            candidate.snapshot_url not in seen_urls
+            and len(selected) < maximum_candidates
+        ):
+            seen_urls.add(candidate.snapshot_url)
+            selected.append(candidate)
+
+    largest_slots = max(1, maximum_candidates // 2)
+    for candidate in largest[:largest_slots]:
+        append(candidate)
+    for candidate in candidates:
+        append(candidate)
+    for candidate in largest:
+        append(candidate)
+    return tuple(selected)
 
 
 def reuters_syndication_search_url(item: ManifestItem) -> str:
