@@ -44,6 +44,10 @@ def test_suspicious_image_detector_distinguishes_movie_from_user_avatar() -> Non
         "https://media.npr.org/assets/movies/2009/12/avatar/"
         "humanandavatar2-f44c267a.jpg"
     )
+    assert not _suspicious_selected_image(
+        "https://media.npr.org/assets/news/2010/02/19/"
+        "logo_custom-3257db8ff3898e2259e954abba1d1a766a03f557.jpg"
+    )
 
 
 def test_selects_only_active_qa_passing_complete_sample() -> None:

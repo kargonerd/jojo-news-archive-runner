@@ -7391,6 +7391,13 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
             and "npr. all rights reserved" in text
         ) or text.startswith(
             "listen to yesterday's song of the day"
+        ) or (
+            text.startswith("sign up for the all songs considered newsletter")
+            and "new music features" in text
+        ) or text.startswith(
+            "register with the npr.org community"
+        ) or text.startswith(
+            "contact us with your questions and comments"
         ):
             node.decompose()
     for container in list(soup.select(".container")):
