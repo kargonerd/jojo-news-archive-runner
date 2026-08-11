@@ -1264,6 +1264,102 @@ def test_validation_plan_tries_fresh_samples_before_retrying_errors(
     assert selected == [pending_url]
 
 
+def test_nikkei_validation_replays_common_crawl_before_wayback(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "nikkei-manifest.jsonl"
+    wayback_url = (
+        "https://www.nikkei.com/article/"
+        "DGKDASDG2003E_Q2A620C1CR8000"
+    )
+    common_crawl_url = (
+        "https://www.nikkei.com/article/"
+        "DGXNASDD020EN_S2A800C1TJ2000"
+    )
+    rows = [
+        {
+            "publisher": "nikkei",
+            "canonicalUrl": wayback_url,
+            "publishedAt": "2012-06-20T00:00:00+09:00",
+            "candidates": [
+                {
+                    "provider": "wayback",
+                    "snapshotUrl": (
+                        "https://web.archive.org/web/20120625230643id_/"
+                        f"{wayback_url}"
+                    ),
+                    "capturedAt": "2012-06-25T23:06:43Z",
+                    "digest": "WAYBACK-DIGEST",
+                }
+            ],
+        },
+        {
+            "publisher": "nikkei",
+            "canonicalUrl": common_crawl_url,
+            "publishedAt": "2012-08-02T00:00:00+09:00",
+            "candidates": [
+                {
+                    "provider": "commoncrawl",
+                    "snapshotUrl": (
+                        "https://data.commoncrawl.org/crawl-data/"
+                        "CC-MAIN-2013-20/sample.warc.gz"
+                    ),
+                    "capturedAt": "2013-05-24T12:05:35Z",
+                    "warcFilename": (
+                        "crawl-data/CC-MAIN-2013-20/sample.warc.gz"
+                    ),
+                    "warcOffset": 100,
+                    "warcLength": 200,
+                }
+            ],
+        },
+    ]
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="nikkei",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="nikkei",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="nikkei",
+        from_year=2012,
+        to_year=2012,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+        seed="nikkei-source-priority",
+    )
+    connection.execute(
+        """
+        UPDATE parser_validation_samples
+        SET sample_priority=CASE canonical_url
+            WHEN ? THEN '0000'
+            ELSE 'ffff'
+        END
+        """,
+        (wayback_url,),
+    )
+    connection.commit()
+
+    selected = pending_parser_validation_urls(
+        connection,
+        maximum=1,
+        maximum_record_attempts=3,
+    )
+
+    assert selected == [common_crawl_url]
+
+
 def test_validation_plan_retries_server_placeholder_before_fresh_sample(
     tmp_path: Path,
 ):

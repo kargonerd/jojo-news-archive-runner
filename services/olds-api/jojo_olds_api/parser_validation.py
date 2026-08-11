@@ -936,6 +936,20 @@ def pending_parser_validation_urls(
                             ELSE 4
                         END,
                         CASE
+                            -- Nikkei's indexed Wayback captures in the
+                            -- 2012-2015 cohort overwhelmingly contain only
+                            -- membership excerpts.  Keep the randomly chosen
+                            -- article cohort unchanged, but replay its
+                            -- provenance-bearing Common Crawl rows before
+                            -- low-yield Wayback rows.
+                            WHEN capture.publisher = 'nikkei'
+                              AND EXISTS (
+                                SELECT 1
+                                FROM json_each(capture.candidates_json)
+                                WHERE json_extract(value, '$.provider')
+                                    = 'commoncrawl'
+                            ) THEN 0
+                            WHEN capture.publisher = 'nikkei' THEN 1
                             WHEN EXISTS (
                                 SELECT 1
                                 FROM json_each(capture.candidates_json)

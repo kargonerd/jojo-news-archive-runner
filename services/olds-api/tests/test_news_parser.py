@@ -17024,7 +17024,7 @@ def test_nikkei_legacy_parser_extracts_print_date_and_article_text():
     assert result.published_at.isoformat() == "2013-09-11T00:00:00+09:00"
     assert "価格や通信料金" in result.plain_text
     assert result.quality.body_characters >= 100
-    assert result.extraction.parser_version == "nikkei-parser/0.1.3"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.4"
 
 
 def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
@@ -17055,7 +17055,34 @@ def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
     assert result.published_at.isoformat() == "2012-12-13T00:00:00+09:00"
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "nikkei-parser/0.1.3"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.4"
+
+
+def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
+    result = parse_article(
+        """
+        <html lang="ja"><head>
+          <meta property="og:title" content="短い企業ニュース">
+          <meta property="og:image"
+            content="http://parts.nikkei.jp/parts/ds/images/common/icon_ogpnikkei.png">
+        </head><body>
+          <div class="cmn-article_text JSID_key_fonttxt">
+            <p>企業は新しいサービスを発売した。利用者向けの機能を増やし、
+            中長期で収益を拡大する。</p>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url=(
+            "https://www.nikkei.com/article/"
+            "DGXNASDD020EN_S2A800C1TJ2000"
+        ),
+    )
+
+    assert result.headline == "短い企業ニュース"
+    assert "新しいサービスを発売した" in result.plain_text
+    assert result.images == []
+    assert result.extraction.parser_version == "nikkei-parser/0.1.4"
 
 
 def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
@@ -17112,7 +17139,7 @@ def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
     assert "paid-banner" not in result.body_html
     assert len(result.images) == 1
     assert len(result.images[0].candidate_urls) == 2
-    assert result.extraction.parser_version == "nikkei-parser/0.1.3"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.4"
 
 
 def test_scmp_legacy_parser_extracts_body_date_and_byline():

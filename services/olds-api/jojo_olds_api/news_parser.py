@@ -12533,6 +12533,14 @@ def _image_identity(url: str) -> str:
 
 
 def _nikkei_non_editorial_image_url(url: str) -> bool:
+    parts = urlsplit(url)
+    host = (parts.hostname or "").casefold()
+    path = unquote(parts.path).casefold()
+    if (
+        host == "parts.nikkei.jp"
+        and path.endswith("/images/common/icon_ogpnikkei.png")
+    ):
+        return True
     decoded = unquote(url).casefold()
     return any(
         marker in decoded
