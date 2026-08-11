@@ -63,6 +63,48 @@ def test_forced_replay_candidates_reports_missing_raw_objects(
 
     assert replayable == ["https://example.com/present"]
     assert missing == [
-        "objects/missing.html",
-        "<missing raw_path for https://example.com/no-path>",
+        ("https://example.com/missing", "objects/missing.html"),
+        (
+            "https://example.com/no-path",
+            "<missing raw_path for https://example.com/no-path>",
+        ),
     ]
+
+
+def test_requeue_missing_validation_capture_resets_capture_and_result() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.executescript(
+        """
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY
+        );
+        CREATE TABLE captures (
+            canonical_url TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO parser_validation_results VALUES
+            ('https://example.com/missing');
+        INSERT INTO captures VALUES
+            ('https://example.com/missing', 'complete', 2, NULL, 'old');
+        """
+    )
+
+    TOOL.requeue_missing_validation_capture(
+        connection,
+        canonical_url="https://example.com/missing",
+    )
+
+    assert connection.execute(
+        "SELECT status, attempts, last_error FROM captures"
+    ).fetchone() == (
+        "pending",
+        0,
+        "raw quality policy rejected stored capture: "
+        "validation-raw-object-missing",
+    )
+    assert connection.execute(
+        "SELECT COUNT(*) FROM parser_validation_results"
+    ).fetchone() == (0,)
