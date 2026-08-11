@@ -52,6 +52,10 @@ _CAIXIN_EDITORIAL_HOSTS = (
     "international.caixin.com",
     "opinion.caixin.com",
     "culture.caixin.com",
+    # Caixin publishes first-party photo essays under a dated article URL
+    # family.  Keep the host distinct: its story ids do not alias the text
+    # desks, and gallery captures exercise a separate editorial template.
+    "photos.caixin.com",
 )
 
 

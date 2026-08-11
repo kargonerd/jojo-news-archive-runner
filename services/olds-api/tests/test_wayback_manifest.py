@@ -1037,6 +1037,7 @@ def test_caixin_wayback_patterns_shard_dated_www_paths_by_year():
     assert "www.caixin.com/2011/*" in patterns
     assert "china.caixin.com/2010-*" in patterns
     assert "finance.caixin.com/2011-*" in patterns
+    assert "photos.caixin.com/2010-*" in patterns
 
 
 def test_caixin_normalization_preserves_editorial_section_hosts():
@@ -1050,6 +1051,10 @@ def test_caixin_normalization_preserves_editorial_section_hosts():
         spec,
         "https://china.caixin.com/2010-04-06/100132332.html",
     ) == "https://china.caixin.com/2010-04-06/100132332.html"
+    assert normalize_article_url(
+        spec,
+        "http://photos.caixin.com/2010-01-22/100110376_3.html",
+    ) == "https://photos.caixin.com/2010-01-22/100110376.html"
 
 
 def test_date_inference_and_candidate_ranking_prefers_after_publication():
