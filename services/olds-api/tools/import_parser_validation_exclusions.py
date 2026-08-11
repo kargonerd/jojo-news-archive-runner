@@ -82,11 +82,11 @@ def main() -> int:
             WHERE type='table' AND name='parser_validation_exclusions'
             """
         ).fetchone()
-        inherited_urls = (
+        inherited_exclusions = (
             [
-                str(row[0])
+                (str(row[0]), str(row[1]))
                 for row in source.execute(
-                    "SELECT DISTINCT canonical_url "
+                    "SELECT canonical_url, source_cohort "
                     "FROM parser_validation_exclusions"
                 )
             ]
@@ -98,17 +98,48 @@ def main() -> int:
         # must remain excluded when rotating again. They are safe to inherit
         # across a year-filtered import because the target sample can only
         # overlap exclusions whose canonical URL is present in that year.
-        urls = evaluated_urls + inherited_urls
+        evaluated_entries = [
+            (url, args.source_cohort) for url in evaluated_urls
+        ]
+        inherited_entries = inherited_exclusions
         if args.publisher:
             spec = archive_source_spec(args.publisher)
-            urls = sorted(
+            evaluated_entries = sorted(
                 {
-                    normalize_article_url(spec, url) or url
-                    for url in urls
+                    (normalize_article_url(spec, url) or url, source_cohort)
+                    for url, source_cohort in evaluated_entries
                 }
             )
+            inherited_entries = sorted(
+                {
+                    (normalize_article_url(spec, url) or url, source_cohort)
+                    for url, source_cohort in inherited_entries
+                }
+            )
+        unique_urls = {
+            url for url, _source_cohort in evaluated_entries + inherited_entries
+        }
         now = datetime.now(timezone.utc).isoformat()
         with target:
+            # Transitive exclusions already identify the cohort that first
+            # evaluated each URL. Preserve that provenance and never let a
+            # later checkpoint relabel an older cohort's samples as its own.
+            target.executemany(
+                """
+                INSERT INTO parser_validation_exclusions(
+                    canonical_url, source_cohort, excluded_at
+                )
+                VALUES (?, ?, ?)
+                ON CONFLICT(canonical_url) DO NOTHING
+                """,
+                (
+                    (url, source_cohort, now)
+                    for url, source_cohort in inherited_entries
+                ),
+            )
+            # URLs evaluated by this source checkpoint are authoritative for
+            # its cohort label. This also repairs stale inherited labels when
+            # the corresponding cohort checkpoint is imported directly.
             target.executemany(
                 """
                 INSERT INTO parser_validation_exclusions(
@@ -119,7 +150,10 @@ def main() -> int:
                     source_cohort=excluded.source_cohort,
                     excluded_at=excluded.excluded_at
                 """,
-                ((url, args.source_cohort, now) for url in urls),
+                (
+                    (url, source_cohort, now)
+                    for url, source_cohort in evaluated_entries
+                ),
             )
         overlap = int(
             target.execute(
@@ -166,9 +200,11 @@ def main() -> int:
             "sourceCohort": args.source_cohort,
             "sourceTable": source_table,
             "sampleYear": args.sample_year,
-            "sourceSamples": len(urls),
+            "sourceSamples": len(unique_urls),
             "evaluatedSourceSamples": len(set(evaluated_urls)),
-            "inheritedSourceExclusions": len(set(inherited_urls)),
+            "inheritedSourceExclusions": len(
+                {url for url, _source_cohort in inherited_entries}
+            ),
             "excluded": int(
                 target.execute(
                     "SELECT COUNT(*) FROM parser_validation_exclusions"

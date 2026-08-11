@@ -278,13 +278,95 @@ def test_inherits_transitive_exclusions_from_prior_validation_state(
     assert payload["inheritedSourceExclusions"] == 1
     target = sqlite3.connect(target_path)
     exclusions = {
-        row[0]
+        row[0]: row[1]
         for row in target.execute(
-            "SELECT canonical_url FROM parser_validation_exclusions"
+            "SELECT canonical_url, source_cohort "
+            "FROM parser_validation_exclusions"
         )
     }
     target.close()
     assert exclusions == {
-        "https://magazine.caixin.com/2010-01-01/evaluated.html",
-        "https://magazine.caixin.com/2010-01-02/preflight.html",
+        "https://magazine.caixin.com/2010-01-01/evaluated.html": (
+            "validation-v1"
+        ),
+        "https://magazine.caixin.com/2010-01-02/preflight.html": (
+            "preflight-v1"
+        ),
+    }
+
+
+def test_direct_cohort_import_repairs_stale_inherited_label(tmp_path: Path):
+    inherited_path = tmp_path / "inherited.sqlite3"
+    direct_path = tmp_path / "direct.sqlite3"
+    target_path = tmp_path / "target.sqlite3"
+    inherited = sqlite3.connect(inherited_path)
+    inherited.executescript(
+        """
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_exclusions (
+            canonical_url TEXT PRIMARY KEY,
+            source_cohort TEXT NOT NULL,
+            excluded_at TEXT NOT NULL
+        );
+        INSERT INTO parser_validation_results VALUES
+            ('https://magazine.caixin.com/2010-01-02/new.html', 2010);
+        INSERT INTO parser_validation_exclusions VALUES
+            ('https://magazine.caixin.com/2010-01-01/old.html',
+             'wrong-later-cohort', 'now');
+        """
+    )
+    inherited.commit()
+    inherited.close()
+    direct = sqlite3.connect(direct_path)
+    direct.executescript(
+        """
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        INSERT INTO parser_validation_results VALUES
+            ('https://magazine.caixin.com/2010-01-01/old.html', 2010);
+        """
+    )
+    direct.commit()
+    direct.close()
+
+    for source_path, source_cohort in (
+        (inherited_path, "holdout-v2"),
+        (direct_path, "holdout-v1"),
+    ):
+        subprocess.run(
+            [
+                sys.executable,
+                str(TOOL),
+                "--source-state",
+                str(source_path),
+                "--target-state",
+                str(target_path),
+                "--source-cohort",
+                source_cohort,
+                "--publisher",
+                "caixin",
+                "--sample-year",
+                "2010",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    target = sqlite3.connect(target_path)
+    exclusions = dict(
+        target.execute(
+            "SELECT canonical_url, source_cohort "
+            "FROM parser_validation_exclusions"
+        )
+    )
+    target.close()
+    assert exclusions == {
+        "https://magazine.caixin.com/2010-01-01/old.html": "holdout-v1",
+        "https://magazine.caixin.com/2010-01-02/new.html": "holdout-v2",
     }
