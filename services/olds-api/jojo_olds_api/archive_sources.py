@@ -44,6 +44,16 @@ _NON_ARTICLE_FILE_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+_CAIXIN_EDITORIAL_HOSTS = (
+    "china.caixin.com",
+    "economy.caixin.com",
+    "finance.caixin.com",
+    "companies.caixin.com",
+    "international.caixin.com",
+    "opinion.caixin.com",
+    "culture.caixin.com",
+)
+
 
 ARCHIVE_SOURCE_SPECS = {
     "ap": ArchiveSourceSpec(
@@ -251,10 +261,12 @@ ARCHIVE_SOURCE_SPECS = {
             "www.caixin.com/{year}-*",
             "www.caixin.com/{year}/*",
             "magazine.caixin.com/{year}/*",
-        ),
+        )
+        + tuple(f"{host}/{{year}}-*" for host in _CAIXIN_EDITORIAL_HOSTS),
         accepted_path_patterns=_patterns(r"^/20\d{2}(?:[-/]|$)"),
-        alternate_hosts=("magazine.caixin.com",),
-        preserve_normalized_hosts=("magazine.caixin.com",),
+        alternate_hosts=("magazine.caixin.com",) + _CAIXIN_EDITORIAL_HOSTS,
+        preserve_normalized_hosts=("magazine.caixin.com",)
+        + _CAIXIN_EDITORIAL_HOSTS,
     ),
 }
 

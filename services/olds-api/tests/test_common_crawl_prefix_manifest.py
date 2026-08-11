@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 import gzip
 import json
@@ -201,6 +202,47 @@ def test_prefix_schema_adds_new_collections_without_resetting_progress():
     ).fetchone()[0] == "complete"
 
 
+def test_prefix_schema_allows_additive_publisher_patterns():
+    connection = sqlite3.connect(":memory:")
+    current = archive_source_spec("caixin")
+    original = replace(
+        current,
+        wayback_patterns=(
+            "www.caixin.com/*",
+            "www.caixin.com/{year}-*",
+            "www.caixin.com/{year}/*",
+            "magazine.caixin.com/{year}/*",
+        ),
+    )
+    collection = _collection()
+    initialize_prefix_schema(
+        connection,
+        spec=original,
+        from_year=2010,
+        to_year=2010,
+        collections=(collection,),
+    )
+    old_count = connection.execute(
+        "SELECT COUNT(*) FROM prefix_queries"
+    ).fetchone()[0]
+
+    initialize_prefix_schema(
+        connection,
+        spec=current,
+        from_year=2010,
+        to_year=2010,
+        collections=(collection,),
+    )
+
+    new_count = connection.execute(
+        "SELECT COUNT(*) FROM prefix_queries"
+    ).fetchone()[0]
+    assert new_count > old_count
+    assert connection.execute(
+        "SELECT COUNT(*) FROM prefix_queries WHERE status='pending'"
+    ).fetchone()[0] == new_count
+
+
 def test_prefix_queries_prioritize_recent_collections():
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("npr")
@@ -258,11 +300,8 @@ def test_prefix_queries_prioritize_dated_prefixes_over_broad_fallbacks():
         collection_order="oldest",
     )
 
-    assert pattern in {
-        "www.caixin.com/2010-",
-        "www.caixin.com/2010/",
-        "magazine.caixin.com/2010/",
-    }
+    assert "/2010" in pattern
+    assert pattern != "www.caixin.com/"
 
 
 def test_prefix_year_target_skips_and_can_reopen_pending_queries():

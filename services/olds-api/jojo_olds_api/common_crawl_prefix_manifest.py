@@ -339,10 +339,30 @@ def initialize_prefix_schema(
         "SELECT value FROM prefix_metadata WHERE key='fingerprint'"
     ).fetchone()
     if existing is not None and str(existing[0]) != fingerprint:
-        raise ValueError(
-            "Common Crawl prefix state belongs to a different publisher, "
-            "date window, or pattern set"
+        previous_metadata = dict(
+            connection.execute(
+                """
+                SELECT key, value FROM prefix_metadata
+                WHERE key IN ('publisher', 'from_year', 'to_year')
+                """
+            ).fetchall()
         )
+        previous_patterns = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT DISTINCT pattern FROM prefix_queries"
+            )
+        }
+        same_scope = previous_metadata == {
+            "publisher": spec.publisher,
+            "from_year": str(from_year),
+            "to_year": str(to_year),
+        }
+        if not same_scope or not previous_patterns < set(patterns):
+            raise ValueError(
+                "Common Crawl prefix state belongs to a different "
+                "publisher, date window, or pattern set"
+            )
     metadata = {
         "schema_version": SCHEMA_VERSION,
         "publisher": spec.publisher,
