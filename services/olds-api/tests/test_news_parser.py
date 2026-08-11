@@ -17027,7 +17027,66 @@ def test_nikkei_legacy_parser_extracts_print_date_and_article_text():
     assert result.published_at.isoformat() == "2013-09-11T00:00:00+09:00"
     assert "価格や通信料金" in result.plain_text
     assert result.quality.body_characters >= 100
-    assert result.extraction.parser_version == "nikkei-parser/0.1.5"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.6"
+
+
+def test_nikkei_legacy_parser_joins_split_body_around_editorial_photo():
+    result = parse_article(
+        """
+        <html lang="ja"><head>
+          <meta property="og:title" content="大卒内定、2年連続増">
+        </head><body>
+          <div class="cmn-section cmn-indent">
+            <h4 class="cmn-article_title">大卒内定、2年連続増</h4>
+            <div class="cmn-article_text JSID_key_fonttxt">
+              <p>日本経済新聞社がまとめた採用状況調査によると、主要企業の
+              大卒採用内定者数は二年連続で増加し、企業の採用意欲が続いた。</p>
+            </div>
+            <div class="cmn-position_right cmn-clearfix">
+              <img src="/content/pic/20121022/editorial-photo.jpg"
+                   alt="採用状況を示すグラフ">
+              <img src="http://parts.nikkei.jp/parts/ds/images/common/icon_zoom_off.gif">
+            </div>
+            <div class="cmn-article_text JSID_key_fonttxt">
+              <p>主要千社を対象に調べたところ、非製造業では旅行や住宅、
+              小売りを中心に幅広い業種で採用人数が前年を上回った。</p>
+            </div>
+            <div class="cmn-article_text JSID_key_fonttxt">
+              <p>製造業は一部で採用を減らしたものの、企業は海外事業を担う
+              人材の確保を進め、今後の需要変化にも備える方針だ。</p>
+            </div>
+            <form class="cmn-form_area"><p>小サイズに変更</p></form>
+            <div class="cmn-article_keyword">関連キーワード 採用</div>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url=(
+            "https://www.nikkei.com/article/"
+            "DGKDASDD190JG_R21C12A0MM8000"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "日本経済新聞社がまとめた" in result.plain_text
+    assert "主要千社を対象に調べた" in result.plain_text
+    assert "製造業は一部で採用を減らした" in result.plain_text
+    assert result.plain_text.index("日本経済新聞社がまとめた") < (
+        result.plain_text.index("主要千社を対象に調べた")
+    ) < result.plain_text.index("製造業は一部で採用を減らした")
+    assert "小サイズに変更" not in result.plain_text
+    assert "関連キーワード" not in result.plain_text
+    assert "icon_zoom_off" not in result.body_html
+    assert len(result.images) == 1
+    assert result.images[0].original_url.endswith("editorial-photo.jpg")
+    assert [block.type for block in result.blocks] == [
+        BlockType.PARAGRAPH,
+        BlockType.IMAGE,
+        BlockType.PARAGRAPH,
+        BlockType.PARAGRAPH,
+    ]
+    assert result.quality.body_characters >= 150
+    assert result.extraction.parser_version == "nikkei-parser/0.1.6"
 
 
 def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
@@ -17058,7 +17117,7 @@ def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
     assert result.published_at.isoformat() == "2012-12-13T00:00:00+09:00"
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "nikkei-parser/0.1.5"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.6"
 
 
 def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
@@ -17100,7 +17159,7 @@ def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
         for block in result.blocks
         if block.type == BlockType.IMAGE
     } == {result.images[0].asset_id}
-    assert result.extraction.parser_version == "nikkei-parser/0.1.5"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.6"
 
 
 @pytest.mark.parametrize(
@@ -17195,7 +17254,7 @@ def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
     assert "paid-banner" not in result.body_html
     assert len(result.images) == 1
     assert len(result.images[0].candidate_urls) == 2
-    assert result.extraction.parser_version == "nikkei-parser/0.1.5"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.6"
 
 
 def test_scmp_legacy_parser_extracts_body_date_and_byline():

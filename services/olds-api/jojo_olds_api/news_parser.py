@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 import hashlib
@@ -277,6 +278,13 @@ def parse_article(
             structured_image_gallery_selected = True
     if body is None:
         body = _select_body(soup, spec)
+    if spec.publisher == "nikkei":
+        legacy_body = _nikkei_legacy_article_body(
+            soup,
+            selected_body=body,
+        )
+        if legacy_body is not None:
+            body = legacy_body
     if spec.publisher == "aljazeera":
         gallery_body = _aljazeera_gallery_body(
             soup,
@@ -2758,6 +2766,107 @@ def _select_body(soup: BeautifulSoup, spec: PublisherSpec) -> Tag | None:
         if nodes:
             return max(nodes, key=lambda node: len(node.get_text(" ", strip=True)))
     return None
+
+
+def _nikkei_legacy_article_body(
+    soup: BeautifulSoup,
+    *,
+    selected_body: Tag | None,
+) -> Tag | None:
+    """Join split legacy print-story paragraphs and their inline photos."""
+
+    legacy_nodes = [
+        node
+        for node in soup.select(".cmn-article_text")
+        if isinstance(node, Tag)
+        and not any(
+            isinstance(parent, Tag)
+            and "cmn-article_text" in (parent.get("class") or [])
+            for parent in node.parents
+        )
+    ]
+    groups: dict[int, tuple[Tag, list[Tag]]] = {}
+    for node in legacy_nodes:
+        parent = node.parent
+        if not isinstance(parent, Tag):
+            continue
+        group = groups.setdefault(id(parent), (parent, []))[1]
+        group.append(node)
+
+    candidates = [group for group in groups.values() if len(group[1]) >= 2]
+    if not candidates:
+        return None
+
+    selected_group = next(
+        (
+            group
+            for group in candidates
+            if selected_body is not None
+            and any(node is selected_body for node in group[1])
+        ),
+        None,
+    )
+    if selected_group is None:
+        if selected_body is not None and all(
+            any(node is descendant for descendant in selected_body.descendants)
+            for _, nodes in candidates
+            for node in nodes
+        ):
+            return None
+        selected_group = max(
+            candidates,
+            key=lambda group: sum(
+                len(_clean_text(node.get_text(" ", strip=True)))
+                for node in group[1]
+            ),
+        )
+
+    parent, nodes = selected_group
+    direct_children = [
+        child for child in parent.children if isinstance(child, Tag)
+    ]
+    node_ids = {id(node) for node in nodes}
+    text_positions = [
+        index
+        for index, child in enumerate(direct_children)
+        if id(child) in node_ids
+    ]
+    if len(text_positions) < 2:
+        return None
+
+    document = BeautifulSoup(
+        "<article data-jojo-source='nikkei-legacy-split-body'></article>",
+        "html.parser",
+    )
+    wrapper = document.select_one("article")
+    if not isinstance(wrapper, Tag):
+        return None
+
+    first_text = text_positions[0]
+    last_text = text_positions[-1]
+    for index, child in enumerate(direct_children):
+        if id(child) in node_ids:
+            wrapper.append(copy.deepcopy(child))
+            continue
+        if not first_text < index < last_text:
+            continue
+        if any(
+            urls
+            and any(
+                not _nikkei_non_editorial_image_url(url)
+                for url in urls
+            )
+            for image in child.select("img")
+            if (
+                urls := _image_urls(
+                    image,
+                    base_url="https://www.nikkei.com/",
+                )
+            )
+        ):
+            wrapper.append(copy.deepcopy(child))
+
+    return wrapper if wrapper.get_text(" ", strip=True) else None
 
 
 def _nyt_story_body_companions(soup: BeautifulSoup) -> Tag | None:

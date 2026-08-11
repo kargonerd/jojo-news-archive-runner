@@ -256,7 +256,7 @@ PUBLISHER_SPECS = {
     ),
     "nikkei": PublisherSpec(
         publisher="nikkei",
-        parser_version="nikkei-parser/0.1.5",
+        parser_version="nikkei-parser/0.1.6",
         domains=("nikkei.com", "www.nikkei.com"),
         default_language="ja",
         edition="jp",
