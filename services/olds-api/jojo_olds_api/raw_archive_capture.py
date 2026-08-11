@@ -1833,6 +1833,17 @@ def archive_fallback_policy(
             common_crawl=prior_attempts >= 2,
             arquivo_pt=prior_attempts >= 1,
         )
+    if publisher == "nikkei" and parser_validation_enabled:
+        # Indexed Common Crawl candidates are still attempted on every pass.
+        # Nikkei's Wayback Timemap adds complete legacy captures cheaply, while
+        # per-URL Common Crawl and Arquivo discovery produced no additional
+        # successes in the independent 2012-2015 preflight and more than
+        # doubled batch runtime. Stage those dynamic lookups on retries.
+        return ArchiveFallbackPolicy(
+            wayback_timemap=True,
+            common_crawl=prior_attempts >= 1,
+            arquivo_pt=prior_attempts >= 2,
+        )
     return ArchiveFallbackPolicy(
         wayback_timemap=True,
         common_crawl=True,

@@ -767,7 +767,9 @@ jobs:
           if [ "${{ steps.before.outputs.retry_errors }}" = "true" ]; then
             args+=(--retry-errors)
           fi
-          if [ "$PUBLISHER" = "ft" ] || [ "$PUBLISHER" = "wsj" ]; then
+          if [ "$PUBLISHER" = "ft" ] || \
+             [ "$PUBLISHER" = "wsj" ] || \
+             [ "$PUBLISHER" = "nikkei" ]; then
             args+=(
               --enable-arquivo-pt-fallback
               --enable-common-crawl-fallback

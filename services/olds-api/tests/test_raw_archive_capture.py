@@ -3849,6 +3849,40 @@ def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
     ) == (True, True, True)
 
 
+def test_nikkei_validation_keeps_timemap_and_stages_slow_fallbacks():
+    first = archive_fallback_policy(
+        publisher="nikkei",
+        parser_validation_enabled=True,
+        prior_attempts=0,
+    )
+    second = archive_fallback_policy(
+        publisher="nikkei",
+        parser_validation_enabled=True,
+        prior_attempts=1,
+    )
+    third = archive_fallback_policy(
+        publisher="nikkei",
+        parser_validation_enabled=True,
+        prior_attempts=2,
+    )
+
+    assert (
+        first.wayback_timemap,
+        first.common_crawl,
+        first.arquivo_pt,
+    ) == (True, False, False)
+    assert (
+        second.wayback_timemap,
+        second.common_crawl,
+        second.arquivo_pt,
+    ) == (True, True, False)
+    assert (
+        third.wayback_timemap,
+        third.common_crawl,
+        third.arquivo_pt,
+    ) == (True, True, True)
+
+
 def test_wsj_timemap_mixes_largest_digests_with_nearest_captures():
     canonical_url = (
         "https://www.wsj.com/articles/"

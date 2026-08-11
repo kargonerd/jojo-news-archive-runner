@@ -96,10 +96,15 @@ def test_rotation_audit_failure_blocks_checkpoint_publish_and_chaining() -> None
     assert '"${REMOTE_ROOT}/state/rotation-audit.json"' in publish
 
 
-def test_accelerator_enables_archive_fallbacks_for_wsj() -> None:
+def test_accelerator_enables_archive_fallbacks_for_ft_wsj_and_nikkei() -> None:
     workflow = _workflow_text()
 
-    assert 'if [ "$PUBLISHER" = "ft" ] || [ "$PUBLISHER" = "wsj" ]; then' in workflow
+    fallback_section = workflow[
+        workflow.index('if [ "$PUBLISHER" = "ft" ] ||') :
+        workflow.index("set +e", workflow.index('if [ "$PUBLISHER" = "ft" ] ||'))
+    ]
+    assert '[ "$PUBLISHER" = "wsj" ] ||' in fallback_section
+    assert '[ "$PUBLISHER" = "nikkei" ]; then' in fallback_section
     assert "--enable-arquivo-pt-fallback" in workflow
     assert "--enable-common-crawl-fallback" in workflow
 
