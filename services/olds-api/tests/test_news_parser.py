@@ -17351,7 +17351,7 @@ def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
         BlockType.PARAGRAPH,
         BlockType.PARAGRAPH,
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.3"
+    assert result.extraction.parser_version == "caixin-parser/0.1.4"
 
 
 def test_caixin_legacy_parser_rejects_structured_site_logo():
@@ -17387,7 +17387,77 @@ def test_caixin_legacy_parser_rejects_structured_site_logo():
     assert [image.original_url for image in result.images] == [
         "http://img.caixin.com/2010-02-01/hearing.jpg"
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.3"
+    assert result.extraction.parser_version == "caixin-parser/0.1.4"
+
+
+def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Storms overwhelm city drains">
+          <meta property="article:published_time"
+            content="2011-07-02T08:00:00+08:00">
+          <meta property="og:image"
+            content="http://file.caixin.com/images/common/images/logo120_cw.jpg">
+        </head><body>
+          <div class="content">
+            <span id="Main_Content_Val">
+              <div class="fullUrl" id="jumpurl">
+                <img src="http://file.caing.com/images/channel/content/images/fullUrl.gif">
+                Continue reading, please sign in or register
+              </div>
+            </span>
+            <div class="recommendations">
+              <p>Unrelated recommendation text that is deliberately long enough
+              to look like a complete story when the whole page is selected.</p>
+              <p>Another unrelated ranking entry must never become article text.</p>
+              <img src="http://file.caixin.com/file/common/images/top_1.gif">
+              <input type="text" value="Enter email address">
+            </div>
+          </div>
+        </body></html>
+        """,
+        publisher="caixin",
+        canonical_url=(
+            "https://magazine.caixin.com/2011-07-02/100275221.html"
+        ),
+    )
+
+    assert result.quality.status != ArticleStatus.COMPLETE
+    assert "Unrelated recommendation" not in result.plain_text
+    assert "ranking entry" not in result.plain_text
+    assert "<input" not in result.body_html
+    assert result.images == []
+    assert result.extraction.parser_version == "caixin-parser/0.1.4"
+
+
+def test_caixin_parser_rejects_common_logo_with_edition_suffix():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A valid Caixin report">
+          <meta property="article:published_time"
+            content="2011-06-04T08:00:00+08:00">
+          <meta property="og:image"
+            content="http://file.caixin.com/images/common/images/logo120_cw.jpg">
+        </head><body>
+          <div id="Main_Content_Val">
+            <p>The first paragraph contains the reported facts and context for
+            readers following this event across the country.</p>
+            <p>The second paragraph adds independent detail and explains why
+            the development matters to the affected organizations.</p>
+          </div>
+        </body></html>
+        """,
+        publisher="caixin",
+        canonical_url=(
+            "https://magazine.caixin.com/2011-06-04/100266334.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.images == []
+    assert result.extraction.parser_version == "caixin-parser/0.1.4"
 
 
 def test_caixin_legacy_parser_preserves_short_editorial_correction():
@@ -17430,7 +17500,7 @@ def test_caixin_legacy_parser_preserves_short_editorial_correction():
     assert "腾讯微博" not in result.plain_text
     assert result.images == []
     assert "structured-short-record" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.3"
+    assert result.extraction.parser_version == "caixin-parser/0.1.4"
 
 
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():

@@ -47,6 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--publisher", required=True)
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--target", type=int, default=800)
+    parser.add_argument("--expected-parser-version")
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
@@ -133,6 +134,7 @@ def audit_content(
     publisher: str,
     year: int,
     target: int,
+    expected_parser_version: str | None = None,
 ) -> dict[str, object]:
     connection = sqlite3.connect(f"file:{state.resolve().as_posix()}?mode=ro", uri=True)
     try:
@@ -142,12 +144,14 @@ def audit_content(
             year=year,
             target=target,
         )
+        expected_version = expected_parser_version or parser_version
         hard_anomalies: list[dict[str, object]] = []
         review_candidates: list[dict[str, object]] = []
         block_articles: dict[str, set[str]] = defaultdict(set)
         selected_image_articles: dict[str, set[str]] = defaultdict(set)
         body_lengths: list[int] = []
         selected_images = 0
+        extraction_statuses: Counter[str] = Counter()
         for index, canonical_url in enumerate(urls, start=1):
             try:
                 capture = completed_raw_capture(
@@ -174,12 +178,24 @@ def audit_content(
                     }
                 )
                 continue
-            if article.extraction.parser_version != parser_version:
+            extraction_statuses[article.quality.status.value] += 1
+            if article.extraction.parser_version != expected_version:
                 hard_anomalies.append(
                     {
                         "type": "parser-version-mismatch",
                         "url": canonical_url,
                         "detail": article.extraction.parser_version,
+                    }
+                )
+            if (
+                article.content_type.value == "article"
+                and article.quality.status.value != "complete"
+            ):
+                hard_anomalies.append(
+                    {
+                        "type": "extraction-not-complete",
+                        "url": canonical_url,
+                        "detail": article.quality.status.value,
                     }
                 )
             body_lengths.append(len(article.plain_text))
@@ -301,8 +317,10 @@ def audit_content(
         "year": year,
         "target": target,
         "audited": len(body_lengths),
-        "parserVersion": parser_version,
+        "configuredParserVersion": parser_version,
+        "parserVersion": expected_version,
         "qaRevision": qa_revision,
+        "extractionStatuses": dict(sorted(extraction_statuses.items())),
         "bodyCharacters": quantiles,
         "selectedImages": selected_images,
         "hardAnomalyCount": len(hard_anomalies),
@@ -322,6 +340,7 @@ def main() -> int:
         publisher=args.publisher,
         year=args.year,
         target=args.target,
+        expected_parser_version=args.expected_parser_version,
     )
     rendered = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
     if args.output:
@@ -337,6 +356,8 @@ def main() -> int:
                         "target",
                         "audited",
                         "parserVersion",
+                        "configuredParserVersion",
+                        "extractionStatuses",
                         "bodyCharacters",
                         "selectedImages",
                         "hardAnomalyCount",

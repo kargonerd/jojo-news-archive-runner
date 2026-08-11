@@ -280,11 +280,14 @@ def parse_article(
         body = _select_body(soup, spec)
     if spec.publisher == "caixin":
         legacy_body = soup.select_one("#Main_Content_Val")
-        if (
-            isinstance(legacy_body, Tag)
-            and len(_clean_text(legacy_body.get_text(" ", strip=True)))
-            >= 20
-        ):
+        if isinstance(legacy_body, Tag):
+            # Legacy subscription snapshots can leave only a short login
+            # roadblock in the real article node.  Falling back to the much
+            # broader ``.content`` wrapper then turns recommendations, live
+            # tickers, rankings and share controls into a false complete
+            # article.  Keep the authoritative node even when it is short;
+            # Caixin chrome cleanup will remove the roadblock and quality
+            # assessment will correctly reject the empty capture.
             body = legacy_body
     if spec.publisher == "nikkei":
         legacy_body = _nikkei_legacy_article_body(
@@ -12771,7 +12774,7 @@ def _caixin_non_editorial_image_url(url: str) -> bool:
     ) or (
         host == "file.caixin.com"
         and re.search(
-            r"/images/common/images/logo(?:\d+)?\.(?:gif|jpe?g|png|webp)$",
+            r"/images/common/images/logo[^/]*\.(?:gif|jpe?g|png|webp)$",
             path,
         )
         is not None
