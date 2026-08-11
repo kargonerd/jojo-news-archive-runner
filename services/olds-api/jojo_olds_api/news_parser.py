@@ -6463,6 +6463,11 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
         for node in article.select("img[src]")
     }
     existing_images.discard(None)
+    existing_embeds = {
+        _string_or_none(node.get("src"))
+        for node in article.select("iframe[src]")
+    }
+    existing_embeds.discard(None)
     has_rendered_text = bool(existing_text)
 
     for block in structured_blocks:
@@ -6503,11 +6508,25 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
                 if embed_html
                 else ""
             )
+            embed_sources = (
+                {
+                    _string_or_none(node.get("src"))
+                    for node in BeautifulSoup(
+                        embed_html, "html.parser"
+                    ).select("iframe[src]")
+                }
+                if embed_html
+                else set()
+            )
+            embed_sources.discard(None)
+            if embed_sources and embed_sources.issubset(existing_embeds):
+                continue
             if embed_html and (
                 not embed_text
                 or embed_text.casefold() not in existing_text
             ):
                 append_fragment(embed_html)
+                existing_embeds.update(embed_sources)
                 existing_text = _clean_text(
                     article.get_text(" ", strip=True)
                 ).casefold()
@@ -6575,15 +6594,45 @@ def _remove_axios_body_chrome(soup: BeautifulSoup) -> None:
         ):
             text_node.extract()
     for node in list(soup.select("p")):
-        if _clean_text(node.get_text(" ", strip=True)).casefold() not in {
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        if (
+            text.startswith("sign up for our axios ")
+            and " newsletter" in text
+        ) or (
+            text.startswith("subscribe to ")
+            and " podcast" in text
+        ):
+            node.decompose()
+            continue
+        if text not in {
             "read more",
             "read more:",
-        }:
+            "go deeper",
+            "go deeper:",
+        } and not text.startswith("go deeper:"):
             continue
         following = node.find_next_sibling()
-        if isinstance(following, Tag) and following.name in {"ul", "ol"}:
+        if (
+            text in {"read more", "read more:", "go deeper", "go deeper:"}
+            and isinstance(following, Tag)
+            and following.name in {"ul", "ol"}
+        ):
             following.decompose()
         node.decompose()
+    for listing in list(soup.select("ul, ol")):
+        items = [
+            _clean_text(item.get_text(" ", strip=True)).casefold()
+            for item in listing.select(":scope > li")
+        ]
+        if items and all(
+            item.startswith("go deeper:")
+            or (
+                item.startswith("subscribe to ")
+                and " podcast" in item
+            )
+            for item in items
+        ):
+            listing.decompose()
 
 
 def _axios_image_only_story(
