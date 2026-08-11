@@ -10,7 +10,9 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 import sqlite3
-from urllib.error import HTTPError
+import time
+from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
@@ -39,11 +41,24 @@ def authorize(key_id: str, application_key: str) -> tuple[str, str]:
     basic = base64.b64encode(
         f"{key_id}:{application_key}".encode("utf-8")
     ).decode("ascii")
-    with urlopen(
-        Request(AUTHORIZE_URL, headers={"Authorization": f"Basic {basic}"}),
-        timeout=30,
-    ) as response:
-        payload = json.load(response)
+    request = Request(
+        AUTHORIZE_URL,
+        headers={"Authorization": f"Basic {basic}"},
+    )
+    payload: dict[str, Any] | None = None
+    last_error: Exception | None = None
+    for attempt in range(6):
+        try:
+            with urlopen(request, timeout=30) as response:
+                payload = json.load(response)
+            break
+        except (URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt == 5:
+                raise RuntimeError("B2 authorization failed after retries") from exc
+            time.sleep(min(2**attempt, 10))
+    if payload is None:
+        raise RuntimeError("B2 authorization returned no payload") from last_error
     return (
         str(payload["authorizationToken"]),
         str(payload["apiInfo"]["storageApi"]["downloadUrl"]),
@@ -85,20 +100,31 @@ def download_file(
         return "existing"
     last_error: Exception | None = None
     for remote_name in remote_names:
-        try:
-            request = Request(
-                download_url(download_base, bucket, remote_name),
-                headers={"Authorization": token},
-            )
-            temporary = target.with_name(target.name + ".part")
-            with urlopen(request, timeout=60) as response, temporary.open("wb") as handle:
-                shutil.copyfileobj(response, handle)
-            temporary.replace(target)
-            return remote_name
-        except HTTPError as exc:
-            last_error = exc
-            if exc.code != 404:
-                raise
+        for attempt in range(6):
+            try:
+                request = Request(
+                    download_url(download_base, bucket, remote_name),
+                    headers={"Authorization": token},
+                )
+                temporary = target.with_name(target.name + ".part")
+                with (
+                    urlopen(request, timeout=60) as response,
+                    temporary.open("wb") as handle,
+                ):
+                    shutil.copyfileobj(response, handle)
+                temporary.replace(target)
+                return remote_name
+            except HTTPError as exc:
+                last_error = exc
+                if exc.code == 404:
+                    break
+            except (URLError, TimeoutError, OSError) as exc:
+                last_error = exc
+            if attempt == 5:
+                raise RuntimeError(
+                    f"failed to download after retries: {remote_name}"
+                ) from last_error
+            time.sleep(min(2**attempt, 10))
     raise RuntimeError(
         f"object not found in any configured root: {remote_names}"
     ) from last_error
