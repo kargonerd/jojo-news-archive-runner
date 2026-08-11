@@ -41,6 +41,11 @@ on:
         required: true
         default: "200"
         type: string
+      target_articles_per_year:
+        description: "Stop catalog discovery after this many URLs per publication year."
+        required: true
+        default: "3000"
+        type: string
       auto_continue:
         description: "Dispatch the next bounded run after checkpointing."
         required: true
@@ -69,6 +74,7 @@ env:
   MAX_PAGES: ${{ inputs.max_pages }}
   MAX_QUERIES: ${{ inputs.max_queries }}
   MAX_HYDRATIONS: ${{ inputs.max_hydrations }}
+  TARGET_ARTICLES_PER_YEAR: ${{ inputs.target_articles_per_year }}
   AUTO_CONTINUE: ${{ inputs.auto_continue }}
 
 jobs:
@@ -115,7 +121,8 @@ jobs:
             echo "Invalid publication or collection window." >&2
             exit 2
           fi
-          for value in "$MAX_PAGES" "$MAX_QUERIES" "$MAX_HYDRATIONS"; do
+          for value in "$MAX_PAGES" "$MAX_QUERIES" "$MAX_HYDRATIONS" \
+              "$TARGET_ARTICLES_PER_YEAR"; do
             if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
               echo "All batch limits must be positive." >&2
               exit 2
@@ -165,6 +172,7 @@ jobs:
             --max-pages "$MAX_PAGES" \
             --max-queries "$MAX_QUERIES" \
             --max-errors 4 \
+            --target-articles-per-year "$TARGET_ARTICLES_PER_YEAR" \
             --max-date-hydrations "$MAX_HYDRATIONS" \
             --min-request-interval 3 \
             --data-min-request-interval 0.5 \
@@ -228,4 +236,5 @@ jobs:
             -f max_pages="$MAX_PAGES" \
             -f max_queries="$MAX_QUERIES" \
             -f max_hydrations="$MAX_HYDRATIONS" \
+            -f target_articles_per_year="$TARGET_ARTICLES_PER_YEAR" \
             -f auto_continue=true
