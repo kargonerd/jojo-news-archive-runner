@@ -17401,6 +17401,67 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert result.extraction.parser_version == "scmp-parser/0.1.1"
 
 
+def test_caixin_legacy_parser_extracts_single_page_photo_story():
+    result = parse_article(
+        """
+        <html><head><title>外资投行正在逐渐进入经纪业务领域</title></head>
+        <body>
+          <h1>外资投行正在逐渐进入经纪业务领域</h1>
+          <div class="focusBody">
+            <ul id="pic_content"><li><table><tr><td>
+              <div class="imgBox"><table>
+                <tr><td><img src="http://img.caixin.com/2010-03-21/100128465.jpg"></td></tr>
+                <tr><td style="FONT-SIZE: 12px">外资投行逐渐进入经纪业务领域。东方IC</td></tr>
+              </table></div>
+            </td></tr></table></li></ul>
+            <div class="infobox">发表时间：2010年03月21日 20:23</div>
+            <div class="op">发表时间：2010年03月21日 20:23　1 /1</div>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://photos.caixin.com/2010-03-21/100128464.html",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.content_type == ContentType.GALLERY
+    assert result.published_at.isoformat() == "2010-03-21T20:23:00+08:00"
+    assert len(result.images) == 1
+    assert result.images[0].should_archive is True
+    assert result.images[0].original_url.endswith("/100128465.jpg")
+    assert result.images[0].caption == "外资投行逐渐进入经纪业务领域。东方IC"
+    assert result.blocks[0].type == BlockType.IMAGE
+    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+
+
+def test_caixin_legacy_parser_rejects_incomplete_multipage_photo_story():
+    result = parse_article(
+        """
+        <html><body>
+          <h1>多页图片报道</h1>
+          <div class="focusBody">
+            <ul id="pic_content"><li><table><tr><td>
+              <div class="imgBox"><table>
+                <tr><td><img src="http://img.caixin.com/2010-04-01/photo.jpg"></td></tr>
+                <tr><td style="font-size:12px">这里只保存了第一张图片的图注。</td></tr>
+              </table></div>
+            </td></tr></table></li></ul>
+            <div class="infobox">发表时间：2010年04月01日 08:05</div>
+            <div class="op">发表时间：2010年04月01日 08:05</div>
+            1 /3
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://photos.caixin.com/2010-04-01/100130000.html",
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.PARTIAL
+    assert "incomplete-gallery" in result.quality.warnings
+    assert result.extraction.parser_version == "caixin-parser/0.1.7"
+
+
 def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
     result = parse_article(
         """
@@ -17449,7 +17510,7 @@ def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
         BlockType.PARAGRAPH,
         BlockType.PARAGRAPH,
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.6"
+    assert result.extraction.parser_version == "caixin-parser/0.1.7"
 
 
 def test_caixin_legacy_parser_removes_pagination_and_source_boilerplate():
@@ -17491,7 +17552,7 @@ def test_caixin_legacy_parser_removes_pagination_and_source_boilerplate():
     assert "MarketWatch拥有位于三大洲" not in result.plain_text
     assert "第1页" not in result.plain_text
     assert "yinduBottom" not in result.body_html
-    assert result.extraction.parser_version == "caixin-parser/0.1.6"
+    assert result.extraction.parser_version == "caixin-parser/0.1.7"
 
 
 def test_caixin_legacy_parser_preserves_direct_body_text_nodes():
@@ -17534,7 +17595,7 @@ def test_caixin_legacy_parser_preserves_direct_body_text_nodes():
     assert "原文地址" in result.plain_text
     assert "MarketWatch拥有位于三大洲" not in result.plain_text
     assert result.blocks[0].type == BlockType.PARAGRAPH
-    assert result.extraction.parser_version == "caixin-parser/0.1.6"
+    assert result.extraction.parser_version == "caixin-parser/0.1.7"
 
 
 def test_caixin_legacy_parser_rejects_structured_site_logo():
@@ -17570,7 +17631,7 @@ def test_caixin_legacy_parser_rejects_structured_site_logo():
     assert [image.original_url for image in result.images] == [
         "http://img.caixin.com/2010-02-01/hearing.jpg"
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.6"
+    assert result.extraction.parser_version == "caixin-parser/0.1.7"
 
 
 def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
@@ -17611,7 +17672,7 @@ def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
     assert "ranking entry" not in result.plain_text
     assert "<input" not in result.body_html
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.6"
+    assert result.extraction.parser_version == "caixin-parser/0.1.7"
 
 
 def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node():
@@ -17649,7 +17710,7 @@ def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node()
     assert "<input" not in result.body_html
     assert result.blocks == []
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.6"
+    assert result.extraction.parser_version == "caixin-parser/0.1.7"
 
 
 def test_caixin_parser_rejects_common_logo_with_edition_suffix():
@@ -17678,7 +17739,7 @@ def test_caixin_parser_rejects_common_logo_with_edition_suffix():
 
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.6"
+    assert result.extraction.parser_version == "caixin-parser/0.1.7"
 
 
 def test_caixin_legacy_parser_preserves_short_editorial_correction():
@@ -17721,7 +17782,7 @@ def test_caixin_legacy_parser_preserves_short_editorial_correction():
     assert "腾讯微博" not in result.plain_text
     assert result.images == []
     assert "structured-short-record" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.6"
+    assert result.extraction.parser_version == "caixin-parser/0.1.7"
 
 
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():

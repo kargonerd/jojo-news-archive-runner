@@ -134,6 +134,7 @@ def parse_article(
     )
     body = None
     structured_image_gallery_selected = False
+    caixin_legacy_gallery_selected = False
     nyt_interactive_body_selected = False
     ft_crossword_selected = False
     npr_legacy_transcript_selected = False
@@ -279,8 +280,14 @@ def parse_article(
     if body is None:
         body = _select_body(soup, spec)
     if spec.publisher == "caixin":
-        legacy_body = soup.select_one("#Main_Content_Val")
-        if isinstance(legacy_body, Tag):
+        legacy_gallery = _caixin_legacy_gallery_body(soup)
+        if legacy_gallery is not None:
+            body = legacy_gallery
+            structured_image_gallery_selected = True
+            caixin_legacy_gallery_selected = True
+        else:
+            legacy_body = soup.select_one("#Main_Content_Val")
+        if legacy_gallery is None and isinstance(legacy_body, Tag):
             # Legacy subscription snapshots can leave only a short login
             # roadblock in the real article node.  Falling back to the much
             # broader ``.content`` wrapper then turns recommendations, live
@@ -712,6 +719,11 @@ def parse_article(
             (
                 _zaobao_embedded_published_at(soup)
                 if spec.publisher == "zaobao"
+                else None
+            ),
+            (
+                _caixin_legacy_published_at(soup)
+                if spec.publisher == "caixin"
                 else None
             ),
             _tag_attribute(
@@ -1345,6 +1357,12 @@ def parse_article(
         and content_type == ContentType.GALLERY
         and soup.select_one(".slideshow-article")
         and sum(image.should_archive for image in images) < 3
+    ):
+        warnings.append("incomplete-gallery")
+    if (
+        caixin_legacy_gallery_selected
+        and _caixin_legacy_gallery_expected_images(soup)
+        > sum(image.should_archive for image in images)
     ):
         warnings.append("incomplete-gallery")
     if (
@@ -12036,6 +12054,74 @@ def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:
             container.decompose()
 
 
+def _caixin_legacy_gallery_body(soup: BeautifulSoup) -> Tag | None:
+    """Convert Caixin's table-based photo channel into semantic figures."""
+
+    source = soup.select_one("#pic_content")
+    if not isinstance(source, Tag):
+        return None
+    document = BeautifulSoup(
+        "<article data-jojo-source='caixin-legacy-gallery'></article>",
+        "html.parser",
+    )
+    wrapper = document.select_one("article")
+    if not isinstance(wrapper, Tag):
+        return None
+    for item in source.find_all("li", recursive=False):
+        if not isinstance(item, Tag):
+            continue
+        image = next(
+            (
+                node
+                for node in item.select(".imgBox img[src], img[src]")
+                if isinstance(node, Tag)
+                and not _caixin_non_editorial_image_url(
+                    _normalized_url(
+                        node.get("src"),
+                        base_url="https://photos.caixin.com/",
+                    )
+                    or ""
+                )
+            ),
+            None,
+        )
+        if not isinstance(image, Tag):
+            continue
+        figure = document.new_tag("figure")
+        copied_image = document.new_tag("img")
+        copied_image.attrs = dict(image.attrs)
+        figure.append(copied_image)
+        image_row = image.find_parent("tr")
+        caption_row = (
+            image_row.find_next_sibling("tr")
+            if isinstance(image_row, Tag)
+            else None
+        )
+        caption = (
+            _clean_text(caption_row.get_text(" ", strip=True))
+            if isinstance(caption_row, Tag)
+            else ""
+        )
+        if not caption:
+            caption = _clean_text(
+                _tag_text(item.select_one("#subhead, .title")) or ""
+            )
+        if caption:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = caption
+            figure.append(figcaption)
+        wrapper.append(figure)
+    return wrapper if wrapper.select_one("figure img") else None
+
+
+def _caixin_legacy_gallery_expected_images(soup: BeautifulSoup) -> int:
+    # The counter is a loose text node beside the controls in some snapshots,
+    # not a descendant of `.op`; inspect the complete editorial wrapper.
+    counter = _clean_text(_tag_text(soup.select_one(".focusBody")) or "")
+    matches = re.findall(r"(?<!\d)\d+\s*/\s*(\d+)(?!\d)", counter)
+    return max((int(value) for value in matches), default=1)
+
+
 def _extract_blocks(
     body: BeautifulSoup,
     *,
@@ -13535,6 +13621,29 @@ def _scmp_legacy_published_at(soup: BeautifulSoup) -> str | None:
             tzinfo=timezone(timedelta(hours=8))
         ).isoformat()
     return None
+
+
+def _caixin_legacy_published_at(soup: BeautifulSoup) -> str | None:
+    value = _clean_text(
+        _tag_text(soup.select_one(".focusBody .infobox"))
+        or _tag_text(soup.select_one(".focusBody .op"))
+        or ""
+    )
+    match = re.search(
+        r"发表时间\s*[：:]\s*(?P<year>20\d{2})年"
+        r"(?P<month>\d{1,2})月(?P<day>\d{1,2})日"
+        r"(?:\s*(?P<hour>\d{1,2}):(?P<minute>\d{2}))?",
+        value,
+    )
+    if match is None:
+        return None
+    return (
+        f"{int(match.group('year')):04d}-"
+        f"{int(match.group('month')):02d}-"
+        f"{int(match.group('day')):02d}T"
+        f"{int(match.group('hour') or 0):02d}:"
+        f"{int(match.group('minute') or 0):02d}:00+08:00"
+    )
 
 
 def _nikkei_legacy_headline(soup: BeautifulSoup) -> str | None:
