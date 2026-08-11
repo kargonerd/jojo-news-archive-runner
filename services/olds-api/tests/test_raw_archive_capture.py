@@ -3887,8 +3887,8 @@ def test_wsj_retry_prefers_validated_arquivo_pt_before_common_crawl(
     assert capture.quality_signals["arquivoPtReplayValidated"] is True
 
 
-def test_wsj_validation_defers_expensive_fallbacks_until_retry():
-    assert defer_expensive_archive_fallbacks(
+def test_wsj_validation_uses_bounded_timemap_on_first_attempt():
+    assert not defer_expensive_archive_fallbacks(
         publisher="wsj",
         parser_validation_enabled=True,
         prior_attempts=0,
@@ -3936,7 +3936,7 @@ def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
         first.wayback_timemap,
         first.common_crawl,
         first.arquivo_pt,
-    ) == (False, False, False)
+    ) == (True, False, False)
     assert (
         second.wayback_timemap,
         second.common_crawl,

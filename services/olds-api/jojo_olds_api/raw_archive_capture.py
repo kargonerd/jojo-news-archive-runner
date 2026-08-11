@@ -62,7 +62,7 @@ CAPTURE_POLICY_VERSIONS = {
     "nyt": "nyt-capture/0.9.0",
     "npr": "npr-capture/1.2",
     "reuters": "reuters-capture/0.7.2",
-    "wsj": "wsj-capture/0.8.8",
+    "wsj": "wsj-capture/0.8.9",
 }
 ACCEPTED_HTTP_STATUSES = {200, 206}
 WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"
@@ -1829,8 +1829,14 @@ def archive_fallback_policy(
     if prior_attempts < 0:
         raise ValueError("prior_attempts must not be negative")
     if publisher == "wsj" and parser_validation_enabled:
+        # Publication-near WSJ captures are frequently metered previews, but
+        # later/larger digests for the same URL can contain the full article.
+        # Timemap selection is bounded and ranks those large distinct digests
+        # first, so use it on the first validation pass.  Deferring it until a
+        # retry forced large holdout cohorts to exhaust thousands of known
+        # snippets before reaching the high-yield exact snapshots.
         return ArchiveFallbackPolicy(
-            wayback_timemap=prior_attempts >= 1,
+            wayback_timemap=True,
             common_crawl=prior_attempts >= 2,
             arquivo_pt=prior_attempts >= 1,
         )

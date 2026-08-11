@@ -78,9 +78,10 @@ def download_file(
     bucket: str,
     remote_names: list[str],
     target: Path,
+    reuse_existing: bool = True,
 ) -> str:
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists() and target.stat().st_size:
+    if reuse_existing and target.exists() and target.stat().st_size:
         return "existing"
     last_error: Exception | None = None
     for remote_name in remote_names:
@@ -194,6 +195,7 @@ def main() -> int:
         bucket=args.bucket,
         remote_names=[args.checkpoint],
         target=checkpoint_gzip,
+        reuse_existing=False,
     )
     state = output / "capture.sqlite3"
     with gzip.open(checkpoint_gzip, "rb") as source, state.open("wb") as target_handle:
