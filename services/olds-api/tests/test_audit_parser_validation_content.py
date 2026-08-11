@@ -23,6 +23,10 @@ def test_interface_text_detector_does_not_match_ordinary_prose() -> None:
     assert _INTERFACE_TEXT_RE.search("subscribe") is not None
     assert _INTERFACE_TEXT_RE.search("subscribe to our daily newsletter") is not None
     assert _INTERFACE_TEXT_RE.search("terms of use") is not None
+    assert _INTERFACE_TEXT_RE.search("01 第1页 02 第2页") is not None
+    assert _INTERFACE_TEXT_RE.search(
+        "MarketWatch拥有位于三大洲的100多名记者，为世界各地读者提供新闻。"
+    ) is not None
     assert _INTERFACE_TEXT_RE.search(
         "The court considered whether violating the terms of use was illegal."
     ) is None

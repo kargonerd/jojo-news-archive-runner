@@ -17449,7 +17449,92 @@ def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
         BlockType.PARAGRAPH,
         BlockType.PARAGRAPH,
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.5"
+    assert result.extraction.parser_version == "caixin-parser/0.1.6"
+
+
+def test_caixin_legacy_parser_removes_pagination_and_source_boilerplate():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="国际市场报道">
+          <meta property="article:published_time"
+            content="2010-05-13T08:00:00+08:00">
+        </head><body>
+          <span id="Main_Content_Val">
+            <p>报道第一段说明市场当天发生的变化，并提供足够的事实、
+            数字和背景供读者理解事件的重要性。</p>
+            <p>报道第二段继续介绍各方回应和后续影响，确保这是一篇
+            完整的新闻正文而不是只有模板的页面。</p>
+            <p>原文地址: http://www.marketwatch.com/story/example</p>
+            <p><strong>MarketWatch拥有位于三大洲的100多名记者，
+            为世界各地读者提供关于全球市场、经济和商业的实时新闻与数据。
+            它是“华尔街日报数码网”的一部分，由新闻集团的子公司
+            道琼斯公司所有。</strong></p>
+            <div class="yinduBottom">
+              <ul>
+                <li><b>01</b>第1页</li>
+                <li><b>02</b><a href="/story_1.html">第2页</a></li>
+              </ul>
+            </div>
+          </span>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://international.caixin.com/2010-05-13/100143582.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "报道第一段" in result.plain_text
+    assert "原文地址" in result.plain_text
+    assert "MarketWatch拥有位于三大洲" not in result.plain_text
+    assert "第1页" not in result.plain_text
+    assert "yinduBottom" not in result.body_html
+    assert result.extraction.parser_version == "caixin-parser/0.1.6"
+
+
+def test_caixin_legacy_parser_preserves_direct_body_text_nodes():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="通用汽车或最早周五申请IPO">
+          <meta property="article:published_time"
+            content="2010-08-12T08:00:00+08:00">
+        </head><body>
+          <span id="Main_Content_Val">
+            <b>【财新网】（John Letzing -MarketWatch）</b>
+            本周三公布的消息称，通用汽车公司最早将于周五提出IPO计划。
+            通用汽车首席执行官不久前表示，公司近期内将起草相关申请文件，
+            以期重返股市。据报道，自通用汽车陷入破产以来，美国财政部
+            已累计为其提供资金，并由此获得通用汽车多数股权。消息称，
+            IPO的施行将使美国政府得以在几个月内开始交易其所持股份。
+            <p><strong>（陈沁）</strong></p>
+            <p><strong>原文地址：
+              <a href="http://www.marketwatch.com/story/gm-ipo">
+                http://www.marketwatch.com/story/gm-ipo
+              </a>
+            </strong></p>
+            <p><strong>MarketWatch拥有位于三大洲的100多名记者，
+            为世界各地读者提供关于全球市场、经济和商业的实时新闻与数据。
+            </strong></p>
+          </span>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://international.caixin.com/2010-08-12/100169932.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "本周三公布的消息" in result.plain_text
+    assert "IPO的施行" in result.plain_text
+    assert "（陈沁）" in result.plain_text
+    assert "原文地址" in result.plain_text
+    assert "MarketWatch拥有位于三大洲" not in result.plain_text
+    assert result.blocks[0].type == BlockType.PARAGRAPH
+    assert result.extraction.parser_version == "caixin-parser/0.1.6"
 
 
 def test_caixin_legacy_parser_rejects_structured_site_logo():
@@ -17485,7 +17570,7 @@ def test_caixin_legacy_parser_rejects_structured_site_logo():
     assert [image.original_url for image in result.images] == [
         "http://img.caixin.com/2010-02-01/hearing.jpg"
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.5"
+    assert result.extraction.parser_version == "caixin-parser/0.1.6"
 
 
 def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
@@ -17526,7 +17611,7 @@ def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
     assert "ranking entry" not in result.plain_text
     assert "<input" not in result.body_html
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.5"
+    assert result.extraction.parser_version == "caixin-parser/0.1.6"
 
 
 def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node():
@@ -17564,7 +17649,7 @@ def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node()
     assert "<input" not in result.body_html
     assert result.blocks == []
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.5"
+    assert result.extraction.parser_version == "caixin-parser/0.1.6"
 
 
 def test_caixin_parser_rejects_common_logo_with_edition_suffix():
@@ -17593,7 +17678,7 @@ def test_caixin_parser_rejects_common_logo_with_edition_suffix():
 
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.5"
+    assert result.extraction.parser_version == "caixin-parser/0.1.6"
 
 
 def test_caixin_legacy_parser_preserves_short_editorial_correction():
@@ -17636,7 +17721,7 @@ def test_caixin_legacy_parser_preserves_short_editorial_correction():
     assert "腾讯微博" not in result.plain_text
     assert result.images == []
     assert "structured-short-record" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.5"
+    assert result.extraction.parser_version == "caixin-parser/0.1.6"
 
 
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():

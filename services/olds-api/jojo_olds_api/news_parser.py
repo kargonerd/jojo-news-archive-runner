@@ -11991,8 +11991,33 @@ def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
 def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:
     """Remove legacy Caixin print controls and subscription QR images."""
 
-    for node in list(soup.select(".fullUrl, #jumpurl")):
+    legacy_body = soup.select_one("#Main_Content_Val")
+    if isinstance(legacy_body, Tag):
+        # Caixin's legacy CMS often emitted the lead or even the entire short
+        # report as a direct text node beside a bold byline. The common block
+        # extractor deliberately ignores loose text, so preserve these nodes
+        # in document order as ordinary paragraphs before block extraction.
+        for child in list(legacy_body.children):
+            if not isinstance(child, NavigableString) or isinstance(
+                child, Comment
+            ):
+                continue
+            text = _clean_text(str(child))
+            if len(text) < 2:
+                continue
+            paragraph = soup.new_tag("p")
+            paragraph.string = text
+            child.replace_with(paragraph)
+    for node in list(soup.select(".fullUrl, #jumpurl, .yinduBottom")):
         node.decompose()
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True)).casefold()
+        if text.startswith("marketwatch拥有位于三大洲的100多名记者"):
+            # Caixin appended the same corporate description to syndicated
+            # MarketWatch stories. Preserve the preceding original-URL
+            # attribution, but do not treat this publisher boilerplate as
+            # article prose.
+            paragraph.decompose()
     for image in list(soup.select("img")):
         urls = _image_urls(
             image,
