@@ -17351,7 +17351,43 @@ def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
         BlockType.PARAGRAPH,
         BlockType.PARAGRAPH,
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.2"
+    assert result.extraction.parser_version == "caixin-parser/0.1.3"
+
+
+def test_caixin_legacy_parser_rejects_structured_site_logo():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="北大医院案件再开庭">
+          <meta property="article:published_time"
+            content="2010-02-01T09:00:00+08:00">
+          <meta property="og:image"
+            content="http://file.caixin.com/images/common/images/logo120.jpg">
+        </head><body>
+          <div id="Main_Content_Val">
+            <p>案件在北京市高级法院再次开庭，双方围绕关键证据
+            和医疗责任展开辩论，法庭将进一步审查相关材料。</p>
+            <p>记者在现场了解到，双方代理人分别陈述了新的意见，
+            并申请对部分证据的形成过程作进一步核实。</p>
+            <p>此前的一审判决认定医院在诊疗过程中存在过失，
+            原被告双方随后均提出上诉，对责任认定和赔偿金额持有异议。</p>
+            <p>审判人员表示，本次庭审将充分听取双方意见，
+            对争议焦点逐项调查，并在合议后依法作出裁判。</p>
+            <img src="http://img.caixin.com/2010-02-01/hearing.jpg">
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://china.caixin.com/2010-02-01/100112681.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert [image.original_url for image in result.images] == [
+        "http://img.caixin.com/2010-02-01/hearing.jpg"
+    ]
+    assert result.extraction.parser_version == "caixin-parser/0.1.3"
 
 
 def test_caixin_legacy_parser_preserves_short_editorial_correction():
@@ -17394,7 +17430,7 @@ def test_caixin_legacy_parser_preserves_short_editorial_correction():
     assert "腾讯微博" not in result.plain_text
     assert result.images == []
     assert "structured-short-record" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.2"
+    assert result.extraction.parser_version == "caixin-parser/0.1.3"
 
 
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():

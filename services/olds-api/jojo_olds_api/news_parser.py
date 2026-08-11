@@ -12768,6 +12768,13 @@ def _caixin_non_editorial_image_url(url: str) -> bool:
     ) or (
         host == "file.caixin.com"
         and path.endswith("/file/vip/images/code.jpg")
+    ) or (
+        host == "file.caixin.com"
+        and re.search(
+            r"/images/common/images/logo(?:\d+)?\.(?:gif|jpe?g|png|webp)$",
+            path,
+        )
+        is not None
     )
 
 
