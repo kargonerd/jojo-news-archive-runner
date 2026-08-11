@@ -14,7 +14,8 @@ def test_catalog_hydrates_dates_and_checkpoints_private_state() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert "build_common_crawl_prefix_manifest.py" in workflow
-    assert "--publisher nikkei" in workflow
+    assert 'default: "nikkei"' in workflow
+    assert '--publisher "$PUBLISHER"' in workflow
     assert '--collection-from-year "$COLLECTION_FROM_YEAR"' in workflow
     assert '--collection-to-year "$COLLECTION_TO_YEAR"' in workflow
     assert "--collection-order oldest" in workflow
@@ -37,6 +38,7 @@ def test_catalog_continues_after_discovery_or_hydration_progress() -> None:
     assert "steps.discovery.outputs.advances != '0'" in dispatch
     assert "steps.discovery.outputs.hydration_attempted != '0'" in dispatch
     assert '-f max_hydrations="$MAX_HYDRATIONS"' in dispatch
+    assert '-f publisher="$PUBLISHER"' in dispatch
     assert (
         '-f target_articles_per_year="$TARGET_ARTICLES_PER_YEAR"'
         in dispatch

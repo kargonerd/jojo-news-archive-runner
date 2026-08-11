@@ -1,18 +1,23 @@
-name: Nikkei Common Crawl catalog
+name: Publisher Common Crawl catalog
 
 run-name: >-
-  nikkei-common-crawl-${{ inputs.from_year }}-${{ inputs.to_year }}
+  ${{ inputs.publisher }}-common-crawl-${{ inputs.from_year }}-${{ inputs.to_year }}
 
 on:
   workflow_dispatch:
     inputs:
+      publisher:
+        description: "Configured publisher identifier."
+        required: true
+        default: "nikkei"
+        type: string
       from_year:
-        description: "First Nikkei publication year to retain."
+        description: "First publication year to retain."
         required: true
         default: "2010"
         type: string
       to_year:
-        description: "Last Nikkei publication year to retain."
+        description: "Last publication year to retain."
         required: true
         default: "2015"
         type: string
@@ -58,7 +63,7 @@ permissions:
 
 concurrency:
   group: >-
-    nikkei-common-crawl-${{ inputs.from_year }}-${{ inputs.to_year }}-${{ inputs.collection_from_year }}-${{ inputs.collection_to_year }}
+    ${{ inputs.publisher }}-common-crawl-${{ inputs.from_year }}-${{ inputs.to_year }}-${{ inputs.collection_from_year }}-${{ inputs.collection_to_year }}
   cancel-in-progress: false
 
 env:
@@ -67,6 +72,7 @@ env:
   B2_ARCHIVE_APPLICATION_KEY: ${{ secrets.B2_ARCHIVE_APPLICATION_KEY }}
   B2_ARCHIVE_BUCKET: ${{ secrets.B2_ARCHIVE_BUCKET }}
   B2_REMOTE: jojo-b2
+  PUBLISHER: ${{ inputs.publisher }}
   FROM_YEAR: ${{ inputs.from_year }}
   TO_YEAR: ${{ inputs.to_year }}
   COLLECTION_FROM_YEAR: ${{ inputs.collection_from_year }}
@@ -121,15 +127,23 @@ jobs:
             echo "Invalid publication or collection window." >&2
             exit 2
           fi
-          for value in "$MAX_PAGES" "$MAX_QUERIES" "$MAX_HYDRATIONS" \
+          if ! [[ "$PUBLISHER" =~ ^[a-z][a-z0-9-]*$ ]]; then
+            echo "publisher must be a lowercase configured identifier." >&2
+            exit 2
+          fi
+          for value in "$MAX_PAGES" "$MAX_QUERIES" \
               "$TARGET_ARTICLES_PER_YEAR"; do
             if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
               echo "All batch limits must be positive." >&2
               exit 2
             fi
           done
-          local_root="$RUNNER_TEMP/nikkei-common-crawl-${FROM_YEAR}-${TO_YEAR}"
-          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/nikkei/${FROM_YEAR}-${TO_YEAR}/commoncrawl-prefix"
+          if ! [[ "$MAX_HYDRATIONS" =~ ^[0-9]+$ ]]; then
+            echo "max_hydrations must be non-negative." >&2
+            exit 2
+          fi
+          local_root="$RUNNER_TEMP/${PUBLISHER}-common-crawl-${FROM_YEAR}-${TO_YEAR}"
+          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${PUBLISHER}/${FROM_YEAR}-${TO_YEAR}/commoncrawl-prefix"
           mkdir -p "$local_root/catalog" "$local_root/state"
           {
             echo "local_root=$local_root"
@@ -153,14 +167,14 @@ jobs:
               > "$LOCAL_ROOT/catalog/discovery.sqlite3"
           fi
 
-      - name: Discover and hydrate bounded Nikkei batch
+      - name: Discover and hydrate bounded publisher batch
         id: discovery
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
           python services/olds-api/tools/build_common_crawl_prefix_manifest.py \
-            --publisher nikkei \
+            --publisher "$PUBLISHER" \
             --from-year "$FROM_YEAR" \
             --to-year "$TO_YEAR" \
             --collection-from-year "$COLLECTION_FROM_YEAR" \
@@ -209,7 +223,7 @@ jobs:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
           {
-            echo "### Nikkei Common Crawl prefix catalog"
+            echo "### ${PUBLISHER} Common Crawl prefix catalog"
             echo
             echo '```json'
             cat "$LOCAL_ROOT/state/summary.json"
@@ -229,6 +243,7 @@ jobs:
         run: |
           gh workflow run nikkei-common-crawl-catalog.yml \
             --ref "$GITHUB_REF_NAME" \
+            -f publisher="$PUBLISHER" \
             -f from_year="$FROM_YEAR" \
             -f to_year="$TO_YEAR" \
             -f collection_from_year="$COLLECTION_FROM_YEAR" \
