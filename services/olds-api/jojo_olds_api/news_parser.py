@@ -3806,6 +3806,17 @@ def _wsj_subscription_truncation(
         )
     ):
         return False
+    if (
+        declared_word_count is not None
+        and declared_word_count >= 100
+        and extracted_word_count * 2 < declared_word_count
+    ):
+        # Some archived WSJ templates omit both the visible roadblock and
+        # copyright footer while preserving only a three-paragraph preview.
+        # WSJ's own article word count is still present in those captures;
+        # a deficit greater than half is strong truncation evidence without
+        # penalizing genuine short reports or editorial letters.
+        return True
     if selected_sign_in:
         return True
     copyright_footer = any(
