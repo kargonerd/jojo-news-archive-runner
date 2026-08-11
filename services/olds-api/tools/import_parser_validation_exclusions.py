@@ -68,7 +68,7 @@ def main() -> int:
         if args.sample_year is not None:
             where_clause = " WHERE sample_year=?"
             parameters = (args.sample_year,)
-        urls = [
+        evaluated_urls = [
             str(row[0])
             for row in source.execute(
                 f"SELECT DISTINCT canonical_url FROM {source_table}"
@@ -76,6 +76,29 @@ def main() -> int:
                 parameters,
             )
         ]
+        exclusions_table = source.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type='table' AND name='parser_validation_exclusions'
+            """
+        ).fetchone()
+        inherited_urls = (
+            [
+                str(row[0])
+                for row in source.execute(
+                    "SELECT DISTINCT canonical_url "
+                    "FROM parser_validation_exclusions"
+                )
+            ]
+            if exclusions_table is not None
+            else []
+        )
+        # A saved validation state is a transitive cohort boundary. Its own
+        # exclusions identify samples evaluated by still earlier cohorts and
+        # must remain excluded when rotating again. They are safe to inherit
+        # across a year-filtered import because the target sample can only
+        # overlap exclusions whose canonical URL is present in that year.
+        urls = evaluated_urls + inherited_urls
         if args.publisher:
             spec = archive_source_spec(args.publisher)
             urls = sorted(
@@ -144,6 +167,8 @@ def main() -> int:
             "sourceTable": source_table,
             "sampleYear": args.sample_year,
             "sourceSamples": len(urls),
+            "evaluatedSourceSamples": len(set(evaluated_urls)),
+            "inheritedSourceExclusions": len(set(inherited_urls)),
             "excluded": int(
                 target.execute(
                     "SELECT COUNT(*) FROM parser_validation_exclusions"

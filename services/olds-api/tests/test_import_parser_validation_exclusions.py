@@ -223,3 +223,68 @@ def test_normalizes_caixin_page_variants_before_excluding(tmp_path: Path):
     assert exclusions == [
         ("https://magazine.caixin.com/2010-02-07/100116568.html",)
     ]
+
+
+def test_inherits_transitive_exclusions_from_prior_validation_state(
+    tmp_path: Path,
+):
+    source_path = tmp_path / "source.sqlite3"
+    target_path = tmp_path / "target.sqlite3"
+    source = sqlite3.connect(source_path)
+    source.executescript(
+        """
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_exclusions (
+            canonical_url TEXT PRIMARY KEY,
+            source_cohort TEXT NOT NULL,
+            excluded_at TEXT NOT NULL
+        );
+        INSERT INTO parser_validation_results VALUES
+            ('https://magazine.caixin.com/2010-01-01/evaluated.html', 2010);
+        INSERT INTO parser_validation_exclusions VALUES
+            ('https://magazine.caixin.com/2010-01-02/preflight.html',
+             'preflight-v1', 'now');
+        """
+    )
+    source.commit()
+    source.close()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(TOOL),
+            "--source-state",
+            str(source_path),
+            "--target-state",
+            str(target_path),
+            "--source-cohort",
+            "validation-v1",
+            "--publisher",
+            "caixin",
+            "--sample-year",
+            "2010",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["sourceSamples"] == 2
+    assert payload["evaluatedSourceSamples"] == 1
+    assert payload["inheritedSourceExclusions"] == 1
+    target = sqlite3.connect(target_path)
+    exclusions = {
+        row[0]
+        for row in target.execute(
+            "SELECT canonical_url FROM parser_validation_exclusions"
+        )
+    }
+    target.close()
+    assert exclusions == {
+        "https://magazine.caixin.com/2010-01-01/evaluated.html",
+        "https://magazine.caixin.com/2010-01-02/preflight.html",
+    }
