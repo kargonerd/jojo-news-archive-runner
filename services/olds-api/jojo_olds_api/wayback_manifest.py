@@ -268,6 +268,19 @@ def initialize_discovery_schema(
             ON candidates(canonical_url, rank_score, timestamp);
         """
     )
+    query_columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(discovery_queries)")
+    }
+    if "failures" not in query_columns:
+        connection.execute(
+            "ALTER TABLE discovery_queries "
+            "ADD COLUMN failures INTEGER NOT NULL DEFAULT 0"
+        )
+    if "last_error" not in query_columns:
+        connection.execute(
+            "ALTER TABLE discovery_queries ADD COLUMN last_error TEXT"
+        )
     fingerprint = _spec_fingerprint(
         spec,
         from_year=from_year,
@@ -399,19 +412,6 @@ def initialize_wsj_legacy_date_schema(
             ON wsj_legacy_date_hydration(status, attempts, updated_at);
         """
     )
-    query_columns = {
-        str(row[1])
-        for row in connection.execute("PRAGMA table_info(discovery_queries)")
-    }
-    if "failures" not in query_columns:
-        connection.execute(
-            "ALTER TABLE discovery_queries "
-            "ADD COLUMN failures INTEGER NOT NULL DEFAULT 0"
-        )
-    if "last_error" not in query_columns:
-        connection.execute(
-            "ALTER TABLE discovery_queries ADD COLUMN last_error TEXT"
-        )
     undated_urls = [
         (str(row[0]), _now_iso())
         for row in connection.execute(

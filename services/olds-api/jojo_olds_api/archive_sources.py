@@ -246,7 +246,12 @@ ARCHIVE_SOURCE_SPECS = {
     "caixin": ArchiveSourceSpec(
         publisher="caixin",
         canonical_host="www.caixin.com",
-        wayback_patterns=("www.caixin.com/*", "magazine.caixin.com/{year}/*"),
+        wayback_patterns=(
+            "www.caixin.com/*",
+            "www.caixin.com/{year}-*",
+            "www.caixin.com/{year}/*",
+            "magazine.caixin.com/{year}/*",
+        ),
         accepted_path_patterns=_patterns(r"^/20\d{2}(?:[-/]|$)"),
         alternate_hosts=("magazine.caixin.com",),
         preserve_normalized_hosts=("magazine.caixin.com",),

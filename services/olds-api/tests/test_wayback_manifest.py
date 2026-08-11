@@ -1023,6 +1023,19 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
     ) == "https://magazine.caixin.com/2010-02-07/100116568.html"
 
 
+def test_caixin_wayback_patterns_shard_dated_www_paths_by_year():
+    patterns = archive_source_spec("caixin").expanded_wayback_patterns(
+        from_year=2010,
+        to_year=2011,
+    )
+
+    assert "www.caixin.com/*" in patterns
+    assert "www.caixin.com/2010-*" in patterns
+    assert "www.caixin.com/2010/*" in patterns
+    assert "www.caixin.com/2011-*" in patterns
+    assert "www.caixin.com/2011/*" in patterns
+
+
 def test_date_inference_and_candidate_ranking_prefers_after_publication():
     published = infer_published_at(
         "https://www.nytimes.com/2020/01/02/world/example.html"
@@ -1488,6 +1501,40 @@ def test_failed_urlkey_query_does_not_starve_healthy_patterns():
 
     assert failed_pattern == "www.wsj.com/articles/a*"
     assert next_pattern == "www.wsj.com/articles/b*"
+
+
+def test_initialize_discovery_schema_migrates_legacy_query_columns():
+    connection = sqlite3.connect(":memory:")
+    connection.execute(
+        """
+        CREATE TABLE discovery_queries (
+            pattern TEXT PRIMARY KEY,
+            resume_key TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            pages INTEGER NOT NULL DEFAULT 0,
+            rows_seen INTEGER NOT NULL DEFAULT 0,
+            rows_accepted INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+
+    initialize_discovery_schema(
+        connection,
+        spec=archive_source_spec("caixin"),
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+
+    columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(discovery_queries)"
+        )
+    }
+    assert {"failures", "last_error"} <= columns
+    assert next_discovery_query(connection) is not None
 
 
 def test_successful_legacy_page_resets_failure_priority():

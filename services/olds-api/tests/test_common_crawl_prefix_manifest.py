@@ -242,6 +242,29 @@ def test_prefix_queries_can_prioritize_oldest_collections():
     assert collection_id == "CC-MAIN-2013-48"
 
 
+def test_prefix_queries_prioritize_dated_prefixes_over_broad_fallbacks():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("caixin")
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(_collection("CC-MAIN-2013-48"),),
+    )
+
+    _, _, pattern, _, _ = next_prefix_query(
+        connection,
+        collection_order="oldest",
+    )
+
+    assert pattern in {
+        "www.caixin.com/2010-",
+        "www.caixin.com/2010/",
+        "magazine.caixin.com/2010/",
+    }
+
+
 def test_prefix_year_target_skips_and_can_reopen_pending_queries():
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("npr")
