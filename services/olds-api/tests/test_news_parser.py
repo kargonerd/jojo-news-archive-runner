@@ -295,7 +295,7 @@ def test_axios_visual_fallback_replaces_metadata_placeholder():
     selected = [image for image in result.images if image.should_archive]
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "axios-parser/0.1.9"
+    assert result.extraction.parser_version == "axios-parser/0.1.10"
     assert len(selected) == 1
     assert selected[0].role == ImageRole.CHART
     assert selected[0].original_url == (
@@ -457,6 +457,65 @@ def test_axios_only_accepts_structurally_proven_empty_newsletters(
         assert "body-too-short" not in result.quality.warnings
     else:
         assert "body-too-short" in result.quality.warnings
+
+
+def test_axios_accepts_structurally_proven_image_only_story():
+    canonical_url = (
+        "https://www.axios.com/2018/01/09/"
+        "worthy-content-delivered-efficiently-1515445951"
+    )
+    story = {
+        "headline": "You showed us that you want worthy content",
+        "permalink": canonical_url,
+        "published_date": "2018-01-09T08:51:00Z",
+        "wordcount": 0,
+        "blocks": {"blocks": [], "entityMap": []},
+        "bodyHtml": {
+            "beforeKeepReading": "<span id='midStoryAd'></span>",
+            "afterKeepReading": "",
+        },
+        "primary_image": {
+            "id": "be8b0ec6-33ac-4bf9-8c64-4117c094db18",
+            "alt_text": "Axios anniversary graphic #2",
+            "base_image_url": "https://images.axios.com/anniversary.jpg",
+            "caption": {
+                "blocks": [
+                    {
+                        "type": "unstyled",
+                        "text": "Illustration: Axios Visuals",
+                    }
+                ],
+                "entityMap": [],
+            },
+        },
+    }
+    next_data = {
+        "props": {"pageProps": {"pageProps": {"data": {"story": story}}}}
+    }
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle",
+      "headline":"You showed us that you want worthy content",
+      "datePublished":"2018-01-09T08:51:00Z"
+    }}</script></head><body><main id="main-content"></main>
+    <script id="__NEXT_DATA__" type="application/json">
+    {json.dumps(next_data)}</script></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.COMPLETE
+    selected = [image for image in result.images if image.should_archive]
+    assert len(selected) == 1
+    assert len(selected[0].candidate_urls) >= 1
+    assert result.images[0].credit == "Illustration: Axios Visuals"
+    assert result.extraction.parser_version == "axios-parser/0.1.10"
 
 
 def test_axios_accepts_only_wordcount_matched_short_am_newsletter():

@@ -6529,11 +6529,89 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
             article.append(node)
             existing_text = f"{existing_text} {text.casefold()}".strip()
 
+    image_only = _axios_image_only_story(story)
+    if image_only is not None and not article.select_one("img[src]"):
+        source, alt, caption = image_only
+        figure = document.new_tag("figure")
+        image = document.new_tag("img", src=source)
+        if alt:
+            image["alt"] = alt
+        figure.append(image)
+        if caption:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = caption
+            figure.append(figcaption)
+        article.append(figure)
+
     if article.select_one(
         "p, h2, h3, h4, h5, h6, blockquote, li, table, iframe, img[src]"
     ):
         return article
     return None
+
+
+def _axios_image_only_story(
+    story: dict[str, Any] | None,
+) -> tuple[str, str | None, str | None] | None:
+    """Return publisher-authored media for a proven image-only Axios item."""
+
+    if not isinstance(story, dict) or _axios_empty_newsletter_story(story):
+        return None
+    try:
+        wordcount = int(story.get("wordcount"))
+    except (TypeError, ValueError):
+        return None
+    blocks = story.get("blocks")
+    values = blocks.get("blocks") if isinstance(blocks, dict) else None
+    if wordcount != 0 or values != []:
+        return None
+    body_html = story.get("bodyHtml")
+    fragments = (
+        [body_html]
+        if isinstance(body_html, str)
+        else [
+            value
+            for value in body_html.values()
+            if isinstance(value, str)
+        ]
+        if isinstance(body_html, dict)
+        else []
+    )
+    if _clean_text(
+        BeautifulSoup("".join(fragments), "html.parser").get_text(
+            " ", strip=True
+        )
+    ):
+        return None
+    primary = story.get("primary_image")
+    if not isinstance(primary, dict):
+        return None
+    source = _string_or_none(primary.get("base_image_url"))
+    if source is None:
+        crops = primary.get("crops")
+        if isinstance(crops, dict):
+            preferred = crops.get("16x9") or next(iter(crops.values()), None)
+            if isinstance(preferred, dict):
+                source = _string_or_none(preferred.get("url"))
+    if source is None or not source.startswith(("http://", "https://")):
+        return None
+    alt = _string_or_none(primary.get("alt_text"))
+    caption_data = primary.get("caption")
+    caption_blocks = (
+        caption_data.get("blocks") if isinstance(caption_data, dict) else None
+    )
+    caption = (
+        _clean_text(
+            " ".join(
+                str(block.get("text") or "")
+                for block in caption_blocks
+                if isinstance(block, dict)
+            )
+        )
+        if isinstance(caption_blocks, list)
+        else None
+    )
+    return source, alt, caption or None
 
 
 def _axios_empty_newsletter_story(story: dict[str, Any] | None) -> bool:
@@ -6639,6 +6717,8 @@ def _axios_next_story_content_type(
         story
     ):
         return ContentType.NEWSLETTER
+    if _axios_image_only_story(story) is not None:
+        return ContentType.GALLERY
     if not isinstance(story, dict):
         return None
     blocks = story.get("blocks")
@@ -12702,6 +12782,17 @@ def _image_candidate(
 def _image_identity(url: str) -> str:
     parts = urlsplit(url)
     host = (parts.hostname or "").casefold()
+    if host == "images.axios.com":
+        # Axios places a signing token, crop and resize instructions before a
+        # stable date/filename suffix. Different renditions of one editorial
+        # image must remain alternate URLs of one asset, not duplicate images.
+        axios_asset = re.search(
+            r"/(\d{4}/\d{2}/\d{2}/[^/]+)$",
+            parts.path,
+            flags=re.IGNORECASE,
+        )
+        if axios_asset is not None:
+            return f"axios-image:{axios_asset.group(1).casefold()}"
     if host == "dims.apnews.com":
         nested_match = re.search(
             r"(?:^|&)url=([^&]+)",
