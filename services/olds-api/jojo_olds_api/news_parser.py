@@ -3789,6 +3789,23 @@ def _wsj_subscription_truncation(
         for node in soup.select("p, h2, h3, h4")
     ):
         return True
+    snippet_roadblock_phrases = (
+        "to read the full story",
+        "continue reading your article with a wsj membership",
+        "subscribe to wsj to read the rest of this article",
+    )
+    if any(
+        any(phrase in text for phrase in snippet_roadblock_phrases)
+        for node in soup.select(
+            ".snippet-promotion, #cx-snippet-overlay, .snippet-content"
+        )
+        if (text := _clean_text(node.get_text(" ", strip=True)).casefold())
+    ):
+        # Archived 2020-era WSJ pages can preserve several substantial
+        # preview paragraphs before an explicit membership overlay. Their
+        # extracted text may exceed the generic 1,000-character safety
+        # threshold even though the article ends at the paywall.
+        return True
     if len(plain_text) >= 1_000:
         return False
     declared_word_count = _wsj_declared_word_count(soup)
