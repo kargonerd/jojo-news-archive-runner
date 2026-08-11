@@ -231,7 +231,7 @@ def test_ready_parser_validation_stops_pending_capture_chain(
     assert result["shouldContinue"] is False
 
 
-def test_failed_qa_releases_runner_at_evaluated_target_when_requested(
+def test_failed_qa_keeps_runner_active_until_qa_target_is_reached(
     tmp_path: Path,
 ):
     state = tmp_path / "capture.sqlite3"
@@ -282,10 +282,10 @@ def test_failed_qa_releases_runner_at_evaluated_target_when_requested(
         stop_at_validation_target=True,
     )
 
-    assert exact["validationTargetReached"] is True
+    assert exact["validationTargetReached"] is False
     assert exact["validationReady"] is False
     assert normal["shouldContinue"] is True
-    assert exact["shouldContinue"] is False
+    assert exact["shouldContinue"] is True
 
 
 def test_unbound_capture_input_never_counts_as_ready_or_target(
@@ -341,5 +341,5 @@ def test_unbound_capture_input_never_counts_as_ready_or_target(
     )
 
     assert result["validationReady"] is False
-    assert result["validationTargetReached"] is True
-    assert result["shouldContinue"] is False
+    assert result["validationTargetReached"] is False
+    assert result["shouldContinue"] is True
