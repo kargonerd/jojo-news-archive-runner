@@ -965,6 +965,18 @@ def parse_article(
             for block in blocks:
                 if block.asset_id == image.asset_id:
                     block.asset_id = existing.asset_id
+        selected_asset_ids = {
+            image.asset_id for image in images_by_url.values()
+        }
+        blocks = [
+            block
+            for block in blocks
+            if not (
+                block.type == BlockType.IMAGE
+                and block.asset_id
+                and block.asset_id not in selected_asset_ids
+            )
+        ]
         blocks = _deduplicate_blocks(
             blocks,
             deduplicate_contained_pull_quotes=spec.publisher == "ft",
@@ -11772,6 +11784,23 @@ def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
         for node in list(soup.select(selector)):
             node.decompose()
 
+    for image in list(soup.select("img")):
+        urls = _image_urls(
+            image,
+            base_url="https://www.nikkei.com/",
+        )
+        if not urls or not all(
+            _nikkei_non_editorial_image_url(url) for url in urls
+        ):
+            continue
+        figure = image.find_parent("figure")
+        image.decompose()
+        if (
+            isinstance(figure, Tag)
+            and not _clean_text(figure.get_text(" ", strip=True))
+        ):
+            figure.decompose()
+
 
 def _extract_blocks(
     body: BeautifulSoup,
@@ -12537,8 +12566,14 @@ def _nikkei_non_editorial_image_url(url: str) -> bool:
     host = (parts.hostname or "").casefold()
     path = unquote(parts.path).casefold()
     if (
-        host == "parts.nikkei.jp"
-        and path.endswith("/images/common/icon_ogpnikkei.png")
+        host
+        in {
+            "assets.nikkei.jp",
+            "parts.nikkei.jp",
+            "partsa.nikkei.jp",
+        }
+        and "/parts/ds/images/common/" in path
+        and re.search(r"/icon_(?:ogp|twittercard|zoom_)", path)
     ):
         return True
     decoded = unquote(url).casefold()
@@ -12547,6 +12582,8 @@ def _nikkei_non_editorial_image_url(url: str) -> bool:
         for marker in (
             "/.resources/k-components/icon/",
             "/.resources/k-components/banner/",
+            "/.resources/k-components/rectangle.rev-",
+            "/.resources/k-components/square.rev-",
             "paid-banner",
         )
     )

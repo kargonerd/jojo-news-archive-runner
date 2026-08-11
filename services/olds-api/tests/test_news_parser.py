@@ -18,7 +18,10 @@ from jojo_olds_api.news_models import (
     ImageRole,
     RawCapture,
 )
-from jojo_olds_api.news_parser import parse_article
+from jojo_olds_api.news_parser import (
+    _nikkei_non_editorial_image_url,
+    parse_article,
+)
 
 
 CASES = [
@@ -17024,7 +17027,7 @@ def test_nikkei_legacy_parser_extracts_print_date_and_article_text():
     assert result.published_at.isoformat() == "2013-09-11T00:00:00+09:00"
     assert "価格や通信料金" in result.plain_text
     assert result.quality.body_characters >= 100
-    assert result.extraction.parser_version == "nikkei-parser/0.1.4"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.5"
 
 
 def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
@@ -17055,7 +17058,7 @@ def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
     assert result.published_at.isoformat() == "2012-12-13T00:00:00+09:00"
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "nikkei-parser/0.1.4"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.5"
 
 
 def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
@@ -17069,6 +17072,13 @@ def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
           <div class="cmn-article_text JSID_key_fonttxt">
             <p>企業は新しいサービスを発売した。利用者向けの機能を増やし、
             中長期で収益を拡大する。</p>
+            <figure><img
+              src="http://parts.nikkei.jp/parts/ds/images/common/icon_zoom_off.gif">
+            </figure>
+            <img src="https://www.nikkei.com/.resources/k-components/rectangle.rev-b4d855d.png">
+            <figure><img
+              src="https://www.nikkei.com/content/pic/20141026/editorial-photo.jpg"
+              alt="現場写真"><figcaption>現場写真</figcaption></figure>
           </div>
         </body></html>
         """.encode(),
@@ -17081,8 +17091,54 @@ def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
 
     assert result.headline == "短い企業ニュース"
     assert "新しいサービスを発売した" in result.plain_text
-    assert result.images == []
-    assert result.extraction.parser_version == "nikkei-parser/0.1.4"
+    assert len(result.images) == 1
+    assert result.images[0].original_url.endswith("editorial-photo.jpg")
+    assert "icon_zoom_off" not in result.body_html
+    assert "rectangle.rev" not in result.body_html
+    assert {
+        block.asset_id
+        for block in result.blocks
+        if block.type == BlockType.IMAGE
+    } == {result.images[0].asset_id}
+    assert result.extraction.parser_version == "nikkei-parser/0.1.5"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        (
+            "https://assets.nikkei.jp/release/v3.2.115/parts/ds/"
+            "images/common/icon_ogpnikkei.png"
+        ),
+        (
+            "https://assets.nikkei.jp/release/v3.2.115/parts/ds/"
+            "images/common/icon_twittercard_nikkei.png"
+        ),
+        "http://parts.nikkei.jp/parts/ds/images/common/icon_ogp100.png",
+        "http://parts.nikkei.jp/parts/ds/images/common/icon_zoom_off.gif",
+        (
+            "http://partsa.nikkei.jp/parts/ds/images/common/"
+            "icon_ogpnikkei.png"
+        ),
+        (
+            "https://www.nikkei.com/.resources/k-components/"
+            "rectangle.rev-b4d855d.png"
+        ),
+        (
+            "https://www.nikkei.com/.resources/k-components/"
+            "square.rev-8e2c231.png"
+        ),
+    ],
+)
+def test_nikkei_rejects_legacy_branding_and_control_images(url: str):
+    assert _nikkei_non_editorial_image_url(url)
+
+
+def test_nikkei_preserves_legacy_editorial_photo_url():
+    assert not _nikkei_non_editorial_image_url(
+        "https://www.nikkei.com/content/pic/20141026/"
+        "96958A9F889DE5EAE5EBE2E1E2E2E0E1.jpg"
+    )
 
 
 def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
@@ -17139,7 +17195,7 @@ def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
     assert "paid-banner" not in result.body_html
     assert len(result.images) == 1
     assert len(result.images[0].candidate_urls) == 2
-    assert result.extraction.parser_version == "nikkei-parser/0.1.4"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.5"
 
 
 def test_scmp_legacy_parser_extracts_body_date_and_byline():
