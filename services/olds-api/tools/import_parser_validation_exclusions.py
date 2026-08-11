@@ -155,46 +155,74 @@ def main() -> int:
                     for url, source_cohort in evaluated_entries
                 ),
             )
-        overlap = int(
-            target.execute(
-                """
-                SELECT COUNT(*)
-                FROM parser_validation_samples AS sample
-                JOIN parser_validation_exclusions AS exclusion USING(canonical_url)
-                """
-            ).fetchone()[0]
-        )
-        if overlap:
+        if args.publisher:
+            normalized_exclusions = {
+                normalize_article_url(spec, str(row[0])) or str(row[0])
+                for row in target.execute(
+                    "SELECT canonical_url FROM parser_validation_exclusions"
+                )
+            }
+            overlap_urls = [
+                str(row[0])
+                for row in target.execute(
+                    "SELECT canonical_url FROM parser_validation_samples"
+                )
+                if (
+                    normalize_article_url(spec, str(row[0])) or str(row[0])
+                )
+                in normalized_exclusions
+            ]
+        else:
+            overlap_urls = [
+                str(row[0])
+                for row in target.execute(
+                    """
+                    SELECT sample.canonical_url
+                    FROM parser_validation_samples AS sample
+                    JOIN parser_validation_exclusions AS exclusion
+                      USING(canonical_url)
+                    """
+                )
+            ]
+        overlap = len(overlap_urls)
+        if overlap_urls:
             with target:
-                target.execute(
+                target.executemany(
                     """
                     DELETE FROM parser_validation_results
-                    WHERE canonical_url IN (
-                        SELECT sample.canonical_url
-                        FROM parser_validation_samples AS sample
-                        JOIN parser_validation_exclusions AS exclusion
-                          USING(canonical_url)
-                    )
-                    """
+                    WHERE canonical_url=?
+                    """,
+                    ((url,) for url in overlap_urls),
                 )
-                target.execute(
+                target.executemany(
                     """
                     DELETE FROM parser_validation_samples
-                    WHERE canonical_url IN (
-                        SELECT canonical_url
-                        FROM parser_validation_exclusions
-                    )
-                    """
+                    WHERE canonical_url=?
+                    """,
+                    ((url,) for url in overlap_urls),
                 )
-        remaining_overlap = int(
-            target.execute(
-                """
-                SELECT COUNT(*)
-                FROM parser_validation_samples AS sample
-                JOIN parser_validation_exclusions AS exclusion USING(canonical_url)
-                """
-            ).fetchone()[0]
-        )
+        if args.publisher:
+            remaining_overlap = sum(
+                1
+                for row in target.execute(
+                    "SELECT canonical_url FROM parser_validation_samples"
+                )
+                if (
+                    normalize_article_url(spec, str(row[0])) or str(row[0])
+                )
+                in normalized_exclusions
+            )
+        else:
+            remaining_overlap = int(
+                target.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM parser_validation_samples AS sample
+                    JOIN parser_validation_exclusions AS exclusion
+                      USING(canonical_url)
+                    """
+                ).fetchone()[0]
+            )
         result = {
             "formatVersion": "jojo-parser-validation-exclusions/1",
             "sourceCohort": args.source_cohort,

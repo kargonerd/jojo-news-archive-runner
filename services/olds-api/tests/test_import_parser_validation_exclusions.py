@@ -225,6 +225,66 @@ def test_normalizes_caixin_page_variants_before_excluding(tmp_path: Path):
     ]
 
 
+def test_removes_existing_sample_with_normalized_npr_exclusion_overlap(
+    tmp_path: Path,
+):
+    source_path = tmp_path / "source.sqlite3"
+    target_path = tmp_path / "target.sqlite3"
+    canonical = "https://www.npr.org/2010/01/01/123456789/sample-story"
+    legacy_variant = (
+        "http://npr.org/2010/01/01/123456789/sample-story/?output=1"
+    )
+    source = sqlite3.connect(source_path)
+    source.execute(
+        "CREATE TABLE parser_validation_results (canonical_url TEXT PRIMARY KEY)"
+    )
+    source.execute(
+        "INSERT INTO parser_validation_results VALUES (?)",
+        (canonical,),
+    )
+    source.commit()
+    source.close()
+    target = sqlite3.connect(target_path)
+    initialize_parser_validation_schema(target)
+    target.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2010, 'priority', 'now')
+        """,
+        (legacy_variant,),
+    )
+    target.commit()
+    target.close()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(TOOL),
+            "--source-state",
+            str(source_path),
+            "--target-state",
+            str(target_path),
+            "--source-cohort",
+            "validation-v2",
+            "--publisher",
+            "npr",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["removedSampleOverlap"] == 1
+    assert payload["sampleOverlap"] == 0
+    target = sqlite3.connect(target_path)
+    assert target.execute(
+        "SELECT COUNT(*) FROM parser_validation_samples"
+    ).fetchone()[0] == 0
+    target.close()
+
+
 def test_inherits_transitive_exclusions_from_prior_validation_state(
     tmp_path: Path,
 ):

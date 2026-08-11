@@ -1689,6 +1689,35 @@ def _select_additional_samples(
     parameters: list[object] = [start, end]
     if direct_provider not in {None, "wayback-exact"}:
         parameters.append(f'%"provider":"{direct_provider}"%')
+    source_spec = archive_source_spec(publisher)
+    excluded_normalized = {
+        normalized
+        for (canonical_url,) in connection.execute(
+            "SELECT canonical_url FROM parser_validation_exclusions"
+        )
+        if (
+            normalized := normalize_article_url(
+                source_spec,
+                str(canonical_url),
+            )
+        )
+        is not None
+    }
+    selected_normalized = {
+        normalized
+        for (canonical_url,) in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples "
+            "WHERE sample_year=?",
+            (year,),
+        )
+        if (
+            normalized := normalize_article_url(
+                source_spec,
+                str(canonical_url),
+            )
+        )
+        is not None
+    }
     rows: Iterable[tuple[str]] = connection.execute(
         f"""
         SELECT capture.canonical_url
@@ -1709,21 +1738,32 @@ def _select_additional_samples(
             FROM parser_validation_exclusions AS exclusion
             WHERE exclusion.canonical_url=capture.canonical_url
           )
+        ORDER BY
+          (capture.status='complete') DESC,
+          capture.canonical_url
         """,
         parameters,
     )
-    source_spec = archive_source_spec(publisher)
+    seen_normalized = excluded_normalized | selected_normalized
     for (canonical_url,) in rows:
-        if normalize_article_url(source_spec, str(canonical_url)) is None:
-            continue
-        embedded_year = article_url_publication_year(
+        normalized_url = normalize_article_url(
             source_spec,
             str(canonical_url),
+        )
+        if normalized_url is None or normalized_url in seen_normalized:
+            continue
+        # Legacy checkpoints can contain HTTP/HTTPS, bare/www, query-string,
+        # or trailing-slash variants of the same article. SQL equality cannot
+        # enforce a zero-overlap holdout across those representations.
+        seen_normalized.add(normalized_url)
+        embedded_year = article_url_publication_year(
+            source_spec,
+            normalized_url,
         )
         if embedded_year is not None and embedded_year != year:
             continue
         priority = hashlib.sha256(
-            f"{seed}\0{publisher}\0{year}\0{canonical_url}".encode("utf-8")
+            f"{seed}\0{publisher}\0{year}\0{normalized_url}".encode("utf-8")
         ).hexdigest()
         numeric = int(priority, 16)
         candidate = (-numeric, str(canonical_url), priority)

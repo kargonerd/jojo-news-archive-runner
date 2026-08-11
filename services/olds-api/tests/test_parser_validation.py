@@ -227,6 +227,11 @@ def _state_with_years(
                     "https://www.wsj.com/articles/"
                     f"sample-{suffix}-{timestamp + suffix}"
                 )
+            elif publisher == "npr":
+                canonical_url = (
+                    f"https://www.npr.org/{year}/01/01/"
+                    f"{year}{suffix:02d}/sample-{suffix}"
+                )
             else:
                 raise AssertionError(f"unsupported fixture: {publisher}")
             candidate = CaptureCandidate(
@@ -386,6 +391,53 @@ def test_holdout_plan_excludes_every_prior_cohort_url(tmp_path: Path):
     }
     assert len(holdout_urls) == 4
     assert first_urls.isdisjoint(holdout_urls)
+
+
+def test_holdout_plan_excludes_normalized_legacy_url_variants(tmp_path: Path):
+    connection = _state_with_years(tmp_path, publisher="npr")
+    initialize_parser_validation_schema(connection)
+    canonical = str(
+        connection.execute(
+            "SELECT canonical_url FROM captures "
+            "WHERE published_at >= '2020-01-01' "
+            "ORDER BY canonical_url LIMIT 1"
+        ).fetchone()[0]
+    )
+    path = canonical.removeprefix("https://www.npr.org")
+    legacy_variant = f"http://npr.org{path}/?output=1"
+    connection.execute(
+        "UPDATE captures SET canonical_url=? WHERE canonical_url=?",
+        (legacy_variant, canonical),
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        ) VALUES (?, 'validation-v2', '2026-08-12T00:00:00Z')
+        """,
+        (canonical,),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="npr",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=9,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+        seed="holdout-v1",
+    )
+
+    selected = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    }
+    assert legacy_variant not in selected
+    assert len(selected) == 9
 
 
 def test_plan_prunes_reuters_non_article_endpoints(tmp_path: Path):
