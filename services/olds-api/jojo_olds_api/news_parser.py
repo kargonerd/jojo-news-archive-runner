@@ -283,7 +283,7 @@ def parse_article(
         if (
             isinstance(legacy_body, Tag)
             and len(_clean_text(legacy_body.get_text(" ", strip=True)))
-            >= _MINIMUM_BODY_CHARACTERS
+            >= 20
         ):
             body = legacy_body
     if spec.publisher == "nikkei":
@@ -7706,6 +7706,23 @@ def _is_structured_short_record(
             and "go deeper" in page_text
             and not re.search(r"(?:\.\.\.|…)\s*$", plain_text)
         )
+    if spec.publisher == "caixin":
+        legacy_body = soup.select_one("#Main_Content_Val")
+        return bool(
+            isinstance(legacy_body, Tag)
+            and 30 <= len(plain_text) < _MINIMUM_BODY_CHARACTERS
+            and (
+                re.match(r"^(?:编辑更正|休刊启事)", headline)
+                or (
+                    "特此更正" in plain_text
+                    and re.search(r"(?:编辑部|杂志社)\s*$", plain_text)
+                )
+            )
+            and not re.search(
+                r"(?:继续阅读|登录|注册|订阅)\s*$",
+                plain_text,
+            )
+        )
     if spec.publisher == "reuters":
         combined = f"{headline}\n{plain_text}".casefold()
         return bool(
@@ -11934,6 +11951,8 @@ def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
 def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:
     """Remove legacy Caixin print controls and subscription QR images."""
 
+    for node in list(soup.select(".fullUrl, #jumpurl")):
+        node.decompose()
     for image in list(soup.select("img")):
         urls = _image_urls(
             image,

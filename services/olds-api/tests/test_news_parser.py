@@ -17351,7 +17351,50 @@ def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
         BlockType.PARAGRAPH,
         BlockType.PARAGRAPH,
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.1"
+    assert result.extraction.parser_version == "caixin-parser/0.1.2"
+
+
+def test_caixin_legacy_parser_preserves_short_editorial_correction():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title"
+            content="编辑更正（《中国改革》 2010年第8期）">
+          <meta property="article:published_time"
+            content="2010-08-31T08:00:00+08:00">
+        </head><body>
+          <div class="content">
+            <span id="Main_Content_Val">
+              <p>本刊2010年第8期（8月1日出版）第65页副题第1行
+              应为“强调”，特此更正并致歉。</p>
+              <p><strong>《中国改革》编辑部</strong></p>
+              <div class="fullUrl" id="jumpurl">
+                <img src="http://file.caing.com/images/channel/content/images/fullUrl.gif">
+                继续阅读,请 <a href="/login">登录</a> 或
+                <a href="/register">注册</a>
+              </div>
+            </span>
+            <p>打印 意见反馈 推荐新闻 排行榜</p>
+            <p>iphone 安卓 黑莓 rss 腾讯微博 新浪微博</p>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://magazine.caixin.com/2010-08-31/100175596.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "应为“强调”" in result.plain_text
+    assert "《中国改革》编辑部" in result.plain_text
+    assert "继续阅读" not in result.plain_text
+    assert "打印" not in result.plain_text
+    assert "推荐新闻" not in result.plain_text
+    assert "腾讯微博" not in result.plain_text
+    assert result.images == []
+    assert "structured-short-record" in result.quality.warnings
+    assert result.extraction.parser_version == "caixin-parser/0.1.2"
 
 
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():

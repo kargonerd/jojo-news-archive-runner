@@ -56,7 +56,7 @@ SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.4",
     "bloomberg": "bloomberg-capture/0.10.3",
-    "caixin": "caixin-capture/0.1.0",
+    "caixin": "caixin-capture/0.1.1",
     "ft": "ft-capture/0.20.2",
     "nikkei": "nikkei-capture/0.1.0",
     "nyt": "nyt-capture/0.9.0",
