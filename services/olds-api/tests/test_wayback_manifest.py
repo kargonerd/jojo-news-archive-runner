@@ -1093,6 +1093,9 @@ def test_date_inference_and_candidate_ranking_prefers_after_publication():
         "https://magazine.caixin.com/2010-01-08/100106588.html"
     ) == "2010-01-08T00:00:00+00:00"
     assert infer_published_at(
+        "https://china.caixin.com/2010-04-06/100132332.html"
+    ) == "2010-04-06T00:00:00+00:00"
+    assert infer_published_at(
         "https://www.zaobao.com.sg/news/singapore/story20240102-1234567"
     ) == "2024-01-02T00:00:00+00:00"
     assert infer_published_at(

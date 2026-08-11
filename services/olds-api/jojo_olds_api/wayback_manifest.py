@@ -2508,7 +2508,7 @@ def infer_published_at(canonical_url: str) -> str | None:
         return ap_hosted_published.isoformat()
     hostname = (parsed.hostname or "").casefold().removeprefix("www.")
     patterns: list[str] = []
-    if hostname in {"caixin.com", "magazine.caixin.com"}:
+    if hostname == "caixin.com" or hostname.endswith(".caixin.com"):
         patterns.append(r"/(20\d{2})-(\d{2})-(\d{2})(?:/|$)")
     if hostname == "zaobao.com.sg":
         patterns.append(r"/story(20\d{2})(\d{2})(\d{2})(?:[-/]|$)")
