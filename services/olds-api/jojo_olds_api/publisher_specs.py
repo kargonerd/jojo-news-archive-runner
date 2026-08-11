@@ -308,11 +308,17 @@ PUBLISHER_SPECS = {
     ),
     "caixin": PublisherSpec(
         publisher="caixin",
-        parser_version="caixin-parser/0.1.4",
+        parser_version="caixin-parser/0.1.5",
         domains=("caixin.com", "www.caixin.com", "magazine.caixin.com"),
         default_language="zh",
         edition="cn",
-        body_selectors=(".article-content", ".article_body", ".content", "article"),
+        # ``.content`` is a legacy page-layout wrapper on archived Caixin
+        # pages. When the real article node is absent it contains rankings,
+        # recommendations, sharing controls and subscription forms, which can
+        # be long enough to masquerade as a complete article. Only accept
+        # article-specific containers here; legacy stories use the explicit
+        # #Main_Content_Val override in news_parser.py.
+        body_selectors=(".article-content", ".article_body", "article"),
         preferred_image_hosts=("img.caixin.com", "file.caixin.com"),
         use_structured_article_body=True,
     ),

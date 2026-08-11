@@ -17449,7 +17449,7 @@ def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
         BlockType.PARAGRAPH,
         BlockType.PARAGRAPH,
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.4"
+    assert result.extraction.parser_version == "caixin-parser/0.1.5"
 
 
 def test_caixin_legacy_parser_rejects_structured_site_logo():
@@ -17485,7 +17485,7 @@ def test_caixin_legacy_parser_rejects_structured_site_logo():
     assert [image.original_url for image in result.images] == [
         "http://img.caixin.com/2010-02-01/hearing.jpg"
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.4"
+    assert result.extraction.parser_version == "caixin-parser/0.1.5"
 
 
 def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
@@ -17526,7 +17526,45 @@ def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
     assert "ranking entry" not in result.plain_text
     assert "<input" not in result.body_html
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.4"
+    assert result.extraction.parser_version == "caixin-parser/0.1.5"
+
+
+def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="议题：银行业进阶之路">
+        </head><body>
+          <div class="content">
+            <div class="conri">
+              <div class="hotTopic">
+                <h2>热点推荐</h2>
+                <p>推荐内容一包含很长的站点摘要，但并不是这篇文章的正文。</p>
+                <p>推荐内容二同样只是排行榜和相关链接，不应进入标准记录。</p>
+                <p>推荐内容三继续增加字符数，模拟旧版页面足以越过长度阈值的导航外壳。</p>
+                <div class="share">
+                  <input type="text" value="请输入邮箱">
+                  <p>订阅财新每日新闻并分享给朋友</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://economy.caixin.com/2010-11-06/100196360.html"
+        ),
+    )
+
+    assert result.quality.status != ArticleStatus.COMPLETE
+    assert "热点推荐" not in result.plain_text
+    assert "排行榜" not in result.plain_text
+    assert "请输入邮箱" not in result.plain_text
+    assert "<input" not in result.body_html
+    assert result.blocks == []
+    assert result.images == []
+    assert result.extraction.parser_version == "caixin-parser/0.1.5"
 
 
 def test_caixin_parser_rejects_common_logo_with_edition_suffix():
@@ -17555,7 +17593,7 @@ def test_caixin_parser_rejects_common_logo_with_edition_suffix():
 
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.4"
+    assert result.extraction.parser_version == "caixin-parser/0.1.5"
 
 
 def test_caixin_legacy_parser_preserves_short_editorial_correction():
@@ -17598,7 +17636,7 @@ def test_caixin_legacy_parser_preserves_short_editorial_correction():
     assert "腾讯微博" not in result.plain_text
     assert result.images == []
     assert "structured-short-record" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.4"
+    assert result.extraction.parser_version == "caixin-parser/0.1.5"
 
 
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():
