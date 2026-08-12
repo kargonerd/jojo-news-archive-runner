@@ -32,6 +32,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target", type=int, default=800)
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument(
+        "--reuse-checkpoint",
+        action="store_true",
+        help=(
+            "Reuse an already downloaded capture.sqlite3.gz in the output "
+            "directory. The gzip is still decompressed and its selected raw "
+            "objects are checksum-verified before success."
+        ),
+    )
+    parser.add_argument(
         "--bucket", default=os.environ.get("B2_ARCHIVE_BUCKET")
     )
     return parser.parse_args()
@@ -221,7 +230,7 @@ def main() -> int:
         bucket=args.bucket,
         remote_names=[args.checkpoint],
         target=checkpoint_gzip,
-        reuse_existing=False,
+        reuse_existing=args.reuse_checkpoint,
     )
     state = output / "capture.sqlite3"
     with gzip.open(checkpoint_gzip, "rb") as source, state.open("wb") as target_handle:

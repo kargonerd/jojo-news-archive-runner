@@ -9,6 +9,7 @@ import pytest
 
 from tools.download_b2_validation_sample import (
     authorize,
+    download_file,
     download_url,
     safe_local_path,
 )
@@ -55,6 +56,29 @@ def test_download_url_encodes_each_object_name_segment() -> None:
         "https://download.example/file/private%20bucket/"
         "news%20archive/object%2Ba.gz"
     )
+
+
+def test_download_file_can_reuse_completed_checkpoint(
+    tmp_path: Path, monkeypatch
+) -> None:
+    checkpoint = tmp_path / "capture.sqlite3.gz"
+    checkpoint.write_bytes(b"completed checkpoint")
+
+    def fail_urlopen(*_args, **_kwargs):
+        raise AssertionError("reused checkpoint must not be downloaded again")
+
+    monkeypatch.setattr(
+        "tools.download_b2_validation_sample.urlopen", fail_urlopen
+    )
+
+    assert download_file(
+        token="token",
+        download_base="https://download.example",
+        bucket="private-bucket",
+        remote_names=["state/capture.sqlite3.gz"],
+        target=checkpoint,
+        reuse_existing=True,
+    ) == "existing"
 
 
 def test_safe_local_path_rejects_parent_traversal(tmp_path: Path) -> None:
