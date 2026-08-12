@@ -24,6 +24,7 @@ from jojo_olds_api.common_crawl_prefix_manifest import (
     record_prefix_page_count,
     reconcile_prefix_year_targets,
 )
+from jojo_olds_api.common_crawl_prefix_manifest import _npr_story_id
 from jojo_olds_api.news_models import CaptureProvider
 from jojo_olds_api.raw_archive_capture import manifest_item_from_row
 from tools.build_common_crawl_prefix_manifest import (
@@ -151,6 +152,15 @@ def test_npr_prefix_patterns_include_www_and_bare_hosts():
         "www.npr.org/templates/story/story.php",
         "npr.org/templates/story/story.php",
     )
+
+
+def test_npr_story_id_matches_dated_and_legacy_urls():
+    assert _npr_story_id(
+        "https://www.npr.org/2010/12/02/131356105/example"
+    ) == 131356105
+    assert _npr_story_id(
+        "https://www.npr.org/templates/story/story.php?storyId=131356105"
+    ) == 131356105
 
 
 def test_aljazeera_prefix_patterns_include_article_sections():

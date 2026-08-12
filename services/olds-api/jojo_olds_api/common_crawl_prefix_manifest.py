@@ -859,18 +859,6 @@ def process_prefix_date_hydration(
         )
     if maximum < 1 or maximum_html_bytes < 1 or maximum_attempts < 1:
         raise ValueError("hydration limits must be positive")
-    rows = connection.execute(
-        """
-        SELECT canonical_url, attempts
-        FROM prefix_date_hydration
-        WHERE publisher=?
-          AND status IN ('pending', 'retry')
-          AND attempts < ?
-        ORDER BY attempts, updated_at, canonical_url
-        LIMIT ?
-        """,
-        (spec.publisher, maximum_attempts, maximum),
-    ).fetchall()
     window = dict(
         connection.execute(
             """
@@ -879,8 +867,47 @@ def process_prefix_date_hydration(
             """
         )
     )
+    pending_rows = connection.execute(
+        """
+        SELECT canonical_url, attempts
+        FROM prefix_date_hydration
+        WHERE publisher=?
+          AND status IN ('pending', 'retry')
+          AND attempts < ?
+        ORDER BY attempts, updated_at, canonical_url
+        """,
+        (spec.publisher, maximum_attempts),
+    ).fetchall()
     start = f"{int(window['from_year']):04d}-01-01"
     end = f"{int(window['to_year']) + 1:04d}-01-01"
+    if spec.publisher == "npr":
+        target_story_ids = sorted(
+            story_id
+            for (canonical_url,) in connection.execute(
+                """
+                SELECT DISTINCT canonical_url FROM prefix_candidates
+                WHERE published_at >= ? AND published_at < ?
+                """,
+                (start, end),
+            )
+            if (story_id := _npr_story_id(str(canonical_url))) is not None
+        )
+        if target_story_ids:
+            lower = target_story_ids[len(target_story_ids) // 100]
+            upper = target_story_ids[len(target_story_ids) * 99 // 100]
+            midpoint = (lower + upper) // 2
+            pending_rows.sort(
+                key=lambda row: (
+                    int(row[1]),
+                    not (
+                        (story_id := _npr_story_id(str(row[0]))) is not None
+                        and lower <= story_id <= upper
+                    ),
+                    abs((story_id or 0) - midpoint),
+                    str(row[0]),
+                )
+            )
+    rows = pending_rows[:maximum]
     found = 0
     outside_window = 0
     no_date = 0
@@ -1015,6 +1042,14 @@ def process_prefix_date_hydration(
         "remaining": remaining,
         "errors": errors,
     }
+
+
+def _npr_story_id(value: str) -> int | None:
+    match = re.search(
+        r"(?i)(?:storyId=|/)(\d{6,})(?:[/?&#]|$)",
+        value,
+    )
+    return int(match.group(1)) if match is not None else None
 
 
 def _promote_undated_candidates(
