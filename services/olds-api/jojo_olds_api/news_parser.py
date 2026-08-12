@@ -7436,12 +7436,22 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
     # into the canonical article body.
     for node in list(
         soup.select(
-            ".audio-module-tools, .audio-embed-overlay, "
+            ".audio-module-tools, .audio-embed-overlay, .audiotools, "
             "li.subscribe, .bucketwrap.ecommerce, .ecommerce, .ecomm_body, "
             "form, button, input"
         )
     ):
         node.decompose()
+    for add_control in list(
+        soup.select("a[href*='NPR.Player.Action.ADD_TO_PLAYLIST']")
+    ):
+        # Some 2010 templates omit the ``audiotools`` class.  Their otherwise
+        # anonymous list contains only Add/Download/Transcript player actions.
+        tool_list = add_control.find_parent("ul")
+        if isinstance(tool_list, Tag):
+            tool_list.decompose()
+        else:
+            add_control.decompose()
     for node in list(soup.select("p, span")):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
         if text == "read more" or (
