@@ -419,6 +419,8 @@ def next_prefix_query(
         ORDER BY
             attempts,
             CASE
+                WHEN pattern LIKE '%/templates/story/story.php'
+                  AND collection_id LIKE 'CC-MAIN-2018-%' THEN -2
                 WHEN pattern LIKE '%/templates/story/story.php' THEN -1
                 WHEN instr(pattern, '/20') > 0 THEN 0
                 ELSE 1

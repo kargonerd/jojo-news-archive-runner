@@ -279,6 +279,26 @@ def test_npr_prefix_queries_probe_legacy_story_ids_first():
     assert pattern.endswith("/templates/story/story.php")
 
 
+def test_npr_legacy_story_ids_prefer_known_usable_2018_indexes():
+    connection = sqlite3.connect(":memory:")
+    initialize_prefix_schema(
+        connection,
+        spec=archive_source_spec("npr"),
+        from_year=2010,
+        to_year=2010,
+        collections=(
+            _collection("CC-MAIN-2014-10"),
+            _collection("CC-MAIN-2018-05"),
+            _collection("CC-MAIN-2026-30"),
+        ),
+    )
+
+    collection_id, _, pattern, _, _ = next_prefix_query(connection)
+
+    assert collection_id == "CC-MAIN-2018-05"
+    assert pattern.endswith("/templates/story/story.php")
+
+
 def test_prefix_queries_can_prioritize_oldest_collections():
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("nikkei")
