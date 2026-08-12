@@ -23,7 +23,7 @@ from jojo_olds_api.raw_archive_capture import completed_raw_capture
 _SPACE_RE = re.compile(r"\s+")
 _SUSPICIOUS_IMAGE_RE = re.compile(
     r"(?i)(?:^|[/_.-])(?:advert(?:isement)?|icon|pixel|"
-    r"spacer|sprite|tracking|transparent)(?:[/_.-]|$)|"
+    r"spacer|sprite|transparent)(?:[/_.-]|$)|"
     r"(?:doubleclick|googlesyndication|scorecardresearch)"
 )
 _SUSPICIOUS_AVATAR_FILENAME_RE = re.compile(

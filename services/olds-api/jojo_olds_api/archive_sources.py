@@ -430,6 +430,9 @@ def article_url_publication_year(
             flags=re.IGNORECASE,
         )
         return 2000 + int(match.group(1)) if match is not None else None
+    if spec.publisher == "nyt":
+        match = re.match(r"^/((?:19|20)\d{2})(?:/|$)", path)
+        return int(match.group(1)) if match is not None else None
     if spec.publisher != "reuters":
         return None
     if not path.startswith("/article/"):

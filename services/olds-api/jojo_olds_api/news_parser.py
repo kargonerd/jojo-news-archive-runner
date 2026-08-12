@@ -11167,6 +11167,31 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
 
 def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     """Remove NYT sponsorship, subscription and standardized engagement UI."""
+    # First-party articles syndicated to partner sites can include the
+    # partner's entire recommendation feed inside the selected article node.
+    # The explicit attribution is a reliable editorial boundary. Preserve a
+    # following NYT copyright/credit paragraph, then remove the partner tail.
+    for attribution in list(soup.select("p")):
+        if _clean_text(
+            attribution.get_text(" ", strip=True)
+        ).casefold() != "this article originally appeared in the new york times.":
+            continue
+        boundary = attribution
+        following = attribution.find_next("p")
+        if isinstance(following, Tag):
+            following_text = _clean_text(
+                following.get_text(" ", strip=True)
+            ).casefold()
+            if "the new york times" in following_text and (
+                "copyright" in following_text or "©" in following_text
+            ):
+                boundary = following
+        # Syndication templates often put the recommendation feed in a
+        # different wrapper, so sibling-only traversal misses it. Everything
+        # after the explicit attribution/credit boundary is partner chrome.
+        for node in list(boundary.find_all_next()):
+            if node.parent is not None:
+                node.decompose()
     # Canonical records are static. Legacy interactive pages can contain
     # hundreds of radio inputs whose adjacent labels already preserve every
     # readable team/outcome name. Retain those labels and explanatory prose,
