@@ -10,6 +10,7 @@ from tools.audit_parser_validation_content import (
     image_identity,
     normalize_text,
     selected_validation_urls,
+    url_year_mismatch,
 )
 
 
@@ -44,6 +45,19 @@ def test_suspicious_image_detector_distinguishes_movie_from_user_avatar() -> Non
         "https://media.npr.org/assets/movies/2009/12/avatar/"
         "humanandavatar2-f44c267a.jpg"
     )
+
+
+def test_url_year_mismatch_detects_misdated_nyt_interactive() -> None:
+    assert url_year_mismatch(
+        "nyt",
+        "https://www.nytimes.com/interactive/2016/obituaries/notable-deaths/x",
+        2018,
+    ) == 2016
+    assert url_year_mismatch(
+        "nyt",
+        "https://www.nytimes.com/interactive/2018/world/example.html",
+        2018,
+    ) is None
     assert not _suspicious_selected_image(
         "https://media.npr.org/assets/news/2010/02/19/"
         "logo_custom-3257db8ff3898e2259e954abba1d1a766a03f557.jpg"

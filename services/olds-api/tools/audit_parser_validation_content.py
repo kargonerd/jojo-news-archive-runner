@@ -12,6 +12,10 @@ from urllib.parse import urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 
+from jojo_olds_api.archive_sources import (
+    archive_source_spec,
+    article_url_publication_year,
+)
 from jojo_olds_api.news_parser import parse_article
 from jojo_olds_api.parser_validation import (
     _read_capture_html,
@@ -79,6 +83,22 @@ def image_identity(value: str) -> str:
             "",
             "",
         )
+    )
+
+
+def url_year_mismatch(
+    publisher: str,
+    canonical_url: str,
+    expected_year: int,
+) -> int | None:
+    embedded_year = article_url_publication_year(
+        archive_source_spec(publisher),
+        canonical_url,
+    )
+    return (
+        embedded_year
+        if embedded_year is not None and embedded_year != expected_year
+        else None
     )
 
 
@@ -188,6 +208,19 @@ def audit_content(
         selected_images = 0
         extraction_statuses: Counter[str] = Counter()
         for index, canonical_url in enumerate(urls, start=1):
+            mismatched_year = url_year_mismatch(
+                publisher,
+                canonical_url,
+                year,
+            )
+            if mismatched_year is not None:
+                hard_anomalies.append(
+                    {
+                        "type": "url-publication-year-mismatch",
+                        "url": canonical_url,
+                        "detail": mismatched_year,
+                    }
+                )
             try:
                 capture = completed_raw_capture(
                     connection,
