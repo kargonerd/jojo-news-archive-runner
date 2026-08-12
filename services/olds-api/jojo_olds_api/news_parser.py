@@ -7403,6 +7403,7 @@ def _npr_non_editorial_image_url(url: str) -> bool:
         or "/images/zag.gif" in path
         or "/include/images/facebook-default-wide" in path
         or "/chrome/news/video_generic_" in path
+        or "/music/calendar/concert_calendar_" in path
     )
 
 
