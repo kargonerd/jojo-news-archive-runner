@@ -32,6 +32,27 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Only import evaluated URLs assigned to this publication year.",
     )
+    parser.add_argument(
+        "--accepted-target-only",
+        action="store_true",
+        help=(
+            "Import only the QA-passing, priority-ranked formal cohort up "
+            "to its configured target instead of every attempted result."
+        ),
+    )
+    parser.add_argument(
+        "--exclude-inherited",
+        action="store_true",
+        help=(
+            "Do not transitively import the source state's exclusions. Use "
+            "when every earlier cohort checkpoint is imported directly."
+        ),
+    )
+    parser.add_argument(
+        "--reset-target-exclusions",
+        action="store_true",
+        help="Clear the target exclusion table before this direct rebuild.",
+    )
     return parser.parse_args()
 
 
@@ -44,6 +65,9 @@ def main() -> int:
     target = sqlite3.connect(args.target_state, timeout=60)
     try:
         initialize_parser_validation_schema(target)
+        if args.reset_target_exclusions:
+            with target:
+                target.execute("DELETE FROM parser_validation_exclusions")
         results_table = source.execute(
             """
             SELECT 1 FROM sqlite_master
@@ -63,19 +87,53 @@ def main() -> int:
             source_table = "parser_validation_samples"
         else:
             raise SystemExit("source state has no parser validation URL table")
-        where_clause = ""
-        parameters: tuple[object, ...] = ()
-        if args.sample_year is not None:
-            where_clause = " WHERE sample_year=?"
-            parameters = (args.sample_year,)
-        evaluated_urls = [
-            str(row[0])
-            for row in source.execute(
-                f"SELECT DISTINCT canonical_url FROM {source_table}"
-                f"{where_clause}",
-                parameters,
-            )
-        ]
+        if args.accepted_target_only:
+            if source_table != "parser_validation_results":
+                raise SystemExit(
+                    "accepted-target-only requires parser_validation_results"
+                )
+            if args.sample_year is None:
+                raise SystemExit(
+                    "accepted-target-only requires --sample-year"
+                )
+            config = source.execute(
+                "SELECT target_size FROM parser_validation_config "
+                "WHERE sample_year=?",
+                (args.sample_year,),
+            ).fetchone()
+            if config is None:
+                raise SystemExit(
+                    "accepted-target-only requires parser validation config"
+                )
+            evaluated_urls = [
+                str(row[0])
+                for row in source.execute(
+                    """
+                    SELECT result.canonical_url
+                    FROM parser_validation_results AS result
+                    JOIN parser_validation_samples AS sample
+                      ON sample.canonical_url=result.canonical_url
+                    WHERE result.sample_year=? AND result.qa_pass=1
+                    ORDER BY sample.sample_priority
+                    LIMIT ?
+                    """,
+                    (args.sample_year, int(config[0])),
+                )
+            ]
+        else:
+            where_clause = ""
+            parameters: tuple[object, ...] = ()
+            if args.sample_year is not None:
+                where_clause = " WHERE sample_year=?"
+                parameters = (args.sample_year,)
+            evaluated_urls = [
+                str(row[0])
+                for row in source.execute(
+                    f"SELECT DISTINCT canonical_url FROM {source_table}"
+                    f"{where_clause}",
+                    parameters,
+                )
+            ]
         exclusions_table = source.execute(
             """
             SELECT 1 FROM sqlite_master
@@ -90,7 +148,7 @@ def main() -> int:
                     "FROM parser_validation_exclusions"
                 )
             ]
-            if exclusions_table is not None
+            if exclusions_table is not None and not args.exclude_inherited
             else []
         )
         # A saved validation state is a transitive cohort boundary. Its own
@@ -228,6 +286,9 @@ def main() -> int:
             "sourceCohort": args.source_cohort,
             "sourceTable": source_table,
             "sampleYear": args.sample_year,
+            "acceptedTargetOnly": args.accepted_target_only,
+            "inheritedExclusionsIncluded": not args.exclude_inherited,
+            "targetExclusionsReset": args.reset_target_exclusions,
             "sourceSamples": len(unique_urls),
             "evaluatedSourceSamples": len(set(evaluated_urls)),
             "inheritedSourceExclusions": len(

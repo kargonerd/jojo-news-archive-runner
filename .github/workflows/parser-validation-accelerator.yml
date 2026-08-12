@@ -460,6 +460,7 @@ jobs:
             echo "No earlier cohort exists for this pre-2016 cell."
             exit 0
           fi
+          reset_args=(--reset-target-exclusions)
           for exclusion_state in "${exclusion_states[@]}"; do
             source_cohort="$(basename "$exclusion_state" .sqlite3)"
             source_cohort="${source_cohort#exclusion-}"
@@ -468,7 +469,11 @@ jobs:
               --target-state "$LOCAL_ROOT/raw/capture.sqlite3" \
               --source-cohort "$source_cohort" \
               --publisher "$PUBLISHER" \
-              --sample-year "$SAMPLE_YEAR"
+              --sample-year "$SAMPLE_YEAR" \
+              --accepted-target-only \
+              --exclude-inherited \
+              "${reset_args[@]}"
+            reset_args=()
           done
 
       - name: Seed validation from source archive
