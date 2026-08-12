@@ -26,6 +26,11 @@ on:
         required: true
         default: "50"
         type: string
+      max_hydrations:
+        description: "Maximum archived pages inspected for publication dates."
+        required: true
+        default: "50"
+        type: string
       auto_continue:
         description: "Dispatch the next bounded run after checkpointing."
         required: true
@@ -51,6 +56,7 @@ env:
   TO_YEAR: ${{ inputs.to_year }}
   MAX_PAGES: ${{ inputs.max_pages }}
   MAX_QUERIES: ${{ inputs.max_queries }}
+  MAX_HYDRATIONS: ${{ inputs.max_hydrations }}
   AUTO_CONTINUE: ${{ inputs.auto_continue }}
 
 jobs:
@@ -99,6 +105,10 @@ jobs:
             echo "max_queries must be positive." >&2
             exit 2
           fi
+          if ! [[ "$MAX_HYDRATIONS" =~ ^[0-9]+$ ]]; then
+            echo "max_hydrations must be non-negative." >&2
+            exit 2
+          fi
           local_root="$RUNNER_TEMP/npr-common-crawl-${FROM_YEAR}-${TO_YEAR}"
           remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/${FROM_YEAR}-${TO_YEAR}/commoncrawl-prefix"
           mkdir -p "$local_root/catalog" "$local_root/state"
@@ -142,6 +152,8 @@ jobs:
             --max-pages "$MAX_PAGES" \
             --max-queries "$MAX_QUERIES" \
             --max-errors 3 \
+            --max-date-hydrations "$MAX_HYDRATIONS" \
+            --data-min-request-interval 0.5 \
             --min-request-interval 3 \
             --timeout 45 \
             --attempts 4 \
@@ -188,7 +200,8 @@ jobs:
           ${{
             inputs.auto_continue &&
             steps.discovery.outputs.should_continue == 'true' &&
-            steps.discovery.outputs.advances != '0'
+            (steps.discovery.outputs.advances != '0' ||
+             steps.discovery.outputs.hydration_attempted != '0')
           }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -199,4 +212,5 @@ jobs:
             -f to_year="$TO_YEAR" \
             -f max_pages="$MAX_PAGES" \
             -f max_queries="$MAX_QUERIES" \
+            -f max_hydrations="$MAX_HYDRATIONS" \
             -f auto_continue=true
