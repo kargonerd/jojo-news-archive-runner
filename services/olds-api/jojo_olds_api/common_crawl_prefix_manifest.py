@@ -222,6 +222,16 @@ def prefix_patterns(
         prefix = pattern[:-1]
         if prefix and prefix not in result:
             result.append(prefix)
+    if spec.publisher == "npr":
+        # NPR's pre-2010 CMS links remained widely captured after dated
+        # canonical URLs were introduced. Their storyId is stable, while the
+        # publication year must be recovered from archived article metadata.
+        for prefix in (
+            "www.npr.org/templates/story/story.php",
+            "npr.org/templates/story/story.php",
+        ):
+            if prefix not in result:
+                result.append(prefix)
     if not result:
         raise ValueError(
             f"publisher {spec.publisher!r} has no prefix-compatible pattern"
@@ -490,6 +500,33 @@ def reconcile_prefix_year_targets(
                   AND substr(pattern, instr(pattern, '/20') + 1, 4)=?
                 """,
                 (_now_iso(), year),
+            )
+        window = dict(
+            connection.execute(
+                "SELECT key, value FROM prefix_metadata "
+                "WHERE key IN ('from_year', 'to_year')"
+            )
+        )
+        configured_years = {
+            str(year)
+            for year in range(
+                int(window["from_year"]),
+                int(window["to_year"]) + 1,
+            )
+        }
+        if configured_years and configured_years.issubset(satisfied_years):
+            # Undated legacy URL families (currently NPR storyId links) can
+            # contribute to any configured year after HTML hydration. Once
+            # every year has reached its target, scanning them further is no
+            # longer useful; reopen them automatically if the target grows.
+            connection.execute(
+                """
+                UPDATE prefix_queries
+                SET status='target-complete', last_error=NULL, updated_at=?
+                WHERE status NOT IN ('complete', 'target-complete')
+                  AND instr(pattern, '/20')=0
+                """,
+                (_now_iso(),),
             )
         return connection.total_changes - before
 

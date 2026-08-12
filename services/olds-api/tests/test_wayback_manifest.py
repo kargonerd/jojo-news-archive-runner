@@ -948,6 +948,23 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         archive_source_spec("npr"),
         "https://www.npr.org/2010/12/02/131356105/updated-slug",
     ) == "npr:131356105"
+    legacy_npr = (
+        "https://www.npr.org/templates/story/story.php?storyId=131356105"
+    )
+    assert normalize_article_url(
+        archive_source_spec("npr"), legacy_npr
+    ) == legacy_npr
+    assert normalize_article_url(
+        archive_source_spec("npr"),
+        "https://npr.org/templates/story/story.php&storyId=131356105",
+    ) == legacy_npr
+    assert article_deduplication_key(
+        archive_source_spec("npr"), legacy_npr
+    ) == "npr:131356105"
+    assert normalize_article_url(
+        archive_source_spec("npr"),
+        "https://www.npr.org/templates/story/story.php",
+    ) is None
     assert normalize_article_url(
         archive_source_spec("npr"),
         "https://www.npr.org/2010/11/02/130682288/election-2010-florida-results",

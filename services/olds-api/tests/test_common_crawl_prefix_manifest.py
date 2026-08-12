@@ -148,6 +148,8 @@ def test_npr_prefix_patterns_include_www_and_bare_hosts():
     ) == (
         "www.npr.org/2010/",
         "npr.org/2010/",
+        "www.npr.org/templates/story/story.php",
+        "npr.org/templates/story/story.php",
     )
 
 
@@ -192,7 +194,7 @@ def test_prefix_schema_adds_new_collections_without_resetting_progress():
 
     assert connection.execute(
         "SELECT COUNT(*) FROM prefix_queries"
-    ).fetchone()[0] == 4
+    ).fetchone()[0] == 8
     assert connection.execute(
         """
         SELECT status FROM prefix_queries
@@ -338,10 +340,10 @@ def test_prefix_year_target_skips_and_can_reopen_pending_queries():
         target_articles_per_year=1,
     )
 
-    assert completed == 3
+    assert completed == 7
     assert prefix_summary(connection)["queryStatus"] == {
         "complete": 1,
-        "target-complete": 3,
+        "target-complete": 7,
     }
     assert next_prefix_query(connection) is None
 
@@ -351,7 +353,7 @@ def test_prefix_year_target_skips_and_can_reopen_pending_queries():
     )
 
     assert next_prefix_query(connection) is not None
-    assert prefix_summary(connection)["queriesRemaining"] == 3
+    assert prefix_summary(connection)["queriesRemaining"] == 7
 
 
 def test_collection_refresh_timeout_reuses_checkpoint_queries():
@@ -380,12 +382,12 @@ def test_collection_refresh_timeout_reuses_checkpoint_queries():
 
     assert result == {
         "source": "checkpoint",
-        "queryCount": 2,
+        "queryCount": 4,
         "refreshError": "RuntimeError",
     }
     assert connection.execute(
         "SELECT COUNT(*) FROM prefix_queries"
-    ).fetchone()[0] == 2
+    ).fetchone()[0] == 4
 
 
 def test_collection_refresh_timeout_rejects_empty_checkpoint():
@@ -471,6 +473,16 @@ def test_records_caps_and_exports_common_crawl_candidates(tmp_path: Path):
         pattern="npr.org/2010/",
         total_pages=0,
     )
+    for legacy_pattern in (
+        "www.npr.org/templates/story/story.php",
+        "npr.org/templates/story/story.php",
+    ):
+        record_prefix_page_count(
+            connection,
+            collection_id=collection.identifier,
+            pattern=legacy_pattern,
+            total_pages=0,
+        )
     assert prefix_summary(connection)["shouldContinue"] is False
 
     destination = tmp_path / "manifest.jsonl.gz"
@@ -583,6 +595,69 @@ def test_hydrates_nikkei_publication_date_from_common_crawl_warc(
     assert exported["canonicalUrl"] == NIKKEI_URL
     assert exported["publishedAt"] == "2013-05-26T08:00:00+09:00"
     assert exported["candidates"][0]["provider"] == "commoncrawl"
+
+
+def test_hydrates_npr_legacy_story_id_into_requested_year(tmp_path: Path):
+    legacy_url = (
+        "https://www.npr.org/templates/story/story.php?storyId=131356105"
+    )
+    body = "This archived NPR report contains complete editorial prose. " * 30
+    html = f"""
+        <html><head><script type="application/ld+json">
+        {{"@type":"NewsArticle","headline":"Legacy NPR report",
+          "datePublished":"2010-12-02T08:00:00-05:00"}}
+        </script></head><body><article><h1>Legacy NPR report</h1>
+        <p>{body}</p></article></body></html>
+    """.encode()
+    compressed = _warc_record(legacy_url, html)
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("npr")
+    collection = _collection()
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(collection,),
+    )
+    pattern = "www.npr.org/templates/story/story.php"
+    record_prefix_page_count(
+        connection,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        total_pages=1,
+    )
+    row = {
+        **_index_row("20180122150511", offset=1),
+        "url": legacy_url,
+        "length": str(len(compressed)),
+        "offset": "500",
+    }
+    result = record_prefix_page(
+        connection,
+        spec=spec,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        page_number=0,
+        total_pages=1,
+        page=PrefixIndexPage(rows=(row,)),
+    )
+    assert result["undatedAccepted"] == 1
+
+    hydration = process_prefix_date_hydration(
+        connection,
+        spec=spec,
+        archive_client=_RangeClient(compressed),
+        maximum=1,
+    )
+
+    assert hydration["found"] == 1
+    destination = tmp_path / "npr-legacy.jsonl.gz"
+    export_prefix_manifest(connection, spec=spec, destination=destination)
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        exported = json.loads(handle.readline())
+    assert exported["canonicalUrl"] == legacy_url
+    assert exported["publishedAt"].startswith("2010-12-02T08:00:00")
 
 
 def test_new_nikkei_candidate_reopens_a_prior_no_date_result():

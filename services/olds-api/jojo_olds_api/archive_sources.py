@@ -191,7 +191,10 @@ ARCHIVE_SOURCE_SPECS = {
             "www.npr.org/{year}/*",
             "npr.org/{year}/*",
         ),
-        accepted_path_patterns=_patterns(r"^/20\d{2}/"),
+        accepted_path_patterns=_patterns(
+            r"^/20\d{2}/",
+            r"^/templates/story/story\.php(?:&storyId=\d+)?$",
+        ),
         rejected_path_patterns=_patterns(
             r"^/(?:programs|podcasts?|music)(?:/|$)",
             r"/(?:election-\d{4}-.+-results|excerpt-[a-z0-9-]+|nprs?-toy-stories|makeover-photos)(?:/|$)",
@@ -314,6 +317,21 @@ def normalize_article_url(
         # losing the article or preserving a non-canonical duplicate.
         path = "/article/" + path.removeprefix("/article/article/")
     if spec.publisher == "npr":
+        legacy_story = re.search(
+            r"(?i)(?:[?&]|%3f|%26)storyid(?:=|%3d)(\d+)",
+            value,
+        )
+        if path.casefold().startswith("/templates/story/story.php"):
+            if legacy_story is None:
+                return None
+            # Preserve the historical public URL as provenance while
+            # canonicalizing malformed CDX aliases that put ``&storyId`` in
+            # the path. The numeric id also deduplicates this URL against the
+            # modern dated NPR canonical URL below.
+            return (
+                "https://www.npr.org/templates/story/story.php?storyId="
+                + legacy_story.group(1)
+            )
         # CDX indexes occasionally contain scraper-added line endings or a
         # trailing assignment marker. Neither can be part of NPR's article
         # slug, and leaving them in place prevents timemap fallback from
@@ -395,6 +413,12 @@ def article_deduplication_key(
     if normalized is None:
         return None
     if spec.publisher == "npr":
+        legacy_story = re.search(
+            r"(?i)[?&]storyid=(\d+)",
+            normalized,
+        )
+        if legacy_story is not None:
+            return f"npr:{legacy_story.group(1)}"
         match = re.match(
             r"^/\d{4}/\d{2}/\d{2}/(\d+)(?:/|$)",
             urlsplit(normalized).path,
