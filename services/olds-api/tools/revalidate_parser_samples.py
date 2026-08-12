@@ -54,7 +54,7 @@ def forced_replay_candidates(
     *,
     archive_root: Path,
     maximum: int,
-) -> tuple[list[str], list[tuple[str, str]]]:
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     rows = connection.execute(
         """
         SELECT result.canonical_url, capture.raw_path
@@ -69,11 +69,11 @@ def forced_replay_candidates(
         """,
         (maximum,),
     ).fetchall()
-    replayable: list[str] = []
+    replayable: list[tuple[str, str]] = []
     missing: list[tuple[str, str]] = []
     for canonical_url, raw_path in rows:
         if raw_path and (archive_root / str(raw_path)).is_file():
-            replayable.append(str(canonical_url))
+            replayable.append((str(canonical_url), str(raw_path)))
         else:
             missing.append(
                 (
@@ -123,7 +123,7 @@ def main() -> int:
                 DELETE FROM parser_validation_results
                 WHERE canonical_url=?
                 """,
-                ((canonical_url,) for canonical_url in replayable),
+                ((canonical_url,) for canonical_url, _ in replayable),
             )
         for canonical_url, raw_path in missing_entries:
             requeue_missing_validation_capture(
@@ -133,10 +133,21 @@ def main() -> int:
             missing.append(raw_path)
             requeued += 1
         forced = len(replayable)
-    pending = pending_completed_parser_validation_files(
+    else:
+        replayable = []
+    # A forced reproducibility pass must replay every result it just deleted.
+    # Re-selecting through pending_completed_parser_validation_files() is not
+    # equivalent when a cohort has more evaluated rows than its target (for
+    # example, one failed sample plus a QA-passing replacement): that query is
+    # intentionally capped at target_size - qa_passed and used to drop the
+    # replacement, reverting a converged cohort to 799/800 on every run.
+    pending = list(replayable)
+    additional = pending_completed_parser_validation_files(
         connection,
-        maximum=args.max_replays,
+        maximum=max(0, args.max_replays - len(pending)),
     )
+    pending_urls = {item[0] for item in pending}
+    pending.extend(row for row in additional if row[0] not in pending_urls)
     failed = failed_completed_parser_validation_files(
         connection,
         maximum=max(0, args.max_replays - len(pending)),

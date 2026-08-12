@@ -35,7 +35,7 @@ def test_archive_watchdog_is_catalog_only_and_skips_complete_shards() -> None:
     assert "jq -e '.complete == true'" in workflow
 
 
-def test_archive_watchdog_prioritizes_required_legacy_catalogs() -> None:
+def test_archive_watchdog_limits_dispatch_to_active_convergence_set() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     current_wsj = workflow.index(
@@ -45,13 +45,10 @@ def test_archive_watchdog_prioritizes_required_legacy_catalogs() -> None:
     legacy_wsj = workflow.index(
         '{"publisher":"wsj","fromYear":"2010","toYear":"2015"'
     )
-    nikkei = workflow.index(
-        '{"publisher":"nikkei","fromYear":"2010","toYear":"2015"'
-    )
-    scmp = workflow.index(
-        '{"publisher":"scmp","fromYear":"2010","toYear":"2015"'
-    )
-    assert current_wsj < legacy_wsj < nikkei < scmp
-    assert '"publisher":"zaobao"' in workflow
-    assert '"publisher":"aljazeera"' in workflow
+    assert current_wsj < legacy_wsj
+    for publisher in ("ft", "axios", "npr", "nyt", "caixin"):
+        assert f'"publisher":"{publisher}"' in workflow
+    for publisher in ("ap", "nikkei", "zaobao", "aljazeera", "scmp"):
+        assert f'"publisher":"{publisher}"' not in workflow
+    assert "TODO: restore AP, Nikkei, Zaobao, Al Jazeera, and SCMP" in workflow
     assert '"publisher":"caixin"' in workflow

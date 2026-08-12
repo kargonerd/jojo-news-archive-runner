@@ -61,7 +61,9 @@ def test_forced_replay_candidates_reports_missing_raw_objects(
         maximum=500,
     )
 
-    assert replayable == ["https://example.com/present"]
+    assert replayable == [
+        ("https://example.com/present", "objects/present.html")
+    ]
     assert missing == [
         ("https://example.com/missing", "objects/missing.html"),
         (
