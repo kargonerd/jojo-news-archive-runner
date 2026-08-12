@@ -902,6 +902,11 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "https://www.nytimes.com/2018/04/24/world/example.html",
     ) == 2018
     assert article_url_publication_year(
+        archive_source_spec("nyt"),
+        "https://www.nytimes.com/interactive/2016/obituaries/"
+        "notable-deaths/garry-shandling",
+    ) == 2016
+    assert article_url_publication_year(
         nikkei,
         "https://www.nikkei.com/article/DGXZQOCD00001",
     ) is None

@@ -431,7 +431,12 @@ def article_url_publication_year(
         )
         return 2000 + int(match.group(1)) if match is not None else None
     if spec.publisher == "nyt":
-        match = re.match(r"^/((?:19|20)\d{2})(?:/|$)", path)
+        # NYT interactives encode their publication year after the
+        # ``/interactive`` namespace rather than at the path root.
+        match = re.match(
+            r"^/(?:interactive/)?((?:19|20)\d{2})(?:/|$)",
+            path,
+        )
         return int(match.group(1)) if match is not None else None
     if spec.publisher != "reuters":
         return None

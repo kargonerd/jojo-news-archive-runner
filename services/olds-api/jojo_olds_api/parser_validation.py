@@ -1199,8 +1199,19 @@ def record_parser_validation(
             ),
             parsed_at=parsed_at,
         )
-        if article.published_at is not None:
-            sample_year = article.published_at.year
+        embedded_year = article_url_publication_year(
+            archive_source_spec(capture.publisher),
+            capture.canonical_url,
+        )
+        if embedded_year is not None or article.published_at is not None:
+            # A stable year encoded in the canonical URL is authoritative for
+            # archives whose mutable interactive pages expose a later update
+            # timestamp as datePublished.
+            sample_year = (
+                embedded_year
+                if embedded_year is not None
+                else article.published_at.year
+            )
             values["sample_year"] = sample_year
             if sample_year != planned_year:
                 connection.execute(
