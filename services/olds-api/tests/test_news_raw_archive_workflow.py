@@ -5,6 +5,13 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "news-raw-archive.yml"
 
 
+def test_sitemap_mode_supports_axios_official_monthly_archive() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "ap|bloomberg|nyt|ft|axios|aljazeera|zaobao" in workflow
+    assert "FT, Axios, Al Jazeera" in workflow
+
+
 def test_live_raw_checkpoints_cannot_block_archive_workers() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     catalog_section = workflow[

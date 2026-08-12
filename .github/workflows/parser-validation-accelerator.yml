@@ -197,8 +197,11 @@ jobs:
             # so reusing that window here silently ignores the new catalog.
             supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/${SAMPLE_YEAR}-${SAMPLE_YEAR}/commoncrawl-prefix"
           elif [ "$PUBLISHER" = "axios" ]; then
-            source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
-            supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/axios/${source_window}/commoncrawl-prefix"
+            # The official monthly sitemap is much broader for recent years
+            # than both Wayback URL-key and Common Crawl discovery. Validation
+            # captures missing sitemap URLs into the canonical primary raw
+            # root, so this remains a compact catalog-only supplement.
+            supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/axios/2017-2026/sitemap-wayback"
           elif [ "$PUBLISHER" = "nikkei" ]; then
             source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
             supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/nikkei/${source_window}/commoncrawl-prefix"

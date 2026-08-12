@@ -91,6 +91,7 @@ jobs:
           # finish, but this queue must not dispatch new work for deferred
           # publishers.
           queue='[
+            {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"sitemap-wayback","units":"30","runner":"ubuntu-latest"},
             {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"wayback-urlkey","units":"5","runner":"ubuntu-latest"},
             {"publisher":"ft","fromYear":"2010","toYear":"2015","mode":"sitemap-wayback","units":"1","runner":"ubuntu-latest"},
             {"publisher":"ft","fromYear":"2016","toYear":"2026","mode":"sitemap-wayback","units":"1","runner":"ubuntu-latest"},

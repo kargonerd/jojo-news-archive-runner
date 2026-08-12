@@ -204,7 +204,7 @@ def test_accelerator_merges_axios_common_crawl_supplemental_manifest() -> None:
 
     assert 'elif [ "$PUBLISHER" = "axios" ]; then' in workflow
     assert (
-        "news-archive/v1/axios/${source_window}/commoncrawl-prefix"
+        "news-archive/v1/axios/2017-2026/sitemap-wayback"
         in workflow
     )
 
