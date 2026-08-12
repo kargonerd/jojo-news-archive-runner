@@ -418,7 +418,11 @@ def next_prefix_query(
         WHERE status NOT IN ('complete', 'target-complete')
         ORDER BY
             attempts,
-            CASE WHEN instr(pattern, '/20') > 0 THEN 0 ELSE 1 END,
+            CASE
+                WHEN pattern LIKE '%/templates/story/story.php' THEN -1
+                WHEN instr(pattern, '/20') > 0 THEN 0
+                ELSE 1
+            END,
             CAST(
                 substr(pattern, instr(pattern, '/20') + 1, 4)
                 AS INTEGER

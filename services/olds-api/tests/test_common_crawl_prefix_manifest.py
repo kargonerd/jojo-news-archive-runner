@@ -264,6 +264,21 @@ def test_prefix_queries_prioritize_recent_collections():
     assert collection_id == "CC-MAIN-2026-30"
 
 
+def test_npr_prefix_queries_probe_legacy_story_ids_first():
+    connection = sqlite3.connect(":memory:")
+    initialize_prefix_schema(
+        connection,
+        spec=archive_source_spec("npr"),
+        from_year=2010,
+        to_year=2010,
+        collections=(_collection("CC-MAIN-2026-30"),),
+    )
+
+    _, _, pattern, _, _ = next_prefix_query(connection)
+
+    assert pattern.endswith("/templates/story/story.php")
+
+
 def test_prefix_queries_can_prioritize_oldest_collections():
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("nikkei")
