@@ -11682,6 +11682,12 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             text,
         ):
             node.decompose()
+            continue
+        if re.fullmatch(
+            r"(?i)email the lex team at lex@ft\.com\.?",
+            text,
+        ):
+            node.decompose()
 
     for marker in list(soup.select("p, h2, h3, h4")):
         if (
@@ -11727,6 +11733,7 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
                 )
                 and " newsletter" in text
             )
+            or text == "letter in response to this article:"
         ):
             tail_markers.append(node)
     if not tail_markers:
