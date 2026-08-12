@@ -6602,6 +6602,9 @@ def _remove_axios_body_chrome(soup: BeautifulSoup) -> None:
             text.startswith("sign up for our axios ")
             and " newsletter" in text
         ) or (
+            re.match(r"^sign up for (?:the )?axios\b", text) is not None
+            and " newsletter" in text
+        ) or (
             text.startswith("subscribe to the axios ")
             and " newsletter" in text
         ) or (
