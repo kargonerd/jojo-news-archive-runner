@@ -11491,6 +11491,12 @@ def _trim_wsj_roadblock_tail(soup: BeautifulSoup) -> None:
 
 def _remove_wsj_promos(soup: BeautifulSoup) -> None:
     """Remove metered-view controls, copyright footers and coupon modules."""
+    for newsletter_link in list(
+        soup.select("a[href*='/newsletters'][href*='sub=best_of_the_web']")
+    ):
+        # Best of the Web columns append this inline subscription CTA in an
+        # otherwise unclassified ``em`` node inside the article body.
+        newsletter_link.decompose()
     for button in list(soup.select("button")):
         button.decompose()
     for form in list(soup.select("form")):
