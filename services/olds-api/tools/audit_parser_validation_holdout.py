@@ -15,7 +15,7 @@ if str(SERVICE_ROOT) not in sys.path:
 
 from jojo_olds_api.archive_sources import (
     archive_source_spec,
-    normalize_article_url,
+    article_deduplication_key,
 )
 from tools.audit_parser_validation_rotation import (
     _closing_connection,
@@ -90,7 +90,7 @@ def audit_holdout(
 
     def normalized(urls: set[str]) -> set[str]:
         return {
-            normalize_article_url(source_spec, url) or url
+            article_deduplication_key(source_spec, url) or url
             for url in urls
         }
 
@@ -109,7 +109,7 @@ def audit_holdout(
             for label, path in previous_states
         ]
         exclusions = {
-            normalize_article_url(source_spec, str(row[0]))
+            article_deduplication_key(source_spec, str(row[0]))
             or str(row[0]): str(row[1])
             for row in current.execute(
                 "SELECT canonical_url, source_cohort "

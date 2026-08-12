@@ -224,7 +224,7 @@ PUBLISHER_SPECS = {
     ),
     "axios": PublisherSpec(
         publisher="axios",
-        parser_version="axios-parser/0.1.12",
+        parser_version="axios-parser/0.1.13",
         domains=("axios.com", "www.axios.com"),
         default_language="en",
         edition="us",
@@ -246,7 +246,7 @@ PUBLISHER_SPECS = {
     ),
     "npr": PublisherSpec(
         publisher="npr",
-        parser_version="npr-parser/0.1.21",
+        parser_version="npr-parser/0.1.22",
         domains=("npr.org", "www.npr.org"),
         default_language="en",
         edition="us",

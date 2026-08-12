@@ -6595,9 +6595,16 @@ def _remove_axios_body_chrome(soup: BeautifulSoup) -> None:
             text_node.extract()
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        newsletter_signup = node.select_one(
+            "a[href*='link.axios.com/join/'], a[href*='/newsletter-signup']"
+        )
         if (
             text.startswith("sign up for our axios ")
             and " newsletter" in text
+        ) or (
+            text.startswith("sign up for ")
+            and " newsletter" in text
+            and newsletter_signup is not None
         ) or (
             text.startswith("subscribe to ")
             and " podcast" in text
@@ -7395,6 +7402,7 @@ def _npr_non_editorial_image_url(url: str) -> bool:
         or "/chrome/news/pbs_logo" in path
         or "/images/zag.gif" in path
         or "/include/images/facebook-default-wide" in path
+        or "/chrome/news/video_generic_" in path
     )
 
 
@@ -7454,7 +7462,11 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
         header_text = _clean_text(
             header.get_text(" ", strip=True) if header is not None else ""
         ).casefold()
-        if header_text in {"read more:", "related npr stories"}:
+        if header_text in {
+            "read more:",
+            "related stories",
+            "related npr stories",
+        }:
             container.decompose()
 
 
@@ -13464,6 +13476,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/common/imgs/wsjsection.",
             "/img/social/opengraph/ij-social-default-",
             "axios-placeholder-",
+            "/social/breaking-news.png",
             "/include/images/facebook-default.jpg",
         )
     )

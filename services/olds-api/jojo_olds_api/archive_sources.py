@@ -323,6 +323,14 @@ def normalize_article_url(
             "",
             path,
         ).rstrip("=")
+        # Some CDX keys append tracking parameters to the path rather than
+        # storing them as a query string. They are aliases of the same story.
+        path = re.split(
+            r"(?i)(?:&|%26)(?:sc|cc|ps)=",
+            path,
+            maxsplit=1,
+        )[0]
+        path = re.sub(r"(?i)(?:%5d|\])$", "", path)
     if spec.publisher == "axios":
         # Historical CDX keys include malformed aliases whose slug differs
         # from the canonical article only by one or more trailing hyphens.
@@ -375,6 +383,25 @@ def normalize_article_url(
         else spec.canonical_host
     )
     return urlunsplit(("https", normalized_host, path, "", ""))
+
+
+def article_deduplication_key(
+    spec: ArchiveSourceSpec,
+    value: str,
+) -> str | None:
+    """Return a stable story identity without changing its public URL."""
+
+    normalized = normalize_article_url(spec, value)
+    if normalized is None:
+        return None
+    if spec.publisher == "npr":
+        match = re.match(
+            r"^/\d{4}/\d{2}/\d{2}/(\d+)(?:/|$)",
+            urlsplit(normalized).path,
+        )
+        if match is not None:
+            return f"npr:{match.group(1)}"
+    return normalized
 
 
 def article_url_publication_year(

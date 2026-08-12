@@ -12,8 +12,8 @@ from typing import Iterable
 
 from .archive_sources import (
     archive_source_spec,
+    article_deduplication_key,
     article_url_publication_year,
-    normalize_article_url,
 )
 from .news_models import ArticleStatus, ContentType, RawCapture
 from .news_parser import parse_article
@@ -370,7 +370,7 @@ def ensure_parser_validation_plan(
             (from_year, to_year),
         )
         if (
-            normalize_article_url(source_spec, str(row[0])) is None
+            article_deduplication_key(source_spec, str(row[0])) is None
             or (
                 (
                     embedded_year := article_url_publication_year(
@@ -1713,7 +1713,7 @@ def _select_additional_samples(
             "SELECT canonical_url FROM parser_validation_exclusions"
         )
         if (
-            normalized := normalize_article_url(
+            normalized := article_deduplication_key(
                 source_spec,
                 str(canonical_url),
             )
@@ -1728,7 +1728,7 @@ def _select_additional_samples(
             (year,),
         )
         if (
-            normalized := normalize_article_url(
+            normalized := article_deduplication_key(
                 source_spec,
                 str(canonical_url),
             )
@@ -1763,7 +1763,7 @@ def _select_additional_samples(
     )
     seen_normalized = excluded_normalized | selected_normalized
     for (canonical_url,) in rows:
-        normalized_url = normalize_article_url(
+        normalized_url = article_deduplication_key(
             source_spec,
             str(canonical_url),
         )
@@ -1775,7 +1775,7 @@ def _select_additional_samples(
         seen_normalized.add(normalized_url)
         embedded_year = article_url_publication_year(
             source_spec,
-            normalized_url,
+            str(canonical_url),
         )
         if embedded_year is not None and embedded_year != year:
             continue

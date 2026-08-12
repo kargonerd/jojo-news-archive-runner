@@ -11,6 +11,7 @@ import pytest
 
 from jojo_olds_api.archive_sources import (
     archive_source_spec,
+    article_deduplication_key,
     article_url_publication_year,
     normalize_article_url,
 )
@@ -930,6 +931,14 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         archive_source_spec("npr"),
         "https://www.npr.org/2018/04/03/598239092/example=",
     ) == "https://www.npr.org/2018/04/03/598239092/example"
+    assert normalize_article_url(
+        archive_source_spec("npr"),
+        "https://www.npr.org/2010/11/29/131667596/example&sc=fb&cc=fp",
+    ) == "https://www.npr.org/2010/11/29/131667596/example"
+    assert article_deduplication_key(
+        archive_source_spec("npr"),
+        "https://www.npr.org/2010/12/02/131356105/updated-slug",
+    ) == "npr:131356105"
     assert normalize_article_url(
         archive_source_spec("npr"),
         "https://www.npr.org/2010/11/02/130682288/election-2010-florida-results",

@@ -296,7 +296,7 @@ def test_axios_visual_fallback_replaces_metadata_placeholder():
     selected = [image for image in result.images if image.should_archive]
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "axios-parser/0.1.12"
+    assert result.extraction.parser_version == "axios-parser/0.1.13"
     assert len(selected) == 1
     assert selected[0].role == ImageRole.CHART
     assert selected[0].original_url == (
@@ -482,7 +482,7 @@ def test_axios_next_story_removes_read_more_and_normalized_duplicates():
     assert "Election countdown" not in result.plain_text
     assert "Go deeper" not in result.body_html
     assert result.body_html.count("https://playlist.example/episode") == 1
-    assert result.extraction.parser_version == "axios-parser/0.1.12"
+    assert result.extraction.parser_version == "axios-parser/0.1.13"
 
 
 @pytest.mark.parametrize(
@@ -599,7 +599,7 @@ def test_axios_accepts_structurally_proven_image_only_story():
     assert len(selected) == 1
     assert len(selected[0].candidate_urls) >= 1
     assert result.images[0].credit == "Illustration: Axios Visuals"
-    assert result.extraction.parser_version == "axios-parser/0.1.12"
+    assert result.extraction.parser_version == "axios-parser/0.1.13"
 
 
 def test_axios_accepts_only_wordcount_matched_short_am_newsletter():
@@ -716,7 +716,7 @@ def test_npr_removes_legacy_player_and_retailer_controls():
     selected = [image for image in result.images if image.should_archive]
     assert len(selected) == 1
     assert "/movies/2009/12/avatar/" in selected[0].original_url
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_wsj_removes_underscore_only_press_release_rule():
@@ -10595,6 +10595,57 @@ def test_npr_parser_rejects_facebook_default_lead_image():
     assert article.quality.images_selected == 0
 
 
+def test_npr_parser_removes_related_story_module_and_generic_video_icon():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="An NPR film report">
+      <meta property="article:published_time" content="2010-11-16T00:00:00Z">
+    </head><body><div id="storytext">
+      <p>Editorial reporting before the related module.</p>
+      <div class="container con2col">
+        <h3 class="conheader">Related Stories</h3>
+        <div><img src="http://media.npr.org/chrome/news/video_generic_70x70.jpg"><h3>Another story</h3></div>
+      </div>
+      <p>Editorial reporting after the related module.</p>
+    </div></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2010/11/16/131366948/example",
+    )
+    assert "Related Stories" not in article.plain_text
+    assert "Another story" not in article.plain_text
+    assert "reporting before" in article.plain_text
+    assert "reporting after" in article.plain_text
+    assert article.quality.images_selected == 0
+    assert article.extraction.parser_version == "npr-parser/0.1.22"
+
+
+def test_axios_parser_removes_linked_newsletter_signup_and_breaking_placeholder():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Axios report">
+      <meta property="article:published_time" content="2019-11-24T00:00:00Z">
+      <meta property="og:image" content="https://images.axios.com/token=/fit-in/1366x1366/social/breaking-news.png">
+    </head><body><article>
+      <p>Substantive reporting before the publisher promotion.</p>
+      <p><em>Sign up for <a href="http://link.axios.com/join/generate-signup">the daily Generate newsletter</a> to get the column on Monday.</em></p>
+      <p>Substantive reporting after the publisher promotion.</p>
+    </article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="axios",
+        canonical_url="https://www.axios.com/2019/11/24/example",
+    )
+    assert "Sign up for" not in article.plain_text
+    assert "reporting before" in article.plain_text
+    assert "reporting after" in article.plain_text
+    assert article.quality.images_selected == 0
+    assert article.extraction.parser_version == "axios-parser/0.1.13"
+
+
 def test_ft_parser_removes_flattened_newsletter_cards():
     reporting_before = " ".join(["FT reporting before module."] * 20)
     reporting_after = " ".join(["FT reporting after module."] * 20)
@@ -16541,7 +16592,7 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_keeps_image_caption_metadata_out_of_body_blocks():
@@ -16597,7 +16648,7 @@ def test_npr_parser_keeps_image_caption_metadata_out_of_body_blocks():
     assert len(result.images) == 1
     assert result.images[0].caption == "This you?"
     assert result.images[0].credit == "RichVintage/Getty Images"
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_preserves_short_audio_story_mp3():
@@ -16637,7 +16688,7 @@ def test_npr_parser_preserves_short_audio_story_mp3():
     assert [
         block.embed_url for block in result.blocks if block.type.value == "embed"
     ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_classifies_unavailable_short_audio_story():
@@ -16661,7 +16712,7 @@ def test_npr_parser_classifies_unavailable_short_audio_story():
     assert result.quality.status.value == "partial"
     assert result.plain_text == "A short audio introduction."
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_accepts_legacy_metadata_only_audio_story():
@@ -16699,7 +16750,7 @@ def test_npr_parser_accepts_legacy_metadata_only_audio_story():
     assert "Unrelated recommended story" not in result.plain_text
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_accepts_named_legacy_audio_series_without_player():
@@ -16738,7 +16789,7 @@ def test_npr_parser_accepts_named_legacy_audio_series_without_player():
     )
     assert "body-too-short" not in result.quality.warnings
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_accepts_legacy_music_redirect_audio_story():
@@ -16781,7 +16832,7 @@ def test_npr_parser_accepts_legacy_music_redirect_audio_story():
     assert result.quality.body_characters == 92
     assert result.quality.images_selected >= 1
     assert "body-too-short" not in result.quality.warnings
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_accepts_legacy_unavailable_audio_story():
@@ -16831,7 +16882,7 @@ def test_npr_parser_accepts_legacy_unavailable_audio_story():
     assert "body-too-short" not in result.quality.warnings
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
@@ -16868,7 +16919,7 @@ def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
     assert "A short introduction to the segment." not in result.plain_text
     assert "noncommercial use" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
@@ -16902,7 +16953,7 @@ def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
     assert result.images[0].should_archive is True
     assert "onthetrail_01.jpg" in result.images[0].original_url
     assert "promo.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_recovers_image_led_double_take_cartoon():
@@ -16949,7 +17000,7 @@ def test_npr_parser_recovers_image_led_double_take_cartoon():
     ]
     assert all(image.should_archive for image in result.images)
     assert "related-cartoon.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_recovers_supplementary_double_take_cartoon_images():
@@ -17006,7 +17057,7 @@ def test_npr_parser_recovers_supplementary_double_take_cartoon_images():
     ]
     assert all(image.should_archive for image in result.images)
     assert "Unrelated recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_recovers_legacy_music_flash_interactive():
@@ -17060,7 +17111,7 @@ def test_npr_parser_recovers_legacy_music_flash_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://www.npr.org/music/memoriam_2010/memoriam.swf"]
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_recovers_ap_backed_legacy_election_results():
@@ -17108,7 +17159,7 @@ def test_npr_parser_recovers_ap_backed_legacy_election_results():
         "http://hosted.ap.org/dynamic/files/elections/2010/general/"
         "by_race/OK_37857.js?SITE=NPRELN",
     ]
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_recovers_legacy_book_list_and_removes_purchase_chrome():
@@ -17182,7 +17233,7 @@ def test_npr_parser_recovers_legacy_book_list_and_removes_purchase_chrome():
     assert "Related review should not" not in result.plain_text
     assert "Unrelated recommended story" not in result.plain_text
     assert result.quality.images_selected == 2
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_removes_legacy_read_more_bucket():
@@ -17218,7 +17269,7 @@ def test_npr_parser_removes_legacy_read_more_bucket():
     assert "second substantive paragraph" in result.plain_text
     assert "Read More" not in result.plain_text
     assert "Related report part one" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_recovers_legacy_iframe_interactive():
@@ -17254,7 +17305,7 @@ def test_npr_parser_recovers_legacy_iframe_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://election-maps.example/results/embed?state=us"]
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_recovers_legacy_inline_graphic():
@@ -17389,7 +17440,7 @@ def test_npr_parser_recovers_legacy_program_audio_download():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://pd.npr.org/audio/prediction.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_npr_parser_does_not_infer_audio_from_plain_primary_bucket():
@@ -17419,7 +17470,7 @@ def test_npr_parser_does_not_infer_audio_from_plain_primary_bucket():
     assert result.quality.status.value == "partial"
     assert result.content_type.value == "article"
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.21"
+    assert result.extraction.parser_version == "npr-parser/0.1.22"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():

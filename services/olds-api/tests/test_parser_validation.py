@@ -496,6 +496,61 @@ def test_axios_plan_deduplicates_trailing_hyphen_aliases(tmp_path: Path):
     assert len(selected) == 1
 
 
+def test_npr_plan_deduplicates_story_id_across_date_and_tracking_aliases(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "npr-manifest.jsonl"
+    urls = (
+        "https://www.npr.org/2010/11/16/131356105/original-slug",
+        "https://www.npr.org/2010/12/02/131356105/updated-slug",
+        "https://www.npr.org/2010/11/16/131356105/original-slug&sc=fb&cc=fp",
+    )
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "publisher": "npr",
+                    "canonicalUrl": url,
+                    "publishedAt": "2010-11-16T12:00:00Z",
+                    "candidates": [
+                        {
+                            "provider": "wayback",
+                            "snapshotUrl": (
+                                "https://web.archive.org/web/20101117000000id_/"
+                                + url
+                            ),
+                        }
+                    ],
+                }
+            )
+            + "\n"
+            for url in urls
+        ),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="npr",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(connection, manifest_path=manifest, publisher="npr")
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="npr",
+        from_year=2010,
+        to_year=2010,
+        target_per_year=3,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    assert connection.execute(
+        "SELECT COUNT(*) FROM parser_validation_samples"
+    ).fetchone()[0] == 1
+
+
 def test_plan_prunes_reuters_non_article_endpoints(tmp_path: Path):
     manifest = tmp_path / "reuters-manifest.jsonl"
     invalid_url = (
@@ -2503,7 +2558,7 @@ def test_empty_axios_video_does_not_fill_article_validation_target(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2019, 1, 'test', 'axios-parser/0.1.12', 2, 'now')
+        ) VALUES (2019, 1, 'test', 'axios-parser/0.1.13', 2, 'now')
         """
     )
     connection.execute(
