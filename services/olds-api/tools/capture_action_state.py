@@ -55,6 +55,7 @@ def action_state(
             (maximum_record_attempts,),
         ).fetchone()[0]
         validation_replays = 0
+        validation_capture_actionable: int | None = None
         validation_ready = False
         validation_target_reached = False
         validation_tables = {
@@ -102,6 +103,31 @@ def action_state(
                 "AND result.qa_revision=active_years.qa_revision"
                 if has_qa_revision
                 else ""
+            )
+            validation_capture_actionable = int(
+                connection.execute(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM parser_validation_samples AS sample
+                    JOIN parser_validation_config AS config
+                      ON config.sample_year=sample.sample_year
+                    JOIN captures AS capture
+                      ON capture.canonical_url=sample.canonical_url
+                    LEFT JOIN parser_validation_results AS result
+                      ON result.canonical_url=sample.canonical_url
+                     AND result.parser_version=config.parser_version
+                     {qa_result_join}
+                    WHERE result.canonical_url IS NULL
+                      AND (
+                        capture.status IN ('pending', 'downloading')
+                        OR (
+                          capture.status='error'
+                          AND capture.attempts < ?
+                        )
+                      )
+                    """,
+                    (maximum_record_attempts,),
+                ).fetchone()[0]
             )
             unbound_expression = (
                 "COALESCE(SUM(result.source_capture_sha256 IS NULL), 0)"
@@ -217,7 +243,11 @@ def action_state(
     pending = counts.get("pending", 0)
     downloading = counts.get("downloading", 0)
     unresolved = counts.get("error", 0)
-    actionable = pending + downloading + recoverable + validation_replays
+    actionable = (
+        validation_capture_actionable + validation_replays
+        if validation_capture_actionable is not None
+        else pending + downloading + recoverable
+    )
     return {
         "stateExists": True,
         "capturesByStatus": counts,

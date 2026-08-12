@@ -226,7 +226,7 @@ def test_ready_parser_validation_stops_pending_capture_chain(
 
     result = MODULE.action_state(state, maximum_record_attempts=3)
 
-    assert result["actionable"] == 2
+    assert result["actionable"] == 0
     assert result["validationReady"] is True
     assert result["shouldContinue"] is False
 
@@ -284,8 +284,8 @@ def test_failed_qa_keeps_runner_active_until_qa_target_is_reached(
 
     assert exact["validationTargetReached"] is False
     assert exact["validationReady"] is False
-    assert normal["shouldContinue"] is True
-    assert exact["shouldContinue"] is True
+    assert normal["shouldContinue"] is False
+    assert exact["shouldContinue"] is False
 
 
 def test_unbound_capture_input_never_counts_as_ready_or_target(
@@ -342,4 +342,59 @@ def test_unbound_capture_input_never_counts_as_ready_or_target(
 
     assert result["validationReady"] is False
     assert result["validationTargetReached"] is False
-    assert result["shouldContinue"] is True
+    assert result["shouldContinue"] is False
+
+
+def test_validation_does_not_continue_for_unselected_global_pending_rows(
+    tmp_path: Path,
+):
+    state = tmp_path / "capture.sqlite3"
+    connection = sqlite3.connect(state)
+    connection.executescript(
+        """
+        CREATE TABLE captures (
+            canonical_url TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            raw_path TEXT
+        );
+        CREATE TABLE parser_validation_config (
+            sample_year INTEGER PRIMARY KEY,
+            target_size INTEGER NOT NULL,
+            parser_version TEXT NOT NULL,
+            qa_revision INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL,
+            parser_version TEXT NOT NULL,
+            qa_revision INTEGER NOT NULL,
+            extraction_status TEXT NOT NULL,
+            qa_pass INTEGER NOT NULL,
+            source_capture_sha256 TEXT
+        );
+        INSERT INTO captures VALUES
+            ('https://example.com/terminal', 'error', 3, NULL),
+            ('https://example.com/unselected', 'pending', 0, NULL);
+        INSERT INTO parser_validation_config VALUES
+            (2024, 800, 'parser/2', 1);
+        INSERT INTO parser_validation_samples VALUES
+            ('https://example.com/terminal', 2024);
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    result = MODULE.action_state(
+        state,
+        maximum_record_attempts=3,
+        stop_at_validation_target=True,
+    )
+
+    assert result["capturesByStatus"]["pending"] == 1
+    assert result["actionable"] == 0
+    assert result["shouldContinue"] is False
