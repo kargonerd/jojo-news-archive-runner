@@ -7141,7 +7141,48 @@ def _npr_legacy_flash_interactive_body(
     *,
     canonical_url: str,
 ) -> Tag | None:
-    """Normalize NPR Music's pre-HTML5 Flash interactive packages."""
+    """Normalize NPR's pre-HTML5 Flash interactive and live-video pages."""
+    story = soup.select_one("#storytext")
+    supplemental = soup.select_one(
+        "#supplementarycontent .bucketwrap.statichtml"
+    )
+    legacy_embed = (
+        supplemental.select_one("object embed[src], embed[src]")
+        if isinstance(supplemental, Tag)
+        else None
+    )
+    story_characters = len(
+        _clean_text(story.get_text(" ", strip=True))
+        if isinstance(story, Tag)
+        else ""
+    )
+    if (
+        isinstance(story, Tag)
+        and isinstance(legacy_embed, Tag)
+        and 20 <= story_characters <= 500
+    ):
+        swf_url = _normalized_url(
+            str(legacy_embed.get("src") or ""),
+            base_url=canonical_url,
+        )
+        if swf_url:
+            document = BeautifulSoup(
+                "<article data-jojo-source='npr-legacy-flash-video'></article>",
+                "html.parser",
+            )
+            article = document.article
+            if isinstance(article, Tag):
+                for child in list(story.contents):
+                    copy = BeautifulSoup(str(child), "html.parser").find()
+                    if isinstance(copy, Tag):
+                        article.append(copy)
+                iframe = document.new_tag("iframe")
+                iframe["src"] = swf_url
+                iframe["title"] = "Archived NPR live video"
+                iframe["data-interactive-provider"] = "npr-flash-video"
+                article.append(iframe)
+                return article
+
     body_classes = (
         {
             str(value).casefold()
