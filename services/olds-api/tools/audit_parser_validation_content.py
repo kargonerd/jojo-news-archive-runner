@@ -34,12 +34,12 @@ _SUSPICIOUS_AVATAR_FILENAME_RE = re.compile(
     r"(?i)(?:^|[_.-])avatar(?:[_.-]|$)"
 )
 _INTERFACE_TEXT_RE = re.compile(
-    r"(?i)^(?:advertisement|back to top|click here|follow us|read more:?|"
+    r"(?i)^(?:advertisement|back to top|click here|follow us|more from axios:?|read more:?|"
     r"related stories|share this article|sign in|subscribe|trending stories)$|"
     r"^(?:\d{2}\s*第\d+页\s*){2,}$|"
     r"^marketwatch拥有位于三大洲的100多名记者|"
     r"^(?:accept all cookies|all rights reserved|download (?:our|the) app|"
-    r"sign up for (?:our|the)|subscribe to (?:our|the)|terms (?:of use|and conditions))"
+    r"sign up for (?:our|the)|subscribe to (?:axios|our|the)|terms (?:of use|and conditions))"
 )
 _INTERACTIVE_TAGS = {"button", "form", "input", "nav", "script", "style"}
 
