@@ -183,7 +183,11 @@ def test_accelerator_merges_npr_common_crawl_supplemental_manifest() -> None:
     workflow = _workflow_text()
 
     assert 'if [ "$PUBLISHER" = "npr" ]; then' in workflow
-    assert "commoncrawl-prefix" in workflow
+    assert (
+        "news-archive/v1/npr/${SAMPLE_YEAR}-${SAMPLE_YEAR}/"
+        "commoncrawl-prefix"
+        in workflow
+    )
     assert (
         'SUPPLEMENTAL_SOURCE_ROOT: '
         '${{ steps.paths.outputs.supplemental_source_root }}'

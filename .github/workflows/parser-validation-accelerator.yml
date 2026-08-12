@@ -191,8 +191,10 @@ jobs:
           fi
           supplemental_source_root=""
           if [ "$PUBLISHER" = "npr" ]; then
-            source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
-            supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/${source_window}/commoncrawl-prefix"
+            # NPR Common Crawl discovery is checkpointed per publication
+            # year.  The primary Wayback shard spans a wider source window,
+            # so reusing that window here silently ignores the new catalog.
+            supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/${SAMPLE_YEAR}-${SAMPLE_YEAR}/commoncrawl-prefix"
           elif [ "$PUBLISHER" = "axios" ]; then
             source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
             supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/axios/${source_window}/commoncrawl-prefix"
