@@ -440,6 +440,62 @@ def test_holdout_plan_excludes_normalized_legacy_url_variants(tmp_path: Path):
     assert len(selected) == 9
 
 
+def test_axios_plan_deduplicates_trailing_hyphen_aliases(tmp_path: Path):
+    manifest = tmp_path / "axios-manifest.jsonl"
+    base = "https://www.axios.com/2019/01/11/example-story"
+    rows = []
+    for index, url in enumerate((base, base + "-", base + "--")):
+        rows.append(
+            {
+                "publisher": "axios",
+                "canonicalUrl": url,
+                "publishedAt": "2019-01-11T12:00:00Z",
+                "candidates": [
+                    {
+                        "provider": "wayback",
+                        "snapshotUrl": (
+                            "https://web.archive.org/web/"
+                            f"2019011200000{index}id_/" + url
+                        ),
+                    }
+                ],
+            }
+        )
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="axios",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="axios",
+    )
+
+    plan = ensure_parser_validation_plan(
+        connection,
+        publisher="axios",
+        from_year=2019,
+        to_year=2019,
+        target_per_year=3,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    selected = connection.execute(
+        "SELECT canonical_url FROM parser_validation_samples"
+    ).fetchall()
+    # ``available`` reports raw manifest rows; the selected cohort is where
+    # normalized article identity must be unique.
+    assert plan["years"]["2019"]["available"] == 3
+    assert len(selected) == 1
+
+
 def test_plan_prunes_reuters_non_article_endpoints(tmp_path: Path):
     manifest = tmp_path / "reuters-manifest.jsonl"
     invalid_url = (

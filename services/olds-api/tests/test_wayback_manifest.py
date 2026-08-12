@@ -915,6 +915,10 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "https://www.axios.com/2020/01/02/example?utm_source=test",
     ) == "https://www.axios.com/2020/01/02/example"
     assert normalize_article_url(
+        archive_source_spec("axios"),
+        "https://axios.com/2019/01/11/example-story--",
+    ) == "https://www.axios.com/2019/01/11/example-story"
+    assert normalize_article_url(
         archive_source_spec("npr"),
         "https://www.npr.org/2018/02/03/123456789/example",
     ) == "https://www.npr.org/2018/02/03/123456789/example"

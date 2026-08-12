@@ -323,6 +323,12 @@ def normalize_article_url(
             "",
             path,
         ).rstrip("=")
+    if spec.publisher == "axios":
+        # Historical CDX keys include malformed aliases whose slug differs
+        # from the canonical article only by one or more trailing hyphens.
+        # Axios does not publish an empty final slug token; treating these as
+        # separate URLs can place the same story twice in an 800-item cohort.
+        path = path.rstrip("-")
     if spec.publisher == "caixin":
         # Legacy magazine articles split long stories into numbered pages and
         # expose an ``_all`` full-text view. They are representations of one
