@@ -11641,10 +11641,23 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             ".insideArticleShare, "
             ".ftlabsaudioplayerholder, "
             ".component-share__button, "
+            ".article__save, "
+            ".article__share, "
+            "form.n-myft-ui, "
+            "form[class*='n-myft-ui'], "
+            ".video__placeholder__up-next, "
+            ".o-video__play-button, "
             "button[data-trackable='save-for-later']"
         )
     ):
         node.decompose()
+    for aside in list(soup.select("aside")):
+        if any(
+            _clean_text(node.get_text(" ", strip=True)).casefold()
+            == "read more"
+            for node in aside.select("a, p")
+        ):
+            aside.decompose()
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
         if re.fullmatch(
@@ -11763,6 +11776,13 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
                 "a[href*='ep.ft.com']"
                 "[href*='newsletter'][href*='subscribe']"
             )
+        ):
+            paragraph.decompose()
+            continue
+        if (
+            text.startswith("sign up for our ")
+            and " newsletter" in text
+            and len(text) <= 300
         ):
             paragraph.decompose()
     for heading in list(soup.select("h2, h3, h4, h5, h6")):
@@ -13395,6 +13415,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "yahoo-finance-default-logo",
             "/m/img/social/og-ft-logo",
             "/__assets/creatives/open-graph/ft-v1.jpg",
+            "/__assets/creatives/open-graph/fastft-v1.jpg",
             "/img/meta/wsj-social-share.",
             "/img/wsj_logo_black_social.",
             "/img/wsj_profile_lg.",
