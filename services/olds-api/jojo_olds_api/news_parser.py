@@ -13453,6 +13453,9 @@ def _is_placeholder_image_url(url: str) -> bool:
             "yahoo_default_logo",
             "yahoo-finance-default-logo",
             "/m/img/social/og-ft-logo",
+            # Legacy FT article chrome: a 210x39 GIF reused across unrelated
+            # stories, not editorial artwork.
+            "bc1ec196-2767-11e2-8c4f-00144feabdc0.gif",
             "/__assets/creatives/open-graph/ft-v1.jpg",
             "/__assets/creatives/open-graph/fastft-v1.jpg",
             "/img/meta/wsj-social-share.",
@@ -13461,6 +13464,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/common/imgs/wsjsection.",
             "/img/social/opengraph/ij-social-default-",
             "axios-placeholder-",
+            "/include/images/facebook-default.jpg",
         )
     )
 

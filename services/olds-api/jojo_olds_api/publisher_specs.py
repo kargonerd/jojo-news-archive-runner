@@ -206,7 +206,7 @@ PUBLISHER_SPECS = {
     ),
     "ft": PublisherSpec(
         publisher="ft",
-        parser_version="ft-parser/0.8.33",
+        parser_version="ft-parser/0.8.34",
         domains=("ft.com", "www.ft.com"),
         default_language="en",
         edition="global",
@@ -246,7 +246,7 @@ PUBLISHER_SPECS = {
     ),
     "npr": PublisherSpec(
         publisher="npr",
-        parser_version="npr-parser/0.1.20",
+        parser_version="npr-parser/0.1.21",
         domains=("npr.org", "www.npr.org"),
         default_language="en",
         edition="us",

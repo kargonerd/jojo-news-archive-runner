@@ -1224,6 +1224,16 @@ def record_parser_validation(
             ContentType.AUDIO,
             ContentType.GALLERY,
         }
+        # Axios video landing pages can carry valid article metadata and a
+        # poster image while containing neither a transcript nor any other
+        # recoverable editorial body.  They are useful catalog records, but
+        # must not fill one of the 800 article-validation slots.
+        if (
+            capture.publisher == "axios"
+            and nontext_content
+            and article.quality.body_characters == 0
+        ):
+            issues.append("empty-nontext-content")
         if (
             article.quality.status != ArticleStatus.COMPLETE
             and not nontext_content

@@ -2492,6 +2492,68 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
     assert summary["years"]["2020"]["unsupported"] == 1
 
 
+def test_empty_axios_video_does_not_fill_article_validation_target(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.axios.com/2019/06/11/example-video"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2019, 1, 'test', 'axios-parser/0.1.12', 2, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2019, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Axios on HBO interview">
+      <meta property="article:published_time" content="2019-06-11T00:00:00Z">
+      <meta property="og:type" content="video.other">
+      <meta property="og:image" content="https://images.axios.com/poster.jpg">
+    </head><body><main></main></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="axios:" + ("b" * 64),
+        publisher="axios",
+        canonical_url=canonical_url,
+        published_at=datetime(2019, 6, 11, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20190612000000id_/" + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+
+    assert connection.execute(
+        "SELECT content_type FROM parser_validation_results WHERE canonical_url=?",
+        (canonical_url,),
+    ).fetchone()[0] == "video"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["empty-nontext-content"]
+
+
 def test_validation_rejects_interface_noise_inside_complete_body(
     tmp_path: Path,
 ):
