@@ -55,6 +55,7 @@ from .news_models import (
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.4",
+    "axios": "axios-capture/0.1.0",
     "bloomberg": "bloomberg-capture/0.10.3",
     "caixin": "caixin-capture/0.1.1",
     "ft": "ft-capture/0.20.2",
@@ -6365,6 +6366,56 @@ def _caixin_capture_parser_evidence(
     }
 
 
+def _axios_capture_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    """Reject Axios next-story records that only redirect to a visual project.
+
+    Some archived Axios URLs hydrate a valid ``__NEXT_DATA__`` story object,
+    but that object is merely a one-sentence hand-off to a separately hosted
+    visual.  It is not the archived visual project and must not occupy one of
+    the 800 article-validation slots.  Keep this deliberately narrower than a
+    generic short-article rule because Axios also publishes legitimate briefs
+    and image-led stories.
+    """
+
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="axios",
+            canonical_url=canonical_url,
+            allow_generic_syndication=False,
+        )
+    except Exception as exc:
+        return True, {
+            "axiosCaptureVisualRedirectStub": False,
+            "axiosCaptureParserError": type(exc).__name__,
+        }
+    plain_text = " ".join(article.plain_text.split())
+    visual_redirect_stub = bool(
+        article.content_type == ContentType.ARTICLE
+        and article.quality.status == ArticleStatus.PARTIAL
+        and article.quality.body_characters <= 250
+        and article.quality.images_selected <= 1
+        and re.match(
+            r"^See Axios Visuals(?:'|\N{RIGHT SINGLE QUOTATION MARK}) best ",
+            plain_text,
+            flags=re.IGNORECASE,
+        )
+    )
+    return not visual_redirect_stub, {
+        "axiosCaptureVisualRedirectStub": visual_redirect_stub,
+        "axiosCaptureExtractionStatus": article.quality.status.value,
+        "axiosCaptureContentType": article.content_type.value,
+        "axiosCaptureBodyCharacters": article.quality.body_characters,
+        "axiosCaptureImagesSelected": article.quality.images_selected,
+    }
+
+
 def score_raw_capture(
     content: bytes,
     *,
@@ -7017,6 +7068,13 @@ def completed_capture_rejection_reason(
         )
         if not usable:
             return "npr-capture-parser-incomplete"
+    if capture.publisher == "axios":
+        usable, _ = _axios_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "axios-visual-redirect-stub"
     if capture.publisher == "ft":
         usable, _ = _ft_capture_parser_evidence(
             content,

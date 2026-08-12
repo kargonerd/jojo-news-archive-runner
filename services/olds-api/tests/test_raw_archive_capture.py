@@ -38,6 +38,7 @@ from jojo_olds_api.raw_archive_capture import (
     WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     _ap_syndication_search_urls,
     _ap_capture_parser_evidence,
+    _axios_capture_parser_evidence,
     _capture_nyt_interactive_resources,
     _caixin_capture_parser_evidence,
     _candidate_rejection_reasons,
@@ -7261,6 +7262,118 @@ def test_wsj_capture_rejects_long_description_slideshow_shell():
     assert signals["wsjCaptureContentType"] == "gallery"
     assert signals["wsjCaptureExtractionStatus"] == "partial"
     assert signals["wsjCaptureImagesSelected"] < 3
+
+
+def test_axios_capture_parser_evidence_rejects_visual_redirect_stub(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "jojo_olds_api.news_parser.parse_article",
+        lambda *args, **kwargs: SimpleNamespace(
+            content_type=ContentType.ARTICLE,
+            quality=SimpleNamespace(
+                status=ArticleStatus.PARTIAL,
+                body_characters=96,
+                images_selected=1,
+            ),
+            plain_text=(
+                "See Axios Visuals' best data visualizations, illustrations, "
+                "comics and collaborations from 2024."
+            ),
+        ),
+    )
+
+    usable, signals = _axios_capture_parser_evidence(
+        b"<html><article>archived redirect</article></html>",
+        canonical_url="https://www.axios.com/2025/01/02/2024-best-visuals-axios",
+    )
+
+    assert usable is False
+    assert signals["axiosCaptureVisualRedirectStub"] is True
+
+
+@pytest.mark.parametrize(
+    ("status", "content_type", "body_characters", "images_selected"),
+    [
+        (ArticleStatus.COMPLETE, ContentType.ARTICLE, 96, 1),
+        (ArticleStatus.PARTIAL, ContentType.INTERACTIVE, 96, 1),
+        (ArticleStatus.PARTIAL, ContentType.ARTICLE, 96, 3),
+    ],
+)
+def test_axios_capture_parser_evidence_keeps_non_stub_formats(
+    monkeypatch: pytest.MonkeyPatch,
+    status: ArticleStatus,
+    content_type: ContentType,
+    body_characters: int,
+    images_selected: int,
+):
+    monkeypatch.setattr(
+        "jojo_olds_api.news_parser.parse_article",
+        lambda *args, **kwargs: SimpleNamespace(
+            content_type=content_type,
+            quality=SimpleNamespace(
+                status=status,
+                body_characters=body_characters,
+                images_selected=images_selected,
+            ),
+            plain_text=(
+                "See Axios Visuals' best data visualizations, illustrations, "
+                "comics and collaborations from 2024."
+            ),
+        ),
+    )
+
+    usable, signals = _axios_capture_parser_evidence(
+        b"<html><article>archived story</article></html>",
+        canonical_url="https://www.axios.com/2025/01/02/example",
+    )
+
+    assert usable is True
+    assert signals["axiosCaptureVisualRedirectStub"] is False
+
+
+def test_stored_axios_visual_redirect_stub_is_requeued(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    canonical_url = "https://www.axios.com/2025/01/02/2024-best-visuals-axios"
+    shell = b"<html><body><article>archived redirect</article></body></html>" + (
+        b" " * 2_048
+    )
+    blob = store_raw_html(tmp_path, shell)
+    capture = RawCapture(
+        article_id="axios:" + ("a" * 64),
+        publisher="axios",
+        canonical_url=canonical_url,
+        published_at=datetime(2025, 1, 2, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20250502000000id_/" + canonical_url
+            ),
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+    monkeypatch.setattr(
+        "jojo_olds_api.raw_archive_capture._axios_capture_parser_evidence",
+        lambda *args, **kwargs: (
+            False,
+            {"axiosCaptureVisualRedirectStub": True},
+        ),
+    )
+
+    reason = completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    )
+
+    assert reason == "axios-visual-redirect-stub"
 
 
 def test_ap_capture_parser_evidence_rejects_unhydrated_score_table():
