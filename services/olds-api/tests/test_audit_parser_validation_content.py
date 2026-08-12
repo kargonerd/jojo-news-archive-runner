@@ -104,6 +104,55 @@ def test_selects_only_active_qa_passing_complete_sample() -> None:
     assert urls == ["https://example.test/a", "https://example.test/b"]
 
 
+def test_selects_sample_from_checkpoint_before_qa_revisions() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.executescript(
+        """
+        CREATE TABLE parser_validation_config (
+          sample_year INTEGER PRIMARY KEY,
+          target_size INTEGER NOT NULL,
+          parser_version TEXT NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+          canonical_url TEXT PRIMARY KEY,
+          sample_year INTEGER NOT NULL,
+          sample_priority TEXT NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+          canonical_url TEXT PRIMARY KEY,
+          publisher TEXT NOT NULL,
+          sample_year INTEGER NOT NULL,
+          parser_version TEXT NOT NULL,
+          qa_pass INTEGER NOT NULL
+        );
+        CREATE TABLE captures (
+          canonical_url TEXT PRIMARY KEY,
+          status TEXT NOT NULL,
+          raw_path TEXT
+        );
+        INSERT INTO parser_validation_config
+          VALUES (2018, 1, 'nyt-parser/legacy');
+        INSERT INTO parser_validation_samples
+          VALUES ('https://example.test/nyt', 2018, '01');
+        INSERT INTO parser_validation_results VALUES (
+          'https://example.test/nyt', 'nyt', 2018,
+          'nyt-parser/legacy', 1
+        );
+        INSERT INTO captures VALUES (
+          'https://example.test/nyt', 'complete', 'objects/nyt.gz'
+        );
+        """
+    )
+
+    version, revision, urls = selected_validation_urls(
+        connection, publisher="nyt", year=2018, target=1
+    )
+
+    assert version == "nyt-parser/legacy"
+    assert revision == 0
+    assert urls == ["https://example.test/nyt"]
+
+
 def test_rejects_incomplete_target() -> None:
     connection = sqlite3.connect(":memory:")
     connection.executescript(

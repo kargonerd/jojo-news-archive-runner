@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 import json
 from pathlib import Path
+import sqlite3
 from urllib.error import URLError
 
 import pytest
@@ -12,6 +13,7 @@ from tools.download_b2_validation_sample import (
     download_file,
     download_url,
     safe_local_path,
+    selected_paths,
 )
 
 
@@ -79,6 +81,69 @@ def test_download_file_can_reuse_completed_checkpoint(
         target=checkpoint,
         reuse_existing=True,
     ) == "existing"
+
+
+def test_selected_paths_supports_checkpoint_before_qa_revisions(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "capture.sqlite3"
+    connection = sqlite3.connect(state)
+    connection.executescript(
+        """
+        CREATE TABLE parser_validation_config (
+          sample_year INTEGER PRIMARY KEY,
+          target_size INTEGER NOT NULL,
+          parser_version TEXT NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+          sample_year INTEGER NOT NULL,
+          canonical_url TEXT NOT NULL,
+          sample_priority TEXT NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+          canonical_url TEXT PRIMARY KEY,
+          publisher TEXT NOT NULL,
+          sample_year INTEGER NOT NULL,
+          parser_version TEXT NOT NULL,
+          qa_pass INTEGER NOT NULL
+        );
+        CREATE TABLE captures (
+          canonical_url TEXT PRIMARY KEY,
+          status TEXT NOT NULL,
+          raw_path TEXT,
+          raw_sha256 TEXT,
+          dependent_resources_json TEXT
+        );
+        INSERT INTO parser_validation_config
+          VALUES (2018, 1, 'nyt-parser/legacy');
+        INSERT INTO parser_validation_samples
+          VALUES (2018, 'https://example.com/article', '001');
+        INSERT INTO parser_validation_results
+          VALUES (
+            'https://example.com/article', 'nyt', 2018,
+            'nyt-parser/legacy', 1
+          );
+        INSERT INTO captures VALUES (
+          'https://example.com/article', 'complete',
+          'objects/html/aa/article.html.gz', 'abc123',
+          '[{"blob":{"path":"objects/assets/bb/image.jpg"}}]'
+        );
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    raw_hashes, paths = selected_paths(
+        state, publisher="nyt", year=2018, target=1
+    )
+
+    assert raw_hashes == [
+        ("objects/html/aa/article.html.gz", "abc123")
+    ]
+    assert paths == {
+        "objects/html/aa/article.html.gz",
+        "objects/assets/bb/image.jpg",
+    }
 
 
 def test_safe_local_path_rejects_parent_traversal(tmp_path: Path) -> None:

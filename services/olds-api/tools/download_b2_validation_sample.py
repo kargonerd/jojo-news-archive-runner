@@ -148,13 +148,45 @@ def selected_paths(
 ) -> tuple[list[tuple[str, str]], set[str]]:
     connection = sqlite3.connect(f"file:{state.resolve().as_posix()}?mode=ro", uri=True)
     try:
+        config_columns = {
+            str(row[1])
+            for row in connection.execute(
+                "PRAGMA table_info(parser_validation_config)"
+            )
+        }
+        result_columns = {
+            str(row[1])
+            for row in connection.execute(
+                "PRAGMA table_info(parser_validation_results)"
+            )
+        }
+        has_qa_revision = (
+            "qa_revision" in config_columns
+            and "qa_revision" in result_columns
+        )
         config = connection.execute(
-            "SELECT parser_version, qa_revision, target_size "
-            "FROM parser_validation_config WHERE sample_year=?",
+            (
+                "SELECT parser_version, qa_revision, target_size "
+                if has_qa_revision
+                else "SELECT parser_version, 0, target_size "
+            )
+            + "FROM parser_validation_config WHERE sample_year=?",
             (year,),
         ).fetchone()
         if config is None or int(config[2]) != target:
             raise ValueError("validation config target does not match requested target")
+        qa_revision_clause = (
+            "AND result.qa_revision=?" if has_qa_revision else ""
+        )
+        parameters: list[Any] = [
+            year,
+            publisher,
+            year,
+            str(config[0]),
+        ]
+        if has_qa_revision:
+            parameters.append(int(config[1]))
+        parameters.append(target)
         rows = connection.execute(
             """
             SELECT
@@ -171,14 +203,14 @@ def selected_paths(
               AND result.publisher=?
               AND result.sample_year=?
               AND result.parser_version=?
-              AND result.qa_revision=?
+              {qa_revision_clause}
               AND result.qa_pass=1
               AND capture.status='complete'
               AND capture.raw_path IS NOT NULL
             ORDER BY sample.sample_priority
             LIMIT ?
-            """,
-            (year, publisher, year, str(config[0]), int(config[1]), target),
+            """.format(qa_revision_clause=qa_revision_clause),
+            parameters,
         ).fetchall()
     finally:
         connection.close()

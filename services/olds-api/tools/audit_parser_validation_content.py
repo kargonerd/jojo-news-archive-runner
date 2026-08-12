@@ -89,12 +89,29 @@ def selected_validation_urls(
     year: int,
     target: int,
 ) -> tuple[str, int, list[str]]:
+    config_columns = {
+        str(row[1])
+        for row in connection.execute(
+            "PRAGMA table_info(parser_validation_config)"
+        )
+    }
+    result_columns = {
+        str(row[1])
+        for row in connection.execute(
+            "PRAGMA table_info(parser_validation_results)"
+        )
+    }
+    has_qa_revision = (
+        "qa_revision" in config_columns
+        and "qa_revision" in result_columns
+    )
     config = connection.execute(
-        """
-        SELECT parser_version, qa_revision, target_size
-        FROM parser_validation_config
-        WHERE sample_year=?
-        """,
+        (
+            "SELECT parser_version, qa_revision, target_size "
+            if has_qa_revision
+            else "SELECT parser_version, 0, target_size "
+        )
+        + "FROM parser_validation_config WHERE sample_year=?",
         (year,),
     ).fetchone()
     if config is None:
@@ -104,6 +121,18 @@ def selected_validation_urls(
         raise ValueError(
             f"configured target is {configured_target}, expected {target}"
         )
+    qa_revision_clause = (
+        "AND result.qa_revision=?" if has_qa_revision else ""
+    )
+    parameters: list[object] = [
+        year,
+        publisher,
+        year,
+        str(parser_version),
+    ]
+    if has_qa_revision:
+        parameters.append(int(qa_revision))
+    parameters.append(target)
     rows = connection.execute(
         """
         SELECT sample.canonical_url
@@ -116,21 +145,14 @@ def selected_validation_urls(
           AND result.publisher=?
           AND result.sample_year=?
           AND result.parser_version=?
-          AND result.qa_revision=?
+          {qa_revision_clause}
           AND result.qa_pass=1
           AND capture.status='complete'
           AND capture.raw_path IS NOT NULL
         ORDER BY sample.sample_priority
         LIMIT ?
-        """,
-        (
-            year,
-            publisher,
-            year,
-            str(parser_version),
-            int(qa_revision),
-            target,
-        ),
+        """.format(qa_revision_clause=qa_revision_clause),
+        parameters,
     ).fetchall()
     urls = [str(row[0]) for row in rows]
     if len(urls) != target:
