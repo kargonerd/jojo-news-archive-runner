@@ -296,7 +296,7 @@ def test_axios_visual_fallback_replaces_metadata_placeholder():
     selected = [image for image in result.images if image.should_archive]
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "axios-parser/0.1.13"
+    assert result.extraction.parser_version == "axios-parser/0.1.14"
     assert len(selected) == 1
     assert selected[0].role == ImageRole.CHART
     assert selected[0].original_url == (
@@ -482,7 +482,7 @@ def test_axios_next_story_removes_read_more_and_normalized_duplicates():
     assert "Election countdown" not in result.plain_text
     assert "Go deeper" not in result.body_html
     assert result.body_html.count("https://playlist.example/episode") == 1
-    assert result.extraction.parser_version == "axios-parser/0.1.13"
+    assert result.extraction.parser_version == "axios-parser/0.1.14"
 
 
 @pytest.mark.parametrize(
@@ -599,7 +599,7 @@ def test_axios_accepts_structurally_proven_image_only_story():
     assert len(selected) == 1
     assert len(selected[0].candidate_urls) >= 1
     assert result.images[0].credit == "Illustration: Axios Visuals"
-    assert result.extraction.parser_version == "axios-parser/0.1.13"
+    assert result.extraction.parser_version == "axios-parser/0.1.14"
 
 
 def test_axios_accepts_only_wordcount_matched_short_am_newsletter():
@@ -10744,7 +10744,29 @@ def test_axios_parser_removes_linked_newsletter_signup_and_breaking_placeholder(
     assert "reporting before" in article.plain_text
     assert "reporting after" in article.plain_text
     assert article.quality.images_selected == 0
-    assert article.extraction.parser_version == "axios-parser/0.1.13"
+    assert article.extraction.parser_version == "axios-parser/0.1.14"
+
+
+def test_axios_parser_removes_publisher_newsletter_subscription_block():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="How the mission happened">
+      <meta property="article:published_time" content="2021-08-31T00:00:00Z">
+    </head><body><article>
+      <p>Axios reporting explains how the orbital mission came together.</p>
+      <p><strong><a href="https://www.axios.com/signup/space">Subscribe</a> to the Axios Space newsletter for more reporting.</strong></p>
+      <p>Credits: Reported and produced by the Axios newsroom.</p>
+    </article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="axios",
+        canonical_url="https://www.axios.com/2021/08/31/example",
+    )
+    assert "orbital mission" in article.plain_text
+    assert "Credits:" in article.plain_text
+    assert "Axios Space newsletter" not in article.plain_text
+    assert article.extraction.parser_version == "axios-parser/0.1.14"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
