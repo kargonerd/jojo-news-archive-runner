@@ -6456,7 +6456,17 @@ def score_raw_capture(
             )
         )
     )
-    wsj_snippet_shell = b'"issnippetview":true' in prefix
+    wsj_snippet_shell = bool(
+        b'"issnippetview":true' in prefix
+        or (
+            re.search(
+                br'<meta[^>]+name=["\']article\.template["\']'
+                br'[^>]+content=["\']snippet["\']',
+                prefix,
+            )
+            and b"wsj-snippet-body" in prefix
+        )
+    )
     wsj_empty_article_shell = bool(
         re.search(br'"headline"\s*:\s*""', prefix)
         and re.search(br'"datepublished"\s*:\s*""', prefix)

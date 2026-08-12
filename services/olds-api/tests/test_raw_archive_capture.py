@@ -7328,6 +7328,27 @@ def test_raw_quality_rejects_wsj_structured_snippet_view():
     assert signals["subscriptionShell"] is True
 
 
+def test_raw_quality_rejects_wsj_legacy_snippet_template():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head>
+          <meta name="article.template" content="snippet">
+          <meta property="og:title" content="A metered WSJ report">
+        </head><body><article>
+          <div class="wsj-snippet-body">
+            <p>Only the opening paragraph of this report is visible.</p>
+          </div>
+          <div class="snippet-promotion">Subscribe to continue reading.</div>
+        </article></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
+    assert signals["subscriptionShell"] is True
+
+
 def test_stored_wsj_subscription_shell_keeps_complete_article(
     tmp_path: Path,
 ):
