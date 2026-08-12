@@ -183,6 +183,71 @@ def test_holdout_audit_rejects_empty_previous_union(tmp_path: Path):
     assert "2020:no-previous-evaluated-samples" in result["issues"]
 
 
+def test_holdout_audit_ignores_failed_and_reserve_attempts(tmp_path: Path):
+    previous_path = tmp_path / "previous.sqlite3"
+    current_path = tmp_path / "current.sqlite3"
+    previous = _state(previous_path)
+    current = _state(current_path)
+    accepted = "https://www.nytimes.com/2020/01/01/world/accepted.html"
+    failed = "https://www.nytimes.com/2020/01/02/world/failed.html"
+    reserve = "https://www.nytimes.com/2020/01/03/world/reserve.html"
+    current_url = "https://www.nytimes.com/2020/01/04/world/current.html"
+    try:
+        _config(previous, year=2020, version="nyt-parser/0.8.54")
+        previous.execute(
+            "UPDATE parser_validation_config SET target_size=1 "
+            "WHERE sample_year=2020"
+        )
+        _config(current, year=2020, version="nyt-parser/0.8.55")
+        for priority, url, qa_pass in (
+            ("001", accepted, 1),
+            ("002", failed, 0),
+            ("003", reserve, 1),
+        ):
+            _sample(
+                previous,
+                url=url,
+                year=2020,
+                version="nyt-parser/0.8.54",
+            )
+            previous.execute(
+                "UPDATE parser_validation_samples SET sample_priority=? "
+                "WHERE canonical_url=?",
+                (priority, url),
+            )
+            previous.execute(
+                "UPDATE parser_validation_results SET qa_pass=? "
+                "WHERE canonical_url=?",
+                (qa_pass, url),
+            )
+        _sample(current, url=current_url, year=2020, version=None)
+        current.execute(
+            """
+            INSERT INTO parser_validation_exclusions(
+                canonical_url, source_cohort, excluded_at
+            ) VALUES (?, 'validation-v1', '2026-08-10T00:00:00Z')
+            """,
+            (accepted,),
+        )
+        previous.commit()
+        current.commit()
+    finally:
+        previous.close()
+        current.close()
+
+    result = audit_holdout(
+        previous_states=(("validation-v1", previous_path),),
+        current_state=current_path,
+        publisher="nyt",
+        expected_parser_version="nyt-parser/0.8.55",
+        from_year=2020,
+        to_year=2020,
+    )
+
+    assert result["passed"] is True
+    assert result["years"]["2020"]["previousUniqueEvaluated"] == 1
+
+
 def test_holdout_audit_normalizes_caixin_pagination_variants(
     tmp_path: Path,
 ):

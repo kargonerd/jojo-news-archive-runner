@@ -122,7 +122,7 @@ def audit_holdout(
             previous_versions: dict[str, str | None] = {}
             for label, connection in previous_connections:
                 previous_by_label[label] = normalized(
-                    _evaluated_urls(connection, year)
+                    _accepted_cohort_urls(connection, year)
                 )
                 config = connection.execute(
                     "SELECT parser_version FROM parser_validation_config "
@@ -231,25 +231,30 @@ def audit_holdout(
     }
 
 
-def _evaluated_urls(
+def _accepted_cohort_urls(
     connection: sqlite3.Connection,
     year: int,
 ) -> set[str]:
+    config = connection.execute(
+        "SELECT target_size FROM parser_validation_config WHERE sample_year=?",
+        (year,),
+    ).fetchone()
+    if config is None:
+        return set()
     return {
         str(row[0])
         for row in connection.execute(
             """
             SELECT sample.canonical_url
             FROM parser_validation_samples AS sample
-            WHERE sample.sample_year=?
-              AND EXISTS (
-                SELECT 1
-                FROM parser_validation_results AS result
-                WHERE result.canonical_url=sample.canonical_url
-                  AND result.sample_year=sample.sample_year
-              )
+            JOIN parser_validation_results AS result
+              ON result.canonical_url=sample.canonical_url
+             AND result.sample_year=sample.sample_year
+            WHERE sample.sample_year=? AND result.qa_pass=1
+            ORDER BY sample.sample_priority
+            LIMIT ?
             """,
-            (year,),
+            (year, int(config[0])),
         )
     }
 
