@@ -65,6 +65,21 @@ layout, local commands, and GitHub Actions inputs.
 The older Bloomberg-only downloader remains for migration and regression
 testing, but new archives use the capture-only pipeline.
 
+## Parser convergence roadmap
+
+The temporary runner remains the active home while validation is in progress.
+
+- Active convergence set: Financial Times, Wall Street Journal, Axios, NPR,
+  New York Times, and Caixin.
+- Completed baseline: Bloomberg.
+- TODO: resume AP, Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
+  Post after the active set has stable per-year 800-article cohorts.
+- TODO: migrate the runner, workflows, secrets documentation, and open
+  validation history to the public
+  [`kargonerd/jojokanbao`](https://github.com/kargonerd/jojokanbao) repository.
+  Do not switch repositories while Actions batches are still using validation
+  checkpoints in this repository.
+
 ## License and content notice
 
 The software in this repository is licensed under the MIT License. Third-party

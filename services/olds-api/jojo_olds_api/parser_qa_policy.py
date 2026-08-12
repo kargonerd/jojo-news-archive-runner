@@ -6,6 +6,7 @@ from __future__ import annotations
 # only a QA rule replays the same sample against the new policy.
 _QA_POLICY_REVISIONS = {
     "axios": 2,
+    "caixin": 1,
     "wsj": 1,
 }
 

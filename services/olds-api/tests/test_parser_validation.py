@@ -2554,6 +2554,63 @@ def test_empty_axios_video_does_not_fill_article_validation_target(
     assert result["issues"] == ["empty-nontext-content"]
 
 
+def test_caixin_photo_desk_does_not_fill_article_validation_target(
+    tmp_path: Path,
+):
+    canonical_url = "https://photos.caixin.com/2010-10-27/100192874.html"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2010, 1, 'test', 'caixin-parser/0.1.8', 1, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2010, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Caixin photo">
+      <meta property="article:published_time" content="2010-10-27T00:00:00Z">
+      <meta property="og:image" content="http://img.caixin.com/photo.jpg">
+    </head><body><div class="photoShow"><img src="http://img.caixin.com/photo.jpg"></div></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="caixin:" + ("c" * 64),
+        publisher="caixin",
+        canonical_url=canonical_url,
+        published_at=datetime(2010, 10, 27, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20101028000000id_/" + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+
+    assert result["qaPass"] is False
+    assert "nonarticle-desk" in result["issues"]
+
+
 def test_validation_rejects_interface_noise_inside_complete_body(
     tmp_path: Path,
 ):

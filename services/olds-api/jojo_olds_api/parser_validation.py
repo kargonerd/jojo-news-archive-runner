@@ -1234,6 +1234,13 @@ def record_parser_validation(
             and article.quality.body_characters == 0
         ):
             issues.append("empty-nontext-content")
+        # Preserve Caixin's photo/video desks in the raw archive and parser
+        # coverage, but do not let their one-image landing pages dominate the
+        # independently sampled article-validation cohort.
+        if capture.publisher == "caixin" and capture.canonical_url.startswith(
+            ("https://photos.caixin.com/", "https://video.caixin.com/")
+        ):
+            issues.append("nonarticle-desk")
         if (
             article.quality.status != ArticleStatus.COMPLETE
             and not nontext_content
