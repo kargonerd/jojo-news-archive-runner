@@ -69,11 +69,13 @@ testing, but new archives use the capture-only pipeline.
 
 The temporary runner remains the active home while validation is in progress.
 
-- Active convergence set: Financial Times, Wall Street Journal, Axios, NPR,
-  New York Times, and Caixin.
+- Active convergence set: Financial Times, Axios, and Caixin.
 - Completed baseline: Bloomberg.
-- TODO: resume AP, Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
-  Post after the active set has stable per-year 800-article cohorts.
+- TODO: resume Wall Street Journal, NPR, and New York Times after the reduced
+  active set has stable per-year 800-article cohorts. Already-running batches
+  may finish, but the watchdog must not dispatch new publisher/year cells.
+- TODO: then resume AP, Nikkei, Lianhe Zaobao, Al Jazeera, and South China
+  Morning Post. Their existing checkpoints remain resumable.
 - TODO: migrate the runner, workflows, secrets documentation, and open
   validation history to the public
   [`kargonerd/jojokanbao`](https://github.com/kargonerd/jojokanbao) repository.

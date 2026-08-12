@@ -38,17 +38,18 @@ def test_archive_watchdog_is_catalog_only_and_skips_complete_shards() -> None:
 def test_archive_watchdog_limits_dispatch_to_active_convergence_set() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    current_wsj = workflow.index(
-        '{"publisher":"wsj","fromYear":"2016","toYear":"2026",'
-        '"mode":"wayback-urlkey"'
-    )
-    legacy_wsj = workflow.index(
-        '{"publisher":"wsj","fromYear":"2010","toYear":"2015"'
-    )
-    assert current_wsj < legacy_wsj
-    for publisher in ("ft", "axios", "npr", "nyt", "caixin"):
+    for publisher in ("ft", "axios", "caixin"):
         assert f'"publisher":"{publisher}"' in workflow
-    for publisher in ("ap", "nikkei", "zaobao", "aljazeera", "scmp"):
+    for publisher in (
+        "wsj",
+        "npr",
+        "nyt",
+        "ap",
+        "nikkei",
+        "zaobao",
+        "aljazeera",
+        "scmp",
+    ):
         assert f'"publisher":"{publisher}"' not in workflow
-    assert "TODO: restore AP, Nikkei, Zaobao, Al Jazeera, and SCMP" in workflow
+    assert "TODO: restore WSJ, NPR, NYT, AP, Nikkei, Zaobao, Al Jazeera" in workflow
     assert '"publisher":"caixin"' in workflow

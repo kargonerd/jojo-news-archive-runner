@@ -11783,6 +11783,8 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             ".component-share__button, "
             ".article__save, "
             ".article__share, "
+            ".share, "
+            "section.article-list, "
             "form.n-myft-ui, "
             "form[class*='n-myft-ui'], "
             ".video__placeholder__up-next, "
@@ -11791,6 +11793,17 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
         )
     ):
         node.decompose()
+    # The legacy How To Spend It template placed topic tags in an unmarked
+    # section headed ``See also`` inside the broad article wrapper.
+    for heading in list(soup.select("h2, h3, h4")):
+        if (
+            _clean_text(heading.get_text(" ", strip=True)).casefold()
+            != "see also"
+        ):
+            continue
+        section = heading.find_parent("section")
+        if isinstance(section, Tag) and section.select_one(".tag-list"):
+            section.decompose()
     for aside in list(soup.select("aside")):
         if any(
             _clean_text(node.get_text(" ", strip=True)).casefold()

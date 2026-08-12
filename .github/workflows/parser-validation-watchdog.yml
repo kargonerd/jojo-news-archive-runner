@@ -29,11 +29,12 @@ env:
   # fill the other slot. This avoids blocking all 800-sample work behind the
   # slowest historical CDX prefix.
   MAX_CATALOG_CONCURRENCY: "1"
-  # Bloomberg has completed the current research acceptance cycle. Reuters is
-  # outside the active convergence objective; both remain supported by the
-  # generic planner and can be re-enabled by editing this explicit queue.
+  # Keep only the deliberately reduced convergence set active. Bloomberg has
+  # completed the current research acceptance cycle. WSJ, NPR, NYT, AP,
+  # Nikkei, Zaobao, Al Jazeera, and SCMP remain supported and resumable, but
+  # are TODOs until FT, Axios, and Caixin have stable per-year cohorts.
   VALIDATION_PUBLISHERS: >-
-    ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin
+    ft axios caixin
   DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
 jobs:

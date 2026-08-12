@@ -85,22 +85,15 @@ jobs:
           # formal validation stores only its selected canonical raw samples,
           # while catalog discovery itself stays compact and resumable.
           #
-          # TODO: restore AP, Nikkei, Zaobao, Al Jazeera, and SCMP after the
-          # active FT/WSJ/Axios/NPR/NYT/Caixin convergence set is complete.
-          # Their existing B2 checkpoints remain resumable; keeping them out
-          # of this queue prevents the watchdog from spending Actions/network
-          # capacity on deferred publishers.
+          # TODO: restore WSJ, NPR, NYT, AP, Nikkei, Zaobao, Al Jazeera, and
+          # SCMP after the reduced FT/Axios/Caixin convergence set is complete.
+          # Existing B2 checkpoints remain resumable; already-running jobs may
+          # finish, but this queue must not dispatch new work for deferred
+          # publishers.
           queue='[
-            {"publisher":"wsj","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"30","runner":"ubuntu-latest"},
-            {"publisher":"wsj","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"30","runner":"ubuntu-latest"},
-            {"publisher":"npr","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"5","runner":"ubuntu-latest"},
-            {"publisher":"npr","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"5","runner":"ubuntu-latest"},
             {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"wayback-urlkey","units":"5","runner":"ubuntu-latest"},
-            {"publisher":"wsj","fromYear":"2016","toYear":"2026","mode":"wayback","units":"5","runner":"ubuntu-latest"},
             {"publisher":"ft","fromYear":"2010","toYear":"2015","mode":"sitemap-wayback","units":"1","runner":"ubuntu-latest"},
             {"publisher":"ft","fromYear":"2016","toYear":"2026","mode":"sitemap-wayback","units":"1","runner":"ubuntu-latest"},
-            {"publisher":"nyt","fromYear":"2010","toYear":"2015","mode":"sitemap-wayback","units":"10","runner":"macos-15-intel"},
-            {"publisher":"nyt","fromYear":"2016","toYear":"2026","mode":"sitemap-wayback","units":"10","runner":"macos-15-intel"},
             {"publisher":"caixin","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"20","runner":"ubuntu-latest"},
             {"publisher":"caixin","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"20","runner":"ubuntu-latest"}
           ]'
