@@ -2643,7 +2643,7 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
     canonical_url = "https://www.nytimes.com/2017/06/02/example.html"
@@ -2700,7 +2700,7 @@ def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
     assert "SectionBarShare" not in result.body_html
     assert "<button" not in result.body_html
     assert "Save story" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
@@ -2747,7 +2747,7 @@ def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
     assert result.quality.status.value == "partial"
     assert "incomplete-interactive" in result.quality.warnings
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_preserves_legacy_interactive_script_shell():
@@ -2775,7 +2775,7 @@ def test_nyt_parser_preserves_legacy_interactive_script_shell():
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
     assert "body-too-short" not in result.quality.warnings
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_keeps_hydrated_image_interactive_over_short_metadata():
@@ -7372,7 +7372,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_reuters_parser_removes_toolbar_licensing_ui_and_promotes_ksl_image():
@@ -9525,7 +9525,7 @@ def test_nyt_parser_removes_sponsorship_subscription_and_opinion_footer_ui():
     assert "diversity of letters" not in result.plain_text
     assert "Opinion section on Facebook" not in result.plain_text
     assert "Share full article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_removes_california_today_subscription_ctas():
@@ -9556,7 +9556,7 @@ def test_nyt_parser_removes_california_today_subscription_ctas():
     assert "This article is part of" not in result.plain_text
     assert "Were you forwarded this email" not in result.plain_text
     assert "weekly updates on learning" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_removes_read_more_marker_without_trimming_following_prose():
@@ -9588,7 +9588,7 @@ def test_nyt_parser_removes_read_more_marker_without_trimming_following_prose():
     assert "Read more:" not in result.plain_text
     assert "A related report remains" in result.plain_text
     assert "The closing paragraph adds" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
@@ -9619,7 +9619,7 @@ def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
     assert result.headline == "Positive tests inch up in New York City."
     assert result.quality.status.value == "complete"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_removes_related_coverage_and_newsletter_modules():
@@ -9719,7 +9719,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_reuters_generic_syndication_removes_benzinga_recirculation_tail():
@@ -9962,7 +9962,7 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_staticizes_legacy_playoff_controls():
@@ -10012,7 +10012,53 @@ def test_nyt_parser_staticizes_legacy_playoff_controls():
     assert parsed_body.select_one(
         "input, select, textarea"
     ) is None
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
+
+
+def test_nyt_parser_staticizes_callout_form_and_drops_sprite_assets():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Readers explain the election">
+          <meta property="article:published_time"
+                content="2018-09-20T12:00:00Z">
+        </head><body><article class="interactive-body">
+          <form id="nytint-callout-form" method="POST">
+            <figure><img src="https://static01.nyt.com/images/report.jpg">
+              <figcaption>Voters gather before the public meeting.</figcaption>
+            </figure>
+            <p>Our reporters answer questions about election interference,
+            the investigation and the evidence gathered during reporting.</p>
+            <label for="question">What question do you have?</label>
+            <textarea id="question"></textarea>
+            <button type="submit">Continue</button>
+          </form>
+          <picture>
+            <img src="https://static01.nyt.com/newsgraphics/2018/11/26/year-end-mortality/hash/sprite-mobile.jpg">
+            <img src="https://static01.nyt.com/newsgraphics/2018/11/26/year-end-mortality/hash/sprite-desktop.jpg">
+          </picture>
+          <p>The accompanying analysis describes the chronology, named
+          participants and public records in enough detail for readers.</p>
+          <p>Additional reporting explains the institutional response and
+          the consequences documented by investigators and witnesses.</p>
+          <p>The article preserves historical context, quotations and data
+          needed to understand the findings and their significance.</p>
+        </article></body></html>
+        """,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2018/09/20/us/"
+            "election-interference-example.html"
+        ),
+    )
+
+    parsed_body = BeautifulSoup(result.body_html, "html.parser")
+    assert parsed_body.select_one("form, input, select, textarea, button") is None
+    assert "What question do you have?" in result.plain_text
+    assert "Voters gather" in result.plain_text
+    assert not any("sprite-" in image.original_url for image in result.images)
+    assert any("report.jpg" in image.original_url for image in result.images)
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -10052,7 +10098,7 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -12129,7 +12175,7 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -13190,7 +13236,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -13376,7 +13422,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
@@ -14399,7 +14445,7 @@ def test_nyt_parser_accepts_legacy_short_editorial_cartoon():
     assert result.content_type.value == "gallery"
     assert result.quality.status.value == "complete"
     assert result.images
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_wsj_parser_preserves_legacy_video_description():
@@ -17410,7 +17456,7 @@ def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
     assert "Science Times newsletter" not in result.plain_text
     assert "<button" not in result.body_html
     assert "Skip advertisement" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.56"
+    assert result.extraction.parser_version == "nyt-parser/0.8.57"
 
 
 def test_nikkei_legacy_parser_extracts_print_date_and_article_text():

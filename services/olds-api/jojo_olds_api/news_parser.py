@@ -11162,6 +11162,31 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     for control in list(soup.select("input, select, textarea")):
         control.decompose()
 
+    # Reader callouts and legacy interactives often wrap useful explanatory
+    # copy, figures and field labels in a form. The controls are dead in a
+    # static archive, but deleting the whole form would also delete that
+    # editorial context. Remove only the interactive container.
+    for label in list(soup.select("form label")):
+        if _clean_text(label.get_text(" ", strip=True)):
+            label.name = "p"
+        else:
+            label.decompose()
+    for form in list(soup.select("form")):
+        form.unwrap()
+
+    # Responsive NYT newsgraphics use sprite sheets as CSS image sources.
+    # They are implementation assets rather than figures and otherwise appear
+    # as giant, meaningless images in the normalized article body.
+    for image in list(soup.select("img[src]")):
+        source = str(image.get("src") or "")
+        if re.search(
+            r"/newsgraphics/.*/sprite-(?:mobile|desktop)\.(?:jpe?g|png)"
+            r"(?:[?#].*)?$",
+            source,
+            flags=re.IGNORECASE,
+        ):
+            image.decompose()
+
     for button in list(
         soup.select(
             "button[aria-label='expand or collapse modal'], "
