@@ -23,6 +23,7 @@ from .common_crawl import (
 )
 from .news_models import CaptureCandidate, CaptureProvider
 from .news_parser import parse_article
+from .publisher_specs import publisher_spec
 from .wayback_manifest import (
     ARCHIVED_DATE_HYDRATION_PUBLISHERS,
     candidate_rank,
@@ -373,12 +374,38 @@ def initialize_prefix_schema(
                 "Common Crawl prefix state belongs to a different "
                 "publisher, date window, or pattern set"
             )
+    hydration_parser_version = publisher_spec(spec.publisher).parser_version
+    previous_hydration_version = connection.execute(
+        "SELECT value FROM prefix_metadata "
+        "WHERE key='hydration_parser_version'"
+    ).fetchone()
+    if (
+        spec.publisher in ARCHIVED_DATE_HYDRATION_PUBLISHERS
+        and (
+            previous_hydration_version is None
+            or str(previous_hydration_version[0]) != hydration_parser_version
+        )
+    ):
+        # A parser may learn a legacy date field after an archived page was
+        # classified as no-date. Reopen only parser-dependent terminal rows;
+        # an out-of-window date remains authoritative across parser versions.
+        connection.execute(
+            """
+            UPDATE prefix_date_hydration
+            SET status='pending', attempts=0, published_at=NULL,
+                parser_status=NULL, body_characters=NULL, last_error=NULL,
+                updated_at=?
+            WHERE publisher=? AND status IN ('no-date', 'failed')
+            """,
+            (_now_iso(), spec.publisher),
+        )
     metadata = {
         "schema_version": SCHEMA_VERSION,
         "publisher": spec.publisher,
         "from_year": str(from_year),
         "to_year": str(to_year),
         "fingerprint": fingerprint,
+        "hydration_parser_version": hydration_parser_version,
     }
     connection.executemany(
         """

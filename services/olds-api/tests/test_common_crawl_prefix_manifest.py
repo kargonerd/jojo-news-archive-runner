@@ -204,6 +204,46 @@ def test_prefix_schema_adds_new_collections_without_resetting_progress():
     ).fetchone()[0] == "complete"
 
 
+def test_prefix_schema_reopens_no_date_rows_after_parser_upgrade():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("npr")
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(_collection(),),
+    )
+    connection.execute(
+        "INSERT INTO prefix_date_hydration("
+        "canonical_url,publisher,status,attempts,updated_at"
+        ") VALUES (?,?,?,?,?)",
+        (
+            "https://www.npr.org/templates/story/story.php?storyId=1",
+            "npr",
+            "no-date",
+            1,
+            "old",
+        ),
+    )
+    connection.execute(
+        "UPDATE prefix_metadata SET value='npr-parser/old' "
+        "WHERE key='hydration_parser_version'"
+    )
+
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(_collection(),),
+    )
+
+    assert connection.execute(
+        "SELECT status, attempts FROM prefix_date_hydration"
+    ).fetchone() == ("pending", 0)
+
+
 def test_prefix_schema_allows_additive_publisher_patterns():
     connection = sqlite3.connect(":memory:")
     current = archive_source_spec("caixin")

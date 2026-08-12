@@ -693,6 +693,11 @@ def parse_article(
                 "analyticsAttributes.articleDate",
             ),
             _meta_content(soup, "name", "sailthru.date"),
+            (
+                _meta_content(soup, "name", "date")
+                if spec.publisher == "npr"
+                else None
+            ),
             _ap_hosted_published_at(soup)
             if spec.publisher == "ap"
             else None,
