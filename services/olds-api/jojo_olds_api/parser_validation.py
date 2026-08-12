@@ -82,14 +82,7 @@ def _has_publisher_interface_noise(
     if publisher == "axios":
         return any(
             text.rstrip(":") == "more from axios"
-            or (
-                text.startswith("subscribe to axios ")
-                and (
-                    " newsletter" in text
-                    or "delivered right to your inbox" in text
-                    or "delivered to your inbox" in text
-                )
-            )
+            or text.startswith("subscribe to axios ")
             for text in blocks
         )
     if publisher == "wsj":

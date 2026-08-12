@@ -113,7 +113,8 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12.13"
+          # Use the latest available 3.12 patch across Linux and macOS runners.
+          python-version: "3.12"
           cache: pip
           cache-dependency-path: services/olds-api/requirements.txt
 

@@ -6612,14 +6612,7 @@ def _remove_axios_body_chrome(soup: BeautifulSoup) -> None:
         ) or (
             text.startswith("subscribe to the axios ")
             and " newsletter" in text
-        ) or (
-            text.startswith("subscribe to axios ")
-            and (
-                " newsletter" in text
-                or "delivered right to your inbox" in text
-                or "delivered to your inbox" in text
-            )
-        ) or (
+        ) or text.startswith("subscribe to axios ") or (
             text.startswith("sign up for ")
             and " newsletter" in text
             and newsletter_signup is not None
