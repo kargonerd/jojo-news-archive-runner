@@ -11155,6 +11155,13 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
 
 def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     """Remove NYT sponsorship, subscription and standardized engagement UI."""
+    # Canonical records are static. Legacy interactive pages can contain
+    # hundreds of radio inputs whose adjacent labels already preserve every
+    # readable team/outcome name. Retain those labels and explanatory prose,
+    # but never serialize dead browser controls after scripts are removed.
+    for control in list(soup.select("input, select, textarea")):
+        control.decompose()
+
     for button in list(
         soup.select(
             "button[aria-label='expand or collapse modal'], "
