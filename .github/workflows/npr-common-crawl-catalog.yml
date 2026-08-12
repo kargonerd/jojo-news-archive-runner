@@ -145,6 +145,7 @@ jobs:
             --min-request-interval 3 \
             --timeout 45 \
             --attempts 4 \
+            --page-size 1 \
             --github-output "$GITHUB_OUTPUT"
 
       - name: Publish manifest and checkpoint
