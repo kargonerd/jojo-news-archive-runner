@@ -69,13 +69,22 @@ testing, but new archives use the capture-only pipeline.
 
 The temporary runner remains the active home while validation is in progress.
 
-- Active convergence set: Financial Times, Axios, and Caixin.
 - Completed baseline: Bloomberg.
-- TODO: resume Wall Street Journal, NPR, and New York Times after the reduced
-  active set has stable per-year 800-article cohorts. Already-running batches
-  may finish, but the watchdog must not dispatch new publisher/year cells.
-- TODO: then resume AP, Nikkei, Lianhe Zaobao, Al Jazeera, and South China
-  Morning Post. Their existing checkpoints remain resumable.
+- Active automatic convergence set: Financial Times, Axios, and Caixin. The
+  watchdog may fill at most two validation slots and one catalog slot from this
+  set.
+- Finishing already-started work: the existing WSJ 2020 holdout chain may run
+  until that one publisher/year cell reaches its 800-article gate. It must not
+  expand into another WSJ year automatically.
+- TODO: revalidate NYT 2019 with a fresh zero-overlap 800-article cohort after
+  the latest parser fix, then resume the remaining NYT and WSJ years.
+- TODO: resume NPR and AP after the reduced active set has stable per-year
+  cohorts. Their existing catalogs and checkpoints remain resumable.
+- TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
+  Post. Their existing catalogs and checkpoints also remain resumable.
+- TODO: add Reuters back to the convergence schedule after its historical
+  source windows and acceptance cohorts are reviewed. The adapter remains
+  supported; it is not currently scheduled.
 - TODO: migrate the runner, workflows, secrets documentation, and open
   validation history to the public
   [`kargonerd/jojokanbao`](https://github.com/kargonerd/jojokanbao) repository.
