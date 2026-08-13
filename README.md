@@ -89,11 +89,13 @@ The temporary runner remains the active home while validation is in progress.
   zero-overlap cohorts for `ft-parser/0.8.40`. They follow fixes for legacy
   podcast RSS chrome, a flattened JSON-LD related-story tail, and dead
   expander/video controls found during partial content audits.
-- In flight: Axios 2018 holdout-v11 is a fresh zero-overlap cohort for
-  `axios-parser/0.1.19` and QA revision 4. It follows removal of a partner
-  financial-newsletter call to action and recovery of the attribution from
-  publisher-authored short quote cards. TODO: after this cohort passes all
-  three gates, replay 2019 and
+- Axios 2018 has formally converged at 800/800 on `axios-parser/0.1.19`
+  and QA revision 4 after removal of a partner financial-newsletter call to
+  action and recovery of publisher-authored short quote-card attributions.
+  The cohort excluded 3,999 previously evaluated URLs, had zero prior-cohort
+  overlap and zero hard content anomalies, and preserved 871 selected images
+  during the final reparse audit. In flight: replay 2019 holdout-v4. TODO:
+  after it passes all three gates, replay
   2022--2025. The previous 2017 cohort contained two confirmed CMS fixtures;
   the previous 2022--2025
   cohorts contained respectively 1, 34, 51, and 110 malformed trailing URL
