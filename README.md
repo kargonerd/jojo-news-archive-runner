@@ -93,20 +93,22 @@ The temporary runner remains the active home while validation is in progress.
   cohorts contained respectively 1, 34, 51, and 110 malformed trailing URL
   aliases. Manifest ingestion and sample planning now collapse or skip those
   aliases. Axios 2020 and 2021 already pass the new content/identity audit,
-  and 2021 now has formal current-version evidence: 800/800, zero overlap,
-  zero hard content anomalies. Axios 2020 is the next active refresh.
+  and both now have formal current-version evidence: 800/800, zero overlap,
+  zero hard content anomalies, and all selected images preserved. Continue
+  with the planner-selected 2017, 2018, 2019, and 2022--2025 cohorts.
 - TODO: run fresh current-parser cohorts for Caixin 2011--2015; each catalog
   year has at least 3,901 candidates. The first bounded 2016--2026 catalog
   pass found at least 1,144 candidates in every year except 2018. A focused
   Common Crawl supplement now adds 3,068 independently cataloged 2018 URLs,
   making every 2016--2026 year eligible for an initial 800-article cohort.
-  Caixin 2010 currently has only 580 accepted current-cohort articles after
-  exhausting its 940 eligible primary candidates. Its resumable Common Crawl
-  supplement now prioritizes recent indexes: the first 20 high-yield pages
-  found 640 URLs, including 208 new article-desk URLs absent from the primary
-  manifest. Keep completing this scan until the constrained 2010 cell has
-  enough source redundancy, and keep completing both broader resumable
-  catalogs for future zero-overlap rotations.
+  Caixin 2010 had only 580 accepted current-cohort articles after exhausting
+  its 940 eligible primary candidates. Its resumable Common Crawl supplement
+  now prioritizes recent indexes: 40 high-yield pages found 1,220 URLs,
+  including 404 new article-desk URLs absent from the primary manifest. The
+  2010 holdout is active against that merged source pool. Keep completing the
+  supplemental scan if observed capture yield still leaves the cell short,
+  and keep completing both broader resumable catalogs for future zero-overlap
+  rotations.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
