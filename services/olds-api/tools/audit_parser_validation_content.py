@@ -42,6 +42,30 @@ _INTERFACE_TEXT_RE = re.compile(
     r"sign up for (?:our|the)|subscribe to (?:axios|our|the)|terms (?:of use|and conditions))"
 )
 _INTERACTIVE_TAGS = {"button", "form", "input", "nav", "script", "style"}
+_NYT_DEAD_INTERACTIVE_CONTROL_RE = re.compile(
+    r"(?i)^(?:read full answer|next:\s+.{1,120})$"
+)
+
+
+def nyt_raw_interactive_prose_characters(
+    html_bytes: bytes,
+    canonical_url: str,
+) -> int:
+    """Measure substantial paragraph prose available in an NYT interactive."""
+    if "/interactive/" not in canonical_url.casefold():
+        return 0
+    soup = BeautifulSoup(html_bytes, "html.parser")
+    candidates = soup.select(
+        ".interactive-graphic, .interactive-body, "
+        "section.interactive-content"
+    )
+    unique_paragraphs = {
+        normalize_text(paragraph.get_text(" ", strip=True))
+        for candidate in candidates
+        for paragraph in candidate.select("p")
+        if normalize_text(paragraph.get_text(" ", strip=True))
+    }
+    return sum(len(text) for text in unique_paragraphs)
 
 
 def _suspicious_selected_image(value: str) -> bool:
@@ -226,8 +250,9 @@ def audit_content(
                     connection,
                     canonical_url=canonical_url,
                 )
+                raw_html = _read_capture_html(capture, archive_root)
                 article = parse_article(
-                    _read_capture_html(capture, archive_root),
+                    raw_html,
                     publisher=publisher,
                     canonical_url=canonical_url,
                     raw_capture=capture,
@@ -272,6 +297,36 @@ def audit_content(
                 for block in article.blocks
                 if normalize_text(block.text)
             ]
+            if publisher == "nyt":
+                raw_interactive_prose = nyt_raw_interactive_prose_characters(
+                    raw_html,
+                    canonical_url,
+                )
+                if (
+                    raw_interactive_prose >= 1_000
+                    and article.quality.body_characters < 200
+                ):
+                    hard_anomalies.append(
+                        {
+                            "type": "interactive-prose-collapse",
+                            "url": canonical_url,
+                            "detail": {
+                                "rawParagraphCharacters": raw_interactive_prose,
+                                "parsedBodyCharacters": (
+                                    article.quality.body_characters
+                                ),
+                            },
+                        }
+                    )
+                for text in normalized_blocks:
+                    if _NYT_DEAD_INTERACTIVE_CONTROL_RE.fullmatch(text):
+                        hard_anomalies.append(
+                            {
+                                "type": "dead-interactive-control",
+                                "url": canonical_url,
+                                "detail": text,
+                            }
+                        )
             for text in set(normalized_blocks):
                 if 4 <= len(text) <= 500:
                     block_articles[text].add(canonical_url)

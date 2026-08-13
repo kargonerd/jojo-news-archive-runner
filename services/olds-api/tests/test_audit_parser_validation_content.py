@@ -6,8 +6,10 @@ import pytest
 
 from tools.audit_parser_validation_content import (
     _INTERFACE_TEXT_RE,
+    _NYT_DEAD_INTERACTIVE_CONTROL_RE,
     _suspicious_selected_image,
     image_identity,
+    nyt_raw_interactive_prose_characters,
     normalize_text,
     selected_validation_urls,
     url_year_mismatch,
@@ -37,6 +39,31 @@ def test_interface_text_detector_does_not_match_ordinary_prose() -> None:
     assert _INTERFACE_TEXT_RE.search(
         "Kafka users can publish data streams or subscribe to them in real time."
     ) is None
+    assert _NYT_DEAD_INTERACTIVE_CONTROL_RE.fullmatch("Read full answer")
+    assert _NYT_DEAD_INTERACTIVE_CONTROL_RE.fullmatch("Next: Another Candidate")
+    assert not _NYT_DEAD_INTERACTIVE_CONTROL_RE.fullmatch(
+        "The next section explains the result."
+    )
+
+
+def test_measures_unique_raw_nyt_interactive_prose() -> None:
+    paragraph = "A detailed reported paragraph with useful context. " * 12
+    html = (
+        "<div class='interactive-graphic'><p>"
+        + paragraph
+        + "</p><p>"
+        + paragraph
+        + "</p></div>"
+    ).encode()
+
+    assert nyt_raw_interactive_prose_characters(
+        html,
+        "https://www.nytimes.com/interactive/2019/example.html",
+    ) == len(normalize_text(paragraph))
+    assert nyt_raw_interactive_prose_characters(
+        html,
+        "https://www.nytimes.com/2019/example.html",
+    ) == 0
 
 
 def test_suspicious_image_detector_distinguishes_movie_from_user_avatar() -> None:
