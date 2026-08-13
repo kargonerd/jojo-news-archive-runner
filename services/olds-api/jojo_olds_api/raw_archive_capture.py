@@ -56,7 +56,7 @@ from .news_models import (
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.4",
-    "axios": "axios-capture/0.1.0",
+    "axios": "axios-capture/0.1.1",
     "bloomberg": "bloomberg-capture/0.10.3",
     "caixin": "caixin-capture/0.1.1",
     "ft": "ft-capture/0.20.2",
@@ -2209,6 +2209,13 @@ def _fetch_usable_candidate(
             )
         )
         signals = signals | caixin_evidence
+    axios_parser_usable = True
+    if publisher == "axios" and signals["looksLikeHtml"]:
+        axios_parser_usable, axios_evidence = _axios_capture_parser_evidence(
+            content,
+            canonical_url=canonical_url,
+        )
+        signals = signals | axios_evidence
     ft_parser_usable = True
     if publisher == "ft" and signals["looksLikeHtml"]:
         ft_parser_usable, ft_evidence = _ft_capture_parser_evidence(
@@ -2242,6 +2249,7 @@ def _fetch_usable_candidate(
         wsj_parser_usable=wsj_parser_usable,
         reuters_parser_usable=reuters_parser_usable,
         npr_parser_usable=npr_parser_usable,
+        axios_parser_usable=axios_parser_usable,
         ft_parser_usable=ft_parser_usable,
         nikkei_parser_usable=nikkei_parser_usable,
         caixin_parser_usable=caixin_parser_usable,
@@ -2304,6 +2312,7 @@ def _candidate_rejection_reasons(
     reuters_parser_usable: bool,
     npr_parser_usable: bool,
     ft_parser_usable: bool,
+    axios_parser_usable: bool = True,
     nikkei_parser_usable: bool = True,
     caixin_parser_usable: bool = True,
 ) -> tuple[str, ...]:
@@ -2344,6 +2353,8 @@ def _candidate_rejection_reasons(
         reasons.append("reuters-parser-unusable")
     if not npr_parser_usable:
         reasons.append("npr-parser-unusable")
+    if not axios_parser_usable:
+        reasons.append("axios-parser-unusable")
     if not ft_parser_usable:
         reasons.append("ft-parser-unusable")
     if not nikkei_parser_usable:
@@ -6382,7 +6393,7 @@ def _axios_capture_parser_evidence(
     *,
     canonical_url: str,
 ) -> tuple[bool, dict[str, object]]:
-    """Reject Axios next-story records that only redirect to a visual project.
+    """Reject Axios captures that cannot supply the archived editorial item.
 
     Some archived Axios URLs hydrate a valid ``__NEXT_DATA__`` story object,
     but that object is merely a one-sentence hand-off to a separately hosted
@@ -6418,8 +6429,16 @@ def _axios_capture_parser_evidence(
             flags=re.IGNORECASE,
         )
     )
-    return not visual_redirect_stub, {
+    empty_article_shell = bool(
+        article.content_type == ContentType.ARTICLE
+        and article.quality.status == ArticleStatus.PARTIAL
+        and article.quality.body_characters == 0
+        and article.quality.images_selected == 0
+    )
+    usable = not (visual_redirect_stub or empty_article_shell)
+    return usable, {
         "axiosCaptureVisualRedirectStub": visual_redirect_stub,
+        "axiosCaptureEmptyArticleShell": empty_article_shell,
         "axiosCaptureExtractionStatus": article.quality.status.value,
         "axiosCaptureContentType": article.content_type.value,
         "axiosCaptureBodyCharacters": article.quality.body_characters,
@@ -7085,7 +7104,7 @@ def completed_capture_rejection_reason(
             canonical_url=capture.canonical_url,
         )
         if not usable:
-            return "axios-visual-redirect-stub"
+            return "axios-capture-parser-incomplete"
     if capture.publisher == "ft":
         usable, _ = _ft_capture_parser_evidence(
             content,

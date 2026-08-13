@@ -7344,6 +7344,35 @@ def test_axios_capture_parser_evidence_rejects_visual_redirect_stub(
     assert signals["axiosCaptureVisualRedirectStub"] is True
 
 
+def test_axios_capture_parser_evidence_rejects_empty_article_shell(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "jojo_olds_api.news_parser.parse_article",
+        lambda *args, **kwargs: SimpleNamespace(
+            content_type=ContentType.ARTICLE,
+            quality=SimpleNamespace(
+                status=ArticleStatus.PARTIAL,
+                body_characters=0,
+                images_selected=0,
+            ),
+            plain_text="",
+        ),
+    )
+
+    usable, signals = _axios_capture_parser_evidence(
+        b"<html><article>metadata-only shell</article></html>",
+        canonical_url=(
+            "https://www.axios.com/2017/12/16/"
+            "trump-at-the-cia-1513388116"
+        ),
+    )
+
+    assert usable is False
+    assert signals["axiosCaptureVisualRedirectStub"] is False
+    assert signals["axiosCaptureEmptyArticleShell"] is True
+
+
 @pytest.mark.parametrize(
     ("status", "content_type", "body_characters", "images_selected"),
     [
@@ -7425,7 +7454,7 @@ def test_stored_axios_visual_redirect_stub_is_requeued(
         archive_root=tmp_path,
     )
 
-    assert reason == "axios-visual-redirect-stub"
+    assert reason == "axios-capture-parser-incomplete"
 
 
 def test_ap_capture_parser_evidence_rejects_unhydrated_score_table():
