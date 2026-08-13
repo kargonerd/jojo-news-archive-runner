@@ -20,6 +20,7 @@ from jojo_olds_api.news_parser import parse_article
 from jojo_olds_api.parser_validation import (
     _read_capture_html,
     _read_dependent_resources,
+    is_axios_internal_test_entry,
 )
 from jojo_olds_api.raw_archive_capture import completed_raw_capture
 
@@ -307,6 +308,17 @@ def audit_content(
                         "type": "extraction-not-complete",
                         "url": canonical_url,
                         "detail": article.quality.status.value,
+                    }
+                )
+            if publisher == "axios" and is_axios_internal_test_entry(
+                canonical_url,
+                article.headline,
+            ):
+                hard_anomalies.append(
+                    {
+                        "type": "internal-test-entry",
+                        "url": canonical_url,
+                        "detail": article.headline,
                     }
                 )
             body_lengths.append(len(article.plain_text))

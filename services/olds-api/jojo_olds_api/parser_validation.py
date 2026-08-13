@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import sqlite3
 from typing import Iterable
+from urllib.parse import urlsplit
 
 from .archive_sources import (
     archive_source_spec,
@@ -72,6 +73,26 @@ _PLACEHOLDER_IMAGE_MARKERS = (
     "social-default",
     "/__assets/creatives/brand-ft/icons/v2/open-graph.png",
 )
+
+
+def is_axios_internal_test_entry(
+    canonical_url: str,
+    headline: str | None,
+) -> bool:
+    """Identify confirmed Axios CMS fixtures without matching real test news."""
+    slug = urlsplit(canonical_url).path.rstrip("/").rsplit("/", 1)[-1].casefold()
+    normalized_headline = _normalize_text(headline).casefold()
+    known_fixtures = {
+        "axios-generate-test": "axios generate test",
+        "test-this-is-second-persons-post": (
+            "test: this is second person's post"
+        ),
+    }
+    return any(
+        normalized_headline == expected
+        and re.fullmatch(rf"{re.escape(prefix)}-\d+", slug) is not None
+        for prefix, expected in known_fixtures.items()
+    )
 
 
 def _has_publisher_interface_noise(
@@ -1253,6 +1274,11 @@ def record_parser_validation(
             and article.quality.body_characters == 0
         ):
             issues.append("empty-nontext-content")
+        if capture.publisher == "axios" and is_axios_internal_test_entry(
+            capture.canonical_url,
+            article.headline,
+        ):
+            issues.append("nonarticle-desk")
         # Preserve Caixin's photo/video desks in the raw archive and parser
         # coverage, but do not let their one-image landing pages dominate the
         # independently sampled article-validation cohort.

@@ -18,6 +18,7 @@ from jojo_olds_api.parser_validation import (
     ensure_parser_validation_plan,
     failed_completed_parser_validation_files,
     initialize_parser_validation_schema,
+    is_axios_internal_test_entry,
     parser_validation_target_reached,
     parser_validation_summary,
     pending_completed_parser_validation_files,
@@ -72,6 +73,27 @@ def test_publisher_interface_noise_detects_wsj_promo_sequences():
     assert not _has_publisher_interface_noise(
         "wsj",
         ["the article discussed free resources and live updates."],
+    )
+
+
+def test_axios_internal_fixture_detection_requires_known_slug_and_headline():
+    assert is_axios_internal_test_entry(
+        "https://www.axios.com/2017/12/16/axios-generate-test-1513388154",
+        "Axios Generate test",
+    )
+    assert is_axios_internal_test_entry(
+        "https://www.axios.com/2017/12/16/"
+        "test-this-is-second-persons-post-1513388144",
+        "TEST: This is second person's post",
+    )
+    assert not is_axios_internal_test_entry(
+        "https://www.axios.com/2017/12/15/"
+        "trump-crams-for-100-days-test-1513301779",
+        "Trump crams for 100 Days test",
+    )
+    assert not is_axios_internal_test_entry(
+        "https://www.axios.com/2017/12/16/axios-generate-test-1513388154",
+        "Axios reports on a power generation test",
     )
 
 
@@ -2608,6 +2630,72 @@ def test_empty_axios_video_does_not_fill_article_validation_target(
     ).fetchone()[0] == "video"
     assert result["qaPass"] is False
     assert result["issues"] == ["empty-nontext-content"]
+
+
+def test_axios_internal_fixture_does_not_fill_article_validation_target(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.axios.com/2017/12/16/"
+        "axios-generate-test-1513388154"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2017, 1, 'test', 'axios-parser/0.1.17', 3, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2017, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Axios Generate test">
+      <meta property="article:published_time" content="2017-04-28T19:34:20Z">
+    </head><body><article><p>test test test</p><p>fin</p></article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="axios:" + ("e" * 64),
+        publisher="axios",
+        canonical_url=canonical_url,
+        published_at=datetime(2017, 4, 28, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20170429000000id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert "nonarticle-desk" in result["issues"]
+    assert summary["years"]["2017"]["evaluated"] == 0
+    assert summary["years"]["2017"]["screenedNonArticles"] == 1
+    assert summary["ready"] is False
 
 
 def test_caixin_photo_desk_does_not_fill_article_validation_target(
