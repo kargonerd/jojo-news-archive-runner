@@ -33,6 +33,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reserve-per-year", type=int)
     parser.add_argument("--max-record-attempts", type=int, default=3)
     parser.add_argument("--seed", default=DEFAULT_SEED)
+    parser.add_argument(
+        "--reuse-target-plan",
+        action="store_true",
+        help=(
+            "Reuse an already prepared target manifest and sampling plan. "
+            "This avoids reloading a large manifest for each additional "
+            "completed-capture index."
+        ),
+    )
     parser.add_argument("--files-from", type=Path, required=True)
     return parser.parse_args()
 
@@ -55,6 +64,7 @@ def main() -> int:
             reserve_per_year=args.reserve_per_year,
             maximum_record_attempts=args.max_record_attempts,
             seed=args.seed,
+            reuse_target_plan=args.reuse_target_plan,
         )
     finally:
         source.close()

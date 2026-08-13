@@ -75,8 +75,12 @@ def test_accelerator_reuses_only_post_exclusion_prior_captures() -> None:
 
     assert exclusion_position < seed_position < reuse_position < plan_position
     reuse_section = workflow[reuse_position:plan_position]
+    seed_section = workflow[seed_position:plan_position]
     assert "import_source \\" in reuse_section
     assert '"$reusable_state"' in reuse_section
+    assert "target_plan_ready=0" in workflow[seed_position:reuse_position]
+    assert "reuse_plan_args+=(--reuse-target-plan)" in seed_section
+    assert "target_plan_ready=1" in seed_section
     assert 'reusable_root="$SOURCE_ROOT"' in reuse_section
     assert "exclusion-validation-legacy.sqlite3" in reuse_section
     assert 'reusable_root="$LEGACY_SOURCE_ROOT"' in reuse_section

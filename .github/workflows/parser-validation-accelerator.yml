@@ -504,12 +504,17 @@ jobs:
           LEGACY_SOURCE_ROOT: ${{ steps.paths.outputs.legacy_source_root }}
         run: |
           set -euo pipefail
+          target_plan_ready=0
           import_source() {
             local source_state="$1"
             local source_root="$2"
             local files_from="$3"
             if [ ! -f "$source_state" ]; then
               return 0
+            fi
+            reuse_plan_args=()
+            if [ "$target_plan_ready" -eq 1 ]; then
+              reuse_plan_args+=(--reuse-target-plan)
             fi
             python services/olds-api/tools/import_validation_source_captures.py \
               --source-state "$source_state" \
@@ -521,7 +526,9 @@ jobs:
               --seed "$VALIDATION_SEED" \
               --reserve-per-year 0 \
               --max-record-attempts "$MAX_RECORD_ATTEMPTS" \
+              "${reuse_plan_args[@]}" \
               --files-from "$files_from"
+            target_plan_ready=1
             if [ -s "$files_from" ]; then
               rclone copy \
                 "${source_root}/raw" \

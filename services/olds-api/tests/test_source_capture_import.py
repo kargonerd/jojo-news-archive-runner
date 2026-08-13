@@ -309,3 +309,101 @@ def test_import_respects_existing_holdout_exclusions(tmp_path: Path):
     assert target.execute(
         "SELECT canonical_url FROM parser_validation_samples"
     ).fetchall() == [(second_url,)]
+
+
+def test_import_can_reuse_prepared_target_plan_without_manifest(tmp_path: Path):
+    manifest = tmp_path / "manifest.jsonl"
+    first_url, _second_url = _write_manifest(manifest)
+    source = sqlite3.connect(":memory:")
+    target = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        source,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(source, manifest_path=manifest, publisher="wsj")
+    raw_sha256 = "c" * 64
+    source.execute(
+        """
+        UPDATE captures
+        SET status='complete', raw_path=?, raw_sha256=?
+        WHERE canonical_url=?
+        """,
+        (
+            f"objects/{raw_sha256[:2]}/{raw_sha256}.html.gz",
+            raw_sha256,
+            first_url,
+        ),
+    )
+    source.commit()
+    initialize_capture_schema(
+        target,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(target, manifest_path=manifest, publisher="wsj")
+    ensure_parser_validation_plan(
+        target,
+        publisher="wsj",
+        from_year=2016,
+        to_year=2016,
+        target_per_year=1,
+        maximum_record_attempts=3,
+    )
+
+    result = import_selected_source_captures(
+        source_connection=source,
+        target_connection=target,
+        manifest_path=tmp_path / "deliberately-missing.jsonl",
+        publisher="wsj",
+        sample_year=2016,
+        target_per_year=1,
+        reuse_target_plan=True,
+    )
+
+    assert result["imported"] == 1
+    assert result["manifest"] == {"reusedTargetManifest": True}
+    assert result["plan"] == {"reusedTargetPlan": True}
+
+
+def test_reused_target_plan_must_match_sampling_identity(tmp_path: Path):
+    manifest = tmp_path / "manifest.jsonl"
+    _write_manifest(manifest)
+    source = sqlite3.connect(":memory:")
+    target = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        source,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    initialize_capture_schema(
+        target,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(target, manifest_path=manifest, publisher="wsj")
+    ensure_parser_validation_plan(
+        target,
+        publisher="wsj",
+        from_year=2016,
+        to_year=2016,
+        target_per_year=1,
+        maximum_record_attempts=3,
+        seed="original-seed",
+    )
+
+    try:
+        import_selected_source_captures(
+            source_connection=source,
+            target_connection=target,
+            manifest_path=manifest,
+            publisher="wsj",
+            sample_year=2016,
+            target_per_year=1,
+            seed="different-seed",
+            reuse_target_plan=True,
+        )
+    except ValueError as exc:
+        assert "does not match" in str(exc)
+    else:
+        raise AssertionError("mismatched reused plan was accepted")
