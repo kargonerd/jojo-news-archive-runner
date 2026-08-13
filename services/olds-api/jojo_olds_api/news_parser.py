@@ -11371,6 +11371,29 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^sign up for weekly updates on .+ from the times\.?$"
         ),
+        re.compile(
+            r"(?i)^\[?what you need to know to start the day:\s*"
+            r"get new york today in your inbox\s*\.?\s*\]?$"
+        ),
+        re.compile(
+            r"(?i)^follow nyt food on twitter and nyt cooking on instagram"
+            r"\b.*get regular updates from nyt cooking\b"
+        ),
+        re.compile(
+            r"(?i)^\[?\s*listen to [“\"]the argument[”\"] podcast\b"
+        ),
+        re.compile(
+            r"(?i)^is there anything you think we[’']re missing\?.*"
+            r"email us at onpolitics@nytimes\.com\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^we want to hear from our readers\..*"
+            r"email us at onpolitics@nytimes\.com\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^were you forwarded this newsletter\?\s*"
+            r"subscribe here to get it delivered to your inbox\.?$"
+        ),
     )
     for node in list(soup.select("p, li, span")):
         text = _clean_text(node.get_text(" ", strip=True))
