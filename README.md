@@ -118,9 +118,11 @@ The temporary runner remains the active home while validation is in progress.
   evidence: 800/800, zero overlap, zero hard content anomalies, and all
   selected images preserved. The 2017 cohort excluded 6,644 previously
   evaluated URLs and preserved 701 selected images.
-- In flight: Caixin 2013 holdout-v1 on `caixin-parser/0.1.9` after removing a
-  legacy Two Sessions topic-recirculation tail exposed by the initial
-  751-article content audit. TODO: run fresh current-parser cohorts for
+- Caixin 2013 holdout-v1 has formally converged at 800/800 on
+  `caixin-parser/0.1.9` with QA revision 1, zero prior-cohort overlap, zero
+  hard content anomalies, and all 228 selected images preserved. The parser
+  removes the legacy Two Sessions topic-recirculation tail exposed by the
+  initial 751-article audit. TODO: run fresh current-parser cohorts for
   Caixin 2014--2015; each catalog
   year has at least 3,901 candidates. The first bounded 2016--2026 catalog
   pass found at least 1,144 candidates in every year except 2018. A focused
