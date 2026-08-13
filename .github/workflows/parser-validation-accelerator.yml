@@ -881,7 +881,9 @@ jobs:
               capture_timed_out=true
               break
             fi
-            timeout 600 tail --pid="$capture_pid" -f /dev/null
+            # Wake frequently enough to enforce the hard deadline even when
+            # the capture process has no completed future to report.
+            timeout 30 tail --pid="$capture_pid" -f /dev/null
             wait_code=$?
             if [ "$wait_code" -eq 124 ]; then
               live_checkpoint
