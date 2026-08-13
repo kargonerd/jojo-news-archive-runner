@@ -11946,19 +11946,25 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             node.decompose()
 
     for marker in list(soup.select("p, h2, h3, h4")):
-        if (
-            _clean_text(marker.get_text(" ", strip=True)).casefold()
-            != "read more:"
+        if not re.fullmatch(
+            r"read more:?",
+            _clean_text(marker.get_text(" ", strip=True)).casefold(),
         ):
             continue
         sibling = marker.find_next_sibling()
         while isinstance(sibling, Tag):
             next_sibling = sibling.find_next_sibling()
             text = _clean_text(sibling.get_text(" ", strip=True))
+            linked_ft_stories = sibling.select(
+                "a[href*='ft.com/content/'], a[href^='/content/']"
+            )
             if sibling.name in {"ul", "ol"} or (
                 sibling.name == "p"
-                and len(text) <= 300
-                and text.startswith(("-", "–", "—", "−"))
+                and len(text) <= 500
+                and (
+                    text.startswith(("-", "–", "—", "−"))
+                    or len(linked_ft_stories) >= 2
+                )
             ):
                 sibling.decompose()
                 sibling = next_sibling
@@ -13702,6 +13708,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/__assets/creatives/open-graph/ft-v1.jpg",
             "/__assets/creatives/open-graph/fastft-v1.jpg",
             "/__assets/creatives/brand-ft/icons/v2/open-graph.png",
+            "/__assets/creatives/brand-ft/icons/v2/favicon-",
             "/img/meta/wsj-social-share.",
             "/img/wsj_logo_black_social.",
             "/img/wsj_profile_lg.",
