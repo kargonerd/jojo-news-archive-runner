@@ -73,6 +73,10 @@ def _suspicious_selected_image(value: str) -> bool:
     return bool(
         _SUSPICIOUS_IMAGE_RE.search(value)
         or _SUSPICIOUS_AVATAR_FILENAME_RE.search(filename)
+        or (
+            "/__assets/creatives/brand-ft/icons/v2/open-graph.png"
+            in value.casefold()
+        )
     )
 
 
