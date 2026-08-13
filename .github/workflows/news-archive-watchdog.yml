@@ -87,9 +87,10 @@ jobs:
           #
           # TODO: restore WSJ, NPR, NYT, AP, Nikkei, Zaobao, Al Jazeera, and
           # SCMP after the reduced FT/Axios/Caixin convergence set is complete.
-          # Existing B2 checkpoints remain resumable; already-running jobs may
-          # finish, but this queue must not dispatch new work for deferred
-          # publishers.
+          # Existing B2 checkpoints remain resumable, but this queue must not
+          # dispatch new work for deferred publishers. WSJ 2020 is also paused
+          # until its low-yield replay candidate pool has been expanded and
+          # audited (17 accepted samples after 305 capture failures).
           queue='[
             {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"sitemap-wayback","units":"30","runner":"ubuntu-latest"},
             {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"wayback-urlkey","units":"5","runner":"ubuntu-latest"},

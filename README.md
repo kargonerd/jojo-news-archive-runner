@@ -73,9 +73,10 @@ The temporary runner remains the active home while validation is in progress.
 - Active automatic convergence set: Financial Times, Axios, and Caixin. The
   watchdog may fill at most two validation slots and one catalog slot from this
   set.
-- Finishing already-started work: the existing WSJ 2020 holdout chain may run
-  until that one publisher/year cell reaches its 800-article gate. It must not
-  expand into another WSJ year automatically.
+- Paused after an already-started WSJ 2020 holdout exposed poor source yield
+  (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
+  replay candidate pool before resuming that cell; do not expand into another
+  WSJ year automatically.
 - TODO: revalidate NYT 2019 with a fresh zero-overlap 800-article cohort after
   the latest parser fix, then resume the remaining NYT and WSJ years.
 - TODO: resume NPR and AP after the reduced active set has stable per-year
