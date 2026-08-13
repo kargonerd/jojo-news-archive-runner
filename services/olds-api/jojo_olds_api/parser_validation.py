@@ -7,6 +7,7 @@ import hashlib
 import heapq
 import json
 from pathlib import Path
+import re
 import sqlite3
 from typing import Iterable
 
@@ -1256,6 +1257,17 @@ def record_parser_validation(
         # independently sampled article-validation cohort.
         if capture.publisher == "caixin" and capture.canonical_url.startswith(
             ("https://photos.caixin.com/", "https://video.caixin.com/")
+        ):
+            issues.append("nonarticle-desk")
+        # NYT's sitemap includes utility entries from the printed-paper
+        # package. Empty corrections notices and the one-line quotation card
+        # are editorial metadata, not news articles to count toward the
+        # article-parser cohort. Keep them visible in screening statistics.
+        if capture.publisher == "nyt" and re.search(
+            r"(?i)^https://(?:www\.)?nytimes\.com/20\d{2}/\d{2}/\d{2}/(?:"
+            r"pageoneplus/(?:no-)?corrections(?:-|\.)|"
+            r"todayspaper/quotation-of-the-day(?:-|\.))",
+            capture.canonical_url,
         ):
             issues.append("nonarticle-desk")
         if (

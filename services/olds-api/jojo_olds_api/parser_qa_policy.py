@@ -7,6 +7,7 @@ from __future__ import annotations
 _QA_POLICY_REVISIONS = {
     "axios": 2,
     "caixin": 1,
+    "nyt": 1,
     "wsj": 1,
 }
 

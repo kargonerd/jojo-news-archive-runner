@@ -2487,9 +2487,10 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
     connection.execute(
         """
         INSERT INTO parser_validation_config(
-            sample_year, target_size, seed, parser_version, updated_at
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
         )
-            VALUES (2020, 1, 'test', 'nyt-parser/0.8.58', 'now')
+            VALUES (2020, 1, 'test', 'nyt-parser/0.8.58', 1, 'now')
         """
     )
     connection.execute(
@@ -2669,6 +2670,79 @@ def test_caixin_photo_desk_does_not_fill_article_validation_target(
     assert summary["years"]["2010"]["screenedNonArticles"] == 1
     assert summary["years"]["2010"]["qaPassed"] == 0
     assert summary["ready"] is False
+
+
+@pytest.mark.parametrize(
+    "canonical_url",
+    [
+        (
+            "https://www.nytimes.com/2019/09/01/pageoneplus/"
+            "corrections-september-2-2019.html"
+        ),
+        (
+            "https://www.nytimes.com/2019/08/04/todayspaper/"
+            "quotation-of-the-day-a-short-card.html"
+        ),
+    ],
+)
+def test_nyt_print_utility_entry_is_screened_from_article_cohort(
+    tmp_path: Path,
+    canonical_url: str,
+):
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2019, 1, 'test', 'nyt-parser/0.8.58', 1, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2019, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Print utility card">
+      <meta property="article:published_time" content="2019-09-01T00:00:00Z">
+    </head><body><article><p>A short notice.</p></article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="nyt:" + ("d" * 64),
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at=datetime(2019, 9, 1, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20190902000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert "nonarticle-desk" in result["issues"]
+    assert summary["years"]["2019"]["evaluated"] == 0
+    assert summary["years"]["2019"]["screenedNonArticles"] == 1
 
 
 def test_validation_rejects_interface_noise_inside_complete_body(
