@@ -98,7 +98,7 @@ The temporary runner remains the active home while validation is in progress.
 - TODO: run fresh current-parser cohorts for Caixin 2011--2015; each catalog
   year has at least 3,901 candidates. The first bounded 2016--2026 catalog
   pass found at least 1,144 candidates in every year except 2018. A focused
-  Common Crawl supplement now adds 1,501 independently cataloged 2018 URLs,
+  Common Crawl supplement now adds 3,068 independently cataloged 2018 URLs,
   making every 2016--2026 year eligible for an initial 800-article cohort.
   Keep completing both resumable catalogs for future zero-overlap rotations.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
