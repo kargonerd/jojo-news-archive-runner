@@ -13709,6 +13709,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/__assets/creatives/open-graph/fastft-v1.jpg",
             "/__assets/creatives/brand-ft/icons/v2/open-graph.png",
             "/__assets/creatives/brand-ft/icons/v2/favicon-",
+            "/__assets/creatives/brand-ft/icons/v3/open-graph.png",
             "/img/meta/wsj-social-share.",
             "/img/wsj_logo_black_social.",
             "/img/wsj_profile_lg.",
