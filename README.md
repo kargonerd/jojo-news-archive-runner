@@ -85,10 +85,10 @@ The temporary runner remains the active home while validation is in progress.
   Failed content audits keep their checkpoint, raw HTML, and audit evidence in
   B2 but are quarantined from automatic retries until the parser or QA policy
   changes.
-- In flight: FT 2016 holdout-v6 and FT 2017 holdout-v5 are fresh,
-  zero-overlap cohorts for `ft-parser/0.8.39`. They follow fixes for legacy
-  podcast RSS chrome and a flattened JSON-LD related-story tail found during
-  an early partial audit.
+- In flight: FT 2016 holdout-v7 and FT 2017 holdout-v6 are fresh,
+  zero-overlap cohorts for `ft-parser/0.8.40`. They follow fixes for legacy
+  podcast RSS chrome, a flattened JSON-LD related-story tail, and dead
+  expander/video controls found during partial content audits.
 - In flight: Axios 2018 holdout-v10 is a fresh zero-overlap cohort for
   `axios-parser/0.1.18` and QA revision 4. It follows removal of a partner
   financial-newsletter call to action found by the previous 800-row content
