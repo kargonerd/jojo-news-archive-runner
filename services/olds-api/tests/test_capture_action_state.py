@@ -398,3 +398,57 @@ def test_validation_does_not_continue_for_unselected_global_pending_rows(
     assert result["capturesByStatus"]["pending"] == 1
     assert result["actionable"] == 0
     assert result["shouldContinue"] is False
+
+
+def test_screened_nonarticle_does_not_dilute_article_qa_rate(tmp_path: Path):
+    state = tmp_path / "capture.sqlite3"
+    connection = sqlite3.connect(state)
+    connection.executescript(
+        """
+        CREATE TABLE captures (
+            canonical_url TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            raw_path TEXT
+        );
+        CREATE TABLE parser_validation_config (
+            sample_year INTEGER PRIMARY KEY,
+            target_size INTEGER NOT NULL,
+            parser_version TEXT NOT NULL,
+            qa_revision INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL,
+            parser_version TEXT NOT NULL,
+            qa_revision INTEGER NOT NULL,
+            extraction_status TEXT NOT NULL,
+            qa_pass INTEGER NOT NULL,
+            issues_json TEXT NOT NULL,
+            source_capture_sha256 TEXT
+        );
+        INSERT INTO parser_validation_config VALUES
+            (2010, 1, 'caixin-parser/0.1.8', 1);
+        INSERT INTO parser_validation_results VALUES
+            ('https://www.caixin.com/2010-01-01/article.html', 2010,
+             'caixin-parser/0.1.8', 1, 'complete', 1, '[]', 'article-sha'),
+            ('https://photos.caixin.com/2010-01-01/gallery.html', 2010,
+             'caixin-parser/0.1.8', 1, 'complete', 0,
+             '["nonarticle-desk"]', 'gallery-sha');
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    result = MODULE.action_state(
+        state,
+        maximum_record_attempts=3,
+        stop_at_validation_target=True,
+    )
+
+    assert result["validationReady"] is True
+    assert result["validationTargetReached"] is True

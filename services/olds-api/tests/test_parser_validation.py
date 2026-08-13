@@ -2661,9 +2661,14 @@ def test_caixin_photo_desk_does_not_fill_article_validation_target(
         capture=capture,
         archive_root=tmp_path,
     )
+    summary = parser_validation_summary(connection)
 
     assert result["qaPass"] is False
     assert "nonarticle-desk" in result["issues"]
+    assert summary["years"]["2010"]["evaluated"] == 0
+    assert summary["years"]["2010"]["screenedNonArticles"] == 1
+    assert summary["years"]["2010"]["qaPassed"] == 0
+    assert summary["ready"] is False
 
 
 def test_validation_rejects_interface_noise_inside_complete_body(

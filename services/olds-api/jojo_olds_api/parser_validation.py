@@ -1467,12 +1467,61 @@ def parser_validation_summary(
         row = connection.execute(
             """
             SELECT
-                COUNT(*),
+                COALESCE(SUM(
+                    NOT EXISTS (
+                        SELECT 1
+                        FROM json_each(parser_validation_results.issues_json)
+                        WHERE value IN (
+                            'empty-nontext-content',
+                            'nonarticle-desk'
+                        )
+                    )
+                ), 0),
                 COALESCE(SUM(qa_pass), 0),
-                COALESCE(SUM(extraction_status='complete'), 0),
-                COALESCE(SUM(extraction_status='partial'), 0),
-                COALESCE(SUM(extraction_status='unsupported'), 0),
-                COALESCE(SUM(extraction_status='error'), 0),
+                COALESCE(SUM(
+                    extraction_status='complete'
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM json_each(parser_validation_results.issues_json)
+                        WHERE value IN (
+                            'empty-nontext-content',
+                            'nonarticle-desk'
+                        )
+                    )
+                ), 0),
+                COALESCE(SUM(
+                    extraction_status='partial'
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM json_each(parser_validation_results.issues_json)
+                        WHERE value IN (
+                            'empty-nontext-content',
+                            'nonarticle-desk'
+                        )
+                    )
+                ), 0),
+                COALESCE(SUM(
+                    extraction_status='unsupported'
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM json_each(parser_validation_results.issues_json)
+                        WHERE value IN (
+                            'empty-nontext-content',
+                            'nonarticle-desk'
+                        )
+                    )
+                ), 0),
+                COALESCE(SUM(
+                    extraction_status='error'
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM json_each(parser_validation_results.issues_json)
+                        WHERE value IN (
+                            'empty-nontext-content',
+                            'nonarticle-desk'
+                        )
+                    )
+                ), 0),
                 COALESCE(AVG(body_characters), 0),
                 COALESCE(SUM(headline_present=0), 0),
                 COALESCE(SUM(published_at_present=0), 0),
@@ -1495,6 +1544,17 @@ def parser_validation_summary(
                 )
                 ,
                 COALESCE(SUM(source_capture_sha256 IS NULL), 0)
+                ,
+                COALESCE(SUM(
+                    EXISTS (
+                        SELECT 1
+                        FROM json_each(parser_validation_results.issues_json)
+                        WHERE value IN (
+                            'empty-nontext-content',
+                            'nonarticle-desk'
+                        )
+                    )
+                ), 0)
             FROM parser_validation_results
             WHERE sample_year=?
               AND parser_version=?
@@ -1635,6 +1695,7 @@ def parser_validation_summary(
             ),
             "nonTextContent": int(row[14]),
             "unboundCaptureInputs": int(row[15]),
+            "screenedNonArticles": int(row[16]),
             "issueCounts": dict(sorted(issue_counts.items())),
             "failureExamples": failure_examples,
         }

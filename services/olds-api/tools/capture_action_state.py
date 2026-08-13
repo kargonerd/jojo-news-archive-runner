@@ -134,6 +134,15 @@ def action_state(
                 if "source_capture_sha256" in result_columns
                 else "0"
             )
+            article_result_expression = (
+                "NOT EXISTS ("
+                "SELECT 1 FROM json_each(result.issues_json) "
+                "WHERE value IN ("
+                "'empty-nontext-content','nonarticle-desk'"
+                "))"
+                if "issues_json" in result_columns
+                else "1"
+            )
             readiness_columns = {
                 "canonical_url",
                 "sample_year",
@@ -147,10 +156,16 @@ def action_state(
                     SELECT
                         config.sample_year,
                         config.target_size,
-                        COUNT(result.canonical_url) AS evaluated,
+                        COALESCE(SUM(
+                            result.canonical_url IS NOT NULL
+                            AND {article_result_expression}
+                        ), 0) AS evaluated,
                         COALESCE(SUM(result.qa_pass), 0) AS qa_passed,
                         COALESCE(
-                            SUM(result.extraction_status='complete'),
+                            SUM(
+                                result.extraction_status='complete'
+                                AND {article_result_expression}
+                            ),
                             0
                         ) AS complete,
                         COALESCE(
