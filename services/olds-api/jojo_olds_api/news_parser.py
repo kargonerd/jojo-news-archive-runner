@@ -11613,7 +11613,7 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             and (
                 heading_text in {"read more", "share your thoughts"}
                 or (
-                    heading_text == "more"
+                    heading_text in {"more", "related"}
                     and rich_text.select_one("ul.articleList") is not None
                 )
             )
