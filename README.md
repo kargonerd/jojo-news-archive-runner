@@ -105,10 +105,11 @@ The temporary runner remains the active home while validation is in progress.
   its 940 eligible primary candidates. Its resumable Common Crawl supplement
   now prioritizes recent indexes: 40 high-yield pages found 1,220 URLs,
   including 404 new article-desk URLs absent from the primary manifest. The
-  2010 holdout is active against that merged source pool. Keep completing the
-  supplemental scan if observed capture yield still leaves the cell short,
-  and keep completing both broader resumable catalogs for future zero-overlap
-  rotations.
+  2010 has now formally converged at 800/800 with zero prior-cohort overlap,
+  zero hard content anomalies, and 41 photo/video desk pages correctly
+  screened outside the article target. The merged pool exposed 1,708 eligible
+  candidates. Caixin 2011 holdout-v2 is the next active cell. Keep completing
+  both broader resumable catalogs for future zero-overlap rotations.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
