@@ -27,6 +27,7 @@ from xml.etree import ElementTree
 from bs4 import BeautifulSoup
 import brotli
 from .bloomberg_archive_download import ArchiveClient
+from .archive_sources import archive_source_spec, normalize_article_url
 from .common_crawl import (
     discover_common_crawl_candidates,
     fetch_common_crawl_candidate,
@@ -463,6 +464,16 @@ def manifest_item_from_row(row: dict, *, publisher: str) -> ManifestItem:
     ).strip()
     if not canonical_url.startswith(("http://", "https://")):
         raise ValueError(f"manifest row has invalid canonical URL: {canonical_url!r}")
+    if publisher == "axios":
+        normalized_url = normalize_article_url(
+            archive_source_spec(publisher),
+            canonical_url,
+        )
+        if normalized_url is None:
+            raise ValueError(
+                f"manifest row has invalid Axios article URL: {canonical_url!r}"
+            )
+        canonical_url = normalized_url
 
     raw_candidates = row.get("candidates")
     candidates: list[CaptureCandidate] = []
@@ -7220,6 +7231,45 @@ def _insert_manifest_batch(
     connection: sqlite3.Connection,
     rows: list[tuple[object, ...]],
 ) -> int:
+    # Normalization can collapse several malformed source aliases onto one
+    # canonical article inside the same input batch. Merge their candidate
+    # snapshots before the upsert; otherwise the last alias silently replaces
+    # the valid canonical candidate.
+    collapsed: dict[str, tuple[object, ...]] = {}
+    for row in rows:
+        canonical_url = str(row[0])
+        previous = collapsed.get(canonical_url)
+        if previous is None:
+            collapsed[canonical_url] = row
+            continue
+        candidates: list[dict] = []
+        seen_candidates: set[str] = set()
+        for candidate in [
+            *json.loads(str(previous[5])),
+            *json.loads(str(row[5])),
+        ]:
+            identity = json.dumps(
+                candidate,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            if identity in seen_candidates:
+                continue
+            seen_candidates.add(identity)
+            candidates.append(candidate)
+        collapsed[canonical_url] = (
+            *previous[:3],
+            row[3] or previous[3],
+            row[4] or previous[4],
+            json.dumps(
+                candidates,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            row[6],
+        )
+    rows = list(collapsed.values())
     canonical_urls = [str(row[0]) for row in rows]
     placeholders = ",".join("?" for _ in canonical_urls)
     persisted_candidates = {

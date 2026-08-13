@@ -928,6 +928,11 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         archive_source_spec("axios"),
         "https://axios.com/2019/01/11/example-story--",
     ) == "https://www.axios.com/2019/01/11/example-story"
+    for suffix in ("%5C", "%0A", "%20", "%5c%0a"):
+        assert normalize_article_url(
+            archive_source_spec("axios"),
+            "https://www.axios.com/2025/01/20/example-story" + suffix,
+        ) == "https://www.axios.com/2025/01/20/example-story"
     assert normalize_article_url(
         archive_source_spec("npr"),
         "https://www.npr.org/2018/02/03/123456789/example",

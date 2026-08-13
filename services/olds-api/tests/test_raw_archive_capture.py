@@ -1811,6 +1811,58 @@ def test_legacy_manifest_loads_into_generic_capture_state(tmp_path: Path):
     )
 
 
+def test_axios_manifest_collapses_encoded_trailing_aliases(tmp_path: Path):
+    canonical_url = "https://www.axios.com/2025/01/20/example-story"
+    manifest = tmp_path / "manifest.jsonl"
+    rows = []
+    for suffix in ("", "%5C", "%0A", "%20"):
+        source_url = canonical_url + suffix
+        rows.append(
+            {
+                "publisher": "axios",
+                "canonicalUrl": source_url,
+                "publishedAt": "2025-01-20T00:00:00Z",
+                "candidates": [
+                    {
+                        "provider": "wayback",
+                        "snapshotUrl": (
+                            "https://web.archive.org/web/20250121000000id_/"
+                            + source_url
+                        ),
+                    }
+                ],
+            }
+        )
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="axios",
+        authorization_reference="authorization:test",
+    )
+
+    result = load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="axios",
+    )
+
+    assert result == {"manifestRows": 4, "inserted": 1}
+    assert connection.execute(
+        "SELECT canonical_url FROM captures"
+    ).fetchall() == [(canonical_url,)]
+    candidate_rows = json.loads(
+        connection.execute(
+            "SELECT candidates_json FROM captures WHERE canonical_url=?",
+            (canonical_url,),
+        ).fetchone()[0]
+    )
+    assert len(candidate_rows) == 4
+
+
 def test_interrupted_capture_does_not_consume_an_attempt():
     connection = sqlite3.connect(":memory:")
     initialize_capture_schema(

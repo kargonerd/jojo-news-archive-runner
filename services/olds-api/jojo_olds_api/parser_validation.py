@@ -16,6 +16,7 @@ from .archive_sources import (
     archive_source_spec,
     article_deduplication_key,
     article_url_publication_year,
+    normalize_article_url,
 )
 from .news_models import ArticleStatus, ContentType, RawCapture
 from .news_parser import parse_article
@@ -1278,6 +1279,11 @@ def record_parser_validation(
             capture.canonical_url,
             article.headline,
         ):
+            issues.append("nonarticle-desk")
+        if capture.publisher == "axios" and normalize_article_url(
+            archive_source_spec("axios"),
+            capture.canonical_url,
+        ) != capture.canonical_url:
             issues.append("nonarticle-desk")
         # Preserve Caixin's photo/video desks in the raw archive and parser
         # coverage, but do not let their one-image landing pages dominate the

@@ -14,7 +14,9 @@ from bs4 import BeautifulSoup
 
 from jojo_olds_api.archive_sources import (
     archive_source_spec,
+    article_deduplication_key,
     article_url_publication_year,
+    normalize_article_url,
 )
 from jojo_olds_api.news_parser import parse_article
 from jojo_olds_api.parser_validation import (
@@ -247,10 +249,24 @@ def audit_content(
         review_candidates: list[dict[str, object]] = []
         block_articles: dict[str, set[str]] = defaultdict(set)
         selected_image_articles: dict[str, set[str]] = defaultdict(set)
+        identity_articles: dict[str, set[str]] = defaultdict(set)
         body_lengths: list[int] = []
         selected_images = 0
         extraction_statuses: Counter[str] = Counter()
         for index, canonical_url in enumerate(urls, start=1):
+            source_spec = archive_source_spec(publisher)
+            normalized_url = normalize_article_url(source_spec, canonical_url)
+            if normalized_url != canonical_url:
+                hard_anomalies.append(
+                    {
+                        "type": "noncanonical-sample-url",
+                        "url": canonical_url,
+                        "detail": normalized_url,
+                    }
+                )
+            identity = article_deduplication_key(source_spec, canonical_url)
+            if identity is not None:
+                identity_articles[identity].add(canonical_url)
             mismatched_year = url_year_mismatch(
                 publisher,
                 canonical_url,
@@ -426,6 +442,20 @@ def audit_content(
         connection.close()
 
     repeated_threshold = max(5, math.ceil(target * 0.01))
+    duplicate_identities = [
+        {
+            "type": "duplicate-article-identity",
+            "url": sorted(article_urls)[0],
+            "detail": {
+                "identity": identity,
+                "sampleUrls": sorted(article_urls),
+            },
+        }
+        for identity, article_urls in identity_articles.items()
+        if len(article_urls) > 1
+    ]
+    duplicate_identities.sort(key=lambda item: str(item["url"]))
+    hard_anomalies.extend(duplicate_identities)
     repeated_blocks = [
         {
             "text": text,

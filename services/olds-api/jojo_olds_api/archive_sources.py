@@ -351,9 +351,15 @@ def normalize_article_url(
         path = re.sub(r"(?i)(?:%5d|\])$", "", path)
     if spec.publisher == "axios":
         # Historical CDX keys include malformed aliases whose slug differs
-        # from the canonical article only by one or more trailing hyphens.
-        # Axios does not publish an empty final slug token; treating these as
-        # separate URLs can place the same story twice in an 800-item cohort.
+        # from the canonical article only by trailing hyphens or encoded
+        # whitespace/backslashes. Axios does not publish those suffixes;
+        # treating them as separate URLs can place the same story twice in
+        # an 800-item cohort.
+        path = re.sub(
+            r"(?i)(?:%(?:09|0a|0d|20|5c|7f))+$",
+            "",
+            path,
+        )
         path = path.rstrip("-")
     if spec.publisher == "caixin":
         # Legacy magazine articles split long stories into numbered pages and
