@@ -518,6 +518,64 @@ def test_axios_plan_deduplicates_trailing_hyphen_aliases(tmp_path: Path):
     assert len(selected) == 1
 
 
+def test_axios_plan_skips_malformed_aliases_already_in_legacy_state():
+    canonical = "https://www.axios.com/2025/01/20/example-story"
+    malformed = canonical + "%5C"
+    replacement = "https://www.axios.com/2025/01/20/replacement-story"
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="axios",
+        authorization_reference="authorization:test",
+    )
+    for index, url in enumerate((canonical, malformed, replacement)):
+        connection.execute(
+            """
+            INSERT INTO captures(
+                canonical_url, article_id, publisher, published_at,
+                candidates_json, updated_at
+            ) VALUES (?, ?, 'axios', '2025-01-20T12:00:00Z', '[]', 'now')
+            """,
+            (url, f"axios:legacy:{index}"),
+        )
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2025, 2, 'old', 'axios-parser/0.1.17', 3, 'now')
+        """
+    )
+    connection.executemany(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2025, ?, 'now')
+        """,
+        [(canonical, "1"), (malformed, "2")],
+    )
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="axios",
+        from_year=2025,
+        to_year=2025,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    selected = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    }
+    assert malformed not in selected
+    assert selected == {canonical, replacement}
+
+
 def test_npr_plan_deduplicates_story_id_across_date_and_tracking_aliases(
     tmp_path: Path,
 ):

@@ -402,6 +402,11 @@ def ensure_parser_validation_plan(
         if (
             article_deduplication_key(source_spec, str(row[0])) is None
             or (
+                publisher == "axios"
+                and normalize_article_url(source_spec, str(row[0]))
+                != str(row[0])
+            )
+            or (
                 (
                     embedded_year := article_url_publication_year(
                         source_spec,
@@ -1891,6 +1896,12 @@ def _select_additional_samples(
             str(canonical_url),
         )
         if normalized_url is None or normalized_url in seen_normalized:
+            continue
+        if (
+            publisher == "axios"
+            and normalize_article_url(source_spec, str(canonical_url))
+            != str(canonical_url)
+        ):
             continue
         # Legacy checkpoints can contain HTTP/HTTPS, bare/www, query-string,
         # or trailing-slash variants of the same article. SQL equality cannot
