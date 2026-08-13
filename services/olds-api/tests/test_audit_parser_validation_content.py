@@ -26,6 +26,7 @@ def test_normalizes_text_and_image_identity() -> None:
 def test_interface_text_detector_does_not_match_ordinary_prose() -> None:
     assert _INTERFACE_TEXT_RE.search("subscribe") is not None
     assert _INTERFACE_TEXT_RE.search("Related") is not None
+    assert _INTERFACE_TEXT_RE.search("RSS") is not None
     assert _INTERFACE_TEXT_RE.search("The reports are closely related.") is None
     assert _INTERFACE_TEXT_RE.search("subscribe to our daily newsletter") is not None
     assert _INTERFACE_TEXT_RE.search("terms of use") is not None
@@ -238,3 +239,58 @@ def test_rejects_incomplete_target() -> None:
             year=2010,
             target=2,
         )
+
+
+def test_partial_audit_selects_available_rows_without_lowering_target() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.executescript(
+        """
+        CREATE TABLE parser_validation_config (
+          sample_year INTEGER PRIMARY KEY,
+          target_size INTEGER NOT NULL,
+          parser_version TEXT NOT NULL,
+          qa_revision INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+          canonical_url TEXT PRIMARY KEY,
+          sample_year INTEGER NOT NULL,
+          sample_priority TEXT NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+          canonical_url TEXT PRIMARY KEY,
+          publisher TEXT NOT NULL,
+          sample_year INTEGER NOT NULL,
+          parser_version TEXT NOT NULL,
+          qa_revision INTEGER NOT NULL,
+          qa_pass INTEGER NOT NULL
+        );
+        CREATE TABLE captures (
+          canonical_url TEXT PRIMARY KEY,
+          status TEXT NOT NULL,
+          raw_path TEXT
+        );
+        INSERT INTO parser_validation_config
+          VALUES (2017, 800, 'ft-parser/current', 0);
+        INSERT INTO parser_validation_samples
+          VALUES ('https://example.test/ft', 2017, '01');
+        INSERT INTO parser_validation_results VALUES (
+          'https://example.test/ft', 'ft', 2017,
+          'ft-parser/current', 0, 1
+        );
+        INSERT INTO captures VALUES (
+          'https://example.test/ft', 'complete', 'objects/ft.gz'
+        );
+        """
+    )
+
+    version, revision, urls = selected_validation_urls(
+        connection,
+        publisher="ft",
+        year=2017,
+        target=800,
+        allow_partial=True,
+    )
+
+    assert version == "ft-parser/current"
+    assert revision == 0
+    assert urls == ["https://example.test/ft"]

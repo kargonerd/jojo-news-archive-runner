@@ -30,6 +30,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--publisher", required=True)
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--target", type=int, default=800)
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help=(
+            "Download the currently available QA-passing rows when the "
+            "configured validation target has not been reached. This is for "
+            "early defect discovery only and does not satisfy the formal gate."
+        ),
+    )
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument(
         "--reuse-checkpoint",
@@ -145,6 +154,7 @@ def selected_paths(
     publisher: str,
     year: int,
     target: int,
+    allow_partial: bool = False,
 ) -> tuple[list[tuple[str, str]], set[str]]:
     connection = sqlite3.connect(f"file:{state.resolve().as_posix()}?mode=ro", uri=True)
     try:
@@ -214,7 +224,9 @@ def selected_paths(
         ).fetchall()
     finally:
         connection.close()
-    if len(rows) != target:
+    if allow_partial and not rows:
+        raise ValueError("selected no completed QA-passing rows")
+    if not allow_partial and len(rows) != target:
         raise ValueError(f"selected {len(rows)} completed rows, expected {target}")
     raw_hashes: list[tuple[str, str]] = []
     paths: set[str] = set()
@@ -272,6 +284,7 @@ def main() -> int:
         publisher=args.publisher,
         year=args.year,
         target=args.target,
+        allow_partial=args.allow_partial,
     )
     failures: list[str] = []
     completed = 0
@@ -310,6 +323,8 @@ def main() -> int:
                 "publisher": args.publisher,
                 "year": args.year,
                 "sampleRows": len(raw_hashes),
+                "formalTarget": args.target,
+                "formalTargetReached": len(raw_hashes) == args.target,
                 "downloadedPaths": len(paths),
                 "rawChecksumsVerified": len(raw_hashes),
                 "output": str(output),

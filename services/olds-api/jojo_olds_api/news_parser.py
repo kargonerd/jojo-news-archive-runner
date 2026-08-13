@@ -11855,6 +11855,7 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             ".o-message__content-main, "
             ".story-package[data-track-comp-name='moreOn'], "
             ".insideArticleShare, "
+            "[data-trackable='podcast-services'], "
             ".ftlabsaudioplayerholder, "
             ".component-share, "
             ".component-share__button, "

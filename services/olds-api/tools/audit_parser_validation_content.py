@@ -34,7 +34,7 @@ _SUSPICIOUS_AVATAR_FILENAME_RE = re.compile(
     r"(?i)(?:^|[_.-])avatar(?:[_.-]|$)"
 )
 _INTERFACE_TEXT_RE = re.compile(
-    r"(?i)^(?:advertisement|back to top|click here|follow us|more from axios:?|read more:?|related|"
+    r"(?i)^(?:advertisement|back to top|click here|follow us|more from axios:?|read more:?|related|rss|"
     r"related stories|share this article|sign in|subscribe|trending stories)$|"
     r"^(?:\d{2}\s*第\d+页\s*){2,}$|"
     r"^marketwatch拥有位于三大洲的100多名记者|"
@@ -92,6 +92,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--publisher", required=True)
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--target", type=int, default=800)
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help=(
+            "Audit the currently available QA-passing rows before the formal "
+            "target is reached. Partial audits can pass content checks but "
+            "never satisfy the formal convergence gate."
+        ),
+    )
     parser.add_argument("--expected-parser-version")
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
@@ -136,6 +145,7 @@ def selected_validation_urls(
     publisher: str,
     year: int,
     target: int,
+    allow_partial: bool = False,
 ) -> tuple[str, int, list[str]]:
     config_columns = {
         str(row[1])
@@ -203,7 +213,9 @@ def selected_validation_urls(
         parameters,
     ).fetchall()
     urls = [str(row[0]) for row in rows]
-    if len(urls) != target:
+    if allow_partial and not urls:
+        raise ValueError("completed QA-passing sample has no rows")
+    if not allow_partial and len(urls) != target:
         raise ValueError(
             f"completed QA-passing sample has {len(urls)} rows, expected {target}"
         )
@@ -218,6 +230,7 @@ def audit_content(
     year: int,
     target: int,
     expected_parser_version: str | None = None,
+    allow_partial: bool = False,
 ) -> dict[str, object]:
     connection = sqlite3.connect(f"file:{state.resolve().as_posix()}?mode=ro", uri=True)
     try:
@@ -226,6 +239,7 @@ def audit_content(
             publisher=publisher,
             year=year,
             target=target,
+            allow_partial=allow_partial,
         )
         expected_version = expected_parser_version or parser_version
         hard_anomalies: list[dict[str, object]] = []
@@ -438,12 +452,15 @@ def audit_content(
         else None,
         "maximum": lengths[-1] if lengths else None,
     }
+    passes_content_checks = not hard_anomalies and bool(body_lengths)
+    formal_target_reached = len(body_lengths) == target
     return {
         "formatVersion": "jojo-parser-validation-content-audit/1",
         "publisher": publisher,
         "year": year,
         "target": target,
         "audited": len(body_lengths),
+        "formalTargetReached": formal_target_reached,
         "configuredParserVersion": parser_version,
         "parserVersion": expected_version,
         "qaRevision": qa_revision,
@@ -455,7 +472,8 @@ def audit_content(
         "hardAnomalies": hard_anomalies,
         "reviewCandidateCount": len(review_candidates),
         "reviewCandidates": review_candidates,
-        "passesHardChecks": not hard_anomalies and len(body_lengths) == target,
+        "passesContentChecks": passes_content_checks,
+        "passesHardChecks": passes_content_checks and formal_target_reached,
     }
 
 
@@ -468,6 +486,7 @@ def main() -> int:
         year=args.year,
         target=args.target,
         expected_parser_version=args.expected_parser_version,
+        allow_partial=args.allow_partial,
     )
     rendered = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
     if args.output:
@@ -482,6 +501,7 @@ def main() -> int:
                         "year",
                         "target",
                         "audited",
+                        "formalTargetReached",
                         "parserVersion",
                         "configuredParserVersion",
                         "extractionStatuses",
@@ -491,6 +511,7 @@ def main() -> int:
                         "hardAnomaliesByType",
                         "reviewCandidateCount",
                         "passesHardChecks",
+                        "passesContentChecks",
                     )
                 }
                 | {"output": str(args.output)},
@@ -500,7 +521,12 @@ def main() -> int:
         )
     else:
         print(rendered)
-    return 0 if bool(result["passesHardChecks"]) else 2
+    accepted = (
+        result["passesContentChecks"]
+        if args.allow_partial
+        else result["passesHardChecks"]
+    )
+    return 0 if bool(accepted) else 2
 
 
 if __name__ == "__main__":

@@ -146,6 +146,72 @@ def test_selected_paths_supports_checkpoint_before_qa_revisions(
     }
 
 
+def test_selected_paths_can_download_partial_sample_for_early_audit(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "capture.sqlite3"
+    connection = sqlite3.connect(state)
+    connection.executescript(
+        """
+        CREATE TABLE parser_validation_config (
+          sample_year INTEGER PRIMARY KEY,
+          target_size INTEGER NOT NULL,
+          parser_version TEXT NOT NULL,
+          qa_revision INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+          sample_year INTEGER NOT NULL,
+          canonical_url TEXT NOT NULL,
+          sample_priority TEXT NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+          canonical_url TEXT PRIMARY KEY,
+          publisher TEXT NOT NULL,
+          sample_year INTEGER NOT NULL,
+          parser_version TEXT NOT NULL,
+          qa_revision INTEGER NOT NULL,
+          qa_pass INTEGER NOT NULL
+        );
+        CREATE TABLE captures (
+          canonical_url TEXT PRIMARY KEY,
+          status TEXT NOT NULL,
+          raw_path TEXT,
+          raw_sha256 TEXT,
+          dependent_resources_json TEXT
+        );
+        INSERT INTO parser_validation_config
+          VALUES (2017, 800, 'ft-parser/current', 0);
+        INSERT INTO parser_validation_samples
+          VALUES (2017, 'https://example.com/article', '001');
+        INSERT INTO parser_validation_results
+          VALUES (
+            'https://example.com/article', 'ft', 2017,
+            'ft-parser/current', 0, 1
+          );
+        INSERT INTO captures VALUES (
+          'https://example.com/article', 'complete',
+          'objects/html/aa/article.html.gz', 'abc123', '[]'
+        );
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(ValueError, match="selected 1 completed rows, expected 800"):
+        selected_paths(state, publisher="ft", year=2017, target=800)
+
+    raw_hashes, paths = selected_paths(
+        state,
+        publisher="ft",
+        year=2017,
+        target=800,
+        allow_partial=True,
+    )
+
+    assert raw_hashes == [("objects/html/aa/article.html.gz", "abc123")]
+    assert paths == {"objects/html/aa/article.html.gz"}
+
+
 def test_safe_local_path_rejects_parent_traversal(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unsafe archive path"):
         safe_local_path(tmp_path, "objects/../secret")
