@@ -12532,6 +12532,17 @@ def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:
         node.decompose()
     for paragraph in list(soup.select("p")):
         text = _clean_text(paragraph.get_text(" ", strip=True)).casefold()
+        if (
+            text.startswith("更多报道详见：")
+            and paragraph.select_one(
+                "a[href*='caixin.com/'][href*='/2013lh/']"
+            )
+        ):
+            # Legacy 2013 reports appended a cross-site Two Sessions topic
+            # link inside the broad article node. It is recirculation, not a
+            # sentence from the report.
+            paragraph.decompose()
+            continue
         if text.startswith("marketwatch拥有位于三大洲的100多名记者"):
             # Caixin appended the same corporate description to syndicated
             # MarketWatch stories. Preserve the preceding original-URL
