@@ -93,7 +93,8 @@ The temporary runner remains the active home while validation is in progress.
   cohorts contained respectively 1, 34, 51, and 110 malformed trailing URL
   aliases. Manifest ingestion and sample planning now collapse or skip those
   aliases. Axios 2020 and 2021 already pass the new content/identity audit,
-  but still need their formal QA-revision checkpoints refreshed.
+  and 2021 now has formal current-version evidence: 800/800, zero overlap,
+  zero hard content anomalies. Axios 2020 is the next active refresh.
 - TODO: run fresh current-parser cohorts for Caixin 2011--2015; each catalog
   year has at least 3,901 candidates. The first bounded 2016--2026 catalog
   pass found at least 1,144 candidates in every year except 2018. A focused
