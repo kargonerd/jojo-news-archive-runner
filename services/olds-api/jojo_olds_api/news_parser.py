@@ -603,6 +603,11 @@ def parse_article(
             else None
         ),
         _string_or_none(nyt_preloaded_metadata.get("headline")),
+        (
+            _string_or_none(axios_next_story.get("headline"))
+            if axios_next_story is not None
+            else None
+        ),
         _ap_structured_headline(news_article)
         if spec.publisher == "ap"
         else (
@@ -6462,6 +6467,16 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
         parsed = BeautifulSoup("".join(html_parts), "html.parser")
         for child in list((parsed.body or parsed).children):
             article.append(child)
+
+    # Axios quote cards store the quote in ``blockquote`` and its complete
+    # editorial attribution in an adjacent ``cite`` element. The generic
+    # block extractor intentionally does not treat every page-level citation
+    # as prose, so normalize only this publisher-owned structured body shape
+    # into a paragraph. Otherwise a complete short quote card is measured
+    # from the quote alone and incorrectly classified as truncated.
+    for attribution in article.select("blockquote + cite"):
+        attribution.name = "p"
+        attribution["data-jojo-role"] = "quote-attribution"
 
     structured_blocks = story.get("blocks", {}).get("blocks", [])
     if not isinstance(structured_blocks, list):

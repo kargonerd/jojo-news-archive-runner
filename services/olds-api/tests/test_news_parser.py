@@ -296,7 +296,7 @@ def test_axios_visual_fallback_replaces_metadata_placeholder():
     selected = [image for image in result.images if image.should_archive]
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "axios-parser/0.1.18"
+    assert result.extraction.parser_version == "axios-parser/0.1.19"
     assert len(selected) == 1
     assert selected[0].role == ImageRole.CHART
     assert selected[0].original_url == (
@@ -328,6 +328,73 @@ def test_axios_legacy_short_news_card_is_not_treated_as_truncated():
 
     assert result.quality.status.value == "complete"
     assert "structured-short-record" in result.quality.warnings
+
+
+def test_axios_next_story_preserves_short_quote_attribution():
+    canonical_url = (
+        "https://www.axios.com/2018/01/26/"
+        "trump-nyt-mueller-fired-fake-news"
+    )
+    story = {
+        "headline": "Trump dismisses NYT after Mueller scoop",
+        "permalink": canonical_url,
+        "published_date": "2018-01-26T09:47:07Z",
+        "wordcount": 35,
+        "blocks": {
+            "blocks": [
+                {
+                    "type": "styled-quote",
+                    "text": (
+                        "Fake news. Fake news. Typical New York Times. "
+                        "Fake stories."
+                    ),
+                    "data": {},
+                },
+                {
+                    "type": "quote-attribution",
+                    "text": (
+                        "Trump on the NYT scoop that he tried to fire Robert "
+                        "Mueller last year, stopping only because White House "
+                        "Counsel Don McGahn threatened to resign."
+                    ),
+                    "data": {},
+                },
+            ],
+            "entityMap": [],
+        },
+        "bodyHtml": {
+            "beforeKeepReading": (
+                "<blockquote>Fake news. Fake news. Typical New York Times. "
+                "Fake stories.</blockquote>"
+                "<cite>Trump on the NYT scoop that he tried to fire Robert "
+                "Mueller last year, stopping only because White House Counsel "
+                "Don McGahn threatened to resign.</cite>"
+            ),
+            "afterKeepReading": "",
+        },
+    }
+    next_data = {"props": {"pageProps": {"data": {"story": story}}}}
+    html = (
+        "<html><body><script id='__NEXT_DATA__' type='application/json'>"
+        + json.dumps(next_data)
+        + "</script></body></html>"
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert [block.type.value for block in result.blocks] == [
+        "quote",
+        "paragraph",
+    ]
+    assert "Trump on the NYT scoop" in result.plain_text
+    assert 'data-jojo-role="quote-attribution"' in result.body_html
+    assert result.extraction.parser_version == "axios-parser/0.1.19"
 
 
 def test_axios_next_story_restores_twitter_embeds_and_images():
@@ -498,7 +565,7 @@ def test_axios_next_story_removes_read_more_and_normalized_duplicates():
     assert "Election countdown" not in result.plain_text
     assert "Go deeper" not in result.body_html
     assert result.body_html.count("https://playlist.example/episode") == 1
-    assert result.extraction.parser_version == "axios-parser/0.1.18"
+    assert result.extraction.parser_version == "axios-parser/0.1.19"
 
 
 @pytest.mark.parametrize(
@@ -615,7 +682,7 @@ def test_axios_accepts_structurally_proven_image_only_story():
     assert len(selected) == 1
     assert len(selected[0].candidate_urls) >= 1
     assert result.images[0].credit == "Illustration: Axios Visuals"
-    assert result.extraction.parser_version == "axios-parser/0.1.18"
+    assert result.extraction.parser_version == "axios-parser/0.1.19"
 
 
 def test_axios_accepts_only_wordcount_matched_short_am_newsletter():
@@ -10827,7 +10894,7 @@ def test_axios_parser_removes_linked_newsletter_signup_and_breaking_placeholder(
     assert "reporting before" in article.plain_text
     assert "reporting after" in article.plain_text
     assert article.quality.images_selected == 0
-    assert article.extraction.parser_version == "axios-parser/0.1.18"
+    assert article.extraction.parser_version == "axios-parser/0.1.19"
 
 
 def test_axios_parser_removes_publisher_newsletter_subscription_block():
@@ -10849,7 +10916,7 @@ def test_axios_parser_removes_publisher_newsletter_subscription_block():
     assert "orbital mission" in article.plain_text
     assert "Credits:" in article.plain_text
     assert "Axios Space newsletter" not in article.plain_text
-    assert article.extraction.parser_version == "axios-parser/0.1.18"
+    assert article.extraction.parser_version == "axios-parser/0.1.19"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
