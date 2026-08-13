@@ -88,7 +88,7 @@ The temporary runner remains the active home while validation is in progress.
 - In flight: FT 2016 holdout-v5 and FT 2017 holdout-v4 are fresh,
   zero-overlap cohorts for `ft-parser/0.8.38` after legacy podcast RSS chrome
   was found during an early partial audit.
-- TODO: replay Axios 2017--2025 against QA revision 4. The previous 2017
+- TODO: replay Axios 2017--2019 and 2022--2025 against QA revision 4. The previous 2017
   cohort contained two confirmed CMS fixtures; the previous 2022--2025
   cohorts contained respectively 1, 34, 51, and 110 malformed trailing URL
   aliases. Manifest ingestion and sample planning now collapse or skip those
@@ -96,7 +96,7 @@ The temporary runner remains the active home while validation is in progress.
   and both now have formal current-version evidence: 800/800, zero overlap,
   zero hard content anomalies, and all selected images preserved. Continue
   with the planner-selected 2017, 2018, 2019, and 2022--2025 cohorts.
-- TODO: run fresh current-parser cohorts for Caixin 2011--2015; each catalog
+- TODO: run fresh current-parser cohorts for Caixin 2012--2015; each catalog
   year has at least 3,901 candidates. The first bounded 2016--2026 catalog
   pass found at least 1,144 candidates in every year except 2018. A focused
   Common Crawl supplement now adds 3,068 independently cataloged 2018 URLs,
