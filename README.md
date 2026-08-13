@@ -77,9 +77,10 @@ The temporary runner remains the active home while validation is in progress.
   chain meanwhile.
 
 - Completed baseline: Bloomberg.
-- Active automatic convergence set: Financial Times, Axios, and Caixin. The
-  watchdog may fill at most two validation slots and one catalog slot from this
-  set.
+- Active automatic convergence set: Financial Times and Caixin. Axios is
+  complete and no longer occupies a validation slot. When the watchdog is
+  re-enabled, it may fill at most two validation slots and one catalog slot
+  from this reduced set.
 - A cell counts as converged only when its 800-row summary and parser-bound
   content audit both pass, plus the zero-overlap rotation audit for holdouts.
   Failed content audits keep their checkpoint, raw HTML, and audit evidence in
