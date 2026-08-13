@@ -89,15 +89,18 @@ The temporary runner remains the active home while validation is in progress.
   zero-overlap cohorts for `ft-parser/0.8.39`. They follow fixes for legacy
   podcast RSS chrome and a flattened JSON-LD related-story tail found during
   an early partial audit.
-- TODO: replay Axios 2018--2019 and 2022--2025 against QA revision 4. The previous 2017
-  cohort contained two confirmed CMS fixtures; the previous 2022--2025
+- In flight: Axios 2018 holdout-v10 is a fresh zero-overlap cohort for
+  `axios-parser/0.1.18` and QA revision 4. It follows removal of a partner
+  financial-newsletter call to action found by the previous 800-row content
+  audit. TODO: after this cohort passes all three gates, replay 2019 and
+  2022--2025. The previous 2017 cohort contained two confirmed CMS fixtures;
+  the previous 2022--2025
   cohorts contained respectively 1, 34, 51, and 110 malformed trailing URL
   aliases. Manifest ingestion and sample planning now collapse or skip those
   aliases. Axios 2017, 2020, and 2021 now have formal current-version
   evidence: 800/800, zero overlap, zero hard content anomalies, and all
   selected images preserved. The 2017 cohort excluded 6,644 previously
-  evaluated URLs and preserved 701 selected images. Continue with the
-  planner-selected 2018, 2019, and 2022--2025 cohorts.
+  evaluated URLs and preserved 701 selected images.
 - TODO: run fresh current-parser cohorts for Caixin 2013--2015; each catalog
   year has at least 3,901 candidates. The first bounded 2016--2026 catalog
   pass found at least 1,144 candidates in every year except 2018. A focused
