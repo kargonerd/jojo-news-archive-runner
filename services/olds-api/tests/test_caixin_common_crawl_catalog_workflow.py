@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -43,3 +44,31 @@ def test_catalog_auto_continue_preserves_year_and_branch() -> None:
     assert '-f max_pages="$MAX_PAGES"' in dispatch
     assert '-f max_queries="$MAX_QUERIES"' in dispatch
     assert "auto_continue=true" in dispatch
+
+
+def test_catalog_run_blocks_have_valid_bash_syntax(tmp_path: Path) -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    blocks = []
+    lines = workflow.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() != "run: |":
+            continue
+        indent = len(line) - len(line.lstrip())
+        body = []
+        for candidate in lines[index + 1 :]:
+            if candidate.strip() and len(candidate) - len(candidate.lstrip()) <= indent:
+                break
+            body.append(candidate[indent + 2 :] if candidate.strip() else "")
+        blocks.append("\n".join(body))
+
+    assert blocks
+    for number, block in enumerate(blocks):
+        script = tmp_path / f"run-{number}.sh"
+        script.write_text(block + "\n", encoding="utf-8")
+        result = subprocess.run(
+            ["C:/Program Files/Git/bin/bash.exe", "-n", str(script)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr

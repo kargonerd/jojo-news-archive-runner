@@ -124,15 +124,15 @@ jobs:
           if [ "$collection_from_year" -lt 2012 ]; then
             collection_from_year=2012
           fi
+          # Recent indexes retain materially more of Caixin's dated legacy
+          # URLs than the earliest 2012--2014 indexes. Completed queries in
+          # the checkpoint stay complete, so this only prioritizes the
+          # remaining high-yield collections and does not duplicate work.
           python services/olds-api/tools/build_common_crawl_prefix_manifest.py \
             --publisher caixin \
             --from-year "$SAMPLE_YEAR" \
             --to-year "$SAMPLE_YEAR" \
             --collection-from-year "$collection_from_year" \
-            # Recent indexes retain materially more of Caixin's dated legacy
-            # URLs than the earliest 2012--2014 indexes. Completed queries in
-            # the checkpoint stay complete, so this only prioritizes the
-            # remaining high-yield collections and does not duplicate work.
             --collection-order newest \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
