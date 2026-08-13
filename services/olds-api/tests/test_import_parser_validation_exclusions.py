@@ -158,6 +158,62 @@ def test_formal_cohort_import_excludes_only_priority_ranked_qa_target(
     }
 
 
+def test_empty_formal_placeholder_is_skipped_without_resetting_target(
+    tmp_path: Path,
+):
+    source_path = tmp_path / "placeholder.sqlite3"
+    target_path = tmp_path / "target.sqlite3"
+    source = sqlite3.connect(source_path)
+    initialize_parser_validation_schema(source)
+    source.commit()
+    source.close()
+    target = sqlite3.connect(target_path)
+    initialize_parser_validation_schema(target)
+    target.execute(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        ) VALUES ('https://www.ft.com/content/prior', 'validation-v1', 'now')
+        """
+    )
+    target.commit()
+    target.close()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(TOOL),
+            "--source-state",
+            str(source_path),
+            "--target-state",
+            str(target_path),
+            "--source-cohort",
+            "validation-v2",
+            "--publisher",
+            "ft",
+            "--sample-year",
+            "2017",
+            "--accepted-target-only",
+            "--exclude-inherited",
+            "--reset-target-exclusions",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["skippedPlaceholder"] is True
+    target = sqlite3.connect(target_path)
+    assert target.execute(
+        "SELECT canonical_url, source_cohort "
+        "FROM parser_validation_exclusions"
+    ).fetchall() == [
+        ("https://www.ft.com/content/prior", "validation-v1")
+    ]
+    target.close()
+
+
 def test_direct_rebuild_can_clear_stale_target_exclusions(tmp_path: Path):
     source_path = tmp_path / "source.sqlite3"
     target_path = tmp_path / "target.sqlite3"

@@ -65,9 +65,6 @@ def main() -> int:
     target = sqlite3.connect(args.target_state, timeout=60)
     try:
         initialize_parser_validation_schema(target)
-        if args.reset_target_exclusions:
-            with target:
-                target.execute("DELETE FROM parser_validation_exclusions")
         results_table = source.execute(
             """
             SELECT 1 FROM sqlite_master
@@ -96,12 +93,52 @@ def main() -> int:
                 raise SystemExit(
                     "accepted-target-only requires --sample-year"
                 )
-            config = source.execute(
-                "SELECT target_size FROM parser_validation_config "
-                "WHERE sample_year=?",
-                (args.sample_year,),
+            config_table = source.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='parser_validation_config'"
             ).fetchone()
+            config = (
+                source.execute(
+                    "SELECT target_size FROM parser_validation_config "
+                    "WHERE sample_year=?",
+                    (args.sample_year,),
+                ).fetchone()
+                if config_table is not None
+                else None
+            )
             if config is None:
+                result_columns = {
+                    str(row[1])
+                    for row in source.execute(
+                        "PRAGMA table_info(parser_validation_results)"
+                    )
+                }
+                if {"sample_year", "qa_pass"}.issubset(result_columns):
+                    relevant_results = int(
+                        source.execute(
+                            "SELECT COUNT(*) FROM parser_validation_results "
+                            "WHERE sample_year=? AND qa_pass=1",
+                            (args.sample_year,),
+                        ).fetchone()[0]
+                    )
+                    if relevant_results == 0:
+                        print(
+                            json.dumps(
+                                {
+                                    "formatVersion": (
+                                        "jojo-parser-validation-exclusions/1"
+                                    ),
+                                    "sourceCohort": args.source_cohort,
+                                    "sampleYear": args.sample_year,
+                                    "acceptedTargetOnly": True,
+                                    "skippedPlaceholder": True,
+                                    "reason": "no-config-and-no-accepted-results",
+                                },
+                                ensure_ascii=False,
+                                sort_keys=True,
+                            )
+                        )
+                        return 0
                 raise SystemExit(
                     "accepted-target-only requires parser validation config"
                 )
@@ -179,6 +216,11 @@ def main() -> int:
         }
         now = datetime.now(timezone.utc).isoformat()
         with target:
+            # Defer the destructive rebuild until the source has proved it is
+            # a real cohort. An empty v2 placeholder must not erase exclusions
+            # already imported from a valid legacy checkpoint.
+            if args.reset_target_exclusions:
+                target.execute("DELETE FROM parser_validation_exclusions")
             # Transitive exclusions already identify the cohort that first
             # evaluated each URL. Preserve that provenance and never let a
             # later checkpoint relabel an older cohort's samples as its own.

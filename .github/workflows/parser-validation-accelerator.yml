@@ -467,10 +467,12 @@ jobs:
             exit 0
           fi
           reset_args=(--reset-target-exclusions)
+          imported_exclusion_states=0
           for exclusion_state in "${exclusion_states[@]}"; do
             source_cohort="$(basename "$exclusion_state" .sqlite3)"
             source_cohort="${source_cohort#exclusion-}"
-            python services/olds-api/tools/import_parser_validation_exclusions.py \
+            import_output="$(
+              python services/olds-api/tools/import_parser_validation_exclusions.py \
               --source-state "$exclusion_state" \
               --target-state "$LOCAL_ROOT/raw/capture.sqlite3" \
               --source-cohort "$source_cohort" \
@@ -479,8 +481,19 @@ jobs:
               --accepted-target-only \
               --exclude-inherited \
               "${reset_args[@]}"
+            )"
+            echo "$import_output"
+            if [ "$(jq -r '.skippedPlaceholder // false' <<<"$import_output")" = "true" ]; then
+              echo "Skipped empty validation placeholder: $source_cohort"
+              continue
+            fi
             reset_args=()
+            imported_exclusion_states=$((imported_exclusion_states + 1))
           done
+          if [ "$SAMPLE_YEAR" -ge 2016 ] && [ "$imported_exclusion_states" -eq 0 ]; then
+            echo "No usable earlier cohort exists for this 2016+ holdout cell." >&2
+            exit 1
+          fi
 
       - name: Seed validation from source archive
         shell: bash
