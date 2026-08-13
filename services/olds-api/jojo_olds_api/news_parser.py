@@ -12033,6 +12033,25 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
         if isinstance(sibling, Tag) and sibling.name in {"ul", "ol"}:
             sibling.decompose()
         heading.decompose()
+    # JSON-LD ``articleBody`` has no semantic heading tags. Some archived FT
+    # pages append a recirculation heading plus one flattened paragraph of
+    # story titles, which therefore arrives here as two ordinary ``p`` tags.
+    # Treat the exact standalone marker as a tail boundary only when it has a
+    # following sibling; prose that merely mentions related stories remains.
+    for marker in list(soup.select("p")):
+        if (
+            _clean_text(marker.get_text(" ", strip=True)).casefold()
+            != "related stories"
+        ):
+            continue
+        sibling = marker.find_next_sibling()
+        if not isinstance(sibling, Tag):
+            continue
+        while isinstance(sibling, Tag):
+            next_sibling = sibling.find_next_sibling()
+            sibling.decompose()
+            sibling = next_sibling
+        marker.decompose()
     for heading in list(soup.select("h2, h3, h4")):
         heading_text = _clean_text(
             heading.get_text(" ", strip=True)

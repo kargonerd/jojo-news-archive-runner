@@ -86,7 +86,7 @@ The temporary runner remains the active home while validation is in progress.
   B2 but are quarantined from automatic retries until the parser or QA policy
   changes.
 - In flight: FT 2016 holdout-v5 and FT 2017 holdout-v4 are fresh,
-  zero-overlap cohorts for `ft-parser/0.8.38` after legacy podcast RSS chrome
+  zero-overlap cohorts for `ft-parser/0.8.39` after legacy podcast RSS chrome and a flattened JSON-LD related-story tail
   was found during an early partial audit.
 - TODO: replay Axios 2017--2019 and 2022--2025 against QA revision 4. The previous 2017
   cohort contained two confirmed CMS fixtures; the previous 2022--2025
