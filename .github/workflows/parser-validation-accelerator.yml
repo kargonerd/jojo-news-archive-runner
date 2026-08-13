@@ -992,12 +992,59 @@ jobs:
             --require-complete \
             --output "$LOCAL_ROOT/raw/rotation-audit.json"
 
+      - name: Audit completed sample content
+        id: content_audit
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            steps.rotation_readiness.outputs.validation_ready == 'true' &&
+            (
+              !startsWith(inputs.cohort, 'holdout-v') ||
+              steps.rotation_audit.outcome == 'success'
+            )
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          set -euo pipefail
+          parser_version="$(
+            python -c 'import os; from jojo_olds_api.publisher_specs import publisher_spec; print(publisher_spec(os.environ["PUBLISHER"]).parser_version)'
+          )"
+          python services/olds-api/tools/audit_parser_validation_content.py \
+            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+            --archive-root "$LOCAL_ROOT/raw" \
+            --publisher "$PUBLISHER" \
+            --year "$SAMPLE_YEAR" \
+            --target "$VALIDATION_TARGET" \
+            --expected-parser-version "$parser_version" \
+            --output "$LOCAL_ROOT/raw/content-audit.json"
+
+      - name: Publish failed content audit
+        if: >-
+          ${{
+            always() &&
+            steps.content_audit.outcome == 'failure' &&
+            hashFiles('.archive-work/**/raw/content-audit.json') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+          REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
+        run: |
+          rclone copyto \
+            "$LOCAL_ROOT/raw/content-audit.json" \
+            "${REMOTE_ROOT}/state/content-audit.json" \
+            --retries 8 --low-level-retries 20
+
       - name: Checkpoint validation state
         if: >-
           ${{
             always() &&
             !cancelled() &&
             steps.rotation_readiness.outcome != 'failure' &&
+            steps.content_audit.outcome != 'failure' &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||
               steps.rotation_readiness.outputs.validation_ready != 'true' ||
@@ -1020,6 +1067,7 @@ jobs:
             always() &&
             !cancelled() &&
             steps.rotation_readiness.outcome != 'failure' &&
+            steps.content_audit.outcome != 'failure' &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||
               steps.rotation_readiness.outputs.validation_ready != 'true' ||
@@ -1067,6 +1115,12 @@ jobs:
               "${REMOTE_ROOT}/state/rotation-audit.json" \
               --retries 8 --low-level-retries 20
           fi
+          if [ -f "$LOCAL_ROOT/raw/content-audit.json" ]; then
+            rclone copyto \
+              "$LOCAL_ROOT/raw/content-audit.json" \
+              "${REMOTE_ROOT}/state/content-audit.json" \
+              --retries 8 --low-level-retries 20
+          fi
           rclone copyto \
             "$RUNNER_TEMP/capture.sqlite3.gz" \
             "${REMOTE_ROOT}/state/capture.sqlite3.gz" \
@@ -1079,6 +1133,7 @@ jobs:
             always() &&
             !cancelled() &&
             steps.rotation_readiness.outcome != 'failure' &&
+            steps.content_audit.outcome != 'failure' &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||
               steps.rotation_readiness.outputs.validation_ready != 'true' ||
@@ -1101,6 +1156,7 @@ jobs:
           ${{
             inputs.auto_continue &&
             steps.rotation_readiness.outcome != 'failure' &&
+            steps.content_audit.outcome != 'failure' &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||
               steps.rotation_readiness.outputs.validation_ready != 'true' ||
