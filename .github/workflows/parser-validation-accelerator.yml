@@ -545,6 +545,27 @@ jobs:
               "$LEGACY_SOURCE_ROOT" \
               "$legacy_files"
           fi
+          # Earlier validation checkpoints can contain successful downloads
+          # that never entered their accepted 800-article cohort (for example,
+          # when a run was cancelled or its parser result failed QA). Reuse
+          # those durable objects only after importing the accepted samples as
+          # exclusions above. import_validation_source_captures selects solely
+          # from the current disjoint plan, so excluded articles cannot return.
+          shopt -s nullglob
+          reusable_states=("$RUNNER_TEMP"/exclusion-*.sqlite3)
+          reusable_index=0
+          for reusable_state in "${reusable_states[@]}"; do
+            reusable_index=$((reusable_index + 1))
+            reusable_root="$SOURCE_ROOT"
+            if [[ "$reusable_state" == *"exclusion-validation-legacy.sqlite3" ]] && \
+               [ -n "$LEGACY_SOURCE_ROOT" ]; then
+              reusable_root="$LEGACY_SOURCE_ROOT"
+            fi
+            import_source \
+              "$reusable_state" \
+              "$reusable_root" \
+              "$RUNNER_TEMP/prior-cohort-import-${reusable_index}.txt"
+          done
           # Raw objects are addressed by the SHA-256 of uncompressed HTML.
           # Old clients can encode identical gzip payloads with a different
           # header, so retain an existing addressed object instead of rejecting

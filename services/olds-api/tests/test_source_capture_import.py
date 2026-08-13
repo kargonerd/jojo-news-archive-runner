@@ -8,6 +8,7 @@ from jojo_olds_api.raw_archive_capture import (
     initialize_capture_schema,
     load_capture_manifest,
 )
+from jojo_olds_api.parser_validation import ensure_parser_validation_plan
 from jojo_olds_api.source_capture_import import (
     export_completed_capture_index,
     import_selected_source_captures,
@@ -212,3 +213,99 @@ def test_compact_index_round_trips_completed_capture(tmp_path: Path):
         (first_url, "complete", raw_sha256),
         (second_url, "pending", None),
     ]
+
+
+def test_import_respects_existing_holdout_exclusions(tmp_path: Path):
+    manifest = tmp_path / "manifest.jsonl"
+    first_url, second_url = _write_manifest(manifest)
+    source = sqlite3.connect(":memory:")
+    target = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        source,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        source,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    for index, url in enumerate((first_url, second_url), start=1):
+        raw_sha256 = str(index) * 64
+        source.execute(
+            """
+            UPDATE captures
+            SET status='complete',
+                final_url=canonical_url,
+                http_status=200,
+                content_type='text/html',
+                quality_score=100,
+                quality_signals_json='{"usable":true}',
+                raw_path=?,
+                raw_sha256=?,
+                raw_bytes=4096,
+                stored_bytes=1024,
+                retrieved_at='2026-08-13T00:00:00+00:00'
+            WHERE canonical_url=?
+            """,
+            (
+                f"objects/{raw_sha256[:2]}/{raw_sha256}.html.gz",
+                raw_sha256,
+                url,
+            ),
+        )
+    source.commit()
+
+    initialize_capture_schema(
+        target,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        target,
+        manifest_path=manifest,
+        publisher="wsj",
+    )
+    ensure_parser_validation_plan(
+        target,
+        publisher="wsj",
+        from_year=2016,
+        to_year=2016,
+        target_per_year=1,
+        maximum_record_attempts=3,
+    )
+    target.execute(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        )
+        VALUES (?, 'holdout-v1', '2026-08-13T00:00:00+00:00')
+        """,
+        (first_url,),
+    )
+    target.execute("DELETE FROM parser_validation_samples")
+    target.commit()
+
+    result = import_selected_source_captures(
+        source_connection=source,
+        target_connection=target,
+        manifest_path=manifest,
+        publisher="wsj",
+        sample_year=2016,
+        target_per_year=1,
+    )
+
+    assert result["imported"] == 1
+    assert target.execute(
+        """
+        SELECT canonical_url, status
+        FROM captures
+        ORDER BY canonical_url
+        """
+    ).fetchall() == [
+        (first_url, "pending"),
+        (second_url, "complete"),
+    ]
+    assert target.execute(
+        "SELECT canonical_url FROM parser_validation_samples"
+    ).fetchall() == [(second_url,)]

@@ -63,6 +63,25 @@ def test_accelerator_does_not_silently_relax_exclusions() -> None:
     assert "relax_parser_validation_exclusions" not in workflow
 
 
+def test_accelerator_reuses_only_post_exclusion_prior_captures() -> None:
+    workflow = _workflow_text()
+
+    exclusion_position = workflow.index("Import original-cohort exclusions")
+    seed_position = workflow.index("Seed validation from source archive")
+    reuse_position = workflow.index(
+        'reusable_states=("$RUNNER_TEMP"/exclusion-*.sqlite3)'
+    )
+    plan_position = workflow.index("Plan parser replay")
+
+    assert exclusion_position < seed_position < reuse_position < plan_position
+    reuse_section = workflow[reuse_position:plan_position]
+    assert "import_source \\" in reuse_section
+    assert '"$reusable_state"' in reuse_section
+    assert 'reusable_root="$SOURCE_ROOT"' in reuse_section
+    assert "exclusion-validation-legacy.sqlite3" in reuse_section
+    assert 'reusable_root="$LEGACY_SOURCE_ROOT"' in reuse_section
+
+
 def test_completed_holdout_requires_union_rotation_audit_before_publish() -> None:
     workflow = _workflow_text()
     audit = workflow[
