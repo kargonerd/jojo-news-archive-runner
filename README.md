@@ -96,9 +96,10 @@ The temporary runner remains the active home while validation is in progress.
   but still need their formal QA-revision checkpoints refreshed.
 - TODO: run fresh current-parser cohorts for Caixin 2011--2015; each catalog
   year has at least 3,901 candidates. The first bounded 2016--2026 catalog
-  pass found at least 1,144 candidates in every year except 2018; that year
-  currently has 258 and needs the new per-year Common Crawl supplement before
-  validation. Keep completing the resumable Wayback catalog in parallel.
+  pass found at least 1,144 candidates in every year except 2018. A focused
+  Common Crawl supplement now adds 1,501 independently cataloged 2018 URLs,
+  making every 2016--2026 year eligible for an initial 800-article cohort.
+  Keep completing both resumable catalogs for future zero-overlap rotations.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
