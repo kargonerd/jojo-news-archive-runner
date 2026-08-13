@@ -69,6 +69,13 @@ testing, but new archives use the capture-only pipeline.
 
 The temporary runner remains the active home while validation is in progress.
 
+- Operational TODO: both scheduled watchdog workflows are temporarily
+  disabled because GitHub schedules execute the default `main` branch, whose
+  queues predate this reduced media set. Re-enable them only after this PR (or
+  an equivalent queue-only backport) reaches the default branch. Explicit
+  feature-branch validation jobs continue through their own `auto_continue`
+  chain meanwhile.
+
 - Completed baseline: Bloomberg.
 - Active automatic convergence set: Financial Times, Axios, and Caixin. The
   watchdog may fill at most two validation slots and one catalog slot from this
