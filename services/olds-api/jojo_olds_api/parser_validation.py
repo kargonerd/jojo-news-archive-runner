@@ -70,6 +70,7 @@ _PLACEHOLDER_IMAGE_MARKERS = (
     "r-generic-hdr.png",
     "og-ft-logo",
     "social-default",
+    "/__assets/creatives/brand-ft/icons/v2/open-graph.png",
 )
 
 

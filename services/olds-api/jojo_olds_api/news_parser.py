@@ -13627,6 +13627,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "bc1ec196-2767-11e2-8c4f-00144feabdc0.gif",
             "/__assets/creatives/open-graph/ft-v1.jpg",
             "/__assets/creatives/open-graph/fastft-v1.jpg",
+            "/__assets/creatives/brand-ft/icons/v2/open-graph.png",
             "/img/meta/wsj-social-share.",
             "/img/wsj_logo_black_social.",
             "/img/wsj_profile_lg.",
