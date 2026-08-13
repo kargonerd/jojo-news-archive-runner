@@ -96,7 +96,7 @@ The temporary runner remains the active home while validation is in progress.
   and both now have formal current-version evidence: 800/800, zero overlap,
   zero hard content anomalies, and all selected images preserved. Continue
   with the planner-selected 2017, 2018, 2019, and 2022--2025 cohorts.
-- TODO: run fresh current-parser cohorts for Caixin 2012--2015; each catalog
+- TODO: run fresh current-parser cohorts for Caixin 2013--2015; each catalog
   year has at least 3,901 candidates. The first bounded 2016--2026 catalog
   pass found at least 1,144 candidates in every year except 2018. A focused
   Common Crawl supplement now adds 3,068 independently cataloged 2018 URLs,
@@ -109,9 +109,10 @@ The temporary runner remains the active home while validation is in progress.
   prior-cohort overlap and zero hard content anomalies. The 2010 run also
   screened 41 photo/video desk pages outside the article target; the merged
   pool exposed 1,708 eligible candidates. The 2011 run had 2,301 eligible
-  candidates. Caixin 2012 initial validation is the next active cell. Keep
-  completing both broader resumable catalogs for future zero-overlap
-  rotations.
+  candidates. Caixin 2012 has also formally converged at 800/800 with zero
+  parser errors and zero hard content anomalies; all 29 selected images were
+  preserved. Keep completing both broader resumable catalogs for future
+  zero-overlap rotations.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
