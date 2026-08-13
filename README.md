@@ -91,7 +91,7 @@ The temporary runner remains the active home while validation is in progress.
   expander/video controls, an AMP ``Read more`` link group, and FT brand
   favicons and v3 open-graph branding found during partial content audits.
   All superseded FT cohorts remain mandatory exclusions.
-- Axios 2018, 2019, 2022, and 2023 have formally converged at 800/800 on
+- Axios 2018, 2019, and 2022--2024 have formally converged at 800/800 on
   `axios-parser/0.1.19`
   and QA revision 4 after removal of a partner financial-newsletter call to
   action and recovery of publisher-authored short quote-card attributions.
@@ -103,7 +103,9 @@ The temporary runner remains the active home while validation is in progress.
   excluded 3,191 previously evaluated URLs, had zero overlap and zero hard
   anomalies, and preserved all 949 selected images. The 2023 holdout-v1
   excluded 768 normalized unique URLs, had zero overlap and zero hard
-  anomalies, and preserved all 1,018 selected images. TODO: replay 2024--2025.
+  anomalies, and preserved all 1,018 selected images. The 2024 holdout-v1
+  excluded 763 normalized unique URLs, had zero overlap and zero hard
+  anomalies, and preserved all 1,006 selected images. TODO: replay 2025.
   The previous 2017 cohort contained two confirmed CMS fixtures;
   the previous 2022--2025
   cohorts contained respectively 1, 34, 51, and 110 malformed trailing URL
