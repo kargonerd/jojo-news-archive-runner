@@ -383,7 +383,20 @@ def parse_article(
             canonical_url=canonical_url,
         )
         if interactive_documents is not None:
-            body = interactive_documents
+            body_text = (
+                _clean_text(body.get_text(" ", strip=True))
+                if body is not None
+                else ""
+            )
+            if body is None or len(body_text) < 2 * _MINIMUM_BODY_CHARACTERS:
+                body = interactive_documents
+            else:
+                # A source-document link supplements a prose interactive; it
+                # must not replace the complete narrative with its short meta
+                # description. Append only the linked document embeds because
+                # the description is already represented by the real body.
+                for embed in list(interactive_documents.select("iframe")):
+                    body.append(embed)
         inline_interactive = _nyt_inline_interactive_media(
             soup,
             canonical_url=canonical_url,
@@ -11262,6 +11275,14 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     # readable team/outcome name. Retain those labels and explanatory prose,
     # but never serialize dead browser controls after scripts are removed.
     for control in list(soup.select("input, select, textarea")):
+        control.decompose()
+
+    # Candidate questionnaires and other legacy interactives expose collapsed
+    # answers in static HTML. Preserve the complete answer, but remove browser
+    # expansion controls and navigation to a different candidate/page.
+    for control in list(
+        soup.select(".read-full-answer, .next-question")
+    ):
         control.decompose()
 
     # Reader callouts and legacy interactives often wrap useful explanatory
