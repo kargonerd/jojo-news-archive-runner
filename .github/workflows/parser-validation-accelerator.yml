@@ -865,7 +865,22 @@ jobs:
           set +e
           python services/olds-api/tools/capture_archive_batch.py "${args[@]}" &
           capture_pid=$!
+          # capture_archive_batch has its own admission deadline, but a
+          # provider request can still leave a worker future unresolved while
+          # the executor shuts down.  Bound the whole subprocess as well so a
+          # bad archive cannot consume an entire hosted runner.  The live
+          # checkpoint written below makes the batch safely resumable.
+          hard_deadline=$((SECONDS + MAX_RUNTIME_MINUTES * 60 + 120))
+          capture_timed_out=false
           while kill -0 "$capture_pid" 2>/dev/null; do
+            if [ "$SECONDS" -ge "$hard_deadline" ]; then
+              echo "::warning::Capture subprocess exceeded its hard deadline; terminating for checkpointed continuation."
+              kill -TERM "$capture_pid" 2>/dev/null || true
+              sleep 10
+              kill -KILL "$capture_pid" 2>/dev/null || true
+              capture_timed_out=true
+              break
+            fi
             timeout 600 tail --pid="$capture_pid" -f /dev/null
             wait_code=$?
             if [ "$wait_code" -eq 124 ]; then
@@ -876,6 +891,13 @@ jobs:
           done
           wait "$capture_pid"
           code=$?
+          if [ "$capture_timed_out" = true ]; then
+            live_checkpoint
+            # This is a resumable infrastructure stop, not a parser failure.
+            # A zero capture exit code allows the normal auto-continue gate to
+            # dispatch the next bounded batch from the saved SQLite state.
+            code=0
+          fi
           set -e
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
