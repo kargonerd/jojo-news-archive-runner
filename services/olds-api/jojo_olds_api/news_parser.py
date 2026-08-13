@@ -11336,6 +11336,35 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     for button in list(soup.select("button")):
         button.decompose()
 
+    # Learning Network articles can append a small recirculation list inside
+    # the broad story body, immediately before the contributor credit. Remove
+    # only an exact ``Related`` heading followed by linked bullet paragraphs;
+    # ordinary editorial uses of the word and the following credit remain.
+    for heading in list(soup.select("h2, h3, h4, h5, h6")):
+        if (
+            _clean_text(heading.get_text(" ", strip=True)).casefold()
+            != "related"
+        ):
+            continue
+        related_items: list[Tag] = []
+        sibling = heading.find_next_sibling()
+        while isinstance(sibling, Tag):
+            next_sibling = sibling.find_next_sibling()
+            text = _clean_text(sibling.get_text(" ", strip=True))
+            if (
+                sibling.name == "p"
+                and text.startswith(("•", "·"))
+                and sibling.select_one("a[href]") is not None
+            ):
+                related_items.append(sibling)
+                sibling = next_sibling
+                continue
+            break
+        if related_items:
+            for item in related_items:
+                item.decompose()
+            heading.decompose()
+
     for node in list(
         soup.select("figure.byline, figure[data-testid='byline']")
     ):
