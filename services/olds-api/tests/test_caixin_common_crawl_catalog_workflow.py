@@ -28,6 +28,8 @@ def test_catalog_is_year_parameterized_bounded_and_checkpointed() -> None:
     assert "manifest.jsonl.gz" in workflow
     assert "summarize_archive_manifest.py" in workflow
     assert "manifest-summary.json" in workflow
+    assert "--collection-order newest" in workflow
+    assert "--collection-order oldest" not in workflow
 
 
 def test_catalog_auto_continue_preserves_year_and_branch() -> None:
