@@ -41,7 +41,8 @@ _INTERFACE_TEXT_RE = re.compile(
     r"related stories|share this article|sign in|subscribe|trending stories)$|"
     r"^(?:\d{2}\s*第\d+页\s*){2,}$|"
     r"^marketwatch拥有位于三大洲的100多名记者|"
-    r"^(?:accept all cookies|all rights reserved|download (?:our|the) app|"
+    r"^(?:accept all cookies|all rights reserved|"
+    r"download (?:our|the) app(?:\s+(?:now|today))?[.!]?$|"
     r"sign up for (?:our|the)|subscribe to (?:axios|our|the)|terms (?:of use|and conditions))"
 )
 _INTERACTIVE_TAGS = {"button", "form", "input", "nav", "script", "style"}
