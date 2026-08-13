@@ -407,3 +407,38 @@ def test_reused_target_plan_must_match_sampling_identity(tmp_path: Path):
         assert "does not match" in str(exc)
     else:
         raise AssertionError("mismatched reused plan was accepted")
+
+
+def test_reused_target_plan_skips_empty_source_placeholder(tmp_path: Path):
+    manifest = tmp_path / "manifest.jsonl"
+    _write_manifest(manifest)
+    source = sqlite3.connect(":memory:")
+    target = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        target,
+        publisher="wsj",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(target, manifest_path=manifest, publisher="wsj")
+    ensure_parser_validation_plan(
+        target,
+        publisher="wsj",
+        from_year=2016,
+        to_year=2016,
+        target_per_year=1,
+        maximum_record_attempts=3,
+    )
+
+    result = import_selected_source_captures(
+        source_connection=source,
+        target_connection=target,
+        manifest_path=manifest,
+        publisher="wsj",
+        sample_year=2016,
+        target_per_year=1,
+        reuse_target_plan=True,
+    )
+
+    assert result["skippedSourcePlaceholder"] is True
+    assert result["imported"] == 0
+    assert result["rawPaths"] == []

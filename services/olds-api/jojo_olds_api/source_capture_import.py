@@ -184,6 +184,25 @@ def import_selected_source_captures(
             maximum_record_attempts=maximum_record_attempts,
             seed=seed,
         )
+    source_has_captures = source_connection.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type='table' AND name='captures'
+        """
+    ).fetchone()
+    if source_has_captures is None:
+        return {
+            "publisher": publisher,
+            "sampleYear": sample_year,
+            "selectedIncomplete": 0,
+            "sourceMatches": 0,
+            "imported": 0,
+            "rawPaths": [],
+            "skippedSourcePlaceholder": True,
+            "manifest": manifest_result,
+            "plan": plan,
+        }
     selected_urls = [
         str(row[0])
         for row in target_connection.execute(
