@@ -73,6 +73,18 @@ The temporary runner remains the active home while validation is in progress.
 - Active automatic convergence set: Financial Times, Axios, and Caixin. The
   watchdog may fill at most two validation slots and one catalog slot from this
   set.
+- In flight: FT 2016 holdout-v5 and FT 2017 holdout-v4 are fresh,
+  zero-overlap cohorts for `ft-parser/0.8.38` after legacy podcast RSS chrome
+  was found during an early partial audit.
+- TODO: replay Axios 2017--2025 against QA revision 4. The previous 2017
+  cohort contained two confirmed CMS fixtures; the previous 2022--2025
+  cohorts contained respectively 1, 34, 51, and 110 malformed trailing URL
+  aliases. Manifest ingestion and sample planning now collapse or skip those
+  aliases. Axios 2020 and 2021 already pass the new content/identity audit,
+  but still need their formal QA-revision checkpoints refreshed.
+- TODO: run fresh current-parser cohorts for Caixin 2011--2015; each catalog
+  year has at least 3,901 candidates. Complete the still-missing 2016--2026
+  catalog summary before scheduling those later years.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
