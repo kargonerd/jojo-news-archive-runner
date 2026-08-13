@@ -11394,6 +11394,9 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
             r"(?i)^were you forwarded this newsletter\?\s*"
             r"subscribe here to get it delivered to your inbox\.?$"
         ),
+        re.compile(
+            r"(?i)^follow the @readercenter on twitter for more coverage\b"
+        ),
     )
     for node in list(soup.select("p, li, span")):
         text = _clean_text(node.get_text(" ", strip=True))
