@@ -17,12 +17,17 @@ def test_catalog_is_year_parameterized_bounded_and_checkpointed() -> None:
     assert "SAMPLE_YEAR: ${{ inputs.year }}" in workflow
     assert '--from-year "$SAMPLE_YEAR"' in workflow
     assert '--to-year "$SAMPLE_YEAR"' in workflow
+    assert 'collection_from_year="$SAMPLE_YEAR"' in workflow
+    assert '[ "$collection_from_year" -lt 2012 ]' in workflow
+    assert '--collection-from-year "$collection_from_year"' in workflow
     assert "${SAMPLE_YEAR}-${SAMPLE_YEAR}/commoncrawl-prefix" in workflow
     assert '--max-pages "$MAX_PAGES"' in workflow
     assert '--max-queries "$MAX_QUERIES"' in workflow
     assert "checkpoint_capture_state.py" in workflow
     assert "discovery.sqlite3.gz" in workflow
     assert "manifest.jsonl.gz" in workflow
+    assert "summarize_archive_manifest.py" in workflow
+    assert "manifest-summary.json" in workflow
 
 
 def test_catalog_auto_continue_preserves_year_and_branch() -> None:

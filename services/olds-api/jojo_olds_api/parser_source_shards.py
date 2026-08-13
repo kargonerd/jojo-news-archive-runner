@@ -47,3 +47,21 @@ def parser_source_manifest_shard(publisher: str, year: int) -> str:
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return f"{publisher}/{window}/wayback-urlkey"
     raise ValueError(f"unsupported parser publisher: {publisher}")
+
+
+def parser_supplemental_manifest_shards(
+    publisher: str,
+    year: int,
+) -> tuple[str, ...]:
+    """Return catalog-only sources merged into a validation cell."""
+    # Validate the cell and keep its supported-year semantics aligned with
+    # parser_source_manifest_shard before deriving supplemental paths.
+    parser_source_manifest_shard(publisher, year)
+    if publisher in {"npr", "caixin"}:
+        return (f"{publisher}/{year}-{year}/commoncrawl-prefix",)
+    if publisher == "axios":
+        return ("axios/2017-2026/sitemap-wayback",)
+    if publisher == "nikkei":
+        window = "2010-2015" if year <= 2015 else "2016-2026"
+        return (f"nikkei/{window}/commoncrawl-prefix",)
+    return ()

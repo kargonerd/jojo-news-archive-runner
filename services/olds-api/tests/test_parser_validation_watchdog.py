@@ -934,6 +934,50 @@ def test_watchdog_excludes_years_below_manifest_capacity(tmp_path: Path):
     }
 
 
+def test_watchdog_admits_year_with_sufficient_supplemental_capacity(
+    tmp_path: Path,
+):
+    primary = "caixin/2016-2026/wayback-urlkey"
+    supplemental = "caixin/2018-2018/commoncrawl-prefix"
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=10,
+        publishers=["caixin"],
+        available_source_shards={primary},
+        source_year_capacities={
+            primary: {2018: 258},
+            supplemental: {2018: 1501},
+        },
+    )
+
+    assert plan["targetCells"] == 1
+    assert plan["tasks"][0]["year"] == 2018
+
+
+def test_watchdog_does_not_sum_subthreshold_sources_to_admit_year(
+    tmp_path: Path,
+):
+    primary = "caixin/2016-2026/wayback-urlkey"
+    supplemental = "caixin/2018-2018/commoncrawl-prefix"
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=10,
+        publishers=["caixin"],
+        available_source_shards={primary},
+        source_year_capacities={
+            primary: {2018: 500},
+            supplemental: {2018: 500},
+        },
+    )
+
+    assert plan["targetCells"] == 0
+    assert plan["tasks"] == []
+
+
 def test_watchdog_prioritizes_stale_corpus_for_parser_replay(
     tmp_path: Path,
 ):

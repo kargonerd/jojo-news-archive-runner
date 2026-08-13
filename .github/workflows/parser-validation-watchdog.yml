@@ -154,6 +154,24 @@ jobs:
                 --retries 8 --low-level-retries 20
             fi
           done
+          # Supplemental catalogs are merged by the accelerator per year.
+          # Restore their capacity sidecars so a thin primary Wayback shard
+          # does not hide a year with at least 800 Common Crawl candidates.
+          for supplemental_year in $(seq 2010 2026); do
+            supplemental_root="caixin/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"
+            capacity_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${supplemental_root}/catalog/manifest-summary.json"
+            if capacity_listing="$(
+              rclone lsl "$capacity_remote" \
+                --timeout 30s --contimeout 10s \
+                --retries 1 --low-level-retries 1 \
+                2>/dev/null
+            )" && [ -n "$capacity_listing" ]; then
+              capacity_local="${source_capacity_root}/${supplemental_root}/manifest-summary.json"
+              mkdir -p "$(dirname "$capacity_local")"
+              rclone copyto "$capacity_remote" "$capacity_local" \
+                --retries 8 --low-level-retries 20
+            fi
+          done
           # Formal parser-validation summaries are execution state under v2,
           # not part of a publisher's v1 canonical raw source tree. Restore
           # both the original validation cohort and formal holdout cohorts;

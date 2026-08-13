@@ -19,6 +19,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "available-source-shards.txt" in workflow
     assert "--available-source-shards" in workflow
     assert "manifest-summary.json" in workflow
+    assert 'supplemental_root="caixin/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"' in workflow
     assert "--source-capacity-root" in workflow
     assert 'object_listing="$(\n              rclone lsl' in workflow
     assert '&& [ -n "$object_listing" ]; then' in workflow

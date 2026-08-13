@@ -7,7 +7,10 @@ from typing import Iterable, Mapping
 
 from .publisher_specs import publisher_spec
 from .parser_qa_policy import qa_policy_revision
-from .parser_source_shards import parser_source_manifest_shard
+from .parser_source_shards import (
+    parser_source_manifest_shard,
+    parser_supplemental_manifest_shards,
+)
 
 
 FORMAT_VERSION = "jojo-parser-validation-watchdog/1"
@@ -74,13 +77,41 @@ def _source_year_is_available(
         return False
     if source_year_capacities is None:
         return True
-    year_counts = source_year_capacities.get(source_shard)
-    if year_counts is None:
+    known_counts = _known_source_capacities(
+        publisher=publisher,
+        year=year,
+        source_shard=source_shard,
+        source_year_capacities=source_year_capacities,
+    )
+    if not known_counts:
         # Capacity sidecars are rolling out shard by shard. Preserve the
         # existing availability behavior until a manifest-bound summary is
         # present, then use it as an authoritative impossibility filter.
         return True
-    return int(year_counts.get(year, 0)) >= MINIMUM_SAMPLES
+    # A single independently deduplicated source with 800 URLs is sufficient
+    # evidence of capacity. Summing sources here could count overlapping URLs
+    # twice and incorrectly admit an impossible cell.
+    return max(known_counts) >= MINIMUM_SAMPLES
+
+
+def _known_source_capacities(
+    *,
+    publisher: str,
+    year: int,
+    source_shard: str,
+    source_year_capacities: Mapping[str, Mapping[int, int]],
+) -> list[int]:
+    capacities: list[int] = []
+    for shard in (
+        source_shard,
+        *parser_supplemental_manifest_shards(publisher, year),
+    ):
+        year_counts = source_year_capacities.get(shard)
+        if year_counts is not None:
+            # Once a manifest-bound sidecar exists, an omitted year is an
+            # authoritative zero rather than unknown rolling-migration state.
+            capacities.append(int(year_counts.get(year, 0)))
+    return capacities
 
 
 def plan_validation_dispatch(
@@ -461,10 +492,18 @@ def _eligible_candidate_upper_bound(
         source_shard = parser_source_manifest_shard(publisher, year)
     except ValueError:
         return None
-    year_counts = source_year_capacities.get(source_shard)
-    if year_counts is None or year not in year_counts:
+    known_counts = _known_source_capacities(
+        publisher=publisher,
+        year=year,
+        source_shard=source_shard,
+        source_year_capacities=source_year_capacities,
+    )
+    if not known_counts:
         return None
-    current_manifest_capacity = int(year_counts[year])
+    # This value is deliberately an upper bound. Distinct source manifests
+    # can overlap, so their sum is safe for impossibility filtering while the
+    # exact merged manifest remains authoritative during sample planning.
+    current_manifest_capacity = sum(known_counts)
     evidence: list[tuple[int, int, int]] = []
     for item in observed_rows:
         if not isinstance(item, dict):

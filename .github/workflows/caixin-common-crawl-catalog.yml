@@ -120,11 +120,15 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
+          collection_from_year="$SAMPLE_YEAR"
+          if [ "$collection_from_year" -lt 2012 ]; then
+            collection_from_year=2012
+          fi
           python services/olds-api/tools/build_common_crawl_prefix_manifest.py \
             --publisher caixin \
             --from-year "$SAMPLE_YEAR" \
             --to-year "$SAMPLE_YEAR" \
-            --collection-from-year 2012 \
+            --collection-from-year "$collection_from_year" \
             --collection-order oldest \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
@@ -146,6 +150,10 @@ jobs:
           REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
         run: |
           set -euo pipefail
+          python services/olds-api/tools/summarize_archive_manifest.py \
+            --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
+            --publisher caixin \
+            --output "$LOCAL_ROOT/catalog/manifest-summary.json"
           python services/olds-api/tools/checkpoint_capture_state.py \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$RUNNER_TEMP/discovery.sqlite3.gz"
@@ -156,6 +164,10 @@ jobs:
           rclone copyto \
             "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
             "${REMOTE_ROOT}/catalog/manifest.jsonl.gz" \
+            --retries 8 --low-level-retries 20
+          rclone copyto \
+            "$LOCAL_ROOT/catalog/manifest-summary.json" \
+            "${REMOTE_ROOT}/catalog/manifest-summary.json" \
             --retries 8 --low-level-retries 20
           rclone copyto \
             "$LOCAL_ROOT/state/summary.json" \
