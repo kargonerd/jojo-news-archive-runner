@@ -702,12 +702,19 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
-          python services/olds-api/tools/enrich_ft_validation_candidates.py \
-            --state "$LOCAL_ROOT/raw/capture.sqlite3" \
-            --output-dir "$LOCAL_ROOT/raw" \
-            --limit 600 \
-            --workers "$DOWNLOAD_WORKERS" \
-            --github-output "$GITHUB_OUTPUT"
+          # Mirror discovery is an optional acceleration path.  A degraded
+          # partner or archive circuit must never hold the validation batch
+          # indefinitely; the primary Wayback/Common Crawl replay remains
+          # sufficient to make progress and will resume this lookup later.
+          if ! timeout 600 python \
+            services/olds-api/tools/enrich_ft_validation_candidates.py \
+              --state "$LOCAL_ROOT/raw/capture.sqlite3" \
+              --output-dir "$LOCAL_ROOT/raw" \
+              --limit 600 \
+              --workers "$DOWNLOAD_WORKERS" \
+              --github-output "$GITHUB_OUTPUT"; then
+            echo "::warning::FT mirror pre-index timed out or failed; continuing with archive replay."
+          fi
 
       - name: Capture FT links preserved by Folo
         if: >-
