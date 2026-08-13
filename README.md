@@ -95,8 +95,10 @@ The temporary runner remains the active home while validation is in progress.
   aliases. Axios 2020 and 2021 already pass the new content/identity audit,
   but still need their formal QA-revision checkpoints refreshed.
 - TODO: run fresh current-parser cohorts for Caixin 2011--2015; each catalog
-  year has at least 3,901 candidates. Complete the still-missing 2016--2026
-  catalog summary before scheduling those later years.
+  year has at least 3,901 candidates. The first bounded 2016--2026 catalog
+  pass found at least 1,144 candidates in every year except 2018; that year
+  currently has 258 and needs the new per-year Common Crawl supplement before
+  validation. Keep completing the resumable Wayback catalog in parallel.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another

@@ -1,0 +1,38 @@
+from pathlib import Path
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+WORKFLOW = (
+    REPOSITORY_ROOT
+    / ".github"
+    / "workflows"
+    / "caixin-common-crawl-catalog.yml"
+)
+
+
+def test_catalog_is_year_parameterized_bounded_and_checkpointed() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "caixin-common-crawl-${{ inputs.year }}" in workflow
+    assert "SAMPLE_YEAR: ${{ inputs.year }}" in workflow
+    assert '--from-year "$SAMPLE_YEAR"' in workflow
+    assert '--to-year "$SAMPLE_YEAR"' in workflow
+    assert "${SAMPLE_YEAR}-${SAMPLE_YEAR}/commoncrawl-prefix" in workflow
+    assert '--max-pages "$MAX_PAGES"' in workflow
+    assert '--max-queries "$MAX_QUERIES"' in workflow
+    assert "checkpoint_capture_state.py" in workflow
+    assert "discovery.sqlite3.gz" in workflow
+    assert "manifest.jsonl.gz" in workflow
+
+
+def test_catalog_auto_continue_preserves_year_and_branch() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    dispatch = workflow[workflow.index("Dispatch next bounded run") :]
+
+    assert "steps.discovery.outputs.should_continue == 'true'" in dispatch
+    assert "steps.discovery.outputs.advances != '0'" in dispatch
+    assert '--ref "$GITHUB_REF_NAME"' in dispatch
+    assert '-f year="$SAMPLE_YEAR"' in dispatch
+    assert '-f max_pages="$MAX_PAGES"' in dispatch
+    assert '-f max_queries="$MAX_QUERIES"' in dispatch
+    assert "auto_continue=true" in dispatch
