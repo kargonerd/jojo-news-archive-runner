@@ -88,12 +88,27 @@ def test_rotation_audit_failure_blocks_checkpoint_publish_and_chaining() -> None
     ) == 4
     assert workflow.count(
         "steps.rotation_audit.outcome == 'success'"
-    ) == 4
+    ) == 5
     publish = workflow[
         workflow.index("Publish validation objects and checkpoint")
         : workflow.index("Report validation state")
     ]
     assert '"${REMOTE_ROOT}/state/rotation-audit.json"' in publish
+
+
+def test_content_audit_failure_is_persisted_but_blocks_chaining() -> None:
+    workflow = _workflow_text()
+
+    checkpoint = workflow[
+        workflow.index("Checkpoint validation state")
+        : workflow.index("Report validation state")
+    ]
+    dispatch = workflow[
+        workflow.index("Dispatch next validation batch") :
+    ]
+    assert "steps.content_audit.outcome != 'failure'" not in checkpoint
+    assert '"${REMOTE_ROOT}/state/content-audit.json"' in checkpoint
+    assert "steps.content_audit.outcome != 'failure'" in dispatch
 
 
 def test_accelerator_enables_archive_fallbacks_for_ft_wsj_and_nikkei() -> None:

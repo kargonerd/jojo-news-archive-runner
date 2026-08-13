@@ -157,6 +157,7 @@ def plan_validation_dispatch(
     summaries_read = 0
     invalid_summaries: list[str] = []
     invalid_rotation_audits: list[str] = []
+    invalid_content_audits: list[str] = []
     for summary_path in sorted(state_root.rglob("summary.json")):
         publisher = _publisher_from_summary_path(
             summary_path,
@@ -190,6 +191,24 @@ def plan_validation_dispatch(
                     invalid_rotation_audits.append(
                         rotation_audit_path.relative_to(state_root).as_posix()
                     )
+        content_audit: dict[str, object] | None = None
+        content_audit_path = summary_path.with_name("content-audit.json")
+        if content_audit_path.exists():
+            try:
+                candidate_audit = json.loads(
+                    content_audit_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                invalid_content_audits.append(
+                    content_audit_path.relative_to(state_root).as_posix()
+                )
+            else:
+                if isinstance(candidate_audit, dict):
+                    content_audit = candidate_audit
+                else:
+                    invalid_content_audits.append(
+                        content_audit_path.relative_to(state_root).as_posix()
+                    )
         cohort = _cohort_from_summary_path(
             summary_path,
             state_root=state_root,
@@ -210,6 +229,7 @@ def plan_validation_dispatch(
             evidence_row = {
                 **row,
                 "_rotationAudit": rotation_audit,
+                "_contentAudit": content_audit,
             }
             cell = progress[cell_key]
             cell["replayableEvaluated"] = max(
@@ -308,6 +328,15 @@ def plan_validation_dispatch(
     ready_cells = {
         cell for cell, values in progress.items() if values["ready"]
     }
+    content_audit_failed_cells = {
+        cell
+        for cell, values in progress.items()
+        if _selected_content_audit_failed(
+            values,
+            publisher=cell[0],
+            year=cell[1],
+        )
+    }
     capacity_deficient_cells = {
         cell
         for cell, values in progress.items()
@@ -322,6 +351,7 @@ def plan_validation_dispatch(
         if cell not in ready_cells
         and cell not in active_cells
         and cell not in capacity_deficient_cells
+        and cell not in content_audit_failed_cells
     ]
     order = {
         publisher: index
@@ -380,6 +410,9 @@ def plan_validation_dispatch(
             "capacityDeficient": (
                 (publisher, year) in capacity_deficient_cells
             ),
+            "contentAuditFailed": (
+                (publisher, year) in content_audit_failed_cells
+            ),
         }
         for publisher in publisher_order
         for year in TARGET_YEARS
@@ -392,10 +425,12 @@ def plan_validation_dispatch(
         "readyCells": len(ready_cells),
         "activeCells": len(active_cells),
         "capacityDeficientCells": len(capacity_deficient_cells),
+        "contentAuditFailedCells": len(content_audit_failed_cells),
         "pendingCells": len(progress) - len(ready_cells),
         "summariesRead": summaries_read,
         "invalidSummaries": invalid_summaries,
         "invalidRotationAudits": invalid_rotation_audits,
+        "invalidContentAudits": invalid_content_audits,
         "currentParserVersions": versions,
         "currentQaRevisions": qa_revisions,
         "cellProgress": cell_progress,
@@ -515,12 +550,75 @@ def _year_ready(
 ) -> bool:
     if not _quality_gates_ready(row):
         return False
+    if not _content_audit_passes(
+        row,
+        publisher=publisher,
+        year=year,
+    ):
+        return False
     if not isinstance(cohort, str) or not cohort.startswith("holdout-v"):
         return True
     return _holdout_audit_passes(
         row,
         publisher=publisher,
         year=year,
+    )
+
+
+def _content_audit_passes(
+    row: dict[str, object],
+    *,
+    publisher: str,
+    year: int,
+) -> bool:
+    audit = row.get("_contentAudit")
+    target = max(MINIMUM_SAMPLES, _integer(row.get("target")))
+    return bool(
+        isinstance(audit, dict)
+        and audit.get("formatVersion")
+        == "jojo-parser-validation-content-audit/1"
+        and audit.get("publisher") == publisher
+        and _integer(audit.get("year")) == year
+        and _integer(audit.get("target")) == target
+        and _integer(audit.get("audited")) >= target
+        and audit.get("formalTargetReached") is True
+        and audit.get("configuredParserVersion") == row.get("parserVersion")
+        and audit.get("parserVersion") == row.get("parserVersion")
+        and _integer(audit.get("qaRevision"))
+        == _integer(row.get("qaRevision"))
+        and _integer(audit.get("hardAnomalyCount")) == 0
+        and audit.get("passesContentChecks") is True
+        and audit.get("passesHardChecks") is True
+    )
+
+
+def _selected_content_audit_failed(
+    cell: Mapping[str, object],
+    *,
+    publisher: str,
+    year: int,
+) -> bool:
+    selected_cohort = cell.get("selectedCohort")
+    cohort_rows = cell.get("cohortRows")
+    if not isinstance(selected_cohort, str) or not isinstance(cohort_rows, dict):
+        return False
+    row = cohort_rows.get(selected_cohort)
+    if not isinstance(row, dict) or not _quality_gates_ready(row):
+        return False
+    audit = row.get("_contentAudit")
+    return bool(
+        isinstance(audit, dict)
+        and audit.get("formatVersion")
+        == "jojo-parser-validation-content-audit/1"
+        and audit.get("publisher") == publisher
+        and _integer(audit.get("year")) == year
+        and _integer(audit.get("target"))
+        == max(MINIMUM_SAMPLES, _integer(row.get("target")))
+        and audit.get("configuredParserVersion") == row.get("parserVersion")
+        and audit.get("parserVersion") == row.get("parserVersion")
+        and _integer(audit.get("qaRevision"))
+        == _integer(row.get("qaRevision"))
+        and audit.get("passesHardChecks") is False
     )
 
 

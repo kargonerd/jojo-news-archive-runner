@@ -1044,7 +1044,6 @@ jobs:
             always() &&
             !cancelled() &&
             steps.rotation_readiness.outcome != 'failure' &&
-            steps.content_audit.outcome != 'failure' &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||
               steps.rotation_readiness.outputs.validation_ready != 'true' ||
@@ -1067,7 +1066,6 @@ jobs:
             always() &&
             !cancelled() &&
             steps.rotation_readiness.outcome != 'failure' &&
-            steps.content_audit.outcome != 'failure' &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||
               steps.rotation_readiness.outputs.validation_ready != 'true' ||
@@ -1133,7 +1131,6 @@ jobs:
             always() &&
             !cancelled() &&
             steps.rotation_readiness.outcome != 'failure' &&
-            steps.content_audit.outcome != 'failure' &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||
               steps.rotation_readiness.outputs.validation_ready != 'true' ||

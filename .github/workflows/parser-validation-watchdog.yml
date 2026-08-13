@@ -167,6 +167,8 @@ jobs:
             --include "holdout-v*/*/*/state/summary.json" \
             --include "validation/*/*/state/rotation-audit.json" \
             --include "holdout-v*/*/*/state/rotation-audit.json" \
+            --include "validation/*/*/state/content-audit.json" \
+            --include "holdout-v*/*/*/state/content-audit.json" \
             --transfers 16 --checkers 32 \
             --retries 8 --low-level-retries 20
 

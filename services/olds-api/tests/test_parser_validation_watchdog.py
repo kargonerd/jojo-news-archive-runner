@@ -70,6 +70,39 @@ def _write_summary(
         encoding="utf-8",
     )
     if (
+        evaluated >= 800
+        and complete_rate >= 0.95
+        and qa_rate == 1.0
+        and errors == 0
+        and unbound_capture_inputs == 0
+    ):
+        content_audit_path = path.with_name("content-audit.json")
+        content_audit_path.write_text(
+            json.dumps(
+                {
+                    "formatVersion": (
+                        "jojo-parser-validation-content-audit/1"
+                    ),
+                    "publisher": publisher,
+                    "year": year,
+                    "target": 800,
+                    "audited": 800,
+                    "formalTargetReached": True,
+                    "configuredParserVersion": effective_parser_version,
+                    "parserVersion": effective_parser_version,
+                    "qaRevision": (
+                        qa_revision
+                        if qa_revision is not None
+                        else qa_policy_revision(publisher)
+                    ),
+                    "hardAnomalyCount": 0,
+                    "passesContentChecks": True,
+                    "passesHardChecks": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+    if (
         relative_path.startswith("holdout-v")
         and evaluated >= 800
         and complete_rate >= 0.95
@@ -178,6 +211,7 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "ready": True,
         "active": False,
         "capacityDeficient": False,
+        "contentAuditFailed": False,
     }
 
 
@@ -373,6 +407,112 @@ def test_watchdog_accepts_current_holdout_after_stale_cohorts(
     assert cell["requiredCohort"] == "holdout-v3"
     assert cell["selectedCohort"] == "holdout-v3"
     assert cell["ready"] is True
+
+
+def test_watchdog_requires_passing_content_audit_and_quarantines_failure(
+    tmp_path: Path,
+):
+    relative = "validation/axios/2022/state/summary.json"
+    _write_summary(
+        tmp_path,
+        relative,
+        publisher="axios",
+        year=2022,
+        evaluated=800,
+    )
+    audit_path = (tmp_path / relative).with_name("content-audit.json")
+    audit_path.unlink()
+
+    missing = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["axios"],
+        available_source_shards={"axios/2017-2026/wayback-urlkey"},
+    )
+    assert missing["readyCells"] == 0
+    assert missing["contentAuditFailedCells"] == 0
+    assert missing["tasks"][0]["year"] == 2022
+    missing_cell = next(
+        row
+        for row in missing["cellProgress"]
+        if row["publisher"] == "axios" and row["year"] == 2022
+    )
+    assert missing_cell["contentAuditFailed"] is False
+
+    _write_summary(
+        tmp_path,
+        relative,
+        publisher="axios",
+        year=2022,
+        evaluated=800,
+    )
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    audit["hardAnomalyCount"] = 1
+    audit["passesContentChecks"] = False
+    audit["passesHardChecks"] = False
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+
+    failed = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=10,
+        publishers=["axios"],
+        available_source_shards={"axios/2017-2026/wayback-urlkey"},
+    )
+    assert failed["readyCells"] == 0
+    assert failed["contentAuditFailedCells"] == 1
+    assert all(task["year"] != 2022 for task in failed["tasks"])
+    failed_cell = next(
+        row
+        for row in failed["cellProgress"]
+        if row["publisher"] == "axios" and row["year"] == 2022
+    )
+    assert failed_cell["contentAuditFailed"] is True
+
+    _write_summary(
+        tmp_path,
+        relative,
+        publisher="axios",
+        year=2022,
+        evaluated=800,
+    )
+    passed = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["axios"],
+        available_source_shards={"axios/2017-2026/wayback-urlkey"},
+    )
+    assert passed["readyCells"] == 1
+    assert passed["contentAuditFailedCells"] == 0
+
+
+def test_watchdog_rejects_content_audit_bound_to_wrong_parser(tmp_path: Path):
+    relative = "validation/caixin/2011/state/summary.json"
+    _write_summary(
+        tmp_path,
+        relative,
+        publisher="caixin",
+        year=2011,
+        evaluated=800,
+    )
+    audit_path = (tmp_path / relative).with_name("content-audit.json")
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    audit["parserVersion"] = "caixin-parser/stale"
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["caixin"],
+        available_source_shards={"caixin/2010-2015/wayback-urlkey"},
+    )
+
+    assert plan["readyCells"] == 0
+    assert plan["contentAuditFailedCells"] == 0
+    assert plan["tasks"][0]["year"] == 2011
 
 
 def test_watchdog_rotates_ready_holdout_with_missing_or_failed_audit(
