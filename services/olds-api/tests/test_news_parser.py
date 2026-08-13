@@ -296,7 +296,7 @@ def test_axios_visual_fallback_replaces_metadata_placeholder():
     selected = [image for image in result.images if image.should_archive]
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "axios-parser/0.1.17"
+    assert result.extraction.parser_version == "axios-parser/0.1.18"
     assert len(selected) == 1
     assert selected[0].role == ImageRole.CHART
     assert selected[0].original_url == (
@@ -445,6 +445,9 @@ def test_axios_next_story_removes_read_more_and_normalized_duplicates():
                 "<a href='https://www.axios.com/related-story'>A related story"
                 "</a></li></ul>"
                 "<p><em>Sign up for our Axios Science newsletter here.</em></p>"
+                "<p><em>Sign up for the daily MarketSnacks financial "
+                "newsletter <a href='http://www.marketsnacks.com/'>here</a>."
+                "</em></p>"
                 "<p>Sign up for the Axios Nashville newsletter, launching in "
                 "September, to get smarter, faster on local news.</p>"
                 "<p>Subscribe to the Axios Pro Rata podcast.</p>"
@@ -486,6 +489,7 @@ def test_axios_next_story_removes_read_more_and_normalized_duplicates():
     assert "Read more" not in result.plain_text
     assert "A related story" not in result.plain_text
     assert "Axios Science newsletter" not in result.plain_text
+    assert "MarketSnacks financial newsletter" not in result.plain_text
     assert "Axios Nashville newsletter" not in result.plain_text
     assert "Pro Rata podcast" not in result.plain_text
     assert "Axios Communications" not in result.plain_text
@@ -494,7 +498,7 @@ def test_axios_next_story_removes_read_more_and_normalized_duplicates():
     assert "Election countdown" not in result.plain_text
     assert "Go deeper" not in result.body_html
     assert result.body_html.count("https://playlist.example/episode") == 1
-    assert result.extraction.parser_version == "axios-parser/0.1.17"
+    assert result.extraction.parser_version == "axios-parser/0.1.18"
 
 
 @pytest.mark.parametrize(
@@ -611,7 +615,7 @@ def test_axios_accepts_structurally_proven_image_only_story():
     assert len(selected) == 1
     assert len(selected[0].candidate_urls) >= 1
     assert result.images[0].credit == "Illustration: Axios Visuals"
-    assert result.extraction.parser_version == "axios-parser/0.1.17"
+    assert result.extraction.parser_version == "axios-parser/0.1.18"
 
 
 def test_axios_accepts_only_wordcount_matched_short_am_newsletter():
@@ -10823,7 +10827,7 @@ def test_axios_parser_removes_linked_newsletter_signup_and_breaking_placeholder(
     assert "reporting before" in article.plain_text
     assert "reporting after" in article.plain_text
     assert article.quality.images_selected == 0
-    assert article.extraction.parser_version == "axios-parser/0.1.17"
+    assert article.extraction.parser_version == "axios-parser/0.1.18"
 
 
 def test_axios_parser_removes_publisher_newsletter_subscription_block():
@@ -10845,7 +10849,7 @@ def test_axios_parser_removes_publisher_newsletter_subscription_block():
     assert "orbital mission" in article.plain_text
     assert "Credits:" in article.plain_text
     assert "Axios Space newsletter" not in article.plain_text
-    assert article.extraction.parser_version == "axios-parser/0.1.17"
+    assert article.extraction.parser_version == "axios-parser/0.1.18"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
