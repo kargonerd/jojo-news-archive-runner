@@ -23,6 +23,8 @@ def test_normalizes_text_and_image_identity() -> None:
 
 def test_interface_text_detector_does_not_match_ordinary_prose() -> None:
     assert _INTERFACE_TEXT_RE.search("subscribe") is not None
+    assert _INTERFACE_TEXT_RE.search("Related") is not None
+    assert _INTERFACE_TEXT_RE.search("The reports are closely related.") is None
     assert _INTERFACE_TEXT_RE.search("subscribe to our daily newsletter") is not None
     assert _INTERFACE_TEXT_RE.search("terms of use") is not None
     assert _INTERFACE_TEXT_RE.search("01 第1页 02 第2页") is not None

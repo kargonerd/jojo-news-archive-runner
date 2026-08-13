@@ -34,7 +34,7 @@ _SUSPICIOUS_AVATAR_FILENAME_RE = re.compile(
     r"(?i)(?:^|[_.-])avatar(?:[_.-]|$)"
 )
 _INTERFACE_TEXT_RE = re.compile(
-    r"(?i)^(?:advertisement|back to top|click here|follow us|more from axios:?|read more:?|"
+    r"(?i)^(?:advertisement|back to top|click here|follow us|more from axios:?|read more:?|related|"
     r"related stories|share this article|sign in|subscribe|trending stories)$|"
     r"^(?:\d{2}\s*第\d+页\s*){2,}$|"
     r"^marketwatch拥有位于三大洲的100多名记者|"
