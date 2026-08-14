@@ -11373,6 +11373,8 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         source = str(image.get("src") or "")
         if re.search(
             r"/newsgraphics/.*/sprite-(?:mobile|desktop)\.(?:jpe?g|png)"
+            r"|/projects/assets/oscars_2013/images/2013/"
+            r"[^/]*sprite[^/]*\.(?:jpe?g|png)"
             r"(?:[?#].*)?$",
             source,
             flags=re.IGNORECASE,
@@ -11448,6 +11450,11 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^sign up here to get (?:this newsletter|"
             r"the briefing)\b"
+        ),
+        re.compile(
+            r"(?i)^sign up for the campaign reporter\b.*"
+            r"\bget messages from our politics correspondent\b.*"
+            r"\bwhat(?:'|’)s at stake\.?$"
         ),
         re.compile(
             r"(?i)^if you are not a subscriber to this newsletter\b"
@@ -13251,6 +13258,9 @@ def _image_candidate(
     if spec.publisher == "nyt" and _nyt_author_avatar_image(url):
         role = ImageRole.AUTHOR_AVATAR
         reasons = [*reasons, "author-avatar-url"]
+    if spec.publisher == "nyt" and _nyt_interactive_sprite_image(url):
+        role = ImageRole.ICON
+        reasons = [*reasons, "interactive-sprite-asset"]
     identity = _image_identity(url)
     asset_id = (
         f"urlsha256:{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
@@ -13534,6 +13544,21 @@ def _nyt_author_avatar_image(url: str) -> bool:
             r"/(?:author-[^/]+|author-head-[^/]+)/"
             r"[^/]*(?:thumb(?:large|standard)|author-head)[^/]*"
             r"\.(?:avif|gif|jpe?g|png|webp)$",
+            parts.path,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _nyt_interactive_sprite_image(url: str) -> bool:
+    """Recognize NYT interactive CSS sprites that are not editorial media."""
+    parts = urlsplit(url)
+    if (parts.hostname or "").casefold() != "static01.nyt.com":
+        return False
+    return bool(
+        re.search(
+            r"/projects/assets/oscars_2013/images/2013/"
+            r"[^/]*sprite[^/]*\.(?:jpe?g|png)$",
             parts.path,
             flags=re.IGNORECASE,
         )
