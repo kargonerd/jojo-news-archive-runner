@@ -195,8 +195,11 @@ The temporary runner remains the active home while validation is in progress.
   from legacy live-update pages; the 2019 cell must be re-rotated on this
   current parser before it can be considered current-version evidence. A
   follow-up `0.1.4` fix recognizes image-only Al Jazeera gallery snapshots;
-  fresh `holdout-v2` rotations for 2019 and 2020 are now running, so the
-  `0.1.3` results remain historical until those rotations pass.
+  a further `0.1.5` fix also handles legacy gallery shells and heading-only
+  live-update separators. Fresh `holdout-v3` rotations for 2019 and 2020,
+  plus a 2017 validation replay, are now running on `0.1.5`; all earlier
+  Al Jazeera results remain historical until these current-version rotations
+  pass the complete 800-row, zero-overlap, content-audit gates.
 - TODO: continue NPR and AP across their remaining eligible years after the
   current holdouts establish the next parser baselines. Their existing
   catalogs and checkpoints remain resumable.
