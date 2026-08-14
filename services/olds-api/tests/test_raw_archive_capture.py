@@ -1863,6 +1863,52 @@ def test_axios_manifest_collapses_encoded_trailing_aliases(tmp_path: Path):
     assert len(candidate_rows) == 4
 
 
+def test_npr_manifest_normalizes_tracking_suffix_in_path(tmp_path: Path):
+    canonical_url = (
+        "https://www.npr.org/2012/01/14/145168801/"
+        "alsop-sprach-zarathustra-the-conductor-decodes-strauss-iconic-tone-poem"
+    )
+    alias_url = canonical_url + "&sc=nl&cc=sod-20120120"
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "publisher": "npr",
+                "canonicalUrl": alias_url,
+                "publishedAt": "2012-01-14T00:00:00Z",
+                "candidates": [
+                    {
+                        "provider": "wayback",
+                        "snapshotUrl": (
+                            "https://web.archive.org/web/20120115000000id_/"
+                            + alias_url
+                        ),
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="npr",
+        authorization_reference="authorization:test",
+    )
+
+    result = load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="npr",
+    )
+
+    assert result == {"manifestRows": 1, "inserted": 1}
+    assert connection.execute(
+        "SELECT canonical_url FROM captures"
+    ).fetchall() == [(canonical_url,)]
+
+
 def test_interrupted_capture_does_not_consume_an_attempt():
     connection = sqlite3.connect(":memory:")
     initialize_capture_schema(

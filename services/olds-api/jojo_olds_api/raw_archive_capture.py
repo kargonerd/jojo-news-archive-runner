@@ -464,14 +464,14 @@ def manifest_item_from_row(row: dict, *, publisher: str) -> ManifestItem:
     ).strip()
     if not canonical_url.startswith(("http://", "https://")):
         raise ValueError(f"manifest row has invalid canonical URL: {canonical_url!r}")
-    if publisher == "axios":
+    if publisher in {"axios", "npr"}:
         normalized_url = normalize_article_url(
             archive_source_spec(publisher),
             canonical_url,
         )
         if normalized_url is None:
             raise ValueError(
-                f"manifest row has invalid Axios article URL: {canonical_url!r}"
+                f"manifest row has invalid {publisher} article URL: {canonical_url!r}"
             )
         canonical_url = normalized_url
 
