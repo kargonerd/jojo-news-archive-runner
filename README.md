@@ -200,9 +200,11 @@ The temporary runner remains the active home while validation is in progress.
   formally converged on `0.1.5` at 800/800 with zero parser errors, zero hard
   content anomalies, zero prior overlap, and 1,238 selected images. The
   2017/2020 v3 runs reached 800 QA-passing rows but retained non-clean state
-  records, so they are not formal evidence; fresh `holdout-v4` rotations for
-  those years are running. All earlier Al Jazeera results remain historical
-  until the current-version rotations pass every gate.
+  records, so they are not formal evidence. The fresh `holdout-v4` rotation
+  for 2017 has now also formally converged at 800/800, with zero prior
+  overlap, zero hard anomalies, and 1,311 selected images. The 2020 v4
+  rotation remains in progress. All earlier Al Jazeera results remain
+  historical until the current-version rotations pass every gate.
 - TODO: continue NPR and AP across their remaining eligible years after the
   current holdouts establish the next parser baselines. Their existing
   catalogs and checkpoints remain resumable.
