@@ -1910,11 +1910,12 @@ def _select_additional_samples(
         )
         if normalized_url is None or normalized_url in seen_normalized:
             continue
-        if (
-            publisher == "axios"
-            and normalize_article_url(source_spec, str(canonical_url))
-            != str(canonical_url)
-        ):
+        # Do not seed a holdout with a capture whose stored URL is only a
+        # source alias. The content audit treats these as hard anomalies, and
+        # older source-state databases may predate manifest-time normalization.
+        if publisher in {"axios", "npr"} and normalize_article_url(
+            source_spec, str(canonical_url)
+        ) != str(canonical_url):
             continue
         # Legacy checkpoints can contain HTTP/HTTPS, bare/www, query-string,
         # or trailing-slash variants of the same article. SQL equality cannot

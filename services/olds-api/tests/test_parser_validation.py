@@ -629,6 +629,9 @@ def test_npr_plan_deduplicates_story_id_across_date_and_tracking_aliases(
     assert connection.execute(
         "SELECT COUNT(*) FROM parser_validation_samples"
     ).fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT canonical_url FROM parser_validation_samples"
+    ).fetchall() == [(urls[0],)]
 
 
 def test_plan_prunes_reuters_non_article_endpoints(tmp_path: Path):
