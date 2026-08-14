@@ -31,6 +31,14 @@ on:
         required: true
         default: "2016"
         type: string
+      collection_order:
+        description: "Order in which Common Crawl collections are advanced."
+        required: true
+        default: "oldest"
+        type: choice
+        options:
+          - oldest
+          - newest
       max_pages:
         description: "Maximum Common Crawl index pages in this bounded run."
         required: true
@@ -77,6 +85,7 @@ env:
   TO_YEAR: ${{ inputs.to_year }}
   COLLECTION_FROM_YEAR: ${{ inputs.collection_from_year }}
   COLLECTION_TO_YEAR: ${{ inputs.collection_to_year }}
+  COLLECTION_ORDER: ${{ inputs.collection_order }}
   MAX_PAGES: ${{ inputs.max_pages }}
   MAX_QUERIES: ${{ inputs.max_queries }}
   MAX_HYDRATIONS: ${{ inputs.max_hydrations }}
@@ -131,6 +140,11 @@ jobs:
             echo "publisher must be a lowercase configured identifier." >&2
             exit 2
           fi
+          if [[ "$COLLECTION_ORDER" != "oldest" && \
+                "$COLLECTION_ORDER" != "newest" ]]; then
+            echo "collection_order must be oldest or newest." >&2
+            exit 2
+          fi
           for value in "$MAX_PAGES" "$MAX_QUERIES" \
               "$TARGET_ARTICLES_PER_YEAR"; do
             if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
@@ -179,7 +193,7 @@ jobs:
             --to-year "$TO_YEAR" \
             --collection-from-year "$COLLECTION_FROM_YEAR" \
             --collection-to-year "$COLLECTION_TO_YEAR" \
-            --collection-order oldest \
+            --collection-order "$COLLECTION_ORDER" \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
             --summary "$LOCAL_ROOT/state/summary.json" \
@@ -248,6 +262,7 @@ jobs:
             -f to_year="$TO_YEAR" \
             -f collection_from_year="$COLLECTION_FROM_YEAR" \
             -f collection_to_year="$COLLECTION_TO_YEAR" \
+            -f collection_order="$COLLECTION_ORDER" \
             -f max_pages="$MAX_PAGES" \
             -f max_queries="$MAX_QUERIES" \
             -f max_hydrations="$MAX_HYDRATIONS" \

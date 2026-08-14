@@ -18,7 +18,8 @@ def test_catalog_hydrates_dates_and_checkpoints_private_state() -> None:
     assert '--publisher "$PUBLISHER"' in workflow
     assert '--collection-from-year "$COLLECTION_FROM_YEAR"' in workflow
     assert '--collection-to-year "$COLLECTION_TO_YEAR"' in workflow
-    assert "--collection-order oldest" in workflow
+    assert '--collection-order "$COLLECTION_ORDER"' in workflow
+    assert 'default: "oldest"' in workflow
     assert '--target-articles-per-year "$TARGET_ARTICLES_PER_YEAR"' in workflow
     assert '--max-date-hydrations "$MAX_HYDRATIONS"' in workflow
     assert "--data-min-request-interval 0.5" in workflow
@@ -39,6 +40,7 @@ def test_catalog_continues_after_discovery_or_hydration_progress() -> None:
     assert "steps.discovery.outputs.hydration_attempted != '0'" in dispatch
     assert '-f max_hydrations="$MAX_HYDRATIONS"' in dispatch
     assert '-f publisher="$PUBLISHER"' in dispatch
+    assert '-f collection_order="$COLLECTION_ORDER"' in dispatch
     assert (
         '-f target_articles_per_year="$TARGET_ARTICLES_PER_YEAR"'
         in dispatch
