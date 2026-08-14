@@ -152,7 +152,9 @@ The temporary runner remains the active home while validation is in progress.
   candidates. Caixin 2012 has also formally converged at 800/800 with zero
   parser errors and zero hard content anomalies; all 29 selected images were
   preserved. Keep completing both broader resumable catalogs for future
-  zero-overlap rotations.
+  zero-overlap rotations. After the separator fix, Caixin 2017 has now also
+  passed the current `caixin-parser/0.1.10` validation at 800/800 with zero
+  parser errors, zero hard content anomalies, and 22 selected images.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
