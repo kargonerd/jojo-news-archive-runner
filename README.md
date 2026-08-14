@@ -189,6 +189,9 @@ The temporary runner remains the active home while validation is in progress.
   broader supplement before this year can reach the formal 800-row gate.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
   Post. Their existing catalogs and checkpoints also remain resumable.
+- Nikkei 2019 `holdout-v1` is now the first active Nikkei validation cell,
+  using the 2016--2026 Wayback URL-key catalog plus its Common Crawl
+  supplement. Its parser, rotation, and content gates are still pending.
 - TODO: add Reuters back to the convergence schedule after its historical
   source windows and acceptance cohorts are reviewed. The adapter remains
   supported; it is not currently scheduled.
