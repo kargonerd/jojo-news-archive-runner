@@ -165,8 +165,10 @@ The temporary runner remains the active home while validation is in progress.
   without the current content-audit gate. The `holdout-v8` replay reached
   800 QA-passing rows after evaluating 801, but one archived `/admin/` teaser
   prevented the 100% QA gate. QA revision 2 now screens such unrecoverable
-  teasers as `nonarticle-desk`; a fresh `holdout-v9` will establish the
-  zero-overlap, current-policy result.
+  teasers as `nonarticle-desk`. The fresh `holdout-v9` has now converged at
+  800/800 under that policy: zero parser errors, zero prior/exclusion overlap,
+  zero hard content anomalies, and all 800 extraction statuses complete; its
+  content audit retained 962 selected images.
 - AP 2012 `holdout-v1` has formally converged at 800/800 on
   `ap-parser/0.6.21`: QA 100%, zero parser errors, zero prior/exclusion
   overlap, zero hard content anomalies, and all 800 extraction statuses
