@@ -191,7 +191,9 @@ The temporary runner remains the active home while validation is in progress.
   Post. Their existing catalogs and checkpoints also remain resumable.
 - Nikkei 2019 `holdout-v1` is now the first active Nikkei validation cell,
   using the 2016--2026 Wayback URL-key catalog plus its Common Crawl
-  supplement. Its parser, rotation, and content gates are still pending.
+  supplement. The initial catalog exposed only three 2019 candidates and was
+  rejected before parsing; a bounded 2016--2026 Common Crawl expansion is now
+  running before the parser holdout is retried.
 - TODO: add Reuters back to the convergence schedule after its historical
   source windows and acceptance cohorts are reviewed. The adapter remains
   supported; it is not currently scheduled.
