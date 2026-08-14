@@ -187,6 +187,13 @@ The temporary runner remains the active home while validation is in progress.
 - Al Jazeera 2019 `validation` has formally converged at 800/800 on
   `aljazeera-parser/0.1.2`: QA 100%, zero parser errors, all 800 extraction
   statuses complete, zero hard content anomalies, and 1,199 selected images.
+  That is retained as historical evidence for the pre-0.1.3 parser. A fresh
+  `holdout-v1` for 2020 formally converged on `aljazeera-parser/0.1.3` with
+  800/800 QA-passing rows, zero parser errors, zero prior/exclusion overlap,
+  zero hard content anomalies, 800 complete extraction statuses, and 1,482
+  selected images. The 0.1.3 fix removes underscore-only visual separators
+  from legacy live-update pages; the 2019 cell must be re-rotated on this
+  current parser before it can be considered current-version evidence.
 - TODO: continue NPR and AP across their remaining eligible years after the
   current holdouts establish the next parser baselines. Their existing
   catalogs and checkpoints remain resumable.
