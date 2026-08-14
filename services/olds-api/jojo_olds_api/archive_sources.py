@@ -257,7 +257,22 @@ ARCHIVE_SOURCE_SPECS = {
     "scmp": ArchiveSourceSpec(
         publisher="scmp",
         canonical_host="www.scmp.com",
-        wayback_patterns=("www.scmp.com/article/*", "www.scmp.com/*/article/*"),
+        # Modern SCMP article URLs are nested below section paths (for
+        # example /news/china/.../article/<id>).  Keep explicit section
+        # prefixes because the Common Crawl indexer only accepts one trailing
+        # wildcard; the older two-level wildcard cannot become a prefix query.
+        wayback_patterns=(
+            "www.scmp.com/article/*",
+            "www.scmp.com/*/article/*",
+            "www.scmp.com/news/*",
+            "www.scmp.com/business/*",
+            "www.scmp.com/sport/*",
+            "www.scmp.com/lifestyle/*",
+            "www.scmp.com/tech/*",
+            "www.scmp.com/comment/*",
+            "www.scmp.com/asia/*",
+            "www.scmp.com/infographics/*",
+        ),
         accepted_path_patterns=_patterns(r"^/article/\d+", r"^/.+/article/\d+"),
         rejected_path_patterns=_patterns(r"^/(?:video|magazines)(?:/|$)"),
     ),

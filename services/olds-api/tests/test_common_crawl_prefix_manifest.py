@@ -175,6 +175,24 @@ def test_aljazeera_prefix_patterns_include_article_sections():
     )
 
 
+def test_scmp_prefix_patterns_include_modern_article_sections():
+    assert prefix_patterns(
+        archive_source_spec("scmp"),
+        from_year=2017,
+        to_year=2017,
+    ) == (
+        "www.scmp.com/article/",
+        "www.scmp.com/news/",
+        "www.scmp.com/business/",
+        "www.scmp.com/sport/",
+        "www.scmp.com/lifestyle/",
+        "www.scmp.com/tech/",
+        "www.scmp.com/comment/",
+        "www.scmp.com/asia/",
+        "www.scmp.com/infographics/",
+    )
+
+
 def test_prefix_schema_adds_new_collections_without_resetting_progress():
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("npr")
