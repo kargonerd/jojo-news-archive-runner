@@ -202,9 +202,11 @@ The temporary runner remains the active home while validation is in progress.
   candidate). AP 2017 has now also formally converged at 800/800 on the same
   parser: QA 100%, zero parser errors, zero prior/exclusion overlap, zero hard
   content anomalies, all 800 extraction statuses complete, and 62 selected
-  images (one non-hard review candidate). AP 2018 had one transient capture
-  error after reaching 799/800 and is being retried before it can be recorded
-  as formal evidence.
+  images (one non-hard review candidate). AP 2018 reached 800 QA rows after
+  the transient capture retry, but its first content audit found one legacy
+  inline `RELATED` interface marker. The parser now removes that marker as
+  `ap-parser/0.6.22`; fresh zero-overlap `holdout-v1` evidence is running and
+  the older 0.6.21 audit is not treated as formal convergence.
 - Al Jazeera 2019 `validation` has formally converged at 800/800 on
   `aljazeera-parser/0.1.2`: QA 100%, zero parser errors, all 800 extraction
   statuses complete, zero hard content anomalies, and 1,199 selected images.
@@ -239,9 +241,12 @@ The temporary runner remains the active home while validation is in progress.
   complete, and 1,276 selected images (two non-hard review candidates). The
   previous failed audit was caused by one Wayback tracking suffix embedded in
   a stored path; manifest import and holdout selection now normalize/reject
-  these aliases, with regression tests. NPR 2010 remains source-limited in
-  its parser holdouts; the Common Crawl supplement now exposes about 7,485
-  dated candidates and continues to grow.
+  these aliases, with regression tests. NPR 2011's next audit also exposed a
+  legacy `Read More` header and one old URL alias; the parser now removes the
+  header as `npr-parser/0.1.27`, and fresh zero-overlap `holdout-v15` evidence
+  is running. NPR 2010 remains source-limited in its parser holdouts; the
+  Common Crawl supplement now exposes about 7,485 dated candidates and
+  continues to grow.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
   Post. Their existing catalogs and checkpoints also remain resumable.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
@@ -250,10 +255,12 @@ The temporary runner remains the active home while validation is in progress.
   Wayback catalog now has 82 articles (49 in 2017, 32 in 2018, and 1 in
   2019), while the Common Crawl supplement is still being advanced; no SCMP
   800-row parser gate has passed.
-- Nikkei's 2017 validation is now active against the expanded Common Crawl
-  catalog. The supplement currently exposes about 6,013 dated 2017 articles
-  and 1,789 for 2016; the parser holdout is still running and has not yet
-  passed the 800-row content-audit gate.
+- Nikkei's first 2017 validation reached 800 QA rows but its content audit
+  found three embedded `form`/`input`/`button` controls. The parser now removes
+  those site-wide controls as `nikkei-parser/0.1.7`; fresh zero-overlap
+  `holdout-v1` evidence is running against the expanded Common Crawl catalog.
+  The supplement currently exposes about 6,013 dated 2017 articles and 1,789
+  for 2016; no current-version 800-row content-audit gate has passed yet.
 - TODO: add Reuters back to the convergence schedule after its historical
   source windows and acceptance cohorts are reviewed. The adapter remains
   supported; it is not currently scheduled.
