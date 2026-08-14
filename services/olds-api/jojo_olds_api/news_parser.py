@@ -12546,6 +12546,13 @@ def _trim_nikkei_paywall_tail(soup: BeautifulSoup) -> None:
 def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
     """Remove modern Nikkei article controls that wrap ordinary text nodes."""
 
+    # Modern snapshots can place the site-wide search, sharing and newsletter
+    # controls inside the broad article wrapper. They are browser UI, not
+    # editorial content, and their form controls fail the normalized-body
+    # contract if left in the archived HTML.
+    for node in list(soup.select("form, input, select, textarea, button")):
+        node.decompose()
+
     for selector in (
         "k-image-viewer",
         "k-lock-banner",

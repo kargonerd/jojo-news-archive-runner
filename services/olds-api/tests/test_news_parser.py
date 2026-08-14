@@ -18356,7 +18356,7 @@ def test_nikkei_legacy_parser_extracts_print_date_and_article_text():
     assert result.published_at.isoformat() == "2013-09-11T00:00:00+09:00"
     assert "価格や通信料金" in result.plain_text
     assert result.quality.body_characters >= 100
-    assert result.extraction.parser_version == "nikkei-parser/0.1.6"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.7"
 
 
 def test_nikkei_legacy_parser_joins_split_body_around_editorial_photo():
@@ -18415,7 +18415,7 @@ def test_nikkei_legacy_parser_joins_split_body_around_editorial_photo():
         BlockType.PARAGRAPH,
     ]
     assert result.quality.body_characters >= 150
-    assert result.extraction.parser_version == "nikkei-parser/0.1.6"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.7"
 
 
 def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
@@ -18446,7 +18446,7 @@ def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
     assert result.published_at.isoformat() == "2012-12-13T00:00:00+09:00"
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "nikkei-parser/0.1.6"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.7"
 
 
 def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
@@ -18488,7 +18488,7 @@ def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
         for block in result.blocks
         if block.type == BlockType.IMAGE
     } == {result.images[0].asset_id}
-    assert result.extraction.parser_version == "nikkei-parser/0.1.6"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.7"
 
 
 @pytest.mark.parametrize(
@@ -18583,7 +18583,33 @@ def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
     assert "paid-banner" not in result.body_html
     assert len(result.images) == 1
     assert len(result.images[0].candidate_urls) == 2
-    assert result.extraction.parser_version == "nikkei-parser/0.1.6"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.7"
+
+
+def test_nikkei_modern_parser_removes_embedded_site_controls():
+    result = parse_article(
+        """
+        <html lang="ja"><head>
+          <meta property="og:title" content="日経のニュース">
+          <meta property="article:published_time" content="2017-05-19T00:00:00Z">
+        </head><body><main><article>
+          <section data-track-article-content>
+            <p>これは十分な長さの編集記事本文です。市場と企業の動きを詳しく伝えます。</p>
+            <form action="/search"><input name="keyword"><button type="submit">検索</button></form>
+            <p>続く段落では関係者の発言と背景を説明し、記事の内容を完成させます。</p>
+          </section>
+        </article></main></body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url="https://www.nikkei.com/article/DGTEST170519000000",
+    )
+    assert result.quality.status == ArticleStatus.PARTIAL
+    assert "編集記事本文" in result.plain_text
+    assert "続く段落" in result.plain_text
+    assert "検索" not in result.plain_text
+    assert not result.body_html.casefold().count("<form")
+    assert not result.body_html.casefold().count("<input")
+    assert not result.body_html.casefold().count("<button")
 
 
 def test_scmp_legacy_parser_extracts_body_date_and_byline():
