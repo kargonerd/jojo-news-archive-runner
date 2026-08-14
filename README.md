@@ -193,7 +193,10 @@ The temporary runner remains the active home while validation is in progress.
   zero hard content anomalies, 800 complete extraction statuses, and 1,482
   selected images. The 0.1.3 fix removes underscore-only visual separators
   from legacy live-update pages; the 2019 cell must be re-rotated on this
-  current parser before it can be considered current-version evidence.
+  current parser before it can be considered current-version evidence. A
+  follow-up `0.1.4` fix recognizes image-only Al Jazeera gallery snapshots;
+  fresh `holdout-v2` rotations for 2019 and 2020 are now running, so the
+  `0.1.3` results remain historical until those rotations pass.
 - TODO: continue NPR and AP across their remaining eligible years after the
   current holdouts establish the next parser baselines. Their existing
   catalogs and checkpoints remain resumable.
