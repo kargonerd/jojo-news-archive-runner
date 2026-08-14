@@ -86,21 +86,19 @@ The temporary runner remains the active home while validation is in progress.
   Failed content audits keep their checkpoint, raw HTML, and audit evidence in
   B2 but are quarantined from automatic retries until the parser or QA policy
   changes.
-- In flight: FT 2016 holdout-v9 remains a fresh, zero-overlap cohort for
+- FT 2016 `holdout-v9` and FT 2017 `holdout-v8` have formally converged on
   `ft-parser/0.8.42`. It follows fixes for legacy
   podcast RSS chrome, a flattened JSON-LD related-story tail, dead
   expander/video controls, an AMP ``Read more`` link group, and FT brand
   favicons and v3 open-graph branding found during partial content audits.
-  All superseded FT cohorts remain mandatory exclusions. The last completed
-  parser-bound checkpoint accepted 735/800 articles for 2016 with 100% QA
-  pass rate and zero parser errors; the larger
-  `capturesByStatus.complete` value in those summaries is total raw capture
-  completion, not parser acceptance. FT 2017 holdout-v8 has now formally
-  converged at 800/800 on the same parser: QA 100%, zero parser errors,
-  zero prior-cohort overlap, zero exclusion overlap, zero hard content
-  anomalies, and all 800 extraction statuses complete. Its final content
-  audit retained 794 selected images. The current v9 batch is extending the
-  2016 cohort with fresh samples.
+  All superseded FT cohorts remain mandatory exclusions. The 2016 holdout
+  finished at 800/800 with QA 100%, zero parser errors, zero prior/exclusion
+  overlap, zero hard content anomalies, and all 800 extraction statuses
+  complete; its content audit retained 905 selected images. The 2017 audit
+  retained 794 selected images. The parser fixes covered legacy podcast RSS
+  chrome, a flattened JSON-LD related-story tail, dead expander/video
+  controls, an AMP ``Read more`` link group, and FT brand favicons and v3
+  open-graph branding found during partial content audits.
 - Axios 2018, 2019, and 2022--2025 have formally converged at 800/800 on
   `axios-parser/0.1.19`
   and QA revision 4 after removal of a partner financial-newsletter call to
