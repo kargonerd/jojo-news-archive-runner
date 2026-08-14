@@ -122,12 +122,15 @@ The temporary runner remains the active home while validation is in progress.
   `caixin-parser/0.1.9` with QA revision 1, zero prior-cohort overlap, zero
   hard content anomalies, and all 228 selected images preserved. The parser
   removes the legacy Two Sessions topic-recirculation tail exposed by the
-  initial 751-article audit. TODO: run fresh current-parser cohorts for
-  Caixin 2015; Caixin 2014 holdout-v1 has also formally converged at 800/800
-  with zero prior-cohort overlap, zero hard content anomalies, and all 3
-  selected images preserved. Its first holdout had no earlier cohort, so the
-  rotation audit correctly treated the prior union as empty.
-  year has at least 3,901 candidates. The first bounded 2016--2026 catalog
+  initial 751-article audit. Caixin 2014 holdout-v1 has also formally
+  converged at 800/800 with zero prior-cohort overlap, zero hard content
+  anomalies, and all 3 selected images preserved. Caixin 2015 holdout-v1 has
+  now formally converged at 800/800 on the same parser and QA revision, with
+  zero prior-cohort overlap, zero hard content anomalies, and 2 selected
+  images preserved (one non-hard review candidate). These first holdouts had
+  no earlier cohort, so their rotation audits correctly treated the prior
+  union as empty. Every currently queued Caixin year has at least 3,901
+  candidates. The first bounded 2016--2026 catalog
   pass found at least 1,144 candidates in every year except 2018. A focused
   Common Crawl supplement now adds 3,068 independently cataloged 2018 URLs,
   making every 2016--2026 year eligible for an initial 800-article cohort.
