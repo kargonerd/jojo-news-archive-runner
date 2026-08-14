@@ -195,7 +195,11 @@ The temporary runner remains the active home while validation is in progress.
   complete; its content audit retained 91 selected images and left one
   non-hard review candidate. The AP 2010 catalog
   currently exposes fewer than 800 distinct candidates; 2012 and later years
-  have materially larger pools and are being validated first.
+  have materially larger pools and are being validated first. AP 2016 has now
+  completed the current `ap-parser/0.6.21` validation at 800/800 QA-passing
+  rows, with zero parser errors, all 800 extraction statuses complete, zero
+  hard content anomalies, and 17 selected images (one non-hard review
+  candidate).
 - Al Jazeera 2019 `validation` has formally converged at 800/800 on
   `aljazeera-parser/0.1.2`: QA 100%, zero parser errors, all 800 extraction
   statuses complete, zero hard content anomalies, and 1,199 selected images.
