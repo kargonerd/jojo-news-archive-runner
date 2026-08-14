@@ -1109,6 +1109,30 @@ jobs:
             "${REMOTE_ROOT}/state/content-audit.json" \
             --retries 8 --low-level-retries 20
 
+      - name: Report failed content audit details
+        if: >-
+          ${{
+            always() &&
+            steps.content_audit.outcome == 'failure' &&
+            hashFiles('.archive-work/**/raw/content-audit.json') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["LOCAL_ROOT"]) / "raw" / "content-audit.json"
+          report = json.loads(path.read_text(encoding="utf-8"))
+          print(json.dumps({
+              "hardAnomalies": report.get("hardAnomalies", []),
+              "reviewCandidates": report.get("reviewCandidates", []),
+          }, ensure_ascii=False))
+          PY
+
       - name: Checkpoint validation state
         if: >-
           ${{
