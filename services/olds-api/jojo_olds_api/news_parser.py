@@ -1087,6 +1087,11 @@ def parse_article(
             blocks,
             allow_uncaptioned=spec.publisher == "ft",
         )
+        or (
+            spec.publisher == "zaobao"
+            and "/forum/comic/" in canonical_url.casefold()
+            and any(block.type == BlockType.IMAGE for block in blocks)
+        )
     ):
         content_type = ContentType.GALLERY
     plain_text = "\n\n".join(
