@@ -159,8 +159,10 @@ The temporary runner remains the active home while validation is in progress.
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
   WSJ year automatically.
-- TODO: revalidate NYT 2019 with a fresh zero-overlap 800-article cohort after
-  the latest parser fix, then resume the remaining NYT and WSJ years.
+- In flight: NYT 2019 `holdout-v2` is a fresh independent cohort using
+  `nyt-parser/0.8.62` and the `nyt/2016-2026/sitemap-wayback` source shard.
+  Its 800-row parser, rotation, and content gates are still pending; after it
+  converges, resume the remaining NYT and WSJ years.
 - TODO: resume NPR and AP after the reduced active set has stable per-year
   cohorts. Their existing catalogs and checkpoints remain resumable.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
