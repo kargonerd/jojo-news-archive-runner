@@ -11456,6 +11456,7 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
             r"\bget messages from our politics correspondent\b.*"
             r"\bwhat(?:'|’)s at stake\.?$"
         ),
+        re.compile(r"(?i)^sign up for the campaign reporter\.?$"),
         re.compile(
             r"(?i)^if you are not a subscriber to this newsletter\b"
         ),
@@ -13261,6 +13262,9 @@ def _image_candidate(
     if spec.publisher == "nyt" and _nyt_interactive_sprite_image(url):
         role = ImageRole.ICON
         reasons = [*reasons, "interactive-sprite-asset"]
+    if spec.publisher == "nyt" and _nyt_non_editorial_image(url):
+        role = ImageRole.ICON
+        reasons = [*reasons, "social-or-author-icon-url"]
     identity = _image_identity(url)
     asset_id = (
         f"urlsha256:{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
@@ -13559,6 +13563,20 @@ def _nyt_interactive_sprite_image(url: str) -> bool:
         re.search(
             r"/projects/assets/oscars_2013/images/2013/"
             r"[^/]*sprite[^/]*\.(?:jpe?g|png)$",
+            parts.path,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _nyt_non_editorial_image(url: str) -> bool:
+    """Recognize NYT social/author icon renditions rather than story media."""
+    parts = urlsplit(url)
+    if (parts.hostname or "").casefold() != "static01.nyt.com":
+        return False
+    return bool(
+        re.search(
+            r"(?:^|/)\d{1,4}[^/]*_icon/",
             parts.path,
             flags=re.IGNORECASE,
         )
