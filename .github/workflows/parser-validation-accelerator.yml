@@ -815,6 +815,16 @@ jobs:
             request_interval=1.5
           fi
           effective_max_captures="$MAX_CAPTURES"
+          # The historical FT replay queue spends a material part of each
+          # bounded batch on archive admission and fallback setup.  Keep the
+          # checkpointed continuation contract, but avoid repeatedly paying
+          # that fixed cost for very short (15-minute) batches.  The outer
+          # job timeout remains 350 minutes and the subprocess still has a
+          # hard deadline below, so this only increases useful capture time.
+          effective_runtime_minutes="$MAX_RUNTIME_MINUTES"
+          if [ "$PUBLISHER" = "ft" ] && [ "$effective_runtime_minutes" -lt 30 ]; then
+            effective_runtime_minutes=30
+          fi
           args=(
             --publisher "$PUBLISHER"
             --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
@@ -824,7 +834,7 @@ jobs:
             --timeout 30
             --attempts 2
             --max-captures "$effective_max_captures"
-            --max-runtime-minutes "$MAX_RUNTIME_MINUTES"
+            --max-runtime-minutes "$effective_runtime_minutes"
             --max-record-attempts "$MAX_RECORD_ATTEMPTS"
             --validation-sample-per-year "$VALIDATION_TARGET"
             --validation-seed "$VALIDATION_SEED"
@@ -870,7 +880,7 @@ jobs:
           # the executor shuts down.  Bound the whole subprocess as well so a
           # bad archive cannot consume an entire hosted runner.  The live
           # checkpoint written below makes the batch safely resumable.
-          hard_deadline=$((SECONDS + MAX_RUNTIME_MINUTES * 60 + 120))
+          hard_deadline=$((SECONDS + effective_runtime_minutes * 60 + 120))
           capture_timed_out=false
           while kill -0 "$capture_pid" 2>/dev/null; do
             if [ "$SECONDS" -ge "$hard_deadline" ]; then
