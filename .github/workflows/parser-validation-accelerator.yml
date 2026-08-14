@@ -1027,9 +1027,10 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           previous_states=("$RUNNER_TEMP"/exclusion-*.sqlite3)
+          previous_args=()
           if [ "${#previous_states[@]}" -eq 0 ]; then
-            echo "Completed holdout has no earlier cohort checkpoint." >&2
-            exit 2
+            echo "::notice::First holdout has no earlier cohort; auditing against an empty prior union."
+            previous_args+=(--allow-empty-previous)
           fi
           audit_args=()
           for previous_state in "${previous_states[@]}"; do
@@ -1042,6 +1043,7 @@ jobs:
           )"
           python services/olds-api/tools/audit_parser_validation_holdout.py \
             "${audit_args[@]}" \
+            "${previous_args[@]}" \
             --current-state "$LOCAL_ROOT/raw/capture.sqlite3" \
             --publisher "$PUBLISHER" \
             --expected-parser-version "$parser_version" \

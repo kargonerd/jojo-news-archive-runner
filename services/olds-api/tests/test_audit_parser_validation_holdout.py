@@ -183,6 +183,46 @@ def test_holdout_audit_rejects_empty_previous_union(tmp_path: Path):
     assert "2020:no-previous-evaluated-samples" in result["issues"]
 
 
+def test_holdout_audit_allows_first_cohort_without_previous_state(
+    tmp_path: Path,
+):
+    current_path = tmp_path / "first-holdout.sqlite3"
+    current = _state(current_path)
+    try:
+        _config(current, year=2014, version="caixin-parser/0.1.9")
+        current.execute(
+            "UPDATE parser_validation_config SET target_size=1 "
+            "WHERE sample_year=2014"
+        )
+        _sample(
+            current,
+            url="https://magazine.caixin.com/2014-01-02/100600001.html",
+            year=2014,
+            version="caixin-parser/0.1.9",
+        )
+        current.commit()
+    finally:
+        current.close()
+
+    result = audit_holdout(
+        previous_states=(),
+        current_state=current_path,
+        publisher="caixin",
+        expected_parser_version="caixin-parser/0.1.9",
+        from_year=2014,
+        to_year=2014,
+        target_per_year=1,
+        require_complete=True,
+        allow_empty_previous=True,
+    )
+
+    assert result["passed"] is True
+    year = result["years"]["2014"]
+    assert year["previousUniqueEvaluated"] == 0
+    assert year["priorCohortOverlap"] == 0
+    assert year["missingPriorExclusions"] == 0
+
+
 def test_holdout_audit_ignores_failed_and_reserve_attempts(tmp_path: Path):
     previous_path = tmp_path / "previous.sqlite3"
     current_path = tmp_path / "current.sqlite3"

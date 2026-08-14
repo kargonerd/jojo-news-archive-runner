@@ -44,11 +44,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--to-year", type=int, required=True)
     parser.add_argument("--target-per-year", type=int, default=800)
     parser.add_argument("--require-complete", action="store_true")
+    parser.add_argument(
+        "--allow-empty-previous",
+        action="store_true",
+        help=(
+            "Allow a first holdout cohort with no earlier state. The prior "
+            "cohort union is treated as empty and still requires all current "
+            "sample/parser gates."
+        ),
+    )
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
 
-def parse_previous_states(values: list[str]) -> tuple[tuple[str, Path], ...]:
+def parse_previous_states(
+    values: list[str],
+    *,
+    allow_empty: bool = False,
+) -> tuple[tuple[str, Path], ...]:
     result: list[tuple[str, Path]] = []
     labels: set[str] = set()
     for value in values:
@@ -61,7 +74,7 @@ def parse_previous_states(values: list[str]) -> tuple[tuple[str, Path], ...]:
             raise ValueError(f"duplicate previous state label: {label}")
         labels.add(label)
         result.append((label, Path(raw_path)))
-    if not result:
+    if not result and not allow_empty:
         raise ValueError("at least one previous state is required")
     return tuple(result)
 
@@ -76,12 +89,13 @@ def audit_holdout(
     to_year: int,
     target_per_year: int = 800,
     require_complete: bool = False,
+    allow_empty_previous: bool = False,
 ) -> dict[str, object]:
     if from_year > to_year:
         raise ValueError("from_year must not exceed to_year")
     if target_per_year < 1:
         raise ValueError("target_per_year must be positive")
-    if not previous_states:
+    if not previous_states and not allow_empty_previous:
         raise ValueError("at least one previous state is required")
 
     issues: list[str] = []
@@ -173,7 +187,7 @@ def audit_holdout(
                 if exclusions[url] not in labels_by_url[url]
             }
 
-            if not previous_union:
+            if not previous_union and previous_states:
                 issues.append(f"{year}:no-previous-evaluated-samples")
             if current_config is None:
                 issues.append(f"{year}:missing-current-config")
@@ -271,7 +285,10 @@ def main() -> int:
     args = parse_args()
     try:
         result = audit_holdout(
-            previous_states=parse_previous_states(args.previous_state),
+            previous_states=parse_previous_states(
+                args.previous_state,
+                allow_empty=args.allow_empty_previous,
+            ),
             current_state=args.current_state,
             publisher=args.publisher,
             expected_parser_version=args.expected_parser_version,
@@ -279,6 +296,7 @@ def main() -> int:
             to_year=args.to_year,
             target_per_year=args.target_per_year,
             require_complete=args.require_complete,
+            allow_empty_previous=args.allow_empty_previous,
         )
     except (OSError, sqlite3.Error, ValueError) as exc:
         result = {
