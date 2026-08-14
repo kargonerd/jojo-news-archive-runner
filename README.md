@@ -173,8 +173,11 @@ The temporary runner remains the active home while validation is in progress.
   `ap-parser/0.6.21`: QA 100%, zero parser errors, zero prior/exclusion
   overlap, zero hard content anomalies, and all 800 extraction statuses
   complete. Its content audit retained 383 selected images and two review
-  candidates. AP 2013 is the next independent year in flight against the
-  same sitemap shard and legacy-archive supplement. The AP 2010 catalog
+  candidates. AP 2013 has now also formally converged at 800/800 with QA
+  100%, zero parser errors, zero prior/exclusion overlap, zero hard content
+  anomalies, and all 800 extraction statuses complete; its content audit
+  retained 13 selected images. AP 2014 is the next independent year against
+  the same sitemap shard and legacy-archive supplement. The AP 2010 catalog
   currently exposes fewer than 800 distinct candidates; 2012 and later years
   have materially larger pools and are being validated first.
 - TODO: continue NPR and AP across their remaining eligible years after the
