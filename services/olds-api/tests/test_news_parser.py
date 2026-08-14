@@ -19049,7 +19049,7 @@ def test_aljazeera_parser_classifies_short_embedded_video_report():
         and block.embed_url == "https://www.youtube.com/embed/FBnUNOj4Boo"
         for block in result.blocks
     )
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.2"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.3"
 
 
 def test_aljazeera_parser_marks_short_timeline_shell_as_interactive_partial():
@@ -19076,7 +19076,7 @@ def test_aljazeera_parser_marks_short_timeline_shell_as_interactive_partial():
     assert result.content_type == ContentType.INTERACTIVE
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "body-too-short" in result.quality.warnings
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.2"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.3"
 
 
 def test_aljazeera_parser_extracts_migrated_gallery_figures():
@@ -19118,4 +19118,30 @@ def test_aljazeera_parser_extracts_migrated_gallery_figures():
     assert result.images[0].caption == (
         "Survivors gather after the earthquake [Reuters]"
     )
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.2"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.3"
+
+
+def test_aljazeera_parser_removes_live_update_underscore_separators():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Coronavirus live updates">
+          <meta property="article:published_time" content="2020-06-11T00:00:00Z">
+        </head><body>
+          <article><div class="wysiwyg">
+            <p>Here are the latest updates:</p>
+            <p>__________________________________________________________</p>
+            <p>Substantive update text with enough context for the article.</p>
+          </div></article>
+        </body></html>
+        """,
+        publisher="aljazeera",
+        canonical_url=(
+            "https://www.aljazeera.com/news/2020/6/11/"
+            "coronavirus-live-updates"
+        ),
+    )
+
+    assert "__________________________________________________________" not in result.plain_text
+    assert "Substantive update text" in result.plain_text
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.3"

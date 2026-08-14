@@ -8455,14 +8455,14 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         if text in _EXACT_NOISE_TEXT:
             node.decompose()
         elif (
-            spec.publisher in {"npr", "wsj"}
+            spec.publisher in {"aljazeera", "npr", "wsj"}
             and len(text) >= 2
             and set(text) == {"_"}
         ):
-            # NPR legacy/transcript pages and WSJ press-release feeds use
-            # underscore-only paragraphs as visual rules. They are interface
-            # separators, not article copy, and otherwise survive as ordinary
-            # text blocks.
+            # Al Jazeera live-update pages, NPR legacy/transcript pages and
+            # WSJ press-release feeds use underscore-only paragraphs as visual
+            # rules. They are interface separators, not article copy, and
+            # otherwise survive as ordinary text blocks.
             node.decompose()
         elif (
             spec.publisher == "npr"
