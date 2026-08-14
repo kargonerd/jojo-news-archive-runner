@@ -183,6 +183,10 @@ The temporary runner remains the active home while validation is in progress.
 - TODO: continue NPR and AP across their remaining eligible years after the
   current holdouts establish the next parser baselines. Their existing
   catalogs and checkpoints remain resumable.
+- NPR 2010 `holdout-v10` is currently source-limited rather than parser-limited:
+  after all prior cohorts are excluded, only 960 fresh candidates remain and
+  the first batch accepted 104/800. Its Common Crawl/Wayback catalog needs a
+  broader supplement before this year can reach the formal 800-row gate.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
   Post. Their existing catalogs and checkpoints also remain resumable.
 - TODO: add Reuters back to the convergence schedule after its historical
