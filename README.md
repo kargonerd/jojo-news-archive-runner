@@ -123,7 +123,10 @@ The temporary runner remains the active home while validation is in progress.
   hard content anomalies, and all 228 selected images preserved. The parser
   removes the legacy Two Sessions topic-recirculation tail exposed by the
   initial 751-article audit. TODO: run fresh current-parser cohorts for
-  Caixin 2014--2015; each catalog
+  Caixin 2015; Caixin 2014 holdout-v1 has also formally converged at 800/800
+  with zero prior-cohort overlap, zero hard content anomalies, and all 3
+  selected images preserved. Its first holdout had no earlier cohort, so the
+  rotation audit correctly treated the prior union as empty.
   year has at least 3,901 candidates. The first bounded 2016--2026 catalog
   pass found at least 1,144 candidates in every year except 2018. A focused
   Common Crawl supplement now adds 3,068 independently cataloged 2018 URLs,
