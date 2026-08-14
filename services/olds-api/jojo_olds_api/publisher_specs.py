@@ -281,7 +281,7 @@ PUBLISHER_SPECS = {
     ),
     "aljazeera": PublisherSpec(
         publisher="aljazeera",
-        parser_version="aljazeera-parser/0.1.4",
+        parser_version="aljazeera-parser/0.1.5",
         domains=("aljazeera.com", "www.aljazeera.com"),
         default_language="en",
         edition="global",

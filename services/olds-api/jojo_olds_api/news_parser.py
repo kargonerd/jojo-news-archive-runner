@@ -1095,7 +1095,10 @@ def parse_article(
         or (
             spec.publisher == "aljazeera"
             and "/gallery/" in canonical_url.casefold()
-            and sum(block.type == BlockType.IMAGE for block in blocks) >= 2
+            and (
+                sum(block.type == BlockType.IMAGE for block in blocks) >= 1
+                or len(images_by_url) >= 1
+            )
         )
     ):
         content_type = ContentType.GALLERY
@@ -1134,6 +1137,11 @@ def parse_article(
         and (
             image_block_count >= 1
             or (spec.publisher in {"nyt", "ft"} and len(images) >= 1)
+            or (
+                spec.publisher == "aljazeera"
+                and "/gallery/" in canonical_url.casefold()
+                and len(images) >= 1
+            )
         )
     )
     embedded_nontext_content = bool(
@@ -8460,7 +8468,9 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
     for selector in (*COMMON_REMOVE_SELECTORS, *spec.remove_selectors):
         for node in soup.select(selector):
             node.decompose()
-    for node in soup.select("p, div, span"):
+    for node in soup.select(
+        "p, div, span, h1, h2, h3, h4, h5, h6"
+    ):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
         if text in _EXACT_NOISE_TEXT:
             node.decompose()
