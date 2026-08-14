@@ -159,10 +159,13 @@ The temporary runner remains the active home while validation is in progress.
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
   WSJ year automatically.
-- In flight: NYT 2019 `holdout-v2` is a fresh independent cohort using
-  `nyt-parser/0.8.62` and the `nyt/2016-2026/sitemap-wayback` source shard.
-  Its 800-row parser, rotation, and content gates are still pending; after it
-  converges, resume the remaining NYT and WSJ years.
+- NYT 2019 `holdout-v2` has formally converged at 800/800 on
+  `nyt-parser/0.8.62`: QA 100%, zero parser errors, zero prior/exclusion
+  overlap, and all 800 content-audit rows complete with zero hard anomalies.
+  The audit retained 1,016 selected images and left one review candidate.
+  The older NYT 2018 `holdout-v7` reached 800/800 on `nyt-parser/0.8.58`
+  without the current content-audit gate; a fresh `holdout-v8` revalidation
+  on `nyt-parser/0.8.62` is now queued to establish current-version evidence.
 - In flight: AP 2012 `holdout-v1` is now queued/running against the
   `ap/2010-2015/sitemap-wayback` shard with the legacy-archive supplement.
   The AP 2010 catalog currently exposes fewer than 800 distinct candidates;
