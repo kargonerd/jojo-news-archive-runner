@@ -228,22 +228,25 @@ The temporary runner remains the active home while validation is in progress.
 - TODO: continue NPR and AP across their remaining eligible years after the
   current holdouts establish the next parser baselines. Their existing
   catalogs and checkpoints remain resumable.
-- NPR 2010 `holdout-v10` is currently source-limited rather than parser-limited:
-  after all prior cohorts are excluded, only 960 fresh candidates remain and
-  the first batch accepted 104/800. Its Common Crawl/Wayback catalog needs a
-  broader supplement before this year can reach the formal 800-row gate.
+- NPR 2012 reached 800/800 QA-passing rows on `npr-parser/0.1.26`, but its
+  content audit found one hard `noncanonical-sample-url` caused by a Wayback
+  tracking suffix embedded in the stored path. Manifest import and holdout
+  selection now normalize/reject these aliases (with regression tests); a
+  fresh zero-overlap `holdout-v14` is running and is not yet formal evidence.
+  NPR 2010 remains source-limited in its parser holdouts; the Common Crawl
+  supplement now exposes about 7,485 dated candidates and continues to grow.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
   Post. Their existing catalogs and checkpoints also remain resumable.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
-  URL-key shard exposed only 32 candidates, and all captured pages identified
-  as 1995 articles rather than 2017 publications, so zero rows entered the
-  800-row parser gate. A catalog-only Wayback expansion is running before
-  SCMP validation is retried; this is not parser-convergence evidence.
-- Nikkei 2019 `holdout-v1` is now the first active Nikkei validation cell,
-  using the 2016--2026 Wayback URL-key catalog plus its Common Crawl
-  supplement. The initial catalog exposed only three 2019 candidates and was
-  rejected before parsing; a bounded 2016--2026 Common Crawl expansion is now
-  running before the parser holdout is retried.
+  URL-key shard initially exposed only 32 candidates, and all captured pages
+  identified as 1995 articles rather than 2017 publications. The expanded
+  Wayback catalog now has 82 articles (49 in 2017, 32 in 2018, and 1 in
+  2019), while the Common Crawl supplement is still being advanced; no SCMP
+  800-row parser gate has passed.
+- Nikkei's 2017 validation is now active against the expanded Common Crawl
+  catalog. The supplement currently exposes about 6,013 dated 2017 articles
+  and 1,789 for 2016; the parser holdout is still running and has not yet
+  passed the 800-row content-audit gate.
 - TODO: add Reuters back to the convergence schedule after its historical
   source windows and acceptance cohorts are reviewed. The adapter remains
   supported; it is not currently scheduled.
