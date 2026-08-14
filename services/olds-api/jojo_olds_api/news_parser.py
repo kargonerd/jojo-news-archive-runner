@@ -1090,7 +1090,10 @@ def parse_article(
         or (
             spec.publisher == "zaobao"
             and "/forum/comic/" in canonical_url.casefold()
-            and any(block.type == BlockType.IMAGE for block in blocks)
+            and (
+                any(block.type == BlockType.IMAGE for block in blocks)
+                or len(images_by_url) >= 1
+            )
         )
         or (
             spec.publisher == "aljazeera"
@@ -1117,6 +1120,16 @@ def parse_article(
             blocks=blocks,
         )
     if (
+        spec.publisher == "zaobao"
+        and content_type == ContentType.ARTICLE
+        and _zaobao_visual_short_record(
+            news_article,
+            body_characters=len(plain_text),
+            images=images,
+        )
+    ):
+        content_type = ContentType.GALLERY
+    if (
         spec.publisher == "ft"
         and content_type == ContentType.ARTICLE
         and _ft_image_led_article(
@@ -1137,6 +1150,18 @@ def parse_article(
         and (
             image_block_count >= 1
             or (spec.publisher in {"nyt", "ft"} and len(images) >= 1)
+            or (
+                spec.publisher == "zaobao"
+                and len(images) >= 1
+                and (
+                    "/forum/comic/" in canonical_url.casefold()
+                    or _zaobao_visual_short_record(
+                        news_article,
+                        body_characters=len(plain_text),
+                        images=images,
+                    )
+                )
+            )
             or (
                 spec.publisher == "aljazeera"
                 and "/gallery/" in canonical_url.casefold()
@@ -13540,6 +13565,27 @@ def _ft_image_led_article(
         and width >= 800
         and height >= 600
     )
+
+
+def _zaobao_visual_short_record(
+    article: dict[str, Any],
+    *,
+    body_characters: int,
+    images: list[ImageCandidate],
+) -> bool:
+    """Recognize old Zaobao photo-news records with caption-only bodies."""
+    if not article or not images:
+        return False
+    access_mode = _string_or_none(article.get("accessMode"))
+    if not access_mode or access_mode.casefold() != "visual":
+        return False
+    word_count = article.get("wordCount")
+    if not isinstance(word_count, int) or word_count > 120:
+        return False
+    article_body = _string_or_none(article.get("articleBody"))
+    if not article_body or not _clean_text(article_body):
+        return False
+    return body_characters < _MINIMUM_BODY_CHARACTERS
 
 
 def _ft_explicit_truncation_notice(soup: BeautifulSoup) -> bool:

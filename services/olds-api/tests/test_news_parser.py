@@ -19034,7 +19034,7 @@ def test_zaobao_parser_extracts_embedded_rsc_publication_date():
     assert result.quality.status.value == "complete"
     assert result.published_at is not None
     assert result.published_at.isoformat() == "2016-01-20T18:38:00+08:00"
-    assert result.extraction.parser_version == "zaobao-parser/0.1.2"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.3"
 
 
 def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
@@ -19058,7 +19058,38 @@ def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
 
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.COMPLETE
-    assert result.extraction.parser_version == "zaobao-parser/0.1.2"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.3"
+
+
+def test_zaobao_legacy_visual_photo_record_is_a_complete_gallery():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="扬州盛夏“煮饺子”">
+          <meta property="article:published_time"
+            content="2018-08-07T03:30:00+08:00">
+          <script type="application/ld+json">
+            {"@type":"NewsArticle","headline":"扬州盛夏“煮饺子”",
+             "articleBody":"中国进入盛夏时节，江苏省扬州市气温近日高达36摄氏度。",
+             "wordCount":25,"accessMode":"visual",
+             "image":{"url":"https://static.zaobao.com.sg/photo.jpg",
+                      "width":800,"height":536}}
+          </script>
+        </head><body><article>
+          <p>中国进入盛夏时节，江苏省扬州市气温近日高达36摄氏度。</p>
+        </article></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url=(
+            "https://www.zaobao.com.sg/news/china/"
+            "story20180807-881266"
+        ),
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "body-too-short" not in result.quality.warnings
+    assert result.extraction.parser_version == "zaobao-parser/0.1.3"
 
 
 def test_aljazeera_parser_classifies_short_embedded_video_report():
