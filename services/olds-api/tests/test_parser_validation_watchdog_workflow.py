@@ -24,8 +24,11 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert 'object_listing="$(\n              rclone lsl' in workflow
     assert '&& [ -n "$object_listing" ]; then' in workflow
     assert "VALIDATION_PUBLISHERS:" in workflow
-    assert "ft axios caixin" in workflow
-    assert "WSJ, NPR, NYT, AP" in workflow
+    assert (
+        "ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin"
+        in workflow
+    )
+    assert "other in-scope publisher eligible" in workflow
     assert "--publishers $VALIDATION_PUBLISHERS" in workflow
     assert "cohort=\"$(jq -r '.cohort'" in workflow
     assert '-f cohort="$cohort"' in workflow
