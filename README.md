@@ -162,8 +162,11 @@ The temporary runner remains the active home while validation is in progress.
   overlap, and all 800 content-audit rows complete with zero hard anomalies.
   The audit retained 1,016 selected images and left one review candidate.
   The older NYT 2018 `holdout-v7` reached 800/800 on `nyt-parser/0.8.58`
-  without the current content-audit gate; a fresh `holdout-v8` revalidation
-  on `nyt-parser/0.8.62` is now queued to establish current-version evidence.
+  without the current content-audit gate. The `holdout-v8` replay reached
+  800 QA-passing rows after evaluating 801, but one archived `/admin/` teaser
+  prevented the 100% QA gate. QA revision 2 now screens such unrecoverable
+  teasers as `nonarticle-desk`; a fresh `holdout-v9` will establish the
+  zero-overlap, current-policy result.
 - In flight: AP 2012 `holdout-v1` is now queued/running against the
   `ap/2010-2015/sitemap-wayback` shard with the legacy-archive supplement.
   The AP 2010 catalog currently exposes fewer than 800 distinct candidates;

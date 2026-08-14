@@ -7,7 +7,9 @@ from __future__ import annotations
 _QA_POLICY_REVISIONS = {
     "axios": 4,
     "caixin": 1,
-    "nyt": 1,
+    # Exclude legacy NYT admin-package pages whose archive snapshot contains
+    # only a teaser and no recoverable article body.
+    "nyt": 2,
     "wsj": 1,
 }
 

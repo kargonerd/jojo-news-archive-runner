@@ -1308,6 +1308,19 @@ def record_parser_validation(
             capture.canonical_url,
         ):
             issues.append("nonarticle-desk")
+        # Some legacy NYT ``admin`` package pages survive in Wayback with
+        # only a short teaser; their client-rendered listicle body is absent
+        # from the archived HTML. Keep the raw capture, but do not count an
+        # unrecoverable teaser as a complete article sample.
+        if (
+            capture.publisher == "nyt"
+            and re.search(
+                r"(?i)^https://(?:www\.)?nytimes\.com/20\d{2}/\d{2}/\d{2}/admin/",
+                capture.canonical_url,
+            )
+            and article.quality.body_characters < 200
+        ):
+            issues.append("nonarticle-desk")
         if (
             article.quality.status != ArticleStatus.COMPLETE
             and not nontext_content

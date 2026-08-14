@@ -2570,7 +2570,7 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
         )
-            VALUES (2020, 1, 'test', 'nyt-parser/0.8.62', 1, 'now')
+            VALUES (2020, 1, 'test', 'nyt-parser/0.8.62', 2, 'now')
         """
     )
     connection.execute(
@@ -2885,21 +2885,29 @@ def test_caixin_photo_desk_does_not_fill_article_validation_target(
 
 
 @pytest.mark.parametrize(
-    "canonical_url",
+    "canonical_url,sample_year",
     [
         (
             "https://www.nytimes.com/2019/09/01/pageoneplus/"
-            "corrections-september-2-2019.html"
+            "corrections-september-2-2019.html",
+            2019,
         ),
         (
             "https://www.nytimes.com/2019/08/04/todayspaper/"
-            "quotation-of-the-day-a-short-card.html"
+            "quotation-of-the-day-a-short-card.html",
+            2019,
+        ),
+        (
+            "https://www.nytimes.com/2018/03/03/admin/"
+            "our-10-most-popular-recipes-right-now.html",
+            2018,
         ),
     ],
 )
 def test_nyt_print_utility_entry_is_screened_from_article_cohort(
     tmp_path: Path,
     canonical_url: str,
+    sample_year: int,
 ):
     connection = sqlite3.connect(":memory:")
     initialize_parser_validation_schema(connection)
@@ -2908,16 +2916,17 @@ def test_nyt_print_utility_entry_is_screened_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2019, 1, 'test', 'nyt-parser/0.8.62', 1, 'now')
-        """
+        ) VALUES (?, 1, 'test', 'nyt-parser/0.8.62', 2, 'now')
+        """,
+        (sample_year,),
     )
     connection.execute(
         """
         INSERT INTO parser_validation_samples(
             canonical_url, sample_year, sample_priority, selected_at
-        ) VALUES (?, 2019, 'priority', 'now')
+        ) VALUES (?, ?, 'priority', 'now')
         """,
-        (canonical_url,),
+        (canonical_url, sample_year),
     )
     html = b"""
     <html><head>
@@ -2930,7 +2939,7 @@ def test_nyt_print_utility_entry_is_screened_from_article_cohort(
         article_id="nyt:" + ("d" * 64),
         publisher="nyt",
         canonical_url=canonical_url,
-        published_at=datetime(2019, 9, 1, tzinfo=timezone.utc),
+        published_at=datetime(sample_year, 9, 1, tzinfo=timezone.utc),
         selected_candidate=CaptureCandidate(
             provider=CaptureProvider.WAYBACK,
             snapshot_url="https://web.archive.org/web/20190902000000id_/"
@@ -2953,8 +2962,8 @@ def test_nyt_print_utility_entry_is_screened_from_article_cohort(
 
     assert result["qaPass"] is False
     assert "nonarticle-desk" in result["issues"]
-    assert summary["years"]["2019"]["evaluated"] == 0
-    assert summary["years"]["2019"]["screenedNonArticles"] == 1
+    assert summary["years"][str(sample_year)]["evaluated"] == 0
+    assert summary["years"][str(sample_year)]["screenedNonArticles"] == 1
 
 
 def test_validation_rejects_interface_noise_inside_complete_body(
