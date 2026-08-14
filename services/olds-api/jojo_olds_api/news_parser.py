@@ -7607,6 +7607,7 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
             header.get_text(" ", strip=True) if header is not None else ""
         ).casefold()
         if header_text in {
+            "read more",
             "read more:",
             "related stories",
             "related npr stories",
