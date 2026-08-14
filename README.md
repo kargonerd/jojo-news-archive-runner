@@ -92,7 +92,7 @@ The temporary runner remains the active home while validation is in progress.
   expander/video controls, an AMP ``Read more`` link group, and FT brand
   favicons and v3 open-graph branding found during partial content audits.
   All superseded FT cohorts remain mandatory exclusions. The last completed
-  parser-bound checkpoint accepted 600/800 articles for 2016 with 100% QA
+  parser-bound checkpoint accepted 735/800 articles for 2016 with 100% QA
   pass rate and zero parser errors; the larger
   `capturesByStatus.complete` value in those summaries is total raw capture
   completion, not parser acceptance. FT 2017 holdout-v8 has now formally
