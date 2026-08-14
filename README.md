@@ -163,8 +163,14 @@ The temporary runner remains the active home while validation is in progress.
   `nyt-parser/0.8.62` and the `nyt/2016-2026/sitemap-wayback` source shard.
   Its 800-row parser, rotation, and content gates are still pending; after it
   converges, resume the remaining NYT and WSJ years.
-- TODO: resume NPR and AP after the reduced active set has stable per-year
-  cohorts. Their existing catalogs and checkpoints remain resumable.
+- In flight: AP 2012 `holdout-v1` is now queued/running against the
+  `ap/2010-2015/sitemap-wayback` shard with the legacy-archive supplement.
+  The AP 2010 catalog currently exposes fewer than 800 distinct candidates;
+  2012 and later years have materially larger pools and are being validated
+  first.
+- TODO: continue NPR and AP across their remaining eligible years after the
+  current holdouts establish the next parser baselines. Their existing
+  catalogs and checkpoints remain resumable.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
   Post. Their existing catalogs and checkpoints also remain resumable.
 - TODO: add Reuters back to the convergence schedule after its historical
