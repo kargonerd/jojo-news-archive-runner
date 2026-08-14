@@ -1092,6 +1092,11 @@ def parse_article(
             and "/forum/comic/" in canonical_url.casefold()
             and any(block.type == BlockType.IMAGE for block in blocks)
         )
+        or (
+            spec.publisher == "aljazeera"
+            and "/gallery/" in canonical_url.casefold()
+            and sum(block.type == BlockType.IMAGE for block in blocks) >= 2
+        )
     ):
         content_type = ContentType.GALLERY
     plain_text = "\n\n".join(

@@ -19096,7 +19096,7 @@ def test_aljazeera_parser_classifies_short_embedded_video_report():
         and block.embed_url == "https://www.youtube.com/embed/FBnUNOj4Boo"
         for block in result.blocks
     )
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.3"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.4"
 
 
 def test_aljazeera_parser_marks_short_timeline_shell_as_interactive_partial():
@@ -19123,7 +19123,7 @@ def test_aljazeera_parser_marks_short_timeline_shell_as_interactive_partial():
     assert result.content_type == ContentType.INTERACTIVE
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "body-too-short" in result.quality.warnings
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.3"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.4"
 
 
 def test_aljazeera_parser_extracts_migrated_gallery_figures():
@@ -19165,7 +19165,7 @@ def test_aljazeera_parser_extracts_migrated_gallery_figures():
     assert result.images[0].caption == (
         "Survivors gather after the earthquake [Reuters]"
     )
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.3"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.4"
 
 
 def test_aljazeera_parser_removes_live_update_underscore_separators():
@@ -19191,4 +19191,28 @@ def test_aljazeera_parser_removes_live_update_underscore_separators():
 
     assert "__________________________________________________________" not in result.plain_text
     assert "Substantive update text" in result.plain_text
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.3"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.4"
+
+
+def test_aljazeera_gallery_with_image_only_archive_is_complete():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="2019 in pictures">
+          <meta property="article:published_time"
+            content="2019-12-24T00:00:00Z">
+        </head><body><article>
+          <img src="https://www.aljazeera.com/one.jpg">
+          <img src="https://www.aljazeera.com/two.jpg">
+        </article></body></html>
+        """.encode(),
+        publisher="aljazeera",
+        canonical_url=(
+            "https://www.aljazeera.com/gallery/2019/12/24/"
+            "2019-in-pictures"
+        ),
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.4"
