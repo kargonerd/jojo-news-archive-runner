@@ -230,6 +230,11 @@ The temporary runner remains the active home while validation is in progress.
   broader supplement before this year can reach the formal 800-row gate.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
   Post. Their existing catalogs and checkpoints also remain resumable.
+- SCMP 2017's first validation probe was source-limited: the current Wayback
+  URL-key shard exposed only 32 candidates, and all captured pages identified
+  as 1995 articles rather than 2017 publications, so zero rows entered the
+  800-row parser gate. A catalog-only Wayback expansion is running before
+  SCMP validation is retried; this is not parser-convergence evidence.
 - Nikkei 2019 `holdout-v1` is now the first active Nikkei validation cell,
   using the 2016--2026 Wayback URL-key catalog plus its Common Crawl
   supplement. The initial catalog exposed only three 2019 candidates and was
