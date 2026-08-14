@@ -12302,6 +12302,17 @@ def _remove_ap_body_promos(soup: BeautifulSoup) -> None:
     for button in list(soup.select("button")):
         button.decompose()
 
+    # AP's syndicated legacy body uses inline ``RELATED`` link labels as
+    # navigation chrome.  Keep the linked headline that follows, but remove
+    # the standalone interface marker from the normalized prose.
+    for marker in list(soup.select(".LinkEnhancement")):
+        if _clean_text(marker.get_text(" ", strip=True)).rstrip(":").casefold() != "related":
+            continue
+        parent = marker.parent
+        marker.decompose()
+        if isinstance(parent, Tag) and not _clean_text(parent.get_text(" ", strip=True)):
+            parent.decompose()
+
     patterns = (
         re.compile(
             r"(?i)\bsign up for (?:the )?ap(?:'s|’s) .*newsletter\b"
