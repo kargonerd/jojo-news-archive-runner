@@ -184,6 +184,9 @@ The temporary runner remains the active home while validation is in progress.
   shard and legacy-archive supplement. The AP 2010 catalog
   currently exposes fewer than 800 distinct candidates; 2012 and later years
   have materially larger pools and are being validated first.
+- Al Jazeera 2019 `validation` has formally converged at 800/800 on
+  `aljazeera-parser/0.1.2`: QA 100%, zero parser errors, all 800 extraction
+  statuses complete, zero hard content anomalies, and 1,199 selected images.
 - TODO: continue NPR and AP across their remaining eligible years after the
   current holdouts establish the next parser baselines. Their existing
   catalogs and checkpoints remain resumable.
