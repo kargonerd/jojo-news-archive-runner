@@ -228,13 +228,15 @@ The temporary runner remains the active home while validation is in progress.
 - TODO: continue NPR and AP across their remaining eligible years after the
   current holdouts establish the next parser baselines. Their existing
   catalogs and checkpoints remain resumable.
-- NPR 2012 reached 800/800 QA-passing rows on `npr-parser/0.1.26`, but its
-  content audit found one hard `noncanonical-sample-url` caused by a Wayback
-  tracking suffix embedded in the stored path. Manifest import and holdout
-  selection now normalize/reject these aliases (with regression tests); a
-  fresh zero-overlap `holdout-v14` is running and is not yet formal evidence.
-  NPR 2010 remains source-limited in its parser holdouts; the Common Crawl
-  supplement now exposes about 7,485 dated candidates and continues to grow.
+- NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
+  800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
+  exclusion overlap, zero hard content anomalies, all 800 extraction statuses
+  complete, and 1,276 selected images (two non-hard review candidates). The
+  previous failed audit was caused by one Wayback tracking suffix embedded in
+  a stored path; manifest import and holdout selection now normalize/reject
+  these aliases, with regression tests. NPR 2010 remains source-limited in
+  its parser holdouts; the Common Crawl supplement now exposes about 7,485
+  dated candidates and continues to grow.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
   Post. Their existing catalogs and checkpoints also remain resumable.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
