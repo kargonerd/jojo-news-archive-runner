@@ -303,6 +303,57 @@ def test_failed_qa_keeps_runner_active_until_qa_target_is_reached(
     assert exact["shouldContinue"] is False
 
 
+def test_validation_ready_ignores_replacement_candidates_after_target(
+    tmp_path: Path,
+):
+    state = tmp_path / "capture.sqlite3"
+    connection = sqlite3.connect(state)
+    connection.executescript(
+        """
+        CREATE TABLE captures (
+            canonical_url TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            raw_path TEXT
+        );
+        CREATE TABLE parser_validation_config (
+            sample_year INTEGER PRIMARY KEY,
+            target_size INTEGER NOT NULL,
+            parser_version TEXT NOT NULL
+        );
+        CREATE TABLE parser_validation_samples (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL
+        );
+        CREATE TABLE parser_validation_results (
+            canonical_url TEXT PRIMARY KEY,
+            sample_year INTEGER NOT NULL,
+            parser_version TEXT NOT NULL,
+            extraction_status TEXT NOT NULL,
+            qa_pass INTEGER NOT NULL
+        );
+        INSERT INTO parser_validation_config
+            VALUES (2024, 2, 'parser/2');
+        INSERT INTO parser_validation_results VALUES
+            ('https://example.com/pass-1', 2024, 'parser/2', 'complete', 1),
+            ('https://example.com/pass-2', 2024, 'parser/2', 'complete', 1),
+            ('https://example.com/replacement', 2024, 'parser/2', 'partial', 0);
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    result = MODULE.action_state(
+        state,
+        maximum_record_attempts=3,
+        stop_at_validation_target=True,
+    )
+
+    assert result["validationTargetReached"] is True
+    assert result["validationReady"] is True
+    assert result["shouldContinue"] is False
+
+
 def test_unbound_capture_input_never_counts_as_ready_or_target(
     tmp_path: Path,
 ):
