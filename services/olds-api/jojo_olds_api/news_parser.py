@@ -1242,6 +1242,11 @@ def parse_article(
             spec.publisher == "wsj"
             and _wsj_is_editorial_letter(soup)
         )
+        else 60
+        if (
+            spec.publisher == "zaobao"
+            and content_type == ContentType.ARTICLE
+        )
         else 500
         if (
             spec.publisher == "wsj"
