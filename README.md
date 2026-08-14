@@ -163,6 +163,13 @@ The temporary runner remains the active home while validation is in progress.
   `nyt-parser/0.8.62`: QA 100%, zero parser errors, zero prior/exclusion
   overlap, and all 800 content-audit rows complete with zero hard anomalies.
   The audit retained 1,016 selected images and left one review candidate.
+  NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
+  `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
+  prior/exclusion overlap, and all 800 extraction statuses complete with zero
+  hard content anomalies. The final audit retained 1,023 selected images and
+  left one non-hard review candidate. This supersedes the earlier 2018
+  `holdout-v9` evidence after the interactive-sprite and Campaign Reporter
+  content-audit fixes.
   The older NYT 2018 `holdout-v7` reached 800/800 on `nyt-parser/0.8.58`
   without the current content-audit gate. The `holdout-v8` replay reached
   800 QA-passing rows after evaluating 801, but one archived `/admin/` teaser
