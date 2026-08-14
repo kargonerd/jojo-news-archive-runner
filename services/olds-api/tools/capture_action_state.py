@@ -32,6 +32,7 @@ def action_state(
             "retryErrors": False,
             "actionable": 1,
             "validationReady": False,
+            "parserValidation": {"years": []},
             "terminalUnresolved": 0,
             "shouldContinue": True,
         }
@@ -58,6 +59,7 @@ def action_state(
         validation_capture_actionable: int | None = None
         validation_ready = False
         validation_target_reached = False
+        validation_by_year: list[dict[str, object]] = []
         validation_tables = {
             str(row[0])
             for row in connection.execute(
@@ -156,6 +158,7 @@ def action_state(
                     SELECT
                         config.sample_year,
                         config.target_size,
+                        config.parser_version,
                         COALESCE(SUM(
                             result.canonical_url IS NOT NULL
                             AND {article_result_expression}
@@ -186,6 +189,48 @@ def action_state(
                     ORDER BY config.sample_year
                     """
                 ).fetchall()
+                for (
+                    sample_year,
+                    target_size,
+                    parser_version,
+                    evaluated,
+                    qa_passed,
+                    complete,
+                    parser_errors,
+                    unbound_capture_inputs,
+                ) in readiness_rows:
+                    evaluated_int = int(evaluated)
+                    target_int = int(target_size)
+                    qa_passed_int = int(qa_passed)
+                    complete_int = int(complete)
+                    parser_errors_int = int(parser_errors)
+                    unbound_int = int(unbound_capture_inputs)
+                    validation_by_year.append(
+                        {
+                            "sampleYear": int(sample_year),
+                            "target": target_int,
+                            "parserVersion": str(parser_version),
+                            "evaluated": evaluated_int,
+                            "qaPassed": qa_passed_int,
+                            "complete": complete_int,
+                            "parserErrors": parser_errors_int,
+                            "unboundCaptureInputs": unbound_int,
+                            "qaPassRate": (
+                                round(qa_passed_int / evaluated_int, 4)
+                                if evaluated_int
+                                else 0.0
+                            ),
+                            "completeRate": (
+                                round(complete_int / evaluated_int, 4)
+                                if evaluated_int
+                                else 0.0
+                            ),
+                            "targetReached": (
+                                qa_passed_int >= target_int
+                                and unbound_int == 0
+                            ),
+                        }
+                    )
                 validation_ready = bool(readiness_rows) and all(
                     int(evaluated) >= int(target_size)
                     and int(complete) / int(evaluated) >= 0.95
@@ -195,6 +240,7 @@ def action_state(
                     for (
                         _sample_year,
                         target_size,
+                        _parser_version,
                         evaluated,
                         qa_passed,
                         complete,
@@ -208,6 +254,7 @@ def action_state(
                     for (
                         _sample_year,
                         target_size,
+                        _parser_version,
                         _evaluated,
                         qa_passed,
                         _complete,
@@ -271,6 +318,7 @@ def action_state(
         "validationReplays": validation_replays,
         "validationReady": validation_ready,
         "validationTargetReached": validation_target_reached,
+        "parserValidation": {"years": validation_by_year},
         "terminalUnresolved": max(0, unresolved - recoverable),
         "shouldContinue": (
             actionable > 0

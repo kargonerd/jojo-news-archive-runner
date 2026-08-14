@@ -229,6 +229,21 @@ def test_ready_parser_validation_stops_pending_capture_chain(
     assert result["actionable"] == 0
     assert result["validationReady"] is True
     assert result["shouldContinue"] is False
+    assert result["parserValidation"]["years"] == [
+        {
+            "sampleYear": 2024,
+            "target": 2,
+            "parserVersion": "parser/2",
+            "evaluated": 2,
+            "qaPassed": 2,
+            "complete": 2,
+            "parserErrors": 0,
+            "unboundCaptureInputs": 0,
+            "qaPassRate": 1.0,
+            "completeRate": 1.0,
+            "targetReached": True,
+        }
+    ]
 
 
 def test_failed_qa_keeps_runner_active_until_qa_target_is_reached(
