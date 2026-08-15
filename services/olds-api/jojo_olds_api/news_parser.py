@@ -945,6 +945,11 @@ def parse_article(
         ):
             continue
         if (
+            spec.publisher == "scmp"
+            and _scmp_non_editorial_image_url(url)
+        ):
+            continue
+        if (
             spec.publisher == "bloomberg"
             and (
                 _bloomberg_author_avatar_url(url)
@@ -987,6 +992,11 @@ def parse_article(
             if (
                 spec.publisher == "caixin"
                 and _caixin_non_editorial_image_url(image.original_url)
+            ):
+                continue
+            if (
+                spec.publisher == "scmp"
+                and _scmp_non_editorial_image_url(image.original_url)
             ):
                 continue
             if (
@@ -13661,6 +13671,24 @@ def _caixin_non_editorial_image_url(url: str) -> bool:
             path,
         )
         is not None
+    )
+
+
+def _scmp_non_editorial_image_url(url: str) -> bool:
+    """Recognize legacy SCMP sharing/control icons, not editorial media."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").casefold()
+    path = unquote(parts.path).casefold()
+    return (
+        host in {"cdn1.i-scmp.com", "cdn.i-scmp.com", "www.scmp.com"}
+        and bool(
+            re.search(
+                r"/(?:bookmark-icon|share-icon|print-icon)(?:[-_][^/]*)?\."
+                r"(?:gif|jpe?g|png|webp)$",
+                path,
+                flags=re.IGNORECASE,
+            )
+        )
     )
 
 

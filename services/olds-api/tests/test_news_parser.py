@@ -21,6 +21,7 @@ from jojo_olds_api.news_models import (
 )
 from jojo_olds_api.news_parser import (
     _nikkei_non_editorial_image_url,
+    _scmp_non_editorial_image_url,
     parse_article,
 )
 
@@ -18960,7 +18961,7 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.2"
+    assert result.extraction.parser_version == "scmp-parser/0.1.3"
 
 
 def test_scmp_legacy_drupal_pane_content_is_the_article_body():
@@ -18992,7 +18993,45 @@ def test_scmp_legacy_drupal_pane_content_is_the_article_body():
 
     assert result.quality.status.value == "complete"
     assert "additional financial data" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.2"
+    assert result.extraction.parser_version == "scmp-parser/0.1.3"
+
+
+def test_scmp_parser_drops_legacy_bookmark_control_icon():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A complete SCMP report">
+          <meta property="article:published_time"
+                content="2019-02-01T08:00:00+08:00">
+        </head><body><article class="article-body">
+          <p>The report contains substantial original reporting and context
+          about the company, its investors and the wider market response.</p>
+          <p>A second paragraph supplies additional facts and explains what
+          officials said after the announcement.</p>
+          <img src="https://cdn1.i-scmp.com/sites/all/themes/scmp/images/bookmark-icon.png">
+        </article></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/article/2181768/a-complete-report",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert not any(
+        "bookmark-icon.png" in image.original_url
+        for image in result.images
+    )
+    assert result.extraction.parser_version == "scmp-parser/0.1.3"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://cdn1.i-scmp.com/sites/all/themes/scmp/images/bookmark-icon.png",
+        "https://cdn.i-scmp.com/sites/all/themes/scmp/images/share-icon.png",
+    ],
+)
+def test_scmp_rejects_legacy_control_icons(url: str):
+    assert _scmp_non_editorial_image_url(url)
 
 
 def test_caixin_legacy_parser_extracts_single_page_photo_story():
