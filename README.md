@@ -200,6 +200,10 @@ The temporary runner remains the active home while validation is in progress.
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
   WSJ year automatically.
+  A current-version 2018 audit later found one flattened `related stories`
+  interface marker. `wsj-parser/0.8.55` now removes that plural marker;
+  fresh zero-overlap rotations for 2018, 2019, 2021, and 2022 are dispatched
+  and supersede their 0.8.54-or-earlier evidence once audited.
 - NYT 2019 `holdout-v2` has formally converged at 800/800 on
   `nyt-parser/0.8.62`: QA 100%, zero parser errors, zero prior/exclusion
   overlap, and all 800 content-audit rows complete with zero hard anomalies.
