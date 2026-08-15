@@ -363,8 +363,10 @@ The temporary runner remains the active home while validation is in progress.
   The Common Crawl supplement exposed 12,931 eligible candidates for that
   cohort.
 - Nikkei's Common Crawl supplement now exposes enough dated candidates for
-  2012--2015 (909, 1,055, 915, and 1,085 respectively); current
-  `nikkei-parser/0.1.7` holdouts are running for those years. Lianhe Zaobao
+  2012--2015 (909, 1,055, 915, and 1,085 respectively). Current
+  `nikkei-parser/0.1.7` zero-overlap `holdout-v3` runs are dispatched for
+  2012--2026; only the earlier 2016/2017 800-row holdouts are formally
+  converged so far. Lianhe Zaobao
   current-version holdouts for 2016 and 2018 are also running; its 2017
   holdout remains the prior 800-row baseline pending a clean stricter gate.
 - Lianhe Zaobao's 2017 validation exposed four genuine short news briefs and
@@ -414,7 +416,9 @@ The temporary runner remains the active home while validation is in progress.
   errors, zero prior/exclusion overlap, zero hard content anomalies, all
   extraction statuses complete, and 592 selected images (16 non-hard review
   candidates). The supplement currently exposes about 6,013 dated 2017
-  articles and 1,789 for 2016.
+  articles and 1,789 for 2016. The new `holdout-v3` schedule supersedes the
+  incomplete 2012--2015 and 2018--2026 probes once its current-version audits
+  finish.
 - TODO: add Reuters back to the convergence schedule after its historical
   source windows and acceptance cohorts are reviewed. The adapter remains
   supported; it is not currently scheduled.
