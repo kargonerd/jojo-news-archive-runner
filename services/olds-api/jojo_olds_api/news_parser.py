@@ -7616,6 +7616,9 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
         ) or (
             text.startswith("subscribe to our show on ")
             and ("podcast" in text or "npr one" in text)
+        ) or re.fullmatch(
+            r"subscribe to (?:the )?npr(?: .+)? newsletter\s*[.!?]?",
+            text,
         ):
             node.decompose()
     for container in list(soup.select(".container")):
