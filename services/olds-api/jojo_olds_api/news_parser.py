@@ -11390,7 +11390,7 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     for image in list(soup.select("img[src]")):
         source = str(image.get("src") or "")
         if re.search(
-            r"/newsgraphics/.*/sprite-(?:mobile|desktop)\.(?:jpe?g|png)"
+            r"/newsgraphics/.*/[^/]*sprite[^/]*\.(?:jpe?g|png)"
             r"|/projects/assets/oscars_2013/images/2013/"
             r"[^/]*sprite[^/]*\.(?:jpe?g|png)"
             r"(?:[?#].*)?$",
@@ -11489,6 +11489,7 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         re.compile(r"(?i)^for newspaper delivery questions\b"),
         re.compile(r"^_{2,}$"),
         re.compile(r"(?i)^read more:?$"),
+        re.compile(r"(?i)^related$"),
         re.compile(
             r"(?i)^\[?\s*(?:enjoying this article\?\s*)?"
             r"sign up for (?:our|the) .*newsletter\b"
