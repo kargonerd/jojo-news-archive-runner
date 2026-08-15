@@ -355,7 +355,7 @@ The temporary runner remains the active home while validation is in progress.
   dynamic LiveBlog shells as non-article records while retaining their raw
   captures. Fresh `holdout-v1` replays for 2022--2026 are dispatched against
   the current source shard; 2025 remains subject to source-capacity checks.
-- NPR's current parser is now `npr-parser/0.1.36`. The v0.1.31/v0.1.32
+- NPR's current parser is now `npr-parser/0.1.37`. The v0.1.31/v0.1.32
   replays exposed legacy podcast, subscription-network, and newsletter CTAs;
   the current parser removes them with regression fixtures. The v0.1.33
   rotation then exposed one combined podcast/social CTA in 2016 and a short
