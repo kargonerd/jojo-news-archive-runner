@@ -416,11 +416,12 @@ The temporary runner remains the active home while validation is in progress.
   stages. The 0.1.3 `holdout-v3` reached 800 audited clean rows, but evaluated
   1,042 candidates because 238 were unsupported, leaving aggregate QA at 76.8%
   and the readiness gate closed. Review of those rows found explicit SCMP
-  access shells such as `READ FULL ARTICLE` with no recoverable body; QA
-  revision 1 now screens those source-limited records while retaining raw
-  captures. Fresh zero-overlap `holdout-v3` replays for 2016--2022 are
-  dispatched on the unchanged 0.1.3 parser; the old `holdout-v4` path remains
-  historical 0.1.2 evidence.
+  access shells such as `READ FULL ARTICLE` with no recoverable body. The next
+  audit also identified image-only `/infographics/` and `-gallery` pages; QA
+  revision 2 screens all three source-limited non-article forms while retaining
+  their raw captures. Fresh `holdout-v3` replays for 2016--2022 are dispatched
+  on the unchanged 0.1.3 parser; the old `holdout-v4` path remains historical
+  0.1.2 evidence.
 - Nikkei's first 2017 validation reached 800 QA rows but its content audit
   found three embedded `form`/`input`/`button` controls. The parser now removes
   those site-wide controls as `nikkei-parser/0.1.7`; the fresh zero-overlap
