@@ -295,8 +295,12 @@ The temporary runner remains the active home while validation is in progress.
   formally converged at 800/800: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all extraction statuses
   complete, and 1,108 selected images (two non-hard review candidates). NPR
-  2010 remains source-limited in its parser holdouts; the Common Crawl
-  supplement now exposes about 7,485 dated candidates and continues to grow.
+  2010's fresh zero-overlap `holdout-v17` has now formally converged on
+  `npr-parser/0.1.27`: 800/800 QA-passing rows, zero parser errors, zero
+  prior/exclusion overlap, zero hard content anomalies, all 800 extraction
+  statuses complete, and 748 selected images (two non-hard review candidates).
+  The Common Crawl supplement exposed 12,931 eligible candidates for that
+  cohort.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
   Post. Their existing catalogs and checkpoints also remain resumable.
 - Lianhe Zaobao's 2017 validation exposed four genuine short news briefs and
