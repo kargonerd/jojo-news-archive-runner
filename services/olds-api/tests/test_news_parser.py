@@ -10312,8 +10312,8 @@ def test_nyt_parser_staticizes_callout_form_and_drops_sprite_assets():
           participants and public records in enough detail for readers.</p>
           <p>Additional reporting explains the institutional response and
           the consequences documented by investigators and witnesses.</p>
-          <p>The article preserves historical context, quotations and data
-          needed to understand the findings and their significance.</p>
+        <p>The article preserves historical context, quotations and data
+        needed to understand the findings and their significance.</p>
         </article></body></html>
         """,
         publisher="nyt",
@@ -19678,7 +19678,7 @@ def test_zaobao_parser_extracts_embedded_rsc_publication_date():
     assert result.quality.status.value == "complete"
     assert result.published_at is not None
     assert result.published_at.isoformat() == "2016-01-20T18:38:00+08:00"
-    assert result.extraction.parser_version == "zaobao-parser/0.1.6"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
 
 
 def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
@@ -19702,7 +19702,7 @@ def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
 
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.COMPLETE
-    assert result.extraction.parser_version == "zaobao-parser/0.1.6"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
 
 
 def test_zaobao_parser_accepts_a_short_but_complete_news_brief():
@@ -19722,7 +19722,29 @@ def test_zaobao_parser_accepts_a_short_but_complete_news_brief():
     assert result.quality.body_characters < 100
     assert "body-too-short" not in result.quality.warnings
     assert "project starts next month" in result.plain_text
-    assert result.extraction.parser_version == "zaobao-parser/0.1.6"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
+
+
+def test_zaobao_parser_accepts_a_sub_sixty_character_wire_brief():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="Zaobao wire brief">
+          <meta property="article:published_time" content="2020-03-11T12:41:00Z">
+        </head><body><article>
+          <p>路透社报道，桑德斯预计将在北达科他州党团会议初选中获胜。</p>
+        </article></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url=(
+            "https://www.zaobao.com.sg/realtime/world/"
+            "story20200311-1036258"
+        ),
+    )
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.quality.body_characters < 60
+    assert "body-too-short" not in result.quality.warnings
+    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
 
 
 def test_zaobao_parser_removes_embedded_site_controls():
@@ -19748,7 +19770,7 @@ def test_zaobao_parser_removes_embedded_site_controls():
     assert not result.body_html.casefold().count("<button")
     assert not result.body_html.casefold().count("<form")
     assert not result.body_html.casefold().count("<input")
-    assert result.extraction.parser_version == "zaobao-parser/0.1.6"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
 
 
 def test_zaobao_parser_extracts_legacy_article_content_and_visible_date():
@@ -19774,7 +19796,7 @@ def test_zaobao_parser_extracts_legacy_article_content_and_visible_date():
     assert result.published_at.isoformat() == "2017-03-03T00:00:00+08:00"
     assert "政府公布新的公共服务计划" in result.plain_text
     assert "分享" not in result.plain_text
-    assert result.extraction.parser_version == "zaobao-parser/0.1.6"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
 
 
 def test_zaobao_legacy_visual_photo_record_is_a_complete_gallery():
@@ -19805,7 +19827,7 @@ def test_zaobao_legacy_visual_photo_record_is_a_complete_gallery():
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.COMPLETE
     assert "body-too-short" not in result.quality.warnings
-    assert result.extraction.parser_version == "zaobao-parser/0.1.6"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
 
 
 def test_aljazeera_parser_classifies_short_embedded_video_report():

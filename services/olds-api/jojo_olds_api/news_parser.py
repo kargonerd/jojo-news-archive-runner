@@ -1254,7 +1254,10 @@ def parse_article(
             spec.publisher == "wsj"
             and _wsj_is_editorial_letter(soup)
         )
-        else 60
+        # Zaobao carries short wire briefs whose complete Chinese body can
+        # legitimately be under sixty characters; keep a small floor above
+        # an empty shell while accepting those fully reported briefs.
+        else 20
         if (
             spec.publisher == "zaobao"
             and content_type == ContentType.ARTICLE
