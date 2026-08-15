@@ -172,6 +172,10 @@ The temporary runner remains the active home while validation is in progress.
   converged on the same parser: 800/800 QA-passing rows, zero parser errors,
   zero prior/exclusion overlap, zero hard content anomalies, no selected
   article images, and one non-hard review candidate.
+  Caixin 2022's fresh zero-overlap `holdout-v1` has now also formally
+  converged on the same parser: 800/800 QA-passing rows, zero parser errors,
+  zero prior/exclusion overlap, zero hard content anomalies, and 470 selected
+  images (two non-hard review candidates).
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
