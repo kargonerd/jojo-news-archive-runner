@@ -285,7 +285,11 @@ The temporary runner remains the active home while validation is in progress.
   date, and keeps the control cleanup; the affected samples are complete in
   local regression fixtures. The interrupted `holdout-v1` reached 158
   evaluated rows before the fix and is not convergence evidence; a fresh
-  zero-overlap `holdout-v2` is required.
+  zero-overlap `holdout-v2` has now formally converged on
+  `zaobao-parser/0.1.6`: 800 QA-passing rows after 804 evaluations, zero
+  parser errors, zero prior/exclusion overlap, zero hard content anomalies,
+  and 800 audited complete extraction statuses. Its content audit retained
+  1,726 selected images and left two non-hard review candidates.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
   URL-key shard initially exposed only 32 candidates, and all captured pages
   identified as 1995 articles rather than 2017 publications. The expanded
