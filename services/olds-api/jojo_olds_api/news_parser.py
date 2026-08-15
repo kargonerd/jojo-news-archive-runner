@@ -8508,7 +8508,7 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         if text in _EXACT_NOISE_TEXT:
             node.decompose()
         elif (
-            spec.publisher in {"aljazeera", "caixin", "npr", "wsj"}
+            spec.publisher in {"aljazeera", "ap", "caixin", "npr", "wsj"}
             and len(text) >= 2
             and set(text) == {"_"}
         ):
