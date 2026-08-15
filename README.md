@@ -186,6 +186,10 @@ The temporary runner remains the active home while validation is in progress.
   selected images (two non-hard review candidates). Caixin 2025 has likewise
   formally converged at 800/800 with the same parser and gates, retaining 718
   selected images (two non-hard review candidates).
+  The earlier 2010--2015 holdouts used older parser versions; fresh current
+  `caixin-parser/0.1.10` rotations for all six years are now running against
+  the 3,901--5,996 candidate Wayback windows (with the 2010 Common Crawl
+  supplement available as an additional source).
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
@@ -331,9 +335,12 @@ The temporary runner remains the active home while validation is in progress.
   images and left two non-hard review candidates.
   All earlier Al Jazeera results remain historical until their current-version
   rotations pass every gate.
-- TODO: continue NPR and AP across their remaining eligible years after the
-  current holdouts establish the next parser baselines. Their existing
-  catalogs and checkpoints remain resumable.
+- NPR's current parser is now `npr-parser/0.1.30`. A fresh `holdout-v3`
+  rotation exposed one list-item podcast CTA in 2016 and five in 2017;
+  `holdout-v4` is rerunning those years after the fix, while current-version
+  zero-overlap rotations for 2010--2015 and 2018--2019 are also in progress.
+  The first v0.1.30 audits for 2016 and 2017 have reached 800/800 with no
+  parser errors; final content and rotation audit files are still pending.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
@@ -352,8 +359,11 @@ The temporary runner remains the active home while validation is in progress.
   statuses complete, and 748 selected images (two non-hard review candidates).
   The Common Crawl supplement exposed 12,931 eligible candidates for that
   cohort.
-- TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
-  Post. Their existing catalogs and checkpoints also remain resumable.
+- Nikkei's Common Crawl supplement now exposes enough dated candidates for
+  2012--2015 (909, 1,055, 915, and 1,085 respectively); current
+  `nikkei-parser/0.1.7` holdouts are running for those years. Lianhe Zaobao
+  current-version holdouts for 2016 and 2018 are also running; its 2017
+  holdout remains the prior 800-row baseline pending a clean stricter gate.
 - Lianhe Zaobao's 2017 validation exposed four genuine short news briefs and
   embedded site controls in earlier parser versions. `zaobao-parser/0.1.5`
   addressed those cases, while a current holdout replay then exposed legacy
@@ -369,10 +379,13 @@ The temporary runner remains the active home while validation is in progress.
   1,726 selected images and left two non-hard review candidates.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
   URL-key shard initially exposed only 32 candidates, and all captured pages
-  identified as 1995 articles rather than 2017 publications. The expanded
-  Wayback catalog now has 82 articles (49 in 2017, 32 in 2018, and 1 in
-  2019), while the Common Crawl supplement is still being advanced; no SCMP
-  800-row parser gate has passed.
+  identified as 1995 articles rather than 2017 publications. The Common Crawl
+  supplement now exposes 5,298 dated 2017 candidates (and over 43,000 across
+  2016--2026). The first broad replay found a parser defect in legacy Drupal
+  pages: complete prose lived under `.pane-node-body .pane-content` but was
+  not selected, leaving only 50--90 character summaries. `scmp-parser/0.1.2`
+  fixes that selector; a fresh `holdout-v4` for 2017 and baseline validations
+  for 2016 and 2018--2022 are running.
 - Nikkei's first 2017 validation reached 800 QA rows but its content audit
   found three embedded `form`/`input`/`button` controls. The parser now removes
   those site-wide controls as `nikkei-parser/0.1.7`; the fresh zero-overlap
