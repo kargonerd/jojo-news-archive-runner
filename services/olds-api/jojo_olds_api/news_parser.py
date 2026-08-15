@@ -12306,6 +12306,8 @@ def _remove_ap_body_promos(soup: BeautifulSoup) -> None:
         node.decompose()
     for node in list(soup.select("[data-ap-readmore]")):
         node.decompose()
+    for node in list(soup.select("form, input, select, textarea")):
+        node.decompose()
     for button in list(soup.select("button")):
         button.decompose()
 
