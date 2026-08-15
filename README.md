@@ -141,6 +141,11 @@ The temporary runner remains the active home while validation is in progress.
   pass found at least 1,144 candidates in every year except 2018. A focused
   Common Crawl supplement now adds 3,068 independently cataloged 2018 URLs,
   making every 2016--2026 year eligible for an initial 800-article cohort.
+  Caixin 2018 `holdout-v1` has now formally converged on
+  `caixin-parser/0.1.10`: 800/800 QA-passing rows, zero parser errors, zero
+  prior/exclusion overlap, zero hard content anomalies, and all 800 audited
+  extraction statuses complete. No article images were selected by this
+  parser, and one non-hard review candidate remains.
   Caixin 2010 had only 580 accepted current-cohort articles after exhausting
   its 940 eligible primary candidates. Its resumable Common Crawl supplement
   now prioritizes recent indexes: 40 high-yield pages found 1,220 URLs,
