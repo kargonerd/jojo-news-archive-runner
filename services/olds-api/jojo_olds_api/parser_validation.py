@@ -12,6 +12,8 @@ import sqlite3
 from typing import Iterable
 from urllib.parse import urlsplit
 
+from bs4 import BeautifulSoup
+
 from .archive_sources import (
     archive_source_spec,
     article_deduplication_key,
@@ -1319,6 +1321,32 @@ def record_parser_validation(
             and article.quality.status != ArticleStatus.COMPLETE
         ):
             issues.append("nonarticle-desk")
+        # SCMP Wayback/Common Crawl captures sometimes preserve only article
+        # metadata plus an explicit access shell (for example ``READ FULL
+        # ARTICLE``). There is no body for the parser to recover; keep the
+        # raw capture but do not count it as a parser failure.
+        if (
+            capture.publisher == "scmp"
+            and article.quality.status
+            in {ArticleStatus.UNSUPPORTED, ArticleStatus.PARTIAL}
+            and article.quality.body_characters < 100
+        ):
+            raw_text = _normalize_text(
+                BeautifulSoup(html_bytes, "html.parser").get_text(
+                    " ",
+                    strip=True,
+                )
+            ).casefold()
+            if any(
+                marker in raw_text
+                for marker in (
+                    "read full article",
+                    "sign in/up",
+                    "subscribe to read",
+                    "subscribe to continue",
+                )
+            ):
+                issues.append("nonarticle-desk")
         # Some legacy NYT ``admin`` package pages survive in Wayback with
         # only a short teaser; their client-rendered listicle body is absent
         # from the archived HTML. Keep the raw capture, but do not count an
