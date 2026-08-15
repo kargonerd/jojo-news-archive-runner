@@ -11989,6 +11989,8 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
 
 def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
     """Remove Next-era sharing, recirculation and follow-topic UI."""
+    for button in list(soup.select("button")):
+        button.decompose()
     for component in list(soup.select(".flashcomponent")):
         link = component.select_one("a.flashlink[href]")
         if not isinstance(link, Tag):
@@ -12050,6 +12052,9 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             aside.decompose()
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
+        if text.casefold() in {"sign in", "already a member? sign in"}:
+            node.decompose()
+            continue
         if re.fullmatch(
             r"(?i)see acast\.com/privacy for privacy and "
             r"opt-out information\.?",
