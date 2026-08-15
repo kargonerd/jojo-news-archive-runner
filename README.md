@@ -351,12 +351,13 @@ The temporary runner remains the active home while validation is in progress.
   rotations pass every gate. Fresh `holdout-v1` runs for 2021--2026 are now
   running against the current source shard; 2025 is expected to remain
   source-limited because its validation pool has fewer than 800 complete rows.
-- NPR's current parser is now `npr-parser/0.1.33`. The v0.1.31/v0.1.32
+- NPR's current parser is now `npr-parser/0.1.34`. The v0.1.31/v0.1.32
   replays exposed legacy podcast, subscription-network, and newsletter CTAs;
-  the current parser removes them with regression fixtures. A fresh
-  `holdout-v21` rotation for 2010--2026 is now running against 0.1.33; all
-  earlier NPR results remain historical until this cohort's content and
-  rotation audits pass.
+  the current parser removes them with regression fixtures. The v0.1.33
+  rotation then exposed one combined podcast/social CTA in 2016; 0.1.34 now
+  removes that form too. Fresh `holdout-v22` rotations are dispatched from
+  completed v21 checkpoints, while the remaining v21 years finish; all
+  earlier NPR results remain historical until the current audits pass.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
