@@ -7610,7 +7610,7 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
             "register with the npr.org community"
         ) or text.startswith(
             "contact us with your questions and comments"
-        ) or re.fullmatch(
+        ) or text == "terms and conditions may apply" or re.fullmatch(
             r"subscribe to (?:the )?.+ podcast\s*[.!?]?",
             text,
         ):
