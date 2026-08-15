@@ -240,6 +240,12 @@ The temporary runner remains the active home while validation is in progress.
   with zero parser errors, zero prior/exclusion overlap, zero hard content
   anomalies, and all 800 extraction statuses complete; its content audit
   retained 1,421 selected images and left two non-hard review candidates.
+  The fresh 2018 `holdout-v1` rotation has now also formally converged on
+  `aljazeera-parser/0.1.5`: 800 QA-passing rows, zero parser errors, zero
+  prior/exclusion overlap, zero hard content anomalies, and 800 complete
+  extraction statuses. Its content audit retained 1,299 selected images and
+  left two non-hard review candidates; one additional source candidate was
+  unsupported and was not part of the 800-row formal sample.
   All earlier Al Jazeera results remain historical until their current-version
   rotations pass every gate.
 - TODO: continue NPR and AP across their remaining eligible years after the
