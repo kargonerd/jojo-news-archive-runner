@@ -80,6 +80,10 @@ def test_suspicious_image_detector_distinguishes_movie_from_user_avatar() -> Non
         "https://media.npr.org/assets/movies/2009/12/avatar/"
         "humanandavatar2-f44c267a.jpg"
     )
+    assert not _suspicious_selected_image(
+        "https://media.npr.org/assets/blogs/13.7/images/2009/12/"
+        "avatar-blue_wide.jpg"
+    )
     assert _suspicious_selected_image(
         "https://www.ft.com/__assets/creatives/brand-ft/icons/"
         "v2/open-graph.png"

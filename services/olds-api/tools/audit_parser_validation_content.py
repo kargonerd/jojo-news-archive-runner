@@ -73,10 +73,18 @@ def nyt_raw_interactive_prose_characters(
 
 
 def _suspicious_selected_image(value: str) -> bool:
-    filename = urlsplit(value).path.rsplit("/", 1)[-1]
+    path = urlsplit(value).path.casefold()
+    filename = path.rsplit("/", 1)[-1]
+    avatar_directory = any(
+        segment in {"author", "authors", "avatar", "avatars", "profile", "profiles", "headshot", "headshots"}
+        for segment in path.split("/")
+    )
     return bool(
         _SUSPICIOUS_IMAGE_RE.search(value)
-        or _SUSPICIOUS_AVATAR_FILENAME_RE.search(filename)
+        or (
+            avatar_directory
+            and _SUSPICIOUS_AVATAR_FILENAME_RE.search(filename)
+        )
         or (
             "/__assets/creatives/brand-ft/icons/v2/open-graph.png"
             in value.casefold()
