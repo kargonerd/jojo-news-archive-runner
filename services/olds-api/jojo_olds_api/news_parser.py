@@ -7606,6 +7606,9 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
             "register with the npr.org community"
         ) or text.startswith(
             "contact us with your questions and comments"
+        ) or re.fullmatch(
+            r"subscribe to (?:the )?.+ podcast\s*\.?",
+            text,
         ):
             node.decompose()
     for container in list(soup.select(".container")):

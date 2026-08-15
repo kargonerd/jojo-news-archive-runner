@@ -30,11 +30,14 @@ from jojo_olds_api.raw_archive_capture import completed_raw_capture
 _SPACE_RE = re.compile(r"\s+")
 _SUSPICIOUS_IMAGE_RE = re.compile(
     r"(?i)(?:^|[/_.-])(?:advert(?:isement)?|icon|pixel|"
-    r"spacer|sprite|transparent)(?:[/_.-]|$)|"
+    r"spacer|sprite)(?:[/_.-]|$)|"
     r"(?:doubleclick|googlesyndication|scorecardresearch)"
 )
 _SUSPICIOUS_AVATAR_FILENAME_RE = re.compile(
     r"(?i)(?:^|[_.-])avatar(?:[_.-]|$)"
+)
+_SUSPICIOUS_TRANSPARENT_FILENAME_RE = re.compile(
+    r"(?i)^transparent(?:[_.-](?:1x1|pixel|spacer))?\.(?:gif|png)$"
 )
 _INTERFACE_TEXT_RE = re.compile(
     r"(?i)^(?:advertisement|back to top|click here|follow us|more from axios:?|read more:?|related|rss|"
@@ -81,6 +84,7 @@ def _suspicious_selected_image(value: str) -> bool:
     )
     return bool(
         _SUSPICIOUS_IMAGE_RE.search(value)
+        or _SUSPICIOUS_TRANSPARENT_FILENAME_RE.fullmatch(filename)
         or (
             avatar_directory
             and _SUSPICIOUS_AVATAR_FILENAME_RE.search(filename)
