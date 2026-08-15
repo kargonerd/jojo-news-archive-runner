@@ -213,11 +213,12 @@ The temporary runner remains the active home while validation is in progress.
   prior/exclusion overlap, all 800 extraction statuses complete, and zero hard
   content anomalies. The audit retained 1,852 selected images and left two
   non-hard review candidates.
-  The current parser is now `nyt-parser/0.8.66`: it filters legacy
+  The current parser is now `nyt-parser/0.8.67`: it filters legacy
   newsgraphics sprite sheets and standalone `Related` recirculation markers,
-  and chooses the substantive body when a modern interactive contains a short
-  results panel before the main prose. Fresh zero-overlap `holdout-v13` runs
-  for completed v12 years are being dispatched; all earlier NYT evidence
+  chooses the substantive body when a modern interactive contains a short
+  results panel before the main prose, and removes flattened Campaign Reporter
+  newsletter CTAs. Old 0.8.65/0.8.66 replays were stopped; fresh zero-overlap
+  `holdout-v14` runs for 2016--2026 are dispatched, and all earlier NYT evidence
   remains historical until these audits pass.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
@@ -350,9 +351,10 @@ The temporary runner remains the active home while validation is in progress.
   complete extraction statuses. Its content audit retained 1,503 selected
   images and left two non-hard review candidates.
   All earlier Al Jazeera results remain historical until their current-version
-  rotations pass every gate. Fresh `holdout-v1` runs for 2021--2026 are now
-  running against the current source shard; 2025 is expected to remain
-  source-limited because its validation pool has fewer than 800 complete rows.
+  rotations pass every gate. QA revision 1 now screens short, unrecoverable
+  dynamic LiveBlog shells as non-article records while retaining their raw
+  captures. Fresh `holdout-v1` replays for 2022--2026 are dispatched against
+  the current source shard; 2025 remains subject to source-capacity checks.
 - NPR's current parser is now `npr-parser/0.1.35`. The v0.1.31/v0.1.32
   replays exposed legacy podcast, subscription-network, and newsletter CTAs;
   the current parser removes them with regression fixtures. The v0.1.33
@@ -397,6 +399,10 @@ The temporary runner remains the active home while validation is in progress.
   parser errors, zero prior/exclusion overlap, zero hard content anomalies,
   and 800 audited complete extraction statuses. Its content audit retained
   1,726 selected images and left two non-hard review candidates.
+  A 2020 audit then found a legitimate 28-character Reuters wire brief just
+  below the old 60-character floor. `zaobao-parser/0.1.7` lowers only the
+  ordinary-article floor to 20 characters with a regression fixture; fresh
+  zero-overlap `holdout-v4` runs for 2016--2026 are dispatched.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
   URL-key shard initially exposed only 32 candidates, and all captured pages
   identified as 1995 articles rather than 2017 publications. The Common Crawl
