@@ -18830,7 +18830,39 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.1"
+    assert result.extraction.parser_version == "scmp-parser/0.1.2"
+
+
+def test_scmp_legacy_drupal_pane_content_is_the_article_body():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="SHK unit sued over Malaysia hotel deal">
+          <meta property="article:published_time" content="2017-05-02T16:12:46+08:00">
+          <script type="application/ld+json">
+            {"@type":"NewsArticle","datePublished":"1999-02-27T00:00:00+08:00",
+             "headline":"SHK unit sued over Malaysia hotel deal"}
+          </script>
+        </head><body>
+          <div class="panel-pane pane-entity-field pane-node-body">
+            <div class="pane-content">
+              <p>Sun Hung Kai Securities is being sued over a hotel project.</p>
+              <p>The company disputed the claim and provided additional financial
+              data to the court.</p>
+            </div>
+          </div>
+        </body></html>
+        """,
+        publisher="scmp",
+        canonical_url=(
+            "https://www.scmp.com/article/273522/"
+            "shk-unit-sued-over-malaysia-hotel-deal"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "additional financial data" in result.plain_text
+    assert result.extraction.parser_version == "scmp-parser/0.1.2"
 
 
 def test_caixin_legacy_parser_extracts_single_page_photo_story():

@@ -296,7 +296,7 @@ PUBLISHER_SPECS = {
     ),
     "scmp": PublisherSpec(
         publisher="scmp",
-        parser_version="scmp-parser/0.1.1",
+        parser_version="scmp-parser/0.1.2",
         domains=("scmp.com", "www.scmp.com"),
         default_language="en",
         edition="hk",
@@ -304,6 +304,7 @@ PUBLISHER_SPECS = {
             ".article__body",
             ".article-body",
             "[data-qa='article-body']",
+            ".pane-node-body .pane-content",
             ".pane-node-body .field-name-body",
             ".field-name-body",
             "article",
