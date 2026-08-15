@@ -78,6 +78,10 @@ def nyt_raw_interactive_prose_characters(
 def _suspicious_selected_image(value: str) -> bool:
     path = urlsplit(value).path.casefold()
     filename = path.rsplit("/", 1)[-1]
+    # NPR's legacy book-review pages use the ``icon`` directory for genuine
+    # Baker & Taylor cover art.  It is editorial media, not a UI icon.
+    if "/assets/bakertaylor/covers/" in path:
+        return False
     avatar_directory = any(
         segment in {"author", "authors", "avatar", "avatars", "profile", "profiles", "headshot", "headshots"}
         for segment in path.split("/")
