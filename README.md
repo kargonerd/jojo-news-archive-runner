@@ -202,10 +202,15 @@ The temporary runner remains the active home while validation is in progress.
   candidate). AP 2017 has now also formally converged at 800/800 on the same
   parser: QA 100%, zero parser errors, zero prior/exclusion overlap, zero hard
   content anomalies, all 800 extraction statuses complete, and 62 selected
-  images (one non-hard review candidate). AP 2016 has now also formally
-  converged on `ap-parser/0.6.22` at 800/800: QA 100%, zero parser errors,
+  images (one non-hard review candidate); this is historical evidence for
+  `ap-parser/0.6.21`. AP 2016 has now also formally converged on
+  `ap-parser/0.6.22` at 800/800: QA 100%, zero parser errors,
   zero prior/exclusion overlap, zero hard content anomalies, all extraction
   statuses complete, and 21 selected images (one non-hard review candidate).
+  A fresh audit of AP 2017 on `ap-parser/0.6.22` has now also formally
+  converged at 800/800: QA 100%, zero parser errors, zero prior/exclusion
+  overlap, zero hard content anomalies, all extraction statuses complete, and
+  77 selected images (one non-hard review candidate).
   AP 2018's first content audit found
   one legacy inline `RELATED` interface marker. The parser now removes that
   marker as `ap-parser/0.6.22`; fresh zero-overlap `holdout-v1` evidence has
