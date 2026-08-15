@@ -292,6 +292,9 @@ The temporary runner remains the active home while validation is in progress.
   parser errors, overlaps, or hard content anomalies; their audits retained
   12, 57, and 496 selected images respectively (one, one, and two non-hard
   review candidates).
+  AP 2013--2016 have also passed fresh `holdout-v4` on `ap-parser/0.6.25`:
+  each reached 800/800 with zero parser errors, overlaps, or hard content
+  anomalies, retaining 32, 46, 53, and 19 selected images respectively.
 - Al Jazeera 2019 `validation` has formally converged at 800/800 on
   `aljazeera-parser/0.1.2`: QA 100%, zero parser errors, all 800 extraction
   statuses complete, zero hard content anomalies, and 1,199 selected images.
