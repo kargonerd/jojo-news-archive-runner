@@ -7592,7 +7592,11 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
             tool_list.decompose()
         else:
             add_control.decompose()
-    for node in list(soup.select("p, span")):
+    # Older NPR story wrappers place podcast subscription links in list items
+    # (and, in a few captures, an otherwise empty div) rather than paragraphs.
+    # Inspect those leaf-like containers too so interface CTAs cannot survive
+    # into the canonical article body.
+    for node in list(soup.select("p, li, span, div")):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
         if text == "read more" or (
             text.startswith("copyright ©")
