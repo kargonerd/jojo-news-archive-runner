@@ -558,6 +558,8 @@ def parse_article(
     if spec.publisher == "nikkei":
         _trim_nikkei_paywall_tail(clean_body)
         _remove_nikkei_body_chrome(clean_body)
+    if spec.publisher == "zaobao":
+        _remove_zaobao_body_chrome(clean_body)
     if spec.publisher == "caixin":
         _remove_caixin_body_chrome(clean_body)
     if spec.publisher == "axios":
@@ -12584,6 +12586,17 @@ def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
             and not _clean_text(figure.get_text(" ", strip=True))
         ):
             figure.decompose()
+
+
+def _remove_zaobao_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove site-wide controls embedded in legacy Zaobao article wrappers."""
+
+    # Archived Zaobao pages commonly place share/follow and newsletter
+    # controls inside the same ``article`` node as the historical body.
+    # They are not editorial blocks and otherwise fail the normalized-body
+    # interactive-tag audit.
+    for node in list(soup.select("button, form, input, select, textarea")):
+        node.decompose()
 
 
 def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:

@@ -243,17 +243,20 @@ The temporary runner remains the active home while validation is in progress.
   a stored path; manifest import and holdout selection now normalize/reject
   these aliases, with regression tests. NPR 2011's next audit also exposed a
   legacy `Read More` header and one old URL alias; the parser now removes the
-  header as `npr-parser/0.1.27`, and fresh zero-overlap `holdout-v15` evidence
-  is running. NPR 2010 remains source-limited in its parser holdouts; the
-  Common Crawl supplement now exposes about 7,485 dated candidates and
-  continues to grow.
+  header as `npr-parser/0.1.27`. The fresh zero-overlap `holdout-v15` has now
+  formally converged at 800/800: QA 100%, zero parser errors, zero prior or
+  exclusion overlap, zero hard content anomalies, all extraction statuses
+  complete, and 1,108 selected images (two non-hard review candidates). NPR
+  2010 remains source-limited in its parser holdouts; the Common Crawl
+  supplement now exposes about 7,485 dated candidates and continues to grow.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
   Post. Their existing catalogs and checkpoints also remain resumable.
 - Lianhe Zaobao's 2017 validation has not yet passed the 800-row gate: its
   current `0.1.3` run had 685 QA-passing rows among 690 evaluated records,
   including four genuine short news briefs that were classified as partial
-  solely by the generic 100-character threshold. `zaobao-parser/0.1.4` now
-  accepts complete article bodies of at least 60 characters while retaining
+  solely by the generic 100-character threshold. `zaobao-parser/0.1.5` now
+  accepts complete article bodies of at least 60 characters and removes the
+  embedded site-wide controls found by the content audit, while retaining
   unsupported empty bodies as failures; a fresh holdout is pending.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
   URL-key shard initially exposed only 32 candidates, and all captured pages
@@ -263,10 +266,12 @@ The temporary runner remains the active home while validation is in progress.
   800-row parser gate has passed.
 - Nikkei's first 2017 validation reached 800 QA rows but its content audit
   found three embedded `form`/`input`/`button` controls. The parser now removes
-  those site-wide controls as `nikkei-parser/0.1.7`; fresh zero-overlap
-  `holdout-v1` evidence is running against the expanded Common Crawl catalog.
-  The supplement currently exposes about 6,013 dated 2017 articles and 1,789
-  for 2016; no current-version 800-row content-audit gate has passed yet.
+  those site-wide controls as `nikkei-parser/0.1.7`; the fresh zero-overlap
+  `holdout-v1` has formally converged at 800/800 with QA 100%, zero parser
+  errors, zero prior or exclusion overlap, zero hard content anomalies, all
+  extraction statuses complete, and 761 selected images (15 non-hard review
+  candidates). The supplement currently exposes about 6,013 dated 2017
+  articles and 1,789 for 2016.
 - TODO: add Reuters back to the convergence schedule after its historical
   source windows and acceptance cohorts are reviewed. The adapter remains
   supported; it is not currently scheduled.

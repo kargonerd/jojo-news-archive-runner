@@ -63,6 +63,17 @@ def test_accelerator_does_not_silently_relax_exclusions() -> None:
     assert "relax_parser_validation_exclusions" not in workflow
 
 
+def test_accelerator_initializes_validation_schema_before_exclusions() -> None:
+    workflow = _workflow_text()
+
+    assert "Initialize validation state schema" in workflow
+    assert "initialize_parser_validation_schema" in workflow
+    assert "initialize_capture_schema" in workflow
+    assert workflow.index("Initialize validation state schema") < workflow.index(
+        "Import original-cohort exclusions"
+    )
+
+
 def test_accelerator_reuses_only_post_exclusion_prior_captures() -> None:
     workflow = _workflow_text()
 

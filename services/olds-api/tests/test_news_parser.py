@@ -19156,7 +19156,7 @@ def test_zaobao_parser_extracts_embedded_rsc_publication_date():
     assert result.quality.status.value == "complete"
     assert result.published_at is not None
     assert result.published_at.isoformat() == "2016-01-20T18:38:00+08:00"
-    assert result.extraction.parser_version == "zaobao-parser/0.1.4"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.5"
 
 
 def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
@@ -19180,7 +19180,7 @@ def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
 
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.COMPLETE
-    assert result.extraction.parser_version == "zaobao-parser/0.1.4"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.5"
 
 
 def test_zaobao_parser_accepts_a_short_but_complete_news_brief():
@@ -19200,7 +19200,33 @@ def test_zaobao_parser_accepts_a_short_but_complete_news_brief():
     assert result.quality.body_characters < 100
     assert "body-too-short" not in result.quality.warnings
     assert "project starts next month" in result.plain_text
-    assert result.extraction.parser_version == "zaobao-parser/0.1.4"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.5"
+
+
+def test_zaobao_parser_removes_embedded_site_controls():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="Zaobao controls">
+          <meta property="article:published_time" content="2017-02-20T00:00:00Z">
+        </head><body><article>
+          <p>The historical report contains enough editorial context to be
+          retained as a complete article body for the archive.</p>
+          <button type="button">分享</button>
+          <form><input name="email"><button type="submit">订阅</button></form>
+          <p>The closing paragraph preserves the final reported details.</p>
+        </article></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url="https://www.zaobao.com.sg/news/controls-20170220",
+    )
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "分享" not in result.plain_text
+    assert "订阅" not in result.plain_text
+    assert not result.body_html.casefold().count("<button")
+    assert not result.body_html.casefold().count("<form")
+    assert not result.body_html.casefold().count("<input")
+    assert result.extraction.parser_version == "zaobao-parser/0.1.5"
 
 
 def test_zaobao_legacy_visual_photo_record_is_a_complete_gallery():
@@ -19231,7 +19257,7 @@ def test_zaobao_legacy_visual_photo_record_is_a_complete_gallery():
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.COMPLETE
     assert "body-too-short" not in result.quality.warnings
-    assert result.extraction.parser_version == "zaobao-parser/0.1.4"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.5"
 
 
 def test_aljazeera_parser_classifies_short_embedded_video_report():
