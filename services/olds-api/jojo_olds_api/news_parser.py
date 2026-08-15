@@ -12309,6 +12309,26 @@ def _remove_ap_body_promos(soup: BeautifulSoup) -> None:
     for button in list(soup.select("button")):
         button.decompose()
 
+    # Some AP live-update/gallery stories include a plain ``Read more:``
+    # paragraph followed by a run of related-story links and an ``___``
+    # separator.  Those links are navigation chrome, not part of the wire
+    # copy.  Remove the complete contiguous module while retaining the next
+    # live-update heading and its substantive paragraphs.
+    for marker in list(soup.select("p")):
+        if _clean_text(marker.get_text(" ", strip=True)).casefold() != (
+            "read more:"
+        ):
+            continue
+        sibling = marker.find_next_sibling()
+        marker.decompose()
+        while isinstance(sibling, Tag):
+            next_sibling = sibling.find_next_sibling()
+            text = _clean_text(sibling.get_text(" ", strip=True))
+            sibling.decompose()
+            if text == "___":
+                break
+            sibling = next_sibling
+
     # AP's syndicated legacy body uses inline ``RELATED`` link labels as
     # navigation chrome.  Keep the linked headline that follows, but remove
     # the standalone interface marker from the normalized prose.

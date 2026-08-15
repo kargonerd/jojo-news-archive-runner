@@ -11755,7 +11755,37 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert "___" not in result.plain_text
     assert "<button" not in result.body_html
     assert "data-ap-readmore" not in result.body_html
-    assert result.extraction.parser_version == "ap-parser/0.6.22"
+    assert result.extraction.parser_version == "ap-parser/0.6.23"
+
+
+def test_ap_parser_removes_live_update_read_more_module():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="The latest election updates">
+      <meta property="article:published_time" content="2020-11-01T00:00:00Z">
+    </head><body><article><div class="RichTextStoryBody">
+      <p>The opening update contains substantial reporting and context for
+      readers following the election results and the public response.</p>
+      <p>Read more:</p>
+      <p>- An unrelated recommended election story</p>
+      <p>- Another related headline from the live desk</p>
+      <p>___</p>
+      <p>HERE'S WHAT ELSE HAPPENING:</p>
+      <p>The closing update contains additional reporting and must survive
+      removal of the adjacent recommendation module.</p>
+    </div></article></body></html>
+    """
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/article/live-update-read-more",
+    )
+    assert result.quality.status.value == "complete"
+    assert "Read more" not in result.plain_text
+    assert "unrelated recommended" not in result.plain_text
+    assert "Another related headline" not in result.plain_text
+    assert "closing update contains additional reporting" in result.plain_text
+    assert result.extraction.parser_version == "ap-parser/0.6.23"
 
 
 def test_ap_parser_removes_inline_related_navigation_label():
@@ -11844,7 +11874,7 @@ def test_ap_parser_extracts_hosted_ap_legacy_story_template():
     assert len(result.images) == 1
     assert result.images[0].role.value == "tracking"
     assert result.images[0].should_archive is False
-    assert result.extraction.parser_version == "ap-parser/0.6.22"
+    assert result.extraction.parser_version == "ap-parser/0.6.23"
 
 
 def test_ap_parser_extracts_bigstory_timestamp_and_body():
@@ -11883,7 +11913,7 @@ def test_ap_parser_extracts_bigstory_timestamp_and_body():
         "2012-07-05T16:27:51+00:00"
     )
     assert "major exhibition examines" in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.22"
+    assert result.extraction.parser_version == "ap-parser/0.6.23"
 
 
 def test_ap_parser_extracts_legacy_yahoo_distribution_story():
@@ -11930,7 +11960,7 @@ def test_ap_parser_extracts_legacy_yahoo_distribution_story():
     assert "The Associated Press reported" in result.plain_text
     assert "Follow Yahoo News" not in result.plain_text
     assert "user comment" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.22"
+    assert result.extraction.parser_version == "ap-parser/0.6.23"
 
 
 def test_ap_parser_extracts_google_hosted_distribution_story():
@@ -12001,7 +12031,7 @@ def test_ap_parser_extracts_google_hosted_distribution_story():
     assert "Related articles" not in result.plain_text
     assert "Copyright 2011" not in result.plain_text
     assert "Associated Press - 2 days ago" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.22"
+    assert result.extraction.parser_version == "ap-parser/0.6.23"
 
 
 def test_ap_parser_extracts_huffpost_wire_distribution_story():
@@ -12055,7 +12085,7 @@ def test_ap_parser_extracts_huffpost_wire_distribution_story():
     assert "industrialization minister resigned" in result.plain_text
     assert "Story continues below" not in result.plain_text
     assert "Advertisement" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.22"
+    assert result.extraction.parser_version == "ap-parser/0.6.23"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -12098,7 +12128,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.22"
+    assert article.extraction.parser_version == "ap-parser/0.6.23"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -12132,7 +12162,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.22"
+    assert result.extraction.parser_version == "ap-parser/0.6.23"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -16000,7 +16030,7 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
         block.text in {"_", "——————————", "<"}
         for block in result.blocks
     )
-    assert result.extraction.parser_version == "ap-parser/0.6.22"
+    assert result.extraction.parser_version == "ap-parser/0.6.23"
 
 
 def test_ap_parser_deduplicates_dims_variants_by_underlying_asset():
