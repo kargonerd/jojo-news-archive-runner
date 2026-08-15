@@ -214,11 +214,12 @@ The temporary runner remains the active home while validation is in progress.
   content anomalies. The audit retained 1,852 selected images and left two
   non-hard review candidates.
   The current parser is now `nyt-parser/0.8.68`: it filters legacy
-  newsgraphics sprite sheets and standalone `Related` recirculation markers,
+  newsgraphics sprite sheets (including the GIF flag sprite found in the 2016
+  audit) and standalone `Related` recirculation markers,
   chooses the substantive body when a modern interactive contains a short
   results panel before the main prose, and removes flattened Campaign Reporter
   newsletter CTAs. Old 0.8.65/0.8.66 replays were stopped; fresh zero-overlap
-  `holdout-v14` runs for 2016--2026 are dispatched, and all earlier NYT evidence
+  `holdout-v15` runs for 2016--2026 are dispatched, and all earlier NYT evidence
   remains historical until these audits pass.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
@@ -357,12 +358,11 @@ The temporary runner remains the active home while validation is in progress.
   the current source shard; 2025 remains subject to source-capacity checks.
 - NPR's current parser is now `npr-parser/0.1.37`. The v0.1.31/v0.1.32
   replays exposed legacy podcast, subscription-network, and newsletter CTAs;
-  the current parser removes them with regression fixtures. The v0.1.33
-  rotation then exposed one combined podcast/social CTA in 2016 and a short
-  `subscribe to our podcast here` form in 2022/2024; 0.1.35 now removes
-  those forms too. Fresh `holdout-v22` rotations are dispatched from
-  completed v21 checkpoints, while the remaining v21 years finish; all
-  earlier NPR results remain historical until the current audits pass.
+  later audits also exposed long podcast/challenge CTAs and legacy `Read more`
+  links. The parser removes all of these with regression fixtures. Fresh
+  zero-overlap `holdout-v23` rotations are dispatched for 2010--2026 against
+  the current parser; all earlier NPR results remain historical until these
+  current-version audits pass.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
