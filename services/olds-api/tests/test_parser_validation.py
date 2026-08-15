@@ -2573,7 +2573,7 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
         )
-            VALUES (2020, 1, 'test', 'nyt-parser/0.8.65', 2, 'now')
+            VALUES (2020, 1, 'test', 'nyt-parser/0.8.66', 2, 'now')
         """
     )
     connection.execute(
@@ -2919,7 +2919,7 @@ def test_nyt_print_utility_entry_is_screened_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-            ) VALUES (?, 1, 'test', 'nyt-parser/0.8.65', 2, 'now')
+            ) VALUES (?, 1, 'test', 'nyt-parser/0.8.66', 2, 'now')
         """,
         (sample_year,),
     )

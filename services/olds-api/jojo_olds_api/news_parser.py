@@ -3432,6 +3432,7 @@ def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
         story_text = _clean_text(story.get_text(" ", strip=True))
         if len(story_sections) >= 2 and len(story_text) >= 400:
             return story
+    candidates: list[Tag] = []
     for selector in (
         ".g-story.g-freebird",
         ".interactive-graphic",
@@ -3454,12 +3455,23 @@ def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
             ):
                 quiz_body = _nyt_interactive_quiz_body(candidate)
                 if quiz_body is not None:
-                    return quiz_body
+                    candidates.append(quiz_body)
+                    continue
                 div_body = _nyt_div_only_interactive_body(candidate)
                 if div_body is not None:
-                    return div_body
-                return candidate
-    return None
+                    candidates.append(div_body)
+                    continue
+                candidates.append(candidate)
+    if not candidates:
+        return None
+    # Modern interactive pages can contain a short navigation/result panel
+    # followed by the real article body.  Selecting the first matching
+    # ``.interactive-body`` silently collapses the prose to the short panel;
+    # retain the most substantive rendered body instead.
+    return max(
+        candidates,
+        key=lambda candidate: len(candidate.get_text(" ", strip=True)),
+    )
 
 
 def _nyt_escaped_legacy_interactive_body(
