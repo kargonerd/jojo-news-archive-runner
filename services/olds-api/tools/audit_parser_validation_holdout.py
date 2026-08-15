@@ -188,8 +188,10 @@ def audit_holdout(
                 if exclusions[url] not in labels_by_url[url]
             }
 
-            if not previous_union and previous_states:
-                issues.append(f"{year}:no-previous-evaluated-samples")
+            # A source probe can be checkpointed as a previous cohort without
+            # producing any accepted rows.  It contributes no URLs to the
+            # zero-overlap union and must not block the first usable holdout.
+            # Genuine prior rows are still checked for overlap and exclusions.
             if current_config is None:
                 issues.append(f"{year}:missing-current-config")
             else:

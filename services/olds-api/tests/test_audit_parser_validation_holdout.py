@@ -151,7 +151,7 @@ def test_holdout_audit_rejects_overlap_missing_exclusion_and_short_target(
     assert "2020:missing-prior-exclusions" in result["issues"]
 
 
-def test_holdout_audit_rejects_empty_previous_union(tmp_path: Path):
+def test_holdout_audit_accepts_empty_previous_probe(tmp_path: Path):
     previous_path = tmp_path / "empty.sqlite3"
     current_path = tmp_path / "current.sqlite3"
     previous = _state(previous_path)
@@ -179,8 +179,8 @@ def test_holdout_audit_rejects_empty_previous_union(tmp_path: Path):
         to_year=2020,
     )
 
-    assert result["passed"] is False
-    assert "2020:no-previous-evaluated-samples" in result["issues"]
+    assert result["passed"] is True
+    assert result["issues"] == []
 
 
 def test_holdout_audit_allows_first_cohort_without_previous_state(
