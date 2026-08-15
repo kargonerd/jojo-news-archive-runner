@@ -163,6 +163,11 @@ The temporary runner remains the active home while validation is in progress.
   `nyt-parser/0.8.62`: QA 100%, zero parser errors, zero prior/exclusion
   overlap, and all 800 content-audit rows complete with zero hard anomalies.
   The audit retained 1,016 selected images and left one review candidate.
+  A fresh zero-overlap `holdout-v6` for NYT 2020 has now formally converged
+  on `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
+  prior/exclusion overlap, all 800 extraction statuses complete, and zero hard
+  content anomalies. The audit retained 1,852 selected images and left two
+  non-hard review candidates.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, and all 800 extraction statuses complete with zero
