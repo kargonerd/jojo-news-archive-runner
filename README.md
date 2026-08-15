@@ -102,32 +102,13 @@ The temporary runner remains the active home while validation is in progress.
   chrome, a flattened JSON-LD related-story tail, dead expander/video
   controls, an AMP ``Read more`` link group, and FT brand favicons and v3
   open-graph branding found during partial content audits.
-- Axios 2018, 2019, and 2022--2025 have formally converged at 800/800 on
-  `axios-parser/0.1.19`
-  and QA revision 4 after removal of a partner financial-newsletter call to
-  action and recovery of publisher-authored short quote-card attributions.
-  The 2018 cohort excluded 3,999 previously evaluated URLs, had zero
-  prior-cohort overlap and zero hard content anomalies, and preserved 871
-  selected images during the final reparse audit. The 2019 holdout-v4 excluded
-  3,189 previously evaluated URLs, likewise had zero overlap and zero hard
-  anomalies, and preserved all 930 selected images. The 2022 holdout-v4
-  excluded 3,191 previously evaluated URLs, had zero overlap and zero hard
-  anomalies, and preserved all 949 selected images. The 2023 holdout-v1
-  excluded 768 normalized unique URLs, had zero overlap and zero hard
-  anomalies, and preserved all 1,018 selected images. The 2024 holdout-v1
-  excluded 763 normalized unique URLs, had zero overlap and zero hard
-  anomalies, and preserved all 1,006 selected images. The 2025 holdout-v1
-  excluded 705 normalized unique URLs, had zero overlap and zero hard
-  anomalies, and preserved all 953 selected images. Axios has no remaining
-  year in the current replay queue.
-  The previous 2017 cohort contained two confirmed CMS fixtures;
-  the previous 2022--2025
-  cohorts contained respectively 1, 34, 51, and 110 malformed trailing URL
-  aliases. Manifest ingestion and sample planning now collapse or skip those
-  aliases. Axios 2017, 2020, and 2021 now have formal current-version
-  evidence: 800/800, zero overlap, zero hard content anomalies, and all
-  selected images preserved. The 2017 cohort excluded 6,644 previously
-  evaluated URLs and preserved 701 selected images.
+- Axios's current parser is `axios-parser/0.1.19`, after fixes for partner
+  financial-newsletter CTAs, short quote-card attributions, and malformed URL
+  aliases. The B2 summaries show a current-version `holdout-v11` pass for
+  2018, while several other year summaries still carry older parser versions;
+  those are historical evidence, not current convergence. Fresh zero-overlap
+  `holdout-v12` runs for 2017--2026 are now dispatched on 0.1.19. Their
+  per-year 800-sample audits must finish before Axios is marked converged.
 - Caixin 2013 holdout-v1 has formally converged at 800/800 on
   `caixin-parser/0.1.9` with QA revision 1, zero prior-cohort overlap, zero
   hard content anomalies, and all 228 selected images preserved. The parser
