@@ -271,11 +271,16 @@ PUBLISHER_SPECS = {
     ),
     "zaobao": PublisherSpec(
         publisher="zaobao",
-        parser_version="zaobao-parser/0.1.5",
+        parser_version="zaobao-parser/0.1.6",
         domains=("zaobao.com.sg", "www.zaobao.com.sg"),
         default_language="zh",
         edition="sg",
-        body_selectors=(".field-name-body", ".article-content", "article"),
+        body_selectors=(
+            ".field-name-body",
+            ".article-content",
+            "#article-content",
+            "article",
+        ),
         preferred_image_hosts=("www.zaobao.com.sg",),
         use_structured_article_body=True,
     ),

@@ -251,13 +251,15 @@ The temporary runner remains the active home while validation is in progress.
   supplement now exposes about 7,485 dated candidates and continues to grow.
 - TODO: then resume Nikkei, Lianhe Zaobao, Al Jazeera, and South China Morning
   Post. Their existing catalogs and checkpoints also remain resumable.
-- Lianhe Zaobao's 2017 validation has not yet passed the 800-row gate: its
-  current `0.1.3` run had 685 QA-passing rows among 690 evaluated records,
-  including four genuine short news briefs that were classified as partial
-  solely by the generic 100-character threshold. `zaobao-parser/0.1.5` now
-  accepts complete article bodies of at least 60 characters and removes the
-  embedded site-wide controls found by the content audit, while retaining
-  unsupported empty bodies as failures; a fresh holdout is pending.
+- Lianhe Zaobao's 2017 validation exposed four genuine short news briefs and
+  embedded site controls in earlier parser versions. `zaobao-parser/0.1.5`
+  addressed those cases, while a current holdout replay then exposed legacy
+  Drupal pages whose body is stored under `#article-content` with a visible
+  Chinese date. `zaobao-parser/0.1.6` now selects that body, parses the local
+  date, and keeps the control cleanup; the affected samples are complete in
+  local regression fixtures. The interrupted `holdout-v1` reached 158
+  evaluated rows before the fix and is not convergence evidence; a fresh
+  zero-overlap `holdout-v2` is required.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
   URL-key shard initially exposed only 32 candidates, and all captured pages
   identified as 1995 articles rather than 2017 publications. The expanded

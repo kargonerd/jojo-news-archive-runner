@@ -14380,7 +14380,7 @@ def _nikkei_truncated_body(
 
 
 def _zaobao_embedded_published_at(soup: BeautifulSoup) -> str | None:
-    """Read the local publication timestamp from Zaobao's RSC payload."""
+    """Read publication time from RSC data or legacy visible date markup."""
     for script in soup.select("script"):
         value = script.string or script.get_text()
         if "publication_date" not in value.casefold():
@@ -14403,6 +14403,18 @@ def _zaobao_embedded_published_at(soup: BeautifulSoup) -> str | None:
         if not re.search(r"(?:Z|[+-]\d{2}:?\d{2})$", published_at):
             published_at += "+08:00"
         return published_at
+    for node in soup.select("p.date, .date"):
+        text = _clean_text(node.get_text(" ", strip=True))
+        match = re.search(
+            r"(?P<year>20\d{2})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日",
+            text,
+        )
+        if match is not None:
+            return (
+                f"{int(match.group('year')):04d}-"
+                f"{int(match.group('month')):02d}-"
+                f"{int(match.group('day')):02d}T00:00:00+08:00"
+            )
     return None
 
 
