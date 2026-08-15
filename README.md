@@ -189,7 +189,10 @@ The temporary runner remains the active home while validation is in progress.
   The earlier 2010--2015 holdouts used older parser versions; fresh current
   `caixin-parser/0.1.10` rotations for all six years are now running against
   the 3,901--5,996 candidate Wayback windows (with the 2010 Common Crawl
-  supplement available as an additional source).
+  supplement available as an additional source). The current 2011--2015
+  rotations have already passed all gates at 800/800 with zero parser errors,
+  zero overlap, and zero hard content anomalies; 2010 remains source-limited
+  at the time of this update.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
