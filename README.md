@@ -202,11 +202,12 @@ The temporary runner remains the active home while validation is in progress.
   candidate). AP 2017 has now also formally converged at 800/800 on the same
   parser: QA 100%, zero parser errors, zero prior/exclusion overlap, zero hard
   content anomalies, all 800 extraction statuses complete, and 62 selected
-  images (one non-hard review candidate). AP 2018 reached 800 QA rows after
-  the transient capture retry, but its first content audit found one legacy
-  inline `RELATED` interface marker. The parser now removes that marker as
-  `ap-parser/0.6.22`; fresh zero-overlap `holdout-v1` evidence is running and
-  the older 0.6.21 audit is not treated as formal convergence.
+  images (one non-hard review candidate). AP 2018's first content audit found
+  one legacy inline `RELATED` interface marker. The parser now removes that
+  marker as `ap-parser/0.6.22`; fresh zero-overlap `holdout-v1` evidence has
+  formally converged at 800/800: QA 100%, zero parser errors, zero prior or
+  exclusion overlap, zero hard content anomalies, all extraction statuses
+  complete, and 56 selected images (two non-hard review candidates).
 - Al Jazeera 2019 `validation` has formally converged at 800/800 on
   `aljazeera-parser/0.1.2`: QA 100%, zero parser errors, all 800 extraction
   statuses complete, zero hard content anomalies, and 1,199 selected images.
