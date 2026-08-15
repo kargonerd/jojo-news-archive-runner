@@ -240,6 +240,10 @@ The temporary runner remains the active home while validation is in progress.
   `ap-parser/0.6.24`: 800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, zero hard content anomalies, all 800 extraction
   statuses complete, and 466 selected images (two non-hard review candidates).
+  AP 2022's fresh zero-overlap `holdout-v3` has now also formally converged on
+  the same parser: 800 QA-passing rows, zero parser errors, zero
+  prior/exclusion overlap, zero hard content anomalies, all 800 extraction
+  statuses complete, and 455 selected images (two non-hard review candidates).
 - Al Jazeera 2019 `validation` has formally converged at 800/800 on
   `aljazeera-parser/0.1.2`: QA 100%, zero parser errors, all 800 extraction
   statuses complete, zero hard content anomalies, and 1,199 selected images.
