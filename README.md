@@ -189,10 +189,12 @@ The temporary runner remains the active home while validation is in progress.
   The earlier 2010--2015 holdouts used older parser versions; fresh current
   `caixin-parser/0.1.10` rotations for all six years are now running against
   the 3,901--5,996 candidate Wayback windows (with the 2010 Common Crawl
-  supplement available as an additional source). The current 2011--2015
-  rotations have already passed all gates at 800/800 with zero parser errors,
-  zero overlap, and zero hard content anomalies; 2010 remains source-limited
-  at the time of this update.
+  supplement available as an additional source). A fresh `holdout-v8` is
+  replacing those superseded cohorts: 2011 and 2012 have passed both content
+  and zero-overlap audits at 800/800 on `caixin-parser/0.1.10`; 2014 and 2015
+  have reached 800/800 and are awaiting their final audit files, 2010 is
+  source-limited at 597 accepted rows, and 2013 has been dispatched and is
+  still running.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
@@ -338,12 +340,12 @@ The temporary runner remains the active home while validation is in progress.
   images and left two non-hard review candidates.
   All earlier Al Jazeera results remain historical until their current-version
   rotations pass every gate.
-- NPR's current parser is now `npr-parser/0.1.30`. A fresh `holdout-v3`
-  rotation exposed one list-item podcast CTA in 2016 and five in 2017;
-  `holdout-v4` is rerunning those years after the fix, while current-version
-  zero-overlap rotations for 2010--2015 and 2018--2019 are also in progress.
-  The first v0.1.30 audits for 2016 and 2017 have reached 800/800 with no
-  parser errors; final content and rotation audit files are still pending.
+- NPR's current parser is now `npr-parser/0.1.32`. The v0.1.31
+  zero-overlap replay found one legacy subscription-network CTA in the 2019
+  sample; v0.1.32 removes it and adds a regression fixture. A fresh
+  `holdout-v19` rotation for 2010--2019 is now running against the new parser;
+  all earlier v0.1.31 results are retained as historical evidence only until
+  this new cohort's content and rotation audits pass.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
@@ -387,8 +389,9 @@ The temporary runner remains the active home while validation is in progress.
   2016--2026). The first broad replay found a parser defect in legacy Drupal
   pages: complete prose lived under `.pane-node-body .pane-content` but was
   not selected, leaving only 50--90 character summaries. `scmp-parser/0.1.2`
-  fixes that selector; a fresh `holdout-v4` for 2017 and baseline validations
-  for 2016 and 2018--2022 are running.
+  fixes that selector; the fresh `holdout-v4` for 2017 has now reached 800
+  complete rows with zero hard content anomalies and a passing rotation audit.
+  Fresh holdout-v2 runs for 2016 and 2018--2022 are still running.
 - Nikkei's first 2017 validation reached 800 QA rows but its content audit
   found three embedded `form`/`input`/`button` controls. The parser now removes
   those site-wide controls as `nikkei-parser/0.1.7`; the fresh zero-overlap
