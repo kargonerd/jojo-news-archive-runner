@@ -8,7 +8,7 @@ _QA_POLICY_REVISIONS = {
     # Archived Al Jazeera LiveBlog shells often contain only the closing
     # notice; exclude those non-recoverable dynamic packages from the article
     # cohort while retaining their raw captures and content type.
-    "aljazeera": 1,
+    "aljazeera": 2,
     "axios": 4,
     "caixin": 1,
     # Exclude legacy NYT admin-package pages whose archive snapshot contains

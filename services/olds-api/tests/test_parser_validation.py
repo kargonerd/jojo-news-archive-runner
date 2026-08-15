@@ -2644,7 +2644,7 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2022, 1, 'test', 'aljazeera-parser/0.1.5', 1, 'now')
+        ) VALUES (2022, 1, 'test', 'aljazeera-parser/0.1.5', 2, 'now')
         """
     )
     connection.execute(
@@ -2699,6 +2699,23 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
     assert result["qaPass"] is False
     assert result["issues"] == ["nonarticle-desk"]
     assert summary["years"]["2022"]["evaluated"] == 0
+    assert summary["years"]["2022"]["screenedNonArticles"] == 1
+
+    connection.execute(
+        """
+        INSERT INTO parser_validation_results(
+            canonical_url, publisher, sample_year, parser_version,
+            qa_revision, extraction_status, content_type, qa_pass,
+            body_characters, block_count, warnings_json, issues_json,
+            parsed_at
+        ) VALUES (?, 'aljazeera', 2022, 'aljazeera-parser/0.1.5', 2,
+                  'complete', 'article', 1, 1200, 3, '[]', '[]', 'now')
+        """,
+        ("https://www.aljazeera.com/news/2022/11/29/regular-article",),
+    )
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2022"]["evaluated"] == 1
+    assert summary["years"]["2022"]["qaPassed"] == 1
     assert summary["years"]["2022"]["screenedNonArticles"] == 1
 
 

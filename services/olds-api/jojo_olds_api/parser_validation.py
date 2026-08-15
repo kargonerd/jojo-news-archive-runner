@@ -1552,7 +1552,17 @@ def parser_validation_summary(
                         )
                     )
                 ), 0),
-                COALESCE(SUM(qa_pass), 0),
+                COALESCE(SUM(
+                    qa_pass
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM json_each(parser_validation_results.issues_json)
+                        WHERE value IN (
+                            'empty-nontext-content',
+                            'nonarticle-desk'
+                        )
+                    )
+                ), 0),
                 COALESCE(SUM(
                     extraction_status='complete'
                     AND NOT EXISTS (
