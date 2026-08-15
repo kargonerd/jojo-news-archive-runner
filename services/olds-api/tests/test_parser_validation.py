@@ -2733,7 +2733,7 @@ def test_scmp_access_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.3', 1, 'now')
+        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.3', 2, 'now')
         """
     )
     connection.execute(
@@ -2784,6 +2784,67 @@ def test_scmp_access_shell_is_excluded_from_article_cohort(
     assert result["issues"] == ["nonarticle-desk"]
     assert summary["years"]["2018"]["evaluated"] == 0
     assert summary["years"]["2018"]["screenedNonArticles"] == 1
+
+
+def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    urls = (
+        "https://www.scmp.com/infographics/article/1916541/infographic-sharing-pie",
+        "https://www.scmp.com/sport/article/1995065/rio-olympics-2016-gallery",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2016, 2, 'test', 'scmp-parser/0.1.3', 2, 'now')
+        """
+    )
+    for url in urls:
+        connection.execute(
+            """
+            INSERT INTO parser_validation_samples(
+                canonical_url, sample_year, sample_priority, selected_at
+            ) VALUES (?, 2016, 'priority', 'now')
+            """,
+            (url,),
+        )
+        blob = store_raw_html(
+            tmp_path,
+            b"<html><head><meta property='og:title' content='SCMP visual'>"
+            b"</head><body><article><h1>SCMP visual</h1>"
+            b"<p>Loading the visual package.</p></article></body></html>",
+        )
+        capture = RawCapture(
+            article_id="scmp:" + ("g" * 64),
+            publisher="scmp",
+            canonical_url=url,
+            published_at=datetime(2016, 1, 2, tzinfo=timezone.utc),
+            selected_candidate=CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url="https://web.archive.org/web/20160103000000id_/"
+                + url,
+            ),
+            retrieved_at=datetime.now(timezone.utc),
+            final_url=url,
+            http_status=200,
+            content_type="text/html",
+            quality_score=100,
+            raw_html=blob,
+        )
+        result = record_parser_validation(
+            connection,
+            capture=capture,
+            archive_root=tmp_path,
+        )
+        assert result["issues"] == ["nonarticle-desk"]
+
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2016"]["evaluated"] == 0
+    assert summary["years"]["2016"]["screenedNonArticles"] == 2
 
 
 def test_empty_axios_video_does_not_fill_article_validation_target(

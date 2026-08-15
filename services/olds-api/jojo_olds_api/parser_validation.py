@@ -1329,24 +1329,40 @@ def record_parser_validation(
             capture.publisher == "scmp"
             and article.quality.status
             in {ArticleStatus.UNSUPPORTED, ArticleStatus.PARTIAL}
-            and article.quality.body_characters < 100
-        ):
-            raw_text = _normalize_text(
-                BeautifulSoup(html_bytes, "html.parser").get_text(
-                    " ",
-                    strip=True,
+            and (
+                "/infographics/" in capture.canonical_url.casefold()
+                or re.search(
+                    r"(?:^|[-/])gallery(?:$|[-/?])",
+                    capture.canonical_url.casefold(),
                 )
-            ).casefold()
-            if any(
-                marker in raw_text
-                for marker in (
-                    "read full article",
-                    "sign in/up",
-                    "subscribe to read",
-                    "subscribe to continue",
+                or article.quality.body_characters < 100
+            )
+        ):
+            if (
+                "/infographics/" in capture.canonical_url.casefold()
+                or re.search(
+                    r"(?:^|[-/])gallery(?:$|[-/?])",
+                    capture.canonical_url.casefold(),
                 )
             ):
                 issues.append("nonarticle-desk")
+            else:
+                raw_text = _normalize_text(
+                    BeautifulSoup(html_bytes, "html.parser").get_text(
+                        " ",
+                        strip=True,
+                    )
+                ).casefold()
+                if any(
+                    marker in raw_text
+                    for marker in (
+                        "read full article",
+                        "sign in/up",
+                        "subscribe to read",
+                        "subscribe to continue",
+                    )
+                ):
+                    issues.append("nonarticle-desk")
         # Some legacy NYT ``admin`` package pages survive in Wayback with
         # only a short teaser; their client-rendered listicle body is absent
         # from the archived HTML. Keep the raw capture, but do not count an
