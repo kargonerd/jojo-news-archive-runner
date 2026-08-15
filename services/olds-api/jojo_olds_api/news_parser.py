@@ -11796,7 +11796,7 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
     # blocks; normal reporting sentences that merely mention a newsletter or
     # a related topic must remain in the body.
     wsj_interface_patterns = (
-        re.compile(r"^related$", re.IGNORECASE),
+        re.compile(r"^related(?: stories)?$", re.IGNORECASE),
         re.compile(r"^read more:?$", re.IGNORECASE),
         re.compile(
             r"^subscribe to (?:our morning newsletter|the best of the web "

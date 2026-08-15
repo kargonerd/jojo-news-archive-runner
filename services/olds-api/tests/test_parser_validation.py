@@ -1439,7 +1439,7 @@ def test_qa_revision_change_replays_without_replacing_cohort(
         )
     )
 
-    assert refreshed["parserVersion"] == "wsj-parser/0.8.54"
+    assert refreshed["parserVersion"] == "wsj-parser/0.8.55"
     assert refreshed["qaRevision"] == 1
     assert refreshed["years"]["2020"]["evaluated"] == 0
     assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 0
