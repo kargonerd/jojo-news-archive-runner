@@ -2847,6 +2847,72 @@ def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
     assert summary["years"]["2016"]["screenedNonArticles"] == 2
 
 
+def test_npr_short_audio_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.npr.org/2014/11/28/366815412/short-audio-segment"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2014, 1, 'test', 'npr-parser/0.1.37', 1, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2014, 'priority', 'now')
+        """
+        ,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="NPR audio story">
+      <meta property="article:published_time" content="2014-11-28T00:00:00Z">
+    </head><body class="is-DACS-only no-transcript">
+      <div id="storytext"><p>A short audio introduction.</p></div>
+    </body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="npr:" + ("n" * 64),
+        publisher="npr",
+        canonical_url=canonical_url,
+        published_at=datetime(2014, 11, 28, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20141129000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "partial"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2014"]["evaluated"] == 0
+    assert summary["years"]["2014"]["screenedNonArticles"] == 1
+
+
 def test_empty_axios_video_does_not_fill_article_validation_target(
     tmp_path: Path,
 ):

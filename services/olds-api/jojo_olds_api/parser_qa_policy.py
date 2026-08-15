@@ -17,6 +17,10 @@ _QA_POLICY_REVISIONS = {
     # Exclude legacy NYT admin-package pages whose archive snapshot contains
     # only a teaser and no recoverable article body.
     "nyt": 2,
+    # NPR's legacy audio-only pages can retain metadata and a player while
+    # exposing no recoverable article body. Keep those captures, but exclude
+    # them from the text-article QA denominator.
+    "npr": 1,
     "wsj": 1,
 }
 

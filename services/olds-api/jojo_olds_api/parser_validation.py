@@ -1363,6 +1363,18 @@ def record_parser_validation(
                     )
                 ):
                     issues.append("nonarticle-desk")
+        # NPR's legacy audio-only pages can retain a headline and player while
+        # exposing no recoverable text body. Preserve the raw/audio record,
+        # but do not let an unrecoverable short audio shell fill an article
+        # validation slot. Audio stories with a complete transcript remain in
+        # the article cohort.
+        if (
+            capture.publisher == "npr"
+            and article.content_type == ContentType.AUDIO
+            and article.quality.status != ArticleStatus.COMPLETE
+            and article.quality.body_characters < 200
+        ):
+            issues.append("nonarticle-desk")
         # Some legacy NYT ``admin`` package pages survive in Wayback with
         # only a short teaser; their client-rendered listicle body is absent
         # from the archived HTML. Keep the raw capture, but do not count an
