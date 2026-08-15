@@ -11765,6 +11765,67 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
         ):
             paragraph.decompose()
 
+    # Older WSJ captures flatten newsletter and recirculation cards into
+    # ordinary paragraphs/headings inside the article wrapper.  Their
+    # classes vary by template, so selector-only cleanup misses them.  Keep
+    # this list deliberately narrow and operate only on standalone text
+    # blocks; normal reporting sentences that merely mention a newsletter or
+    # a related topic must remain in the body.
+    wsj_interface_patterns = (
+        re.compile(r"^related$", re.IGNORECASE),
+        re.compile(r"^read more:?$", re.IGNORECASE),
+        re.compile(
+            r"^subscribe to (?:our morning newsletter|the best of the web "
+            r"email)\b.*$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^write to .+? at [\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\.?$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^related(?: coverage| video)$", re.IGNORECASE),
+        re.compile(r"^in other news$", re.IGNORECASE),
+        re.compile(r"^number of the day$", re.IGNORECASE),
+        re.compile(r"^quotable$", re.IGNORECASE),
+        re.compile(r"^best of the rest$", re.IGNORECASE),
+        re.compile(
+            r"^here(?:'|’)s your morning roundup of the biggest marketing, "
+            r"advertising and media industry news and happenings\.?$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^sign up:\s*with one click, get this newsletter delivered "
+            r"to your inbox\.?$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^click to read story$", re.IGNORECASE),
+        re.compile(r"^corrections?\s*&\s*amplifications$", re.IGNORECASE),
+        re.compile(
+            r"^today[’']s top supply chain and logistics news from wsj$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^cmo insights and analysis from deloitte$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^content from our sponsor$", re.IGNORECASE),
+        re.compile(
+            r"^follow us on twitter:\s*@.+$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^please note:\s*the wall street journal news department "
+            r"was not involved in the creation of the content above\.?$",
+            re.IGNORECASE,
+        ),
+    )
+    for node in list(soup.select("p, h2, h3, h4, h5, h6")):
+        if node.parent is None:
+            continue
+        text = _clean_text(node.get_text(" ", strip=True))
+        if any(pattern.fullmatch(text) for pattern in wsj_interface_patterns):
+            node.decompose()
+
     for node in list(
         soup.select(
             ".coupon-list, [class*='SavingsUnited' i], "
