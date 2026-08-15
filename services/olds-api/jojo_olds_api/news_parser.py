@@ -13767,7 +13767,8 @@ def _nyt_interactive_sprite_image(url: str) -> bool:
     return bool(
         re.search(
             r"/projects/assets/oscars_2013/images/2013/"
-            r"[^/]*sprite[^/]*\.(?:jpe?g|png)$",
+            r"[^/]*sprite[^/]*\.(?:gif|jpe?g|png|webp)$|"
+            r"/[^/]*sprite[^/]*\.(?:gif|jpe?g|png|webp)$",
             parts.path,
             flags=re.IGNORECASE,
         )
