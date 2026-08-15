@@ -11513,6 +11513,9 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
             r"\bget messages from our politics correspondent\b.*"
             r"\bwhat(?:'|’)s at stake\.?$"
         ),
+        # Some archived variants flatten the CTA to only its opening phrase,
+        # without the explanatory copy used by the longer pattern above.
+        re.compile(r"(?i)^sign up for the campaign reporter\b.*$"),
         re.compile(r"(?i)^sign up for the campaign reporter\.?$"),
         re.compile(
             r"(?i)^if you are not a subscriber to this newsletter\b"
