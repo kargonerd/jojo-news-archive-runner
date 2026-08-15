@@ -78,9 +78,9 @@ The temporary runner remains the active home while validation is in progress.
 
 - Completed baseline: Bloomberg.
 - Active convergence is being advanced explicitly by publisher/year while the
-  watchdog remains disabled. Bloomberg, FT, Axios, and the completed Caixin
-  cells no longer occupy validation slots; AP and NYT holdouts are currently
-  running, with the remaining publishers queued behind them.
+  watchdog remains disabled on the default branch. Bloomberg's completed
+  cells no longer occupy validation slots; the branch watchdog now admits all
+  remaining in-scope publishers and filters each year by source capacity.
 - A cell counts as converged only when its 800-row summary and parser-bound
   content audit both pass, plus the zero-overlap rotation audit for holdouts.
   Failed content audits keep their checkpoint, raw HTML, and audit evidence in
