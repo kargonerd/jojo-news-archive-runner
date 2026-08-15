@@ -351,7 +351,7 @@ The temporary runner remains the active home while validation is in progress.
   complete extraction statuses. Its content audit retained 1,503 selected
   images and left two non-hard review candidates.
   All earlier Al Jazeera results remain historical until their current-version
-  rotations pass every gate. QA revision 1 now screens short, unrecoverable
+  rotations pass every gate. QA revision 2 now screens short, unrecoverable
   dynamic LiveBlog shells as non-article records while retaining their raw
   captures. Fresh `holdout-v1` replays for 2022--2026 are dispatched against
   the current source shard; 2025 remains subject to source-capacity checks.
