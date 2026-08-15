@@ -213,10 +213,12 @@ The temporary runner remains the active home while validation is in progress.
   prior/exclusion overlap, all 800 extraction statuses complete, and zero hard
   content anomalies. The audit retained 1,852 selected images and left two
   non-hard review candidates.
-  The current parser is now `nyt-parser/0.8.65`: it filters legacy
-  newsgraphics sprite sheets and standalone `Related` recirculation markers.
-  Fresh zero-overlap `holdout-v12` runs for 2016--2026 are running on this
-  version; all earlier NYT evidence remains historical until these audits pass.
+  The current parser is now `nyt-parser/0.8.66`: it filters legacy
+  newsgraphics sprite sheets and standalone `Related` recirculation markers,
+  and chooses the substantive body when a modern interactive contains a short
+  results panel before the main prose. Fresh zero-overlap `holdout-v13` runs
+  for completed v12 years are being dispatched; all earlier NYT evidence
+  remains historical until these audits pass.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, and all 800 extraction statuses complete with zero
