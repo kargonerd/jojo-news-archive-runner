@@ -74,6 +74,18 @@ def test_accelerator_initializes_validation_schema_before_exclusions() -> None:
     )
 
 
+def test_accelerator_rechecks_schema_before_holdout_audit() -> None:
+    workflow = _workflow_text()
+
+    assert "Ensure holdout audit schema" in workflow
+    assert workflow.index("Verify saved parser results are reproducible") < workflow.index(
+        "Ensure holdout audit schema"
+    )
+    assert workflow.index("Ensure holdout audit schema") < workflow.index(
+        "Audit completed holdout rotation"
+    )
+
+
 def test_accelerator_reuses_only_post_exclusion_prior_captures() -> None:
     workflow = _workflow_text()
 

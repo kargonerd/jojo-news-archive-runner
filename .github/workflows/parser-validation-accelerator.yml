@@ -1041,6 +1041,36 @@ jobs:
             --force-existing \
             --summary "$LOCAL_ROOT/raw/summary.json"
 
+      - name: Ensure holdout audit schema
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import sqlite3
+          from pathlib import Path
+
+          from jojo_olds_api.parser_validation import (
+              initialize_parser_validation_schema,
+          )
+
+          state = Path(os.environ["LOCAL_ROOT"]) / "raw" / "capture.sqlite3"
+          connection = sqlite3.connect(state)
+          try:
+              initialize_parser_validation_schema(connection)
+              connection.commit()
+          finally:
+              connection.close()
+          PY
+
       - name: Assess validation state before publication
         id: rotation_readiness
         if: >-
