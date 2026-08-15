@@ -399,6 +399,11 @@ The temporary runner remains the active home while validation is in progress.
   fixes that selector; the fresh `holdout-v4` for 2017 has now reached 800
   complete rows with zero hard content anomalies and a passing rotation audit.
   Fresh holdout-v2 runs for 2016 and 2018--2022 are still running.
+  The 2019 audit then exposed a legacy SCMP `bookmark-icon.png` sharing
+  control being selected as editorial media. `scmp-parser/0.1.3` now filters
+  those legacy sharing/print controls at both metadata and body-image stages;
+  fresh zero-overlap `holdout-v3` runs for 2016--2022 have been dispatched and
+  supersede the earlier 0.1.2 evidence once their audits pass.
 - Nikkei's first 2017 validation reached 800 QA rows but its content audit
   found three embedded `form`/`input`/`button` controls. The parser now removes
   those site-wide controls as `nikkei-parser/0.1.7`; the fresh zero-overlap
