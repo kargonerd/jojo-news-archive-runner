@@ -1094,7 +1094,10 @@ jobs:
         if: >-
           ${{
             startsWith(inputs.cohort, 'holdout-v') &&
-            steps.rotation_readiness.outputs.validation_ready == 'true'
+            (
+              steps.rotation_readiness.outputs.validation_ready == 'true' ||
+              steps.rotation_readiness.outputs.validation_target_reached == 'true'
+            )
           }}
         shell: bash
         env:
@@ -1135,7 +1138,10 @@ jobs:
           ${{
             always() &&
             !cancelled() &&
-            steps.rotation_readiness.outputs.validation_ready == 'true' &&
+            (
+              steps.rotation_readiness.outputs.validation_ready == 'true' ||
+              steps.rotation_readiness.outputs.validation_target_reached == 'true'
+            ) &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||
               steps.rotation_audit.outcome == 'success'
@@ -1314,6 +1320,7 @@ jobs:
           ${{
             inputs.auto_continue &&
             steps.rotation_readiness.outcome != 'failure' &&
+            steps.rotation_readiness.outputs.validation_target_reached != 'true' &&
             steps.content_audit.outcome != 'failure' &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||

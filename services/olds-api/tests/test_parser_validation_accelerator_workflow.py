@@ -122,6 +122,7 @@ def test_completed_holdout_requires_union_rotation_audit_before_publish() -> Non
     assert "--require-complete" in audit
     assert '--target-per-year "$VALIDATION_TARGET"' in audit
     assert 'outputs.validation_ready == \'true\'' in audit
+    assert 'outputs.validation_target_reached == \'true\'' in audit
     assert "rotation-audit.json" in audit
     assert 'PYTHONPATH: ${{ github.workspace }}/services/olds-api' in workflow
 
@@ -135,6 +136,13 @@ def test_rotation_audit_failure_blocks_checkpoint_publish_and_chaining() -> None
     assert workflow.count(
         "steps.rotation_audit.outcome == 'success'"
     ) == 5
+    dispatch = workflow[
+        workflow.index("Dispatch next validation batch") :
+    ]
+    assert (
+        "steps.rotation_readiness.outputs.validation_target_reached != 'true'"
+        in dispatch
+    )
     publish = workflow[
         workflow.index("Publish validation objects and checkpoint")
         : workflow.index("Report validation state")
