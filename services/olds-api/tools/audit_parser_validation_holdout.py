@@ -116,7 +116,8 @@ def audit_holdout(
                 label,
                 stack.enter_context(
                     _closing_connection(
-                        _materialize_state(path, stack=stack)
+                        _materialize_state(path, stack=stack),
+                        require_exclusions=False,
                     )
                 ),
             )
