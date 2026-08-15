@@ -1308,6 +1308,17 @@ def record_parser_validation(
             capture.canonical_url,
         ):
             issues.append("nonarticle-desk")
+        # Al Jazeera's archived LiveBlog pages can be valid editorial
+        # packages but still expose only a short closing shell when the
+        # client-rendered update stream was not captured. Do not let such an
+        # unrecoverable dynamic package consume an article-validation slot;
+        # keep the capture and liveblog classification for later replay.
+        if (
+            capture.publisher == "aljazeera"
+            and article.content_type == ContentType.LIVEBLOG
+            and article.quality.status != ArticleStatus.COMPLETE
+        ):
+            issues.append("nonarticle-desk")
         # Some legacy NYT ``admin`` package pages survive in Wayback with
         # only a short teaser; their client-rendered listicle body is absent
         # from the archived HTML. Keep the raw capture, but do not count an
@@ -1324,6 +1335,7 @@ def record_parser_validation(
         if (
             article.quality.status != ArticleStatus.COMPLETE
             and not nontext_content
+            and "nonarticle-desk" not in issues
         ):
             issues.append(f"extraction-{article.quality.status.value}")
         if not article.headline:

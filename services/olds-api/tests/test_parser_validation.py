@@ -2631,6 +2631,77 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
     assert summary["years"]["2020"]["unsupported"] == 1
 
 
+def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.aljazeera.com/news/liveblog/2022/11/29/example"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2022, 1, 'test', 'aljazeera-parser/0.1.5', 1, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2022, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = (
+        "<html><head>"
+        "<script type='application/ld+json'>"
+        + json.dumps(
+            {
+                "@type": "LiveBlogPosting",
+                "headline": "World Cup live",
+                "datePublished": "2022-11-29T00:00:00Z",
+            }
+        )
+        + "</script></head><body><main><article>"
+        "<h1>World Cup live</h1><p>This blog is now closed.</p>"
+        "</article></main></body></html>"
+    ).encode()
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="aljazeera:" + ("a" * 64),
+        publisher="aljazeera",
+        canonical_url=canonical_url,
+        published_at=datetime(2022, 11, 29, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20221130000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "partial"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2022"]["evaluated"] == 0
+    assert summary["years"]["2022"]["screenedNonArticles"] == 1
+
+
 def test_empty_axios_video_does_not_fill_article_validation_target(
     tmp_path: Path,
 ):
