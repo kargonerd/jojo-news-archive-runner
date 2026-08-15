@@ -190,11 +190,9 @@ The temporary runner remains the active home while validation is in progress.
   `caixin-parser/0.1.10` rotations for all six years are now running against
   the 3,901--5,996 candidate Wayback windows (with the 2010 Common Crawl
   supplement available as an additional source). A fresh `holdout-v8` is
-  replacing those superseded cohorts: 2011 and 2012 have passed both content
-  and zero-overlap audits at 800/800 on `caixin-parser/0.1.10`; 2014 and 2015
-  have reached 800/800 and are awaiting their final audit files, 2010 is
-  source-limited at 597 accepted rows, and 2013 has been dispatched and is
-  still running.
+  replacing those superseded cohorts: all six years 2010--2015 have now
+  passed both content and zero-overlap audits at 800/800 on
+  `caixin-parser/0.1.10` after the Common Crawl/Wayback candidate merge.
 - Paused after an already-started WSJ 2020 holdout exposed poor source yield
   (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
   replay candidate pool before resuming that cell; do not expand into another
@@ -208,6 +206,10 @@ The temporary runner remains the active home while validation is in progress.
   prior/exclusion overlap, all 800 extraction statuses complete, and zero hard
   content anomalies. The audit retained 1,852 selected images and left two
   non-hard review candidates.
+  The current parser is now `nyt-parser/0.8.65`: it filters legacy
+  newsgraphics sprite sheets and standalone `Related` recirculation markers.
+  Fresh zero-overlap `holdout-v12` runs for 2016--2026 are running on this
+  version; all earlier NYT evidence remains historical until these audits pass.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, and all 800 extraction statuses complete with zero
@@ -339,7 +341,9 @@ The temporary runner remains the active home while validation is in progress.
   complete extraction statuses. Its content audit retained 1,503 selected
   images and left two non-hard review candidates.
   All earlier Al Jazeera results remain historical until their current-version
-  rotations pass every gate.
+  rotations pass every gate. Fresh `holdout-v1` runs for 2021--2026 are now
+  running against the current source shard; 2025 is expected to remain
+  source-limited because its validation pool has fewer than 800 complete rows.
 - NPR's current parser is now `npr-parser/0.1.32`. The v0.1.31
   zero-overlap replay found one legacy subscription-network CTA in the 2019
   sample; v0.1.32 removes it and adds a regression fixture. A fresh
