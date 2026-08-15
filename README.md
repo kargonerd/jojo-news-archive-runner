@@ -312,6 +312,10 @@ The temporary runner remains the active home while validation is in progress.
   `holdout-v1` has formally converged at 800/800 with QA 100%, zero parser
   errors, zero prior or exclusion overlap, zero hard content anomalies, all
   extraction statuses complete, and 761 selected images (15 non-hard review
+  candidates). A fresh zero-overlap `holdout-v1` for 2016 has now also
+  formally converged on the same parser: 800/800 QA-passing rows, zero parser
+  errors, zero prior/exclusion overlap, zero hard content anomalies, all
+  extraction statuses complete, and 592 selected images (16 non-hard review
   candidates). The supplement currently exposes about 6,013 dated 2017
   articles and 1,789 for 2016.
 - TODO: add Reuters back to the convergence schedule after its historical
