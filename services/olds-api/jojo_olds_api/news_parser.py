@@ -7641,6 +7641,10 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
         ) or re.fullmatch(
             r"subscribe to (?:the )?npr(?: .+)? newsletter\s*[.!?]?",
             text,
+        ) or re.fullmatch(
+            r"subscribe to (?:the |our )?.*?\bpodcast"
+            r"(?:\s+here)?\s*[.!?]?",
+            text,
         ) or (
             text.startswith("subscribe to the podcast")
             and any(
