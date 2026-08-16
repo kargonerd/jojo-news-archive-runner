@@ -177,14 +177,15 @@ The temporary runner remains the active home while validation is in progress.
   replacing those superseded cohorts: all six years 2010--2015 have now
   passed both content and zero-overlap audits at 800/800 on
   `caixin-parser/0.1.10` after the Common Crawl/Wayback candidate merge.
-- Paused after an already-started WSJ 2020 holdout exposed poor source yield
-  (17 accepted samples after 305 capture failures). TODO: enlarge and audit the
-  replay candidate pool before resuming that cell; do not expand into another
-  WSJ year automatically.
-  A current-version 2018 audit later found one flattened `related stories`
-  interface marker. `wsj-parser/0.8.55` now removes that plural marker;
-  fresh zero-overlap rotations for 2018, 2019, 2021, and 2022 are dispatched
-  and supersede their 0.8.54-or-earlier evidence once audited.
+- WSJ remains source-limited in the older 2020 cell (an earlier run accepted
+  only 17 samples after 305 capture failures); that cell is kept as a recorded
+  TODO until its candidate pool is enlarged. `wsj-parser/0.8.55` removes the
+  flattened `related stories` interface marker. QA revision 2 additionally
+  excludes Infini-News media-only shells that explicitly say `Article Not
+  Supported` and `To Read the Full Story`, while retaining their raw captures.
+  Fresh zero-overlap rotations for 2016, 2018, 2019, 2021, and 2022 are now
+  dispatched on this policy; their earlier evidence remains historical until
+  the new audits pass.
 - NYT 2019 `holdout-v2` has formally converged at 800/800 on
   `nyt-parser/0.8.62`: QA 100%, zero parser errors, zero prior/exclusion
   overlap, and all 800 content-audit rows complete with zero hard anomalies.
