@@ -578,8 +578,8 @@ The temporary runner remains the active home while validation is in progress.
   so `.27` requires another fresh zero-overlap 2022 replay.
   That `.27` replay (`holdout-v68`) now passes 800/800 with zero parser errors,
   zero overlap, zero hard anomalies, and three non-hard review candidates;
-  `.27` replays for 2019 (`holdout-v70`) and 2020 (`holdout-v71`) also pass
-  800/800 with zero hard anomalies.
+  `.27` replays for 2016 (`holdout-v69`), 2019 (`holdout-v70`), and 2020
+  (`holdout-v71`) also pass 800/800 with zero hard anomalies.
 - TODO: migrate the runner, workflows, secrets documentation, and open
   validation history to the public
   [`kargonerd/jojokanbao`](https://github.com/kargonerd/jojokanbao) repository.
