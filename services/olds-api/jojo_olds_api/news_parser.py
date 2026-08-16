@@ -7793,6 +7793,12 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
     for node in list(soup.select("p, li, span, div, h3, a")):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
         if text == "read more" or (
+            text == "read more:"
+            and not (
+                node.name in {"h3", "strong"}
+                and node.find_parent(class_="container") is not None
+            )
+        ) or (
             text.startswith("copyright ©")
             and "npr. all rights reserved" in text
         ) or text.startswith(
