@@ -199,6 +199,10 @@ The temporary runner remains the active home while validation is in progress.
   selected images (two non-hard review candidates). Caixin 2025 has likewise
   formally converged at 800/800 with the same parser and gates, retaining 718
   selected images (two non-hard review candidates).
+  Caixin 2026's fresh zero-overlap `holdout-v47` has now also reached the
+  formal current-parser gate: 800/800 QA-passing rows, zero parser errors,
+  zero prior/exclusion overlap, zero hard content anomalies, and all 800
+  extraction statuses complete on `caixin-parser/0.1.10`.
   The earlier 2010--2015 holdouts used older parser versions; fresh current
   `caixin-parser/0.1.10` rotations for all six years were run against
   the 3,901--5,996 candidate Wayback windows (with the 2010 Common Crawl
