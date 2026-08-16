@@ -391,8 +391,10 @@ The temporary runner remains the active home while validation is in progress.
   1,726 selected images and left two non-hard review candidates.
   A 2020 audit then found a legitimate 28-character Reuters wire brief just
   below the old 60-character floor. `zaobao-parser/0.1.7` lowers only the
-  ordinary-article floor to 20 characters with a regression fixture; fresh
-  zero-overlap `holdout-v4` runs for 2016--2026 are dispatched.
+  ordinary-article floor to 20 characters with a regression fixture. A 2016
+  audit then exposed the legacy `#article_content .a_body` body wrapper;
+  `zaobao-parser/0.1.8` now selects it and fresh zero-overlap `holdout-v5`
+  runs for 2016--2026 are dispatched.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
   URL-key shard initially exposed only 32 candidates, and all captured pages
   identified as 1995 articles rather than 2017 publications. The Common Crawl
