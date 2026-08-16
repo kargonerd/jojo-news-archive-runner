@@ -468,6 +468,10 @@ The temporary runner remains the active home while validation is in progress.
   replays for 2021, 2023, 2025, and 2026 have also been queued as
   `holdout-v82` through `holdout-v86`; the earlier 0.1.45 audits remain
   historical until these current-version runs pass.
+  The current-parser `holdout-v85` replay for 2021 has now passed at 826
+  evaluated captures, 800 audited complete rows, zero parser errors, zero
+  prior/exclusion overlap, zero hard anomalies, and two non-hard review
+  candidates.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
