@@ -466,7 +466,10 @@ The temporary runner remains the active home while validation is in progress.
   fresh 2012 probe likewise rejected 957 of 977 planned captures with the
   same paywall-shell signature and was stopped after four usable articles,
   confirming that its larger catalog count does not represent recoverable
-  article text.
+  article text. The current-parser 2013 probe reached eight usable articles
+  against 1,835 capture-level paywall/source errors and was stopped for the
+  same reason; these 2012--2015 cells remain source-limited, not parser
+  failures.
   Lianhe Zaobao's current-version `holdout-v5`
   audits now cover every 2016--2026 year at 800 QA-passing rows with zero hard
   anomalies and zero overlap.
