@@ -91,10 +91,13 @@ The temporary runner remains the active home while validation is in progress.
   current parser is `ft-parser/0.8.45`, which removes residual `Sign in`
   paragraphs and buttons plus the FT Business School briefing CTA found in
   the 2020 audit; fresh `holdout-v11` runs for
-  FT 2016--2020 are queued/running. The fresh v11 2019 rotation has now
-  formally converged at 800/800 with QA 100%, zero parser errors, zero
-  prior/exclusion overlap, zero hard content anomalies, and three non-hard
-  review candidates. It follows fixes for legacy
+  FT 2016--2020 v11 runs are historical while the current parser is being
+  revalidated. The v11 2019 rotation formally converged at 800/800 with QA
+  100%, zero parser errors, zero prior/exclusion overlap, zero hard content
+  anomalies, and three non-hard review candidates. Its 2018 and 2020 partial
+  audits exposed a legacy “most thought-provoking online contributions” footer;
+  `ft-parser/0.8.45` removes it with a regression fixture, and fresh
+  zero-overlap `holdout-v12` replays for 2016--2020 are now running. It follows fixes for legacy
   podcast RSS chrome, a flattened JSON-LD related-story tail, dead
   expander/video controls, an AMP ``Read more`` link group, and FT brand
   favicons and v3 open-graph branding found during partial content audits.
