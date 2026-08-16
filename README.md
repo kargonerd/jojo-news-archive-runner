@@ -445,7 +445,12 @@ The temporary runner remains the active home while validation is in progress.
   so those cells are source-limited rather than parser failures. The current
   v3 audits for 2016--2019 have now formally passed 800/800 with zero hard
   anomalies; the 2012--2015 runs remain capture-source limited despite their
-  catalog candidate counts. Lianhe Zaobao's current-version `holdout-v5`
+  catalog candidate counts. A 2014 state audit found 2,475 rejected captures
+  out of 2,495 planned records: the archived HTML is a 200-byte Japanese
+  paywall teaser (``［有料会員限定］``), so the parser correctly rejects it as
+  unusable article text; the raw candidates are retained and the retry loop
+  was stopped rather than re-downloading the same permanent rejection.
+  Lianhe Zaobao's current-version `holdout-v5`
   audits now cover every 2016--2026 year at 800 QA-passing rows with zero hard
   anomalies and zero overlap.
 - Lianhe Zaobao's 2017 validation exposed four genuine short news briefs and
