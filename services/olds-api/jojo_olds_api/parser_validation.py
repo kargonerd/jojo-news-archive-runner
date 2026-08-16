@@ -973,6 +973,19 @@ def pending_parser_validation_urls(
                             ELSE 4
                         END,
                         CASE
+                            -- NPR's legacy Wayback captures are frequently
+                            -- 503-limited or parser-unusable.  Keep the
+                            -- random cohort unchanged, but replay its
+                            -- provenance-bearing Common Crawl rows before
+                            -- those low-yield Wayback rows.
+                            WHEN capture.publisher = 'npr'
+                              AND EXISTS (
+                                SELECT 1
+                                FROM json_each(capture.candidates_json)
+                                WHERE json_extract(value, '$.provider')
+                                    = 'commoncrawl'
+                            ) THEN 0
+                            WHEN capture.publisher = 'npr' THEN 1
                             -- Nikkei's indexed Wayback captures in the
                             -- 2012-2015 cohort overwhelmingly contain only
                             -- membership excerpts.  Keep the randomly chosen

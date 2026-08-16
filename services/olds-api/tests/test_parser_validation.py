@@ -1647,6 +1647,96 @@ def test_nikkei_validation_replays_common_crawl_before_wayback(
     assert selected == [common_crawl_url]
 
 
+def test_npr_validation_replays_common_crawl_before_wayback(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "npr-manifest.jsonl"
+    wayback_url = "https://www.npr.org/2013/01/01/123456789/wayback"
+    common_crawl_url = "https://www.npr.org/2013/01/02/123456790/common-crawl"
+    rows = [
+        {
+            "publisher": "npr",
+            "canonicalUrl": wayback_url,
+            "publishedAt": "2013-01-01T00:00:00Z",
+            "candidates": [
+                {
+                    "provider": "wayback",
+                    "snapshotUrl": (
+                        "https://web.archive.org/web/20130102000000id_/"
+                        f"{wayback_url}"
+                    ),
+                    "capturedAt": "2013-01-02T00:00:00Z",
+                    "digest": "NPR-WAYBACK-DIGEST",
+                }
+            ],
+        },
+        {
+            "publisher": "npr",
+            "canonicalUrl": common_crawl_url,
+            "publishedAt": "2013-01-02T00:00:00Z",
+            "candidates": [
+                {
+                    "provider": "commoncrawl",
+                    "snapshotUrl": (
+                        "https://data.commoncrawl.org/crawl-data/"
+                        "CC-MAIN-2013-20/npr.warc.gz"
+                    ),
+                    "capturedAt": "2013-05-24T12:05:35Z",
+                    "warcFilename": (
+                        "crawl-data/CC-MAIN-2013-20/npr.warc.gz"
+                    ),
+                    "warcOffset": 100,
+                    "warcLength": 200,
+                }
+            ],
+        },
+    ]
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="npr",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="npr",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="npr",
+        from_year=2013,
+        to_year=2013,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+        seed="npr-source-priority",
+    )
+    connection.execute(
+        """
+        UPDATE parser_validation_samples
+        SET sample_priority=CASE canonical_url
+            WHEN ? THEN '0000'
+            ELSE 'ffff'
+        END
+        """,
+        (wayback_url,),
+    )
+    connection.commit()
+
+    selected = pending_parser_validation_urls(
+        connection,
+        maximum=1,
+        maximum_record_attempts=3,
+    )
+
+    assert selected == [common_crawl_url]
+
+
 def test_validation_plan_retries_server_placeholder_before_fresh_sample(
     tmp_path: Path,
 ):
