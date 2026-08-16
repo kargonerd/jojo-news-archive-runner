@@ -450,7 +450,7 @@ The temporary runner remains the active home while validation is in progress.
 - Nikkei's Common Crawl supplement now exposes enough dated candidates for
   2012--2015 (909, 1,055, 915, and 1,085 respectively), and the merged
   2016--2019 windows also have sufficient coverage. Current
-  `nikkei-parser/0.1.7` zero-overlap `holdout-v3` runs are dispatched for
+  `nikkei-parser/0.1.7` zero-overlap `holdout-v3` runs were dispatched for
   2012--2019; 2020 has only two dated candidates and 2021--2026 have none,
   so those cells are source-limited rather than parser failures. The current
   v3 audits for 2016--2019 have now formally passed 800/800 with zero hard
@@ -459,7 +459,11 @@ The temporary runner remains the active home while validation is in progress.
   out of 2,495 planned records: the archived HTML is a 200-byte Japanese
   paywall teaser (``［有料会員限定］``), so the parser correctly rejects it as
   unusable article text; the raw candidates are retained and the retry loop
-  was stopped rather than re-downloading the same permanent rejection.
+  was stopped rather than re-downloading the same permanent rejection. A
+  fresh 2012 probe likewise rejected 957 of 977 planned captures with the
+  same paywall-shell signature and was stopped after four usable articles,
+  confirming that its larger catalog count does not represent recoverable
+  article text.
   Lianhe Zaobao's current-version `holdout-v5`
   audits now cover every 2016--2026 year at 800 QA-passing rows with zero hard
   anomalies and zero overlap.
