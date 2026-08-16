@@ -386,8 +386,12 @@ The temporary runner remains the active home while validation is in progress.
   current v32 evidence has already passed 800/800 content and zero-overlap
   audits for 2010, 2012--2015, 2021--2023, and 2025 on 0.1.40; 2024 exposed
   one limited-run sleep-newsletter CTA, so `npr-parser/0.1.41` is being
-  replayed in a fresh `holdout-v33` cohort. 2011, 2020, and 2026 remain below
-  the target, while 2016--2019 are source-limited in this manifest.
+  replayed in a fresh `holdout-v33` cohort. That replay has now formally
+  passed 800/800 for 2024 on 0.1.41 (zero hard anomalies, zero-overlap
+  rotation, and two non-hard review candidates). Fresh v33 replays for 2010,
+  2012--2015, and 2021--2023/2025 are now running to re-establish
+  current-version evidence; 2011, 2020, and 2026 remain below the target,
+  while 2016--2019 are source-limited in this manifest.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
