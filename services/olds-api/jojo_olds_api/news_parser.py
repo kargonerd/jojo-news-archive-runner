@@ -7806,6 +7806,8 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
             "contact us with your questions and comments"
         ) or text.startswith(
             "all rights reserved. no part of this excerpt may be reproduced"
+        ) or text.startswith(
+            "sign up for our limited-run newsletter to receive more tips on sleep"
         ) or text == "terms and conditions may apply" or re.fullmatch(
             r"subscribe to (?:the )?.+ podcast\s*[.!?]?",
             text,
