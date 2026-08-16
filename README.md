@@ -533,7 +533,11 @@ The temporary runner remains the active home while validation is in progress.
   The completed v105 audit then found one non-hard repeated-block review
   candidate: NPR's legacy transcript disclaimer appeared in 788 rows. The
   current `npr-parser/0.1.49` removes that paragraph-level template while
-  preserving the transcript body; a fresh zero-overlap 2013 replay is next.
+  preserving the transcript body. Fresh zero-overlap v109 then formally
+  passed for 2013: 800 audited complete rows, 100% QA, zero parser errors,
+  zero hard anomalies, and zero prior/exclusion overlap. Its only review
+  candidate is a genuine repeated transcript speaker label, not the removed
+  disclaimer.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
