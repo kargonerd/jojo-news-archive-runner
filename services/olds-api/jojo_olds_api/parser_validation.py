@@ -1375,6 +1375,23 @@ def record_parser_validation(
             and article.quality.body_characters < 200
         ):
             issues.append("nonarticle-desk")
+        # Some WSJ Infini-News snapshots are media-only pages. They preserve
+        # the headline and a synthetic body containing the explicit
+        # ``Article Not Supported`` notice plus subscription chrome, but no
+        # recoverable prose. Keep the raw capture while excluding it from the
+        # text-article denominator.
+        if capture.publisher == "wsj":
+            raw_text = _normalize_text(
+                BeautifulSoup(html_bytes, "html.parser").get_text(
+                    " ",
+                    strip=True,
+                )
+            ).casefold()
+            if (
+                "article not supported" in raw_text
+                and "to read the full story" in raw_text
+            ):
+                issues.append("nonarticle-desk")
         # Some legacy NYT ``admin`` package pages survive in Wayback with
         # only a short teaser; their client-rendered listicle body is absent
         # from the archived HTML. Keep the raw capture, but do not count an

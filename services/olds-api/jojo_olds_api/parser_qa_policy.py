@@ -21,7 +21,10 @@ _QA_POLICY_REVISIONS = {
     # exposing no recoverable article body. Keep those captures, but exclude
     # them from the text-article QA denominator.
     "npr": 1,
-    "wsj": 1,
+    # WSJ Infini-News captures can preserve a media-only "Article Not
+    # Supported" shell and related subscription chrome without the article
+    # body. Keep those raw records but exclude them from text-article QA.
+    "wsj": 2,
 }
 
 

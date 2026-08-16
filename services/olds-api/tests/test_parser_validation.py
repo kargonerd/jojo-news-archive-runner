@@ -1440,7 +1440,7 @@ def test_qa_revision_change_replays_without_replacing_cohort(
     )
 
     assert refreshed["parserVersion"] == "wsj-parser/0.8.55"
-    assert refreshed["qaRevision"] == 1
+    assert refreshed["qaRevision"] == 2
     assert refreshed["years"]["2020"]["evaluated"] == 0
     assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 0
     assert current == original
@@ -2913,6 +2913,65 @@ def test_npr_short_audio_shell_is_excluded_from_article_cohort(
     assert summary["years"]["2014"]["screenedNonArticles"] == 1
 
 
+def test_wsj_media_unsupported_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.wsj.com/articles/media-shell-1515668290"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2018, 1, 'test', 'wsj-parser/0.8.55', 2, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2018, 'priority', 'now')
+        """
+        ,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head><meta property="og:title" content="Media package"></head>
+    <body><article><p>Article Not Supported</p>
+      <p>To Read the Full Story Subscribe Sign In</p>
+    </article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="wsj:" + ("w" * 64),
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at=datetime(2018, 1, 11, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.INFINI_NEWS,
+            snapshot_url="https://datasets-server.huggingface.co/rows?offset=1",
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2018"]["evaluated"] == 0
+    assert summary["years"]["2018"]["screenedNonArticles"] == 1
+
+
 def test_empty_axios_video_does_not_fill_article_validation_target(
     tmp_path: Path,
 ):
@@ -3379,7 +3438,7 @@ def test_validation_accepts_wsj_business_wire_source_attribution(
     assert result["qaPass"] is True
     assert result["issues"] == []
     assert summary["formatVersion"] == "jojo-parser-validation/2"
-    assert summary["years"]["2020"]["qaRevision"] == 1
+    assert summary["years"]["2020"]["qaRevision"] == 2
     assert summary["years"]["2020"]["qaPassed"] == 1
     assert summary["years"]["2020"]["issueCounts"] == {}
 
