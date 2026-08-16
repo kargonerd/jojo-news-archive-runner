@@ -127,7 +127,9 @@ The temporary runner remains the active home while validation is in progress.
   and 2026 have passed the 800-sample content and rotation audits with zero
   hard anomalies; the fresh zero-overlap 2024 replay is 800/800 complete on
   QA revision 4, with 978 selected images and two non-hard review candidates.
-  2025 is still capturing toward 800, and 2016 is source-limited. Axios
+  The fresh zero-overlap 2025 replay has also passed at 800/800 on the same
+  parser and QA revision, with 1,016 selected images and one non-hard review
+  candidate; 2016 is source-limited. Axios
   remains open until the remaining eligible cells are resolved.
 - Caixin 2013 holdout-v1 has formally converged at 800/800 on
   `caixin-parser/0.1.9` with QA revision 1, zero prior-cohort overlap, zero
