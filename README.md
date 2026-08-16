@@ -193,7 +193,7 @@ The temporary runner remains the active home while validation is in progress.
   formally converged at 800/800 with the same parser and gates, retaining 718
   selected images (two non-hard review candidates).
   The earlier 2010--2015 holdouts used older parser versions; fresh current
-  `caixin-parser/0.1.10` rotations for all six years are now running against
+  `caixin-parser/0.1.10` rotations for all six years were run against
   the 3,901--5,996 candidate Wayback windows (with the 2010 Common Crawl
   supplement available as an additional source). A fresh `holdout-v8` is
   replacing those superseded cohorts: all six years 2010--2015 have now
