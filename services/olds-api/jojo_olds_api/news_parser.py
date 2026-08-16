@@ -6864,7 +6864,7 @@ def _remove_axios_body_chrome(soup: BeautifulSoup) -> None:
             and _clean_text(str(text_node)).casefold() == "go deeper"
         ):
             text_node.extract()
-    for node in list(soup.select("p")):
+    for node in list(soup.select("p, h2, h3, h4, h5, h6")):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
         newsletter_signup = node.select_one(
             "a[href*='link.axios.com/join/'], a[href*='/newsletter-signup']"
