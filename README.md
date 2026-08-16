@@ -385,8 +385,8 @@ The temporary runner remains the active home while validation is in progress.
   2012--2019; 2020 has only two dated candidates and 2021--2026 have none,
   so those cells are source-limited rather than parser failures. Only the
   earlier 2016/2017 800-row holdouts are formally converged so far. Lianhe Zaobao
-  current-version holdouts for 2016 and 2018 are also running; its 2017
-  holdout remains the prior 800-row baseline pending a clean stricter gate.
+  current-version 2016 has now passed its 800-row content audit; its 2017--2026
+  holdouts continue running, with 2017 still pending a clean stricter gate.
 - Lianhe Zaobao's 2017 validation exposed four genuine short news briefs and
   embedded site controls in earlier parser versions. `zaobao-parser/0.1.5`
   addressed those cases, while a current holdout replay then exposed legacy
@@ -404,8 +404,9 @@ The temporary runner remains the active home while validation is in progress.
   below the old 60-character floor. `zaobao-parser/0.1.7` lowers only the
   ordinary-article floor to 20 characters with a regression fixture. A 2016
   audit then exposed the legacy `#article_content .a_body` body wrapper;
-  `zaobao-parser/0.1.8` now selects it and fresh zero-overlap `holdout-v5`
-  runs for 2016--2026 are dispatched.
+  `zaobao-parser/0.1.8` now selects it. The fresh zero-overlap `holdout-v3`
+  2016 audit formally reached 800 audited complete rows with zero hard
+  anomalies; the remaining 2017--2026 `holdout-v5` cells continue running.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
   URL-key shard initially exposed only 32 candidates, and all captured pages
   identified as 1995 articles rather than 2017 publications. The Common Crawl
@@ -430,8 +431,11 @@ The temporary runner remains the active home while validation is in progress.
   then confirmed Apollo-only image slideshow/newsletter packages with
   `displaySlideShow=true` and no prose; QA revision 3 screens those media-only
   packages while retaining their raw captures. Fresh zero-overlap `holdout-v7`
-  replays for 2016--2022 are dispatched against the revised policy; v6 remains
-  historical until v7 passes.
+  replays for 2016--2022 are dispatched against the revised policy. The v7
+  content audits for 2016, 2018, 2019, and 2020 have each reached 800 complete
+  rows with zero hard anomalies; 2017 is still continuing, while 2021--2022
+  remain source-limited because the unexcluded exact-capture pools are too
+  small. Earlier v6 evidence remains historical for those cells.
   The 2010--2015 source shard currently exposes
   fewer than 800 dated candidates per year, and 2023+ remains source-limited
   pending additional catalog coverage.
