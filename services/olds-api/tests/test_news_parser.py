@@ -19764,7 +19764,7 @@ def test_zaobao_parser_extracts_embedded_rsc_publication_date():
     assert result.quality.status.value == "complete"
     assert result.published_at is not None
     assert result.published_at.isoformat() == "2016-01-20T18:38:00+08:00"
-    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
 
 
 def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
@@ -19788,7 +19788,7 @@ def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
 
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.COMPLETE
-    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
 
 
 def test_zaobao_parser_accepts_a_short_but_complete_news_brief():
@@ -19808,7 +19808,7 @@ def test_zaobao_parser_accepts_a_short_but_complete_news_brief():
     assert result.quality.body_characters < 100
     assert "body-too-short" not in result.quality.warnings
     assert "project starts next month" in result.plain_text
-    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
 
 
 def test_zaobao_parser_accepts_a_sub_sixty_character_wire_brief():
@@ -19830,7 +19830,7 @@ def test_zaobao_parser_accepts_a_sub_sixty_character_wire_brief():
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.quality.body_characters < 60
     assert "body-too-short" not in result.quality.warnings
-    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
 
 
 def test_zaobao_parser_removes_embedded_site_controls():
@@ -19856,7 +19856,7 @@ def test_zaobao_parser_removes_embedded_site_controls():
     assert not result.body_html.casefold().count("<button")
     assert not result.body_html.casefold().count("<form")
     assert not result.body_html.casefold().count("<input")
-    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
 
 
 def test_zaobao_parser_extracts_legacy_article_content_and_visible_date():
@@ -19882,7 +19882,32 @@ def test_zaobao_parser_extracts_legacy_article_content_and_visible_date():
     assert result.published_at.isoformat() == "2017-03-03T00:00:00+08:00"
     assert "政府公布新的公共服务计划" in result.plain_text
     assert "分享" not in result.plain_text
-    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
+
+
+def test_zaobao_parser_extracts_underscore_article_content_body():
+    result = parse_article(
+        """
+        <html lang="zh"><head>
+          <meta property="og:title" content="七部贺岁片 猴年开打">
+          <meta property="article:published_time" content="2016-01-27T00:00:00+08:00">
+        </head><body><div id="article_content">
+          <div id="a_image"><ul><li class="big"><img src="https://www.zaobao.com.sg/photo.jpg"></li></ul></div>
+          <div class="a_body">
+            <p>李亦筠／报道　照片由片商提供</p>
+            <p>随着周星驰新片《美人鱼》及获奥斯卡提名的《复仇勇者》将在猴年贺岁档推出，贺岁片战局顿时升温。</p>
+            <p>今年的贺岁片多达七部，五部是中文片，两部是西片，题材缤纷，各有卖点。</p>
+          </div>
+        </div></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url="https://www.zaobao.com.sg/culture/entertainment/cinema/story20160127-575556",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.published_at is not None
+    assert "猴年贺岁档推出" in result.plain_text
+    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
 
 
 def test_zaobao_legacy_visual_photo_record_is_a_complete_gallery():
@@ -19913,7 +19938,7 @@ def test_zaobao_legacy_visual_photo_record_is_a_complete_gallery():
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.COMPLETE
     assert "body-too-short" not in result.quality.warnings
-    assert result.extraction.parser_version == "zaobao-parser/0.1.7"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
 
 
 def test_aljazeera_parser_classifies_short_embedded_video_report():
