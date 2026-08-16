@@ -1315,6 +1315,46 @@ jobs:
             --stop-at-validation-target \
             --github-output "$GITHUB_OUTPUT"
 
+      - name: Guard stale parser continuation
+        id: parser_freshness
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
+          }}
+        shell: bash
+        env:
+          LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
+        run: |
+          configured_parser="$(python - "$LOCAL_ROOT/raw/capture.sqlite3" "$PUBLISHER" "$SAMPLE_YEAR" <<'PY'
+          import sqlite3
+          import sys
+
+          from jojo_olds_api.publisher_specs import publisher_spec
+
+          connection = sqlite3.connect(sys.argv[1])
+          row = connection.execute(
+              "SELECT parser_version FROM parser_validation_config "
+              "WHERE sample_year = ?",
+              (int(sys.argv[3]),),
+          ).fetchone()
+          configured = str(row[0]) if row and row[0] else ""
+          current = publisher_spec(sys.argv[2]).parser_version
+          print(f"{configured}\t{current}")
+          PY
+          )"
+          configured_version="${configured_parser%%$'\t'*}"
+          current_version="${configured_parser#*$'\t'}"
+          if [ -z "$configured_version" ] || [ "$configured_version" = "$current_version" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+            echo "Parser cohort is current: $current_version"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping auto-continuation for stale parser cohort "
+            echo "$configured_version (current is $current_version)."
+          fi
+
       - name: Dispatch next validation batch
         if: >-
           ${{
@@ -1322,6 +1362,7 @@ jobs:
             steps.rotation_readiness.outcome != 'failure' &&
             steps.rotation_readiness.outputs.validation_target_reached != 'true' &&
             steps.content_audit.outcome != 'failure' &&
+            steps.parser_freshness.outputs.current == 'true' &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||
               steps.rotation_readiness.outputs.validation_ready != 'true' ||
