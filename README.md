@@ -382,7 +382,10 @@ The temporary runner remains the active home while validation is in progress.
   2020; 0.1.39 removed that legacy `subscribe to our newsletter` form. The
   fresh `holdout-v31` rotations then exposed an excerpt copyright tail in
   2013; 0.1.40 removes that exact notice. Fresh zero-overlap `holdout-v32`
-  rotations for 2010--2026 are now running against the fixed parser.
+  rotations for 2010--2026 are now running against the fixed parser. The
+  current v32 evidence has already passed 800/800 content and zero-overlap
+  audits for 2010 and 2021--2023 on 0.1.40; the remaining eligible years are
+  still capturing or source-limited.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
