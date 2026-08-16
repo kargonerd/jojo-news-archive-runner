@@ -397,9 +397,9 @@ The temporary runner remains the active home while validation is in progress.
   labels, so `npr-parser/0.1.42` removes that modern label and a fresh
   `holdout-v34` 2010, 2013--2015, 2021, 2023, and 2024 replays have now formally passed 800/800 on
   0.1.42 with zero hard anomalies and zero-overlap rotation. Additional v34 replays for
-  2010, 2013--2015, 2021--2022, and 2024--2025 are also dispatched to
-  establish current-version evidence. 2012 remains below the target; 2011 and 2020
-  remain below the target, 2026 is still capturing, and 2016--2019 are
+  2010, 2013--2015, 2021, 2023--2025 are also formally passing on the current parser;
+  2022 currently has 566/800 eligible rows and is source-limited. 2012 remains below
+  the target; 2011 and 2020 remain below the target, 2026 is still capturing, and 2016--2019 are
   source-limited in this manifest.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
