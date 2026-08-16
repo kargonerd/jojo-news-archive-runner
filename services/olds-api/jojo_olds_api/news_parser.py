@@ -7835,6 +7835,13 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
             "contact us with your questions and comments"
         ) or text.startswith(
             "all rights reserved. no part of this excerpt may be reproduced"
+        ) or (
+            node.name in {"p", "li", "span"}
+            and
+            text.startswith(
+                "npr transcripts are created on a rush deadline by verb8tm"
+            )
+            and "authoritative record of npr" in text
         ) or text.startswith(
             "sign up for our limited-run newsletter to receive more tips on sleep"
         ) or re.fullmatch(

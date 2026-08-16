@@ -530,6 +530,10 @@ The temporary runner remains the active home while validation is in progress.
   existing Wayback-only batch has 86 screened non-articles and no evaluated
   article rows. The other current-version cells are still running or
   source-limited.
+  The completed v105 audit then found one non-hard repeated-block review
+  candidate: NPR's legacy transcript disclaimer appeared in 788 rows. The
+  current `npr-parser/0.1.49` removes that paragraph-level template while
+  preserving the transcript body; a fresh zero-overlap 2013 replay is next.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
