@@ -214,7 +214,7 @@ The temporary runner remains the active home while validation is in progress.
   then exposed the heading CTA in 2018 and dead interactive control in 2019.
   The 0.8.70 `holdout-v17` audit also exposed decorative `healthquiz-art`
   responsive images being archived as editorial media. Fresh zero-overlap
-  `holdout-v19` runs for 2016--2026 will be dispatched on 0.8.72, and all
+  `holdout-v19` runs for 2016--2026 have now been dispatched on 0.8.72, and all
   earlier NYT evidence remains historical until these audits
   pass.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
