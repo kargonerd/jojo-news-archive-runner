@@ -436,9 +436,10 @@ The temporary runner remains the active home while validation is in progress.
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
   2026 replay then exposed a Life Kit newsletter CTA. `npr-parser/0.1.44`
-  removes that second exact interface block; v35 is superseded and a fresh
-  zero-overlap v36 2026 replay is required before the year can be considered
-  converged.
+  removes that second exact interface block; the fresh zero-overlap `holdout-v36`
+  2026 replay now formally converged at 801/801 QA-passing complete rows, zero
+  parser errors, zero prior/exclusion overlap, zero hard content anomalies,
+  and two non-hard review candidates.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
