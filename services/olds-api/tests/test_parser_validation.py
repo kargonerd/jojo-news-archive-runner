@@ -2925,7 +2925,7 @@ def test_npr_short_audio_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2014, 1, 'test', 'npr-parser/0.1.42', 1, 'now')
+        ) VALUES (2014, 1, 'test', 'npr-parser/0.1.43', 1, 'now')
         """
     )
     connection.execute(
