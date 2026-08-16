@@ -558,13 +558,16 @@ The temporary runner remains the active home while validation is in progress.
   articles and 1,789 for 2016. The new `holdout-v3` schedule supersedes the
   incomplete 2012--2015 and 2018--2026 probes once its current-version audits
   finish.
-- Reuters 2020 has now formally converged on `reuters-parser/0.7.25` with a
+- Reuters 2020 has now formally converged on `reuters-parser/0.7.26` with a
   fresh zero-overlap `holdout-v42`: 800/800 QA-passing and complete rows, zero
   parser errors, zero prior/exclusion overlap, zero hard content anomalies,
   and two non-hard review candidates. Separate zero-overlap `holdout-v49` (2016)
   and `holdout-v50` (2019) have also passed the same gates at 800/800, with
   one and two non-hard review candidates respectively. Other Reuters years are
-  being scheduled against their separate historical source windows.
+  being scheduled against their separate historical source windows. The 2022
+  `holdout-v54` audit exposed a social-channel CTA (`YouTube`, Telegram, and
+  WhatsApp); `reuters-parser/0.7.26` removes that exact interface block, so a
+  fresh zero-overlap 2022 replay is required.
 - TODO: migrate the runner, workflows, secrets documentation, and open
   validation history to the public
   [`kargonerd/jojokanbao`](https://github.com/kargonerd/jojokanbao) repository.

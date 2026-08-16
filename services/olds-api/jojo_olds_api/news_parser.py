@@ -11868,6 +11868,9 @@ def _remove_reuters_promos(soup: BeautifulSoup) -> None:
         ) or text.startswith(
             "the company and law firm names shown above are generated "
             "automatically based on the text of the article"
+        ) or re.fullmatch(
+            r"subscribe to our channels on youtube\s*,\s*telegram\s*&\s*whatsapp\s*[.!]?",
+            text,
         ):
             node.decompose()
 
