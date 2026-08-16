@@ -232,7 +232,15 @@ The temporary runner remains the active home while validation is in progress.
   rotation audit still found one missing historical exclusion entry; it is not
   convergence evidence. The exclusion importer now requires sample and result
   years to match (with a regression test for the stale cross-year URL), and a
-  fresh zero-overlap `holdout-v23` replay is running with that fix.
+  fresh zero-overlap `holdout-v23` replay now has final B2 evidence passing
+  the formal 800-row content gate on
+  `nyt-parser/0.8.73` (800 audited QA-passing rows, zero hard anomalies) and
+  the zero-overlap rotation gate (809 current captures, zero prior/exclusion
+  overlap, no missing historical exclusions). The audited cohort contains
+  799 complete rows and one explicitly marked incomplete interactive; the
+  extra rejected capture is an NYT ``Editors' Note`` page stating that the
+  article was published prematurely, not recoverable article prose. It is
+  retained in raw storage and is not counted among the 800 QA-passing rows.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, and all 800 extraction statuses complete with zero
