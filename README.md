@@ -137,7 +137,11 @@ The temporary runner remains the active home while validation is in progress.
   errors, zero overlap, zero hard anomalies, and two non-hard review candidates;
   the fresh current-parser `holdout-v57` 2025 replay also passed 800/800 with
   zero hard anomalies and two non-hard review candidates; the remaining
-  eligible cells are still open.
+  eligible cells are still open. The fresh current-parser `holdout-v64` replay
+  for 2018 has now also passed both gates: 801 evaluated captures yielded 800
+  QA-passing complete rows, zero parser errors, zero prior/exclusion overlap,
+  zero hard content anomalies, and one non-hard review candidate on
+  `axios-parser/0.1.24`.
 - Caixin 2013 holdout-v1 has formally converged at 800/800 on
   `caixin-parser/0.1.9` with QA revision 1, zero prior-cohort overlap, zero
   hard content anomalies, and all 228 selected images preserved. The parser
