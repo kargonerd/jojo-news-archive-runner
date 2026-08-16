@@ -7833,6 +7833,9 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
         ) or re.fullmatch(
             r"sign up for (?:the )?.+\bchallenge\b.*",
             text,
+        ) or re.fullmatch(
+            r"sign up for the newsletter\b.*\bsubscribe here\s*[.!?]?",
+            text,
         ):
             node.decompose()
     for container in list(soup.select(".container")):

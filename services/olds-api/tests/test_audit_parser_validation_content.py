@@ -43,6 +43,10 @@ def test_interface_text_detector_does_not_match_ordinary_prose() -> None:
         "The court considered whether violating the terms of use was illegal."
     ) is None
     assert _INTERFACE_TEXT_RE.search(
+        "Terms and Conditions in free software says certain provisions can be "
+        "ignored in the case of a widespread viral infection."
+    ) is None
+    assert _INTERFACE_TEXT_RE.search(
         "Kafka users can publish data streams or subscribe to them in real time."
     ) is None
     assert _NYT_DEAD_INTERACTIVE_CONTROL_RE.fullmatch("Read full answer")

@@ -46,7 +46,8 @@ _INTERFACE_TEXT_RE = re.compile(
     r"^marketwatch拥有位于三大洲的100多名记者|"
     r"^(?:accept all cookies|all rights reserved|"
     r"download (?:our|the) app(?:\s+(?:now|today))?[.!]?$|"
-    r"sign up for (?:our|the)|subscribe to (?:axios|our|the)|terms (?:of use|and conditions))"
+    r"sign up for (?:our|the)|subscribe to (?:axios|our|the)|"
+    r"terms (?:of use|and conditions)[.!]?$)"
 )
 _INTERACTIVE_TAGS = {"button", "form", "input", "nav", "script", "style"}
 _NYT_DEAD_INTERACTIVE_CONTROL_RE = re.compile(
