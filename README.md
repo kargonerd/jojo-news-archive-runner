@@ -356,8 +356,10 @@ The temporary runner remains the active home while validation is in progress.
   text-article denominator while retaining their raw captures; the affected
   v23 years are being replayed against that policy. Because the v23 2018 plan
   exhausted at 442 accepted rows, a fresh `holdout-v24` 2018 rotation and a
-  `holdout-v25` 2019 rotation are now dispatched to obtain independent 800-row
-  cohorts from the remaining Wayback candidates.
+  `holdout-v25` 2019 rotation were also planner-only zero-sample runs despite
+  successful workflow exits. Fresh `holdout-v26` rotations for 2018 and 2019
+  are now dispatched from clean state to obtain independent 800-row cohorts
+  from the remaining Wayback candidates.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
