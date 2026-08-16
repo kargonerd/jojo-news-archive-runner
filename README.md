@@ -460,8 +460,10 @@ The temporary runner remains the active home while validation is in progress.
   source matches; it terminated as source-limited rather than producing a
   false convergence result.
   The fresh 2024 replay exposed one Life Kit playlist icon incorrectly selected
-  as editorial artwork; `npr-parser/0.1.46` filters that asset family and a
-  fresh zero-overlap replay is required before 2024 can be counted as current.
+  as editorial artwork; `npr-parser/0.1.46` filters that asset family. The new
+  zero-overlap `holdout-v82` replay now passes at 803 evaluated captures,
+  800 audited complete rows, zero parser errors, zero prior/exclusion overlap,
+  zero hard anomalies, and two non-hard review candidates.
   Because the parser version changed, fresh zero-overlap current-version
   replays for 2021, 2023, 2025, and 2026 have also been queued as
   `holdout-v82` through `holdout-v86`; the earlier 0.1.45 audits remain
