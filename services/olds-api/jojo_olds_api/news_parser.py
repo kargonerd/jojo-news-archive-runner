@@ -12509,6 +12509,9 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^follow .+ with\s*myft and on\s*twitter\b"),
         re.compile(r"(?i)^sign up to our .+ newsletter\b"),
+        re.compile(
+            r"(?i)^sign up for the ft business school briefing\b.*"
+        ),
         re.compile(r"(?i)^for more, sign up for our .+ newsletter\b"),
         re.compile(r"(?i)^ft premium subscribers can sign up here\b"),
         re.compile(r"(?i)^lex publishes two popular newsletters\b"),
