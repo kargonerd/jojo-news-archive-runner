@@ -6897,6 +6897,8 @@ def _remove_axios_body_chrome(soup: BeautifulSoup) -> None:
         ) or (
             text.startswith("subscribe to ")
             and " podcast" in text
+        ) or re.fullmatch(
+            r"subscribe to our youtube(?: channel)?[.!]?", text
         ):
             node.decompose()
             continue
