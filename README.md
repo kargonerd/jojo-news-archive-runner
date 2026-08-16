@@ -227,7 +227,9 @@ The temporary runner remains the active home while validation is in progress.
   exclusion entry, so it is not convergence evidence; a fresh zero-overlap
   `holdout-v22` replay for 2021 reached 783/800 complete rows, but its final
   rotation audit still found one missing historical exclusion entry; it is not
-  convergence evidence and remains queued for an exclusion-import fix.
+  convergence evidence. The exclusion importer now requires sample and result
+  years to match (with a regression test for the stale cross-year URL), and a
+  fresh zero-overlap `holdout-v23` replay is running with that fix.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, and all 800 extraction statuses complete with zero
