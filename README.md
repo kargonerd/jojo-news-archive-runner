@@ -249,6 +249,9 @@ The temporary runner remains the active home while validation is in progress.
   extra rejected capture is an NYT ``Editors' Note`` page stating that the
   article was published prematurely, not recoverable article prose. It is
   retained in raw storage and is not counted among the 800 QA-passing rows.
+  The current-parser `holdout-v20` replay for NYT 2025 has also passed both
+  gates at 800 audited rows, with zero hard anomalies, zero overlap, and no
+  missing historical exclusions.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, and all 800 extraction statuses complete with zero
