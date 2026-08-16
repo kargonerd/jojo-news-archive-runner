@@ -643,15 +643,19 @@ The temporary runner remains the active home while validation is in progress.
   packages while retaining their raw captures. Fresh zero-overlap `holdout-v7`
   replays for 2016--2022 are dispatched against the revised policy. The v7
   content audits for 2016--2020 have each reached 800 complete rows with zero
-  hard anomalies; 2017 is now included, while 2021--2022
-  remain source-limited because the unexcluded exact-capture pools are too
-  small. Earlier v6 evidence remains historical for those cells.
+  hard anomalies; 2017 is now included. Earlier v6 evidence remains historical
+  for those cells.
   The fresh zero-overlap `holdout-v48` 2017 replay independently confirmed
   `scmp-parser/0.1.6` at 815 evaluated rows (800 audited complete rows), with
   zero parser errors, zero overlap, zero hard content anomalies, and no review
   candidates.
+  Expanded Common Crawl coverage now also allows fresh zero-overlap `holdout-v49`
+  (2021) and `holdout-v50` (2022) to formally pass on `scmp-parser/0.1.6`:
+  each has 800/800 QA-passing complete rows, zero parser errors, zero hard
+  anomalies, and zero prior/exclusion overlap. A current-parser `validation`
+  baseline for 2023 is in progress and has reached 650/800 QA-passing rows.
   The 2010--2015 source shard currently exposes
-  fewer than 800 dated candidates per year, and 2023+ remains source-limited
+  fewer than 800 dated candidates per year; later years remain source-limited
   pending additional catalog coverage.
 - Nikkei's first 2017 validation reached 800 QA rows but its content audit
   found three embedded `form`/`input`/`button` controls. The parser now removes
@@ -666,7 +670,10 @@ The temporary runner remains the active home while validation is in progress.
   candidates). The supplement currently exposes about 6,013 dated 2017
   articles and 1,789 for 2016. The new `holdout-v3` schedule supersedes the
   incomplete 2012--2015 and 2018--2026 probes once its current-version audits
-  finish.
+  finish. The 2018 and 2019 v3 rotations have now formally passed on
+  `nikkei-parser/0.1.7`, each with 800/800 QA-passing complete rows, zero
+  parser errors, zero hard anomalies, and zero prior/exclusion overlap;
+  2012--2015 are continuing against their expanded Common Crawl pools.
 - Reuters 2020 historically converged on `reuters-parser/0.7.25` with a
   fresh zero-overlap `holdout-v42`: 800/800 QA-passing and complete rows, zero
   parser errors, zero prior/exclusion overlap, zero hard content anomalies,
