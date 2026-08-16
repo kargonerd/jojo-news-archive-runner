@@ -206,7 +206,7 @@ PUBLISHER_SPECS = {
     ),
     "ft": PublisherSpec(
         publisher="ft",
-        parser_version="ft-parser/0.8.46",
+        parser_version="ft-parser/0.8.47",
         domains=("ft.com", "www.ft.com"),
         default_language="en",
         edition="global",

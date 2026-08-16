@@ -1309,6 +1309,11 @@ def parse_article(
     if spec.publisher == "ft" and _ft_explicit_truncation_notice(soup):
         warnings.append("truncated-body")
     if (
+        spec.publisher == "ft"
+        and _ft_infini_access_shell(soup)
+    ):
+        warnings.append("truncated-body")
+    if (
         spec.publisher == "nikkei"
         and _nikkei_truncated_body(
             soup,
@@ -12381,7 +12386,11 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
         ):
             node.decompose()
             continue
-        if text.casefold() in {"sign in", "already a member? sign in"}:
+        if text.casefold() in {
+            "sign in",
+            "subscribe",
+            "already a member? sign in",
+        }:
             node.decompose()
             continue
         if re.fullmatch(
@@ -12500,6 +12509,19 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             break
         tail = tail.parent
     marker.decompose()
+
+
+def _ft_infini_access_shell(soup: BeautifulSoup) -> bool:
+    """Detect Infini-derived FT access shells with no article prose."""
+    if soup.select_one(
+        "article[data-jojo-representation='derived-infini-news']"
+    ) is None:
+        return False
+    text = _clean_text(soup.get_text(" ", strip=True)).casefold()
+    return (
+        "new to the financial times?" in text
+        and "enjoy 7 days of free access" in text
+    ) or "to read: financial times" in text
 
 
 def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
