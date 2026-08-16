@@ -120,11 +120,12 @@ The temporary runner remains the active home while validation is in progress.
   v12 rotations were stopped. The v13 rotations exposed the newsletter CTA
   in the 2019 audit, plus a standalone YouTube subscription CTA found in the
   2026 audit (including list-item markup); fresh zero-overlap `holdout-v16`
-  runs for 2017--2026 have now been dispatched on 0.1.23. Years 2017--2023
+  runs for 2017--2026 have now been dispatched on 0.1.23. Years 2017--2024
   and 2026 have passed the 800-sample content and rotation audits with zero
-  hard anomalies; 2024 and 2025 are still capturing toward 800, and 2016 is
-  source-limited. Axios remains open until the remaining eligible cells are
-  resolved.
+  hard anomalies; the fresh zero-overlap 2024 replay is 800/800 complete on
+  QA revision 4, with 978 selected images and two non-hard review candidates.
+  2025 is still capturing toward 800, and 2016 is source-limited. Axios
+  remains open until the remaining eligible cells are resolved.
 - Caixin 2013 holdout-v1 has formally converged at 800/800 on
   `caixin-parser/0.1.9` with QA revision 1, zero prior-cohort overlap, zero
   hard content anomalies, and all 228 selected images preserved. The parser
