@@ -11695,6 +11695,9 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         # without the explanatory copy used by the longer pattern above.
         re.compile(r"(?i)^sign up for the campaign reporter\b.*$"),
         re.compile(r"(?i)^sign up for the campaign reporter\.?$"),
+        re.compile(
+            r"(?i)^sign up for the call on .+\bhere\s*\.?$"
+        ),
         re.compile(r"(?i)^subscribe to (?:the )?.+ newsletter\b.*$"),
         re.compile(
             r"(?i)^if you are not a subscriber to this newsletter\b"
