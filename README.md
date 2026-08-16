@@ -88,7 +88,7 @@ The temporary runner remains the active home while validation is in progress.
   changes.
 - FT 2016 `holdout-v9` and FT 2017 `holdout-v8` formally converged on the
   previous `ft-parser/0.8.42`, but their evidence is now historical. The
-  current parser is `ft-parser/0.8.44`, which removes residual `Sign in`
+  current parser is `ft-parser/0.8.45`, which removes residual `Sign in`
   paragraphs and buttons plus the FT Business School briefing CTA found in
   the 2020 audit; fresh `holdout-v11` runs for
   FT 2016--2020 are queued/running. The fresh v11 2019 rotation has now

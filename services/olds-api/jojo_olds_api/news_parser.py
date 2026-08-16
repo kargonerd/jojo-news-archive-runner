@@ -12329,6 +12329,13 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             text,
         ):
             node.decompose()
+            continue
+        if re.fullmatch(
+            r"(?i)the most thought-provoking online contributions may be "
+            r"published in the financial times newspaper\.?",
+            text,
+        ):
+            node.decompose()
 
     for marker in list(soup.select("p, h2, h3, h4")):
         if not re.fullmatch(
