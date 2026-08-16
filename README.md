@@ -521,10 +521,14 @@ The temporary runner remains the active home while validation is in progress.
   pool at 40 evaluated/QA-passing rows, while 2010 reached 350
   evaluated/QA-passing rows; both are source-limited rather than parser
   failures. The 2021 replay captured 30 pages, all screened as non-article desk
-  content, and is likewise source-limited. NPR 2013 and 2023 are continuing
-  while fresh Common Crawl supplemental catalogs are being built; the existing
-  Wayback-only 2023 batch has 86 screened non-articles and no evaluated article
-  rows. The other current-version cells are still running or source-limited.
+  content, and is likewise source-limited. NPR 2013's Common Crawl supplement
+  has now produced 726 dated article candidates (990 raw candidates), which,
+  combined with its primary Wayback pool, is sufficient for a fresh 800-row
+  replay; the next v105 continuation will merge that catalog. NPR 2023 is
+  continuing while its Common Crawl supplement is still being scanned; the
+  existing Wayback-only batch has 86 screened non-articles and no evaluated
+  article rows. The other current-version cells are still running or
+  source-limited.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
