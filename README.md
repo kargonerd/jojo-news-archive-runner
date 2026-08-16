@@ -140,7 +140,10 @@ The temporary runner remains the active home while validation is in progress.
   regression fixture. All prior `0.1.24` audits are now historical. Fresh
   current-version `holdout-v121` through `holdout-v130` replays for 2017--2026
   (excluding source-limited 2016) are being dispatched; 2016 remains
-  source-limited.
+  source-limited. The first `.25` replay, `holdout-v121` for 2017, has now
+  formally converged: 802 current evaluations, 800 audited complete rows,
+  zero parser errors, zero prior or exclusion overlap, zero hard anomalies,
+  and 703 selected images.
   The superseded `0.1.24` replays for 2018, 2024, 2025, and 2026 had passed
   both gates before this defect was found, but they are retained only as
   historical evidence; the v121--v130 rotations must pass on `0.1.25` before
