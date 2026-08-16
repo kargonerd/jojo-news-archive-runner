@@ -338,11 +338,13 @@ The temporary runner remains the active home while validation is in progress.
   zero prior/exclusion overlap, zero hard content anomalies, and 800 audited
   complete extraction statuses. Its content audit retained 1,503 selected
   images and left two non-hard review candidates.
-  All earlier Al Jazeera results remain historical until their current-version
-  rotations pass every gate. QA revision 2 now screens short, unrecoverable
-  dynamic LiveBlog shells as non-article records while retaining their raw
-  captures. Fresh `holdout-v1` replays for 2022--2026 are dispatched against
-  the current source shard; 2025 remains subject to source-capacity checks.
+  QA revision 2 screens short, unrecoverable dynamic LiveBlog shells as
+  non-article records while retaining their raw captures. The current-version
+  0.1.5 content audits now cover every 2016--2026 year: each reached the
+  formal 800-row target with zero hard anomalies and zero parser errors. The
+  2016 audit has 798 complete and 2 partial rows; 2023 has 799 complete and
+  1 partial row, while the other years have 800 complete rows. Earlier
+  pre-0.1.5 evidence remains historical.
 - NPR's current parser is now `npr-parser/0.1.37`. The v0.1.31/v0.1.32
   replays exposed legacy podcast, subscription-network, and newsletter CTAs;
   later audits also exposed long podcast/challenge CTAs and legacy `Read more`
