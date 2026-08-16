@@ -279,6 +279,19 @@ def parse_article(
             structured_image_gallery_selected = True
     if body is None:
         body = _select_body(soup, spec)
+    if spec.publisher == "scmp":
+        # The Vue-era SCMP pages frequently put the complete article in the
+        # Apollo cache while the visible DOM contains only an empty shell.
+        # Prefer that structured body when it is longer than the selected DOM
+        # node; this keeps modern/legacy DOM extraction authoritative whenever
+        # it already contains the full story.
+        apollo_body = _scmp_apollo_body(soup)
+        if apollo_body is not None and (
+            body is None
+            or len(apollo_body.get_text(" ", strip=True))
+            > len(body.get_text(" ", strip=True))
+        ):
+            body = apollo_body
     if spec.publisher == "caixin":
         legacy_gallery = _caixin_legacy_gallery_body(soup)
         if legacy_gallery is not None:
@@ -2895,6 +2908,116 @@ def _select_body(soup: BeautifulSoup, spec: PublisherSpec) -> Tag | None:
         if nodes:
             return max(nodes, key=lambda node: len(node.get_text(" ", strip=True)))
     return None
+
+
+def _scmp_apollo_body(soup: BeautifulSoup) -> Tag | None:
+    """Render article paragraphs retained in SCMP's Apollo state cache.
+
+    Around 2016--2021 SCMP captures often contain a complete ``body`` JSON
+    tree in ``window.__APOLLO_STATE__`` but no server-rendered article node.
+    Ads and recommendation rows are intentionally ignored; the raw capture
+    remains available for any future structured-field expansion.
+    """
+
+    decoder = json.JSONDecoder()
+    body_arrays: list[list[Any]] = []
+    for script in soup.find_all("script"):
+        value = script.string or script.get_text()
+        if "__APOLLO_STATE__" not in value or "body(" not in value:
+            continue
+        for match in re.finditer(
+            r"window\.__APOLLO_STATE__\s*=\s*(?=\{)",
+            value,
+        ):
+            try:
+                payload, _ = decoder.raw_decode(value[match.end() :])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            for key, node in _scmp_apollo_walk_items(payload):
+                if not str(key).startswith("body("):
+                    continue
+                if not isinstance(node, dict):
+                    continue
+                body_json = node.get("json")
+                if isinstance(body_json, list):
+                    body_arrays.append(body_json)
+    if not body_arrays:
+        return None
+
+    document = BeautifulSoup(
+        "<article data-jojo-source='scmp-apollo-body'></article>",
+        "html.parser",
+    )
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+
+    def append_value(parent: Tag, value: Any) -> None:
+        if isinstance(value, str):
+            parent.append(value)
+            return
+        if isinstance(value, list):
+            for child in value:
+                append_value(parent, child)
+            return
+        if not isinstance(value, dict):
+            return
+        node_type = _string_or_none(value.get("type"))
+        if node_type == "text":
+            append_value(parent, value.get("data"))
+            return
+        if node_type in {"ad", "ad2", "newsletter", "more-on-this"} or (
+            node_type and node_type.startswith("outstream")
+        ):
+            return
+        if node_type in {"image", "img", "photo"}:
+            source = _first_text(
+                _string_or_none(value.get("url")),
+                _string_or_none(value.get("src")),
+                _string_or_none(value.get("imageUrl")),
+            )
+            if source:
+                figure = document.new_tag("figure")
+                image = document.new_tag("img", src=source)
+                figure.append(image)
+                caption = _first_text(
+                    _string_or_none(value.get("caption")),
+                    _string_or_none(value.get("alt")),
+                )
+                if caption:
+                    figcaption = document.new_tag("figcaption")
+                    figcaption.string = caption
+                    figure.append(figcaption)
+                parent.append(figure)
+            return
+        tag_name = {
+            "paragraph": "p",
+            "heading": "h2",
+            "quote": "blockquote",
+            "list": "ul",
+            "list-item": "li",
+        }.get(node_type or "", node_type or "")
+        if tag_name not in {"p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "ul", "ol", "li", "table", "tr", "td", "th"}:
+            tag_name = "span"
+        element = document.new_tag(tag_name)
+        append_value(element, value.get("children", value.get("content")))
+        if element.get_text(" ", strip=True) or element.find("img"):
+            parent.append(element)
+
+    for body_json in body_arrays:
+        for node in body_json:
+            append_value(article, node)
+    return article if article.get_text(" ", strip=True) or article.find("img") else None
+
+
+def _scmp_apollo_walk_items(value: Any) -> Iterable[tuple[Any, Any]]:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield key, child
+            yield from _scmp_apollo_walk_items(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _scmp_apollo_walk_items(child)
 
 
 def _nikkei_legacy_article_body(
