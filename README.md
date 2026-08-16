@@ -395,9 +395,10 @@ The temporary runner remains the active home while validation is in progress.
   The 2010, 2013, and 2014 replays have reached 800 and are finishing their
   final audit uploads. The 2023 replay exposed four `Read more:` interface
   labels, so `npr-parser/0.1.42` removes that modern label and a fresh
-  `holdout-v34` 2023 replay is now running. Additional v34 replays for 2010,
-  2013--2015, 2021--2022, and 2024--2025 are also dispatched to establish
-  current-version evidence. 2012 remains below the target; 2011 and 2020
+  `holdout-v34` 2023 replay has now formally passed 800/800 on 0.1.42 with
+  zero hard anomalies and zero-overlap rotation. Additional v34 replays for
+  2010, 2013--2015, 2021--2022, and 2024--2025 are also dispatched to
+  establish current-version evidence. 2012 remains below the target; 2011 and 2020
   remain below the target, 2026 is still capturing, and 2016--2019 are
   source-limited in this manifest.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
