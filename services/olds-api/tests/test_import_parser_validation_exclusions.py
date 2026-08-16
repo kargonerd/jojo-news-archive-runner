@@ -158,6 +158,106 @@ def test_formal_cohort_import_excludes_only_priority_ranked_qa_target(
     }
 
 
+def test_formal_cohort_import_requires_sample_and_result_years_to_match(
+    tmp_path: Path,
+):
+    source_path = tmp_path / "source.sqlite3"
+    target_path = tmp_path / "target.sqlite3"
+    source = sqlite3.connect(source_path)
+    initialize_parser_validation_schema(source)
+    source.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, updated_at
+        ) VALUES (2021, 1, 'seed', 'nyt-parser/0.8.73', 'now')
+        """
+    )
+    # This URL was planned for 2020 but has a stale 2021 result row.  A
+    # URL-only join must not let it displace the actual 2021 cohort sample.
+    source.executemany(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, ?, ?, 'now')
+        """,
+        [
+            (
+                "https://www.nytimes.com/interactive/2021/us/covid-cases.html",
+                2020,
+                "001",
+            ),
+            (
+                "https://www.nytimes.com/2021/12/08/opinion/supreme-court-abortion.html",
+                2021,
+                "002",
+            ),
+        ],
+    )
+    source.execute(
+        """
+        INSERT INTO parser_validation_results(
+            canonical_url, publisher, sample_year, parser_version,
+            extraction_status, qa_pass, warnings_json, issues_json,
+            parsed_at
+        ) VALUES (?, 'nyt', 2021, 'nyt-parser/0.8.73',
+                  'complete', 1, '[]', '[]', 'now')
+        """,
+        (
+            "https://www.nytimes.com/interactive/2021/us/covid-cases.html",
+        ),
+    )
+    source.execute(
+        """
+        INSERT INTO parser_validation_results(
+            canonical_url, publisher, sample_year, parser_version,
+            extraction_status, qa_pass, warnings_json, issues_json,
+            parsed_at
+        ) VALUES (?, 'nyt', 2021, 'nyt-parser/0.8.73',
+                  'complete', 1, '[]', '[]', 'now')
+        """,
+        (
+            "https://www.nytimes.com/2021/12/08/opinion/supreme-court-abortion.html",
+        ),
+    )
+    source.commit()
+    source.close()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(TOOL),
+            "--source-state",
+            str(source_path),
+            "--target-state",
+            str(target_path),
+            "--source-cohort",
+            "validation-v1",
+            "--publisher",
+            "nyt",
+            "--sample-year",
+            "2021",
+            "--accepted-target-only",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["evaluatedSourceSamples"] == 1
+    target = sqlite3.connect(target_path)
+    urls = {
+        row[0]
+        for row in target.execute(
+            "SELECT canonical_url FROM parser_validation_exclusions"
+        )
+    }
+    target.close()
+    assert urls == {
+        "https://www.nytimes.com/2021/12/08/opinion/supreme-court-abortion.html"
+    }
+
+
 def test_empty_formal_placeholder_is_skipped_without_resetting_target(
     tmp_path: Path,
 ):

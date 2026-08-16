@@ -150,7 +150,8 @@ def main() -> int:
                     FROM parser_validation_results AS result
                     JOIN parser_validation_samples AS sample
                       ON sample.canonical_url=result.canonical_url
-                    WHERE result.sample_year=? AND result.qa_pass=1
+                     AND sample.sample_year=result.sample_year
+                    WHERE sample.sample_year=? AND result.qa_pass=1
                     ORDER BY sample.sample_priority
                     LIMIT ?
                     """,
