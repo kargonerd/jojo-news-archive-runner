@@ -19123,7 +19123,7 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.5"
+    assert result.extraction.parser_version == "scmp-parser/0.1.6"
 
 
 def test_scmp_parser_recovers_vue_apollo_article_body():
@@ -19162,7 +19162,7 @@ def test_scmp_parser_recovers_vue_apollo_article_body():
         "https://cdn1.i-scmp.com/cover.jpg",
         "https://cdn1.i-scmp.com/inline.jpg",
     ]
-    assert result.extraction.parser_version == "scmp-parser/0.1.5"
+    assert result.extraction.parser_version == "scmp-parser/0.1.6"
 
 
 def test_scmp_legacy_drupal_pane_content_is_the_article_body():
@@ -19194,7 +19194,7 @@ def test_scmp_legacy_drupal_pane_content_is_the_article_body():
 
     assert result.quality.status.value == "complete"
     assert "additional financial data" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.5"
+    assert result.extraction.parser_version == "scmp-parser/0.1.6"
 
 
 def test_scmp_parser_drops_legacy_bookmark_control_icon():
@@ -19221,7 +19221,7 @@ def test_scmp_parser_drops_legacy_bookmark_control_icon():
         "bookmark-icon.png" in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "scmp-parser/0.1.5"
+    assert result.extraction.parser_version == "scmp-parser/0.1.6"
 
 
 @pytest.mark.parametrize(

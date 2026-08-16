@@ -2935,7 +2935,8 @@ def _scmp_apollo_body(soup: BeautifulSoup) -> Tag | None:
             except (json.JSONDecodeError, TypeError):
                 continue
             for key, node in _scmp_apollo_walk_items(payload):
-                if not str(key).startswith("body("):
+                key_text = str(key)
+                if not key_text.startswith("body("):
                     if key == "images" and isinstance(node, list):
                         apollo_images.extend(
                             item
@@ -2943,6 +2944,11 @@ def _scmp_apollo_body(soup: BeautifulSoup) -> Tag | None:
                             if isinstance(item, dict)
                             and _string_or_none(item.get("url"))
                         )
+                    elif re.search(r"\.images\.\d+$", key_text) and isinstance(
+                        node, dict
+                    ):
+                        if _string_or_none(node.get("url")):
+                            apollo_images.append(node)
                     continue
                 if isinstance(node, dict):
                     body_json = node.get("json")
