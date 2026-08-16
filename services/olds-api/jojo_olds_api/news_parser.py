@@ -12550,6 +12550,18 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
         text = _clean_text(
             paragraph.get_text(" ", strip=True)
         ).casefold()
+        if text == "coronavirus business update":
+            sibling = paragraph.find_next_sibling()
+            sibling_text = (
+                _clean_text(sibling.get_text(" ", strip=True)).casefold()
+                if isinstance(sibling, Tag)
+                else ""
+            )
+            if "coronavirus newsletter" in sibling_text:
+                paragraph.decompose()
+                if isinstance(sibling, Tag):
+                    sibling.decompose()
+                continue
         if (
             text.startswith("sign up to ")
             and "must-read weekly briefing" in text
