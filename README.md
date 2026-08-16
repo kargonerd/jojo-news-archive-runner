@@ -661,8 +661,9 @@ The temporary runner remains the active home while validation is in progress.
   anomalies, and zero prior/exclusion overlap. The current-parser `validation`
   baseline for 2023 has now reached 800/800 QA-passing rows with zero hard
   anomalies and two non-hard review candidates. Its fresh zero-overlap
-  `holdout-v1` currently has 265/800 eligible rows after excluding the 800-row
-  baseline; it remains source-limited while the Common Crawl catalog expands.
+  `holdout-v1` now has 472/800 eligible rows after excluding the 800-row
+  baseline, all 472 QA-passing with zero parser errors; it remains
+  source-limited while the Common Crawl catalog expands.
   The 2010--2015 source shard currently exposes fewer than 800 dated candidates
   per year; later years remain source-limited pending additional catalog
   coverage.
