@@ -123,7 +123,7 @@ The temporary runner remains the active home while validation is in progress.
   truncated; its regression fixture and the full 1,055-test suite pass. Fresh
   zero-overlap `holdout-v14` replays for 2016--2020 are required before any FT
   cell is counted as current-version convergence.
-- Axios's current parser is `axios-parser/0.1.24`, after fixes for partner
+- Axios's current parser is `axios-parser/0.1.25`, after fixes for partner
   financial-newsletter CTAs, short quote-card attributions, malformed URL
   aliases, legacy Draft.js `Read more` headings, and the historical
   ``Sign up for the New Axios Space newsletter`` CTA. The earlier `holdout-v16`
@@ -133,26 +133,18 @@ The temporary runner remains the active home while validation is in progress.
   (including list-item markup). The 2026 `holdout-v43` audit then found a
   punctuation-spaced `Subscribe to our YouTube .` variant; `axios-parser/0.1.24`
   removes that exact whitespace form and requires fresh zero-overlap replays.
-  Current-version `holdout-v64` (2018), `holdout-v63` (2024), `holdout-v57`
-  (2025), and `holdout-v52` (2026) have passed both gates with zero hard
-  anomalies. Fresh current-version `holdout-v115` through `holdout-v120` for
-  2017 and 2019--2023 are now running; 2016 remains source-limited.
-  The later current-parser `holdout-v63` 2024 replay has now formally
-  reconverged on `axios-parser/0.1.24`: 800 current evaluations, zero prior or
-  exclusion overlap, 800 audited complete rows, zero hard anomalies, and 982
-  selected images with no review candidates.
-  The fresh zero-overlap 2025 replay has also passed at 800/800 on the same
-  parser and QA revision, with 1,016 selected images and one non-hard review
-  candidate; 2016 is source-limited. Axios 2026 now formally reconverged on
-  `holdout-v52` at 800/800 with zero parser
-  errors, zero overlap, zero hard anomalies, and two non-hard review candidates;
-  the fresh current-parser `holdout-v57` 2025 replay also passed 800/800 with
-  zero hard anomalies and two non-hard review candidates; the remaining
-  eligible cells are still open. The fresh current-parser `holdout-v64` replay
-  for 2018 has now also passed both gates: 801 evaluated captures yielded 800
-  QA-passing complete rows, zero parser errors, zero prior/exclusion overlap,
-  zero hard content anomalies, and one non-hard review candidate on
-  `axios-parser/0.1.24`.
+  The current-parser `holdout-v115` 2017 content audit then exposed a legacy
+  Draft.js CTA whose linked ``here`` text was split as ``h ere``:
+  ``Subscribe to our newsletters here and check out our news stream here.``
+  `axios-parser/0.1.25` removes that exact normalized interface block with a
+  regression fixture. All prior `0.1.24` audits are now historical. Fresh
+  current-version `holdout-v121` through `holdout-v130` replays for 2017--2026
+  (excluding source-limited 2016) are being dispatched; 2016 remains
+  source-limited.
+  The superseded `0.1.24` replays for 2018, 2024, 2025, and 2026 had passed
+  both gates before this defect was found, but they are retained only as
+  historical evidence; the v121--v130 rotations must pass on `0.1.25` before
+  those years are counted again.
 - Caixin 2013 holdout-v1 has formally converged at 800/800 on
   `caixin-parser/0.1.9` with QA revision 1, zero prior-cohort overlap, zero
   hard content anomalies, and all 228 selected images preserved. The parser

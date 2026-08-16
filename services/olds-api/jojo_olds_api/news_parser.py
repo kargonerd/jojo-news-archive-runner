@@ -6871,6 +6871,11 @@ def _remove_axios_body_chrome(soup: BeautifulSoup) -> None:
             text_node.extract()
     for node in list(soup.select("p, li, h2, h3, h4, h5, h6")):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        # Older Axios Draft.js exports split the linked word ``here`` at the
+        # anchor boundary (``h`` + ``ere``).  This leaves a newsletter/site
+        # navigation CTA in the normalized prose unless the two forms are
+        # compared after repairing that presentation artifact.
+        compact_interface_text = re.sub(r"\bh\s+ere\b", "here", text)
         newsletter_signup = node.select_one(
             "a[href*='link.axios.com/join/'], a[href*='/newsletter-signup']"
         )
@@ -6904,7 +6909,10 @@ def _remove_axios_body_chrome(soup: BeautifulSoup) -> None:
             and " podcast" in text
         ) or re.fullmatch(
             r"subscribe to our youtube(?: channel)?\s*[.!]?", text
-        ):
+        ) or compact_interface_text in {
+            "subscribe to our newsletters here and check out our news stream here.",
+            "subscribe to our newsletters here and check out our news stream here",
+        }:
             node.decompose()
             continue
         if text not in {
