@@ -219,7 +219,10 @@ The temporary runner remains the active home while validation is in progress.
   `holdout-v19` audit then exposed a Space and Astronomy Calendar CTA in the
   2023 interactive. Fresh zero-overlap `holdout-v20` runs for 2016--2026 have
   now been dispatched on 0.8.73, and all earlier NYT evidence remains
-  historical until these audits pass.
+  historical until these audits pass. The 2021 v20 continuation reached 797
+  complete rows but its final rotation audit found one missing historical
+  exclusion entry, so it is not convergence evidence; a fresh zero-overlap
+  `holdout-v22` replay for 2021 is now running.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, and all 800 extraction statuses complete with zero
