@@ -515,11 +515,16 @@ The temporary runner remains the active home while validation is in progress.
   content anomalies, and two non-hard review candidates each. The 2014
   replay (`holdout-v106`) has now also formally passed at 854 current-version
   evaluations, 800 audited complete rows, zero prior/exclusion overlap, zero
-  hard content anomalies, and two non-hard review candidates. The 2015
-  replay exhausted its disjoint source pool at 453 QA-passing rows with three
-  terminal capture errors and is source-limited; 2023 is continuing because a
-  small number of residual source candidates remain. The other current-version
-  cells are still running or source-limited.
+  hard content anomalies, and two non-hard review candidates. The 2015 replay
+  exhausted its disjoint source pool at 453 QA-passing rows with three terminal
+  capture errors and is source-limited. The 2026 replay exhausted its available
+  pool at 40 evaluated/QA-passing rows, while 2010 reached 350
+  evaluated/QA-passing rows; both are source-limited rather than parser
+  failures. The 2021 replay captured 30 pages, all screened as non-article desk
+  content, and is likewise source-limited. NPR 2013 and 2023 are continuing
+  while fresh Common Crawl supplemental catalogs are being built; the existing
+  Wayback-only 2023 batch has 86 screened non-articles and no evaluated article
+  rows. The other current-version cells are still running or source-limited.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
