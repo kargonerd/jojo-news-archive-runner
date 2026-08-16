@@ -165,6 +165,18 @@ def test_content_audit_failure_is_persisted_but_blocks_chaining() -> None:
     assert "steps.content_audit.outcome != 'failure'" in dispatch
 
 
+def test_superseded_holdout_cannot_auto_continue_while_newer_cohort_runs() -> None:
+    workflow = _workflow_text()
+
+    assert "Guard superseded holdout continuation" in workflow
+    assert "gh run list" in workflow
+    assert "newer active cohort" in workflow
+    dispatch = workflow[
+        workflow.index("Dispatch next validation batch") :
+    ]
+    assert "steps.cohort_freshness.outputs.current == 'true'" in dispatch
+
+
 def test_accelerator_enables_archive_fallbacks_for_ft_wsj_and_nikkei() -> None:
     workflow = _workflow_text()
 

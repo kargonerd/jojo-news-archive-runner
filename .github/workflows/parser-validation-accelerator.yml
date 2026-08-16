@@ -1358,6 +1358,61 @@ jobs:
             echo "$configured_version (current is $current_version)."
           fi
 
+      - name: Guard superseded holdout continuation
+        id: cohort_freshness
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            hashFiles('.archive-work/**/raw/capture.sqlite3') != ''
+          }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "current=true" >> "$GITHUB_OUTPUT"
+          if [[ ! "$COHORT" =~ ^holdout-v([1-9][0-9]*)$ ]]; then
+            exit 0
+          fi
+          cohort_number="${BASH_REMATCH[1]}"
+          newer_active="$(
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow parser-validation-accelerator.yml \
+              --branch "$GITHUB_REF_NAME" \
+              --limit 100 \
+              --json displayTitle,status \
+            | jq -r \
+                --arg publisher "$PUBLISHER" \
+                --arg year "$SAMPLE_YEAR" \
+                --argjson current "$cohort_number" \
+                '
+                  .[]
+                  | select(
+                      .status == "in_progress" or
+                      .status == "queued" or
+                      .status == "waiting" or
+                      .status == "pending" or
+                      .status == "requested"
+                    )
+                  | .displayTitle
+                  | capture("^parser-holdout-v(?<number>[0-9]+)-(?<publisher>[a-z0-9-]+)-(?<year>[0-9]{4})$")
+                  | select(
+                      .publisher == $publisher and
+                      .year == $year and
+                      (.number | tonumber) > $current
+                    )
+                  | .number
+                ' \
+            | head -n 1
+          )"
+          if [ -n "$newer_active" ]; then
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping auto-continuation for superseded holdout "
+            echo "$COHORT; newer active cohort holdout-v${newer_active} exists for "
+            echo "$PUBLISHER/$SAMPLE_YEAR."
+          fi
+
       - name: Dispatch next validation batch
         if: >-
           ${{
@@ -1366,6 +1421,7 @@ jobs:
             steps.rotation_readiness.outputs.validation_target_reached != 'true' &&
             steps.content_audit.outcome != 'failure' &&
             steps.parser_freshness.outputs.current == 'true' &&
+            steps.cohort_freshness.outputs.current == 'true' &&
             (
               !startsWith(inputs.cohort, 'holdout-v') ||
               steps.rotation_readiness.outputs.validation_ready != 'true' ||
