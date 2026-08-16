@@ -412,9 +412,9 @@ The temporary runner remains the active home while validation is in progress.
   their raw captures. A sampled 2016 capture then exposed a second parser
   defect: legacy Vue pages can retain the full article only in
   `window.__APOLLO_STATE__`, while the DOM article node is empty.
-  `scmp-parser/0.1.5` now renders that structured body and restores its
+  `scmp-parser/0.1.6` now renders that structured body and restores its
   Apollo inline images (with ads and related chrome excluded), and fresh
-  zero-overlap `holdout-v5` replays for 2016--2022 are dispatched against it.
+  zero-overlap `holdout-v6` replays for 2016--2022 are dispatched against it.
   The 2010--2015 source shard currently exposes
   fewer than 800 dated candidates per year, and 2023+ remains source-limited
   pending additional catalog coverage.
