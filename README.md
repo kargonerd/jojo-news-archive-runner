@@ -103,7 +103,7 @@ The temporary runner remains the active home while validation is in progress.
   chrome, a flattened JSON-LD related-story tail, dead expander/video
   controls, an AMP ``Read more`` link group, and FT brand favicons and v3
   open-graph branding found during partial content audits.
-- Axios's current parser is `axios-parser/0.1.22`, after fixes for partner
+- Axios's current parser is `axios-parser/0.1.23`, after fixes for partner
   financial-newsletter CTAs, short quote-card attributions, malformed URL
   aliases, legacy Draft.js `Read more` headings, and the historical
   ``Sign up for the New Axios Space newsletter`` CTA. The B2 summaries show a
@@ -114,9 +114,11 @@ The temporary runner remains the active home while validation is in progress.
   v12 rotations were stopped. The v13 rotations exposed the newsletter CTA
   in the 2019 audit, plus a standalone YouTube subscription CTA found in the
   2026 audit (including list-item markup); fresh zero-overlap `holdout-v16`
-  runs for 2016--2026 have now been dispatched on 0.1.23, and their per-year
-  800-sample audits must finish
-  before Axios is marked converged.
+  runs for 2017--2026 have now been dispatched on 0.1.23. Years 2017--2023
+  and 2026 have passed the 800-sample content and rotation audits with zero
+  hard anomalies; 2024 and 2025 are still capturing toward 800, and 2016 is
+  source-limited. Axios remains open until the remaining eligible cells are
+  resolved.
 - Caixin 2013 holdout-v1 has formally converged at 800/800 on
   `caixin-parser/0.1.9` with QA revision 1, zero prior-cohort overlap, zero
   hard content anomalies, and all 228 selected images preserved. The parser
