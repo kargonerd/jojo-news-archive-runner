@@ -565,12 +565,13 @@ The temporary runner remains the active home while validation is in progress.
   and `holdout-v50` (2019) also passed the same gates on `.25` at 800/800, with
   one and two non-hard review candidates respectively. Other Reuters years are
   being scheduled against their separate historical source windows. The current
-  `reuters-parser/0.7.26` removes a new social-channel CTA found in the 2022
+  `reuters-parser/0.7.27` removes a new social-channel CTA and statbox input
+  control found in the 2022
   audit; fresh zero-overlap replays for the previously passing years are now
   running against `.26`. The 2022
   `holdout-v54` audit exposed a social-channel CTA (`YouTube`, Telegram, and
-  WhatsApp); the fresh `holdout-v59` 2022 replay is the required current-version
-  check.
+  WhatsApp); the fresh `holdout-v59` 2022 replay then exposed the input control,
+  so `.27` requires another fresh zero-overlap 2022 replay.
 - TODO: migrate the runner, workflows, secrets documentation, and open
   validation history to the public
   [`kargonerd/jojokanbao`](https://github.com/kargonerd/jojokanbao) repository.

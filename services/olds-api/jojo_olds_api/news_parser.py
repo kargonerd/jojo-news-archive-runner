@@ -11811,6 +11811,10 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
 
 def _remove_reuters_promos(soup: BeautifulSoup) -> None:
     """Remove Reuters registration UI and licensed-partner subscription tails."""
+    # Reuters statbox/live-score templates occasionally leave a form control
+    # inside the article body. It is interface chrome, not editorial content.
+    for node in list(soup.select("input")):
+        node.decompose()
     for node in list(
         soup.select(
             ".rich-share, [data-testid='rich-share'], "
