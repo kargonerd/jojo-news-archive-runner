@@ -135,6 +135,10 @@ The temporary runner remains the active home while validation is in progress.
   and 2026 have passed the 800-sample content and rotation audits with zero
   hard anomalies; the fresh zero-overlap 2024 replay is 800/800 complete on
   QA revision 4, with 978 selected images and two non-hard review candidates.
+  The later current-parser `holdout-v63` 2024 replay has now formally
+  reconverged on `axios-parser/0.1.24`: 800 current evaluations, zero prior or
+  exclusion overlap, 800 audited complete rows, zero hard anomalies, and 982
+  selected images with no review candidates.
   The fresh zero-overlap 2025 replay has also passed at 800/800 on the same
   parser and QA revision, with 1,016 selected images and one non-hard review
   candidate; 2016 is source-limited. Axios 2026 now formally reconverged on
