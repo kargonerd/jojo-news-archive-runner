@@ -11709,6 +11709,7 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         re.compile(r"^_{2,}$"),
         re.compile(r"(?i)^read more:?$"),
         re.compile(r"(?i)^related$"),
+        re.compile(r"(?i)^next:\s+.+$"),
         re.compile(
             r"(?i)^\[?\s*(?:enjoying this article\?\s*)?"
             r"sign up for (?:our|the) .*newsletter\b"
@@ -11763,7 +11764,9 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
             r"(?i)^follow the @readercenter on twitter for more coverage\b"
         ),
     )
-    for node in list(soup.select("p, li, span")):
+    for node in list(
+        soup.select("p, li, span, em, h1, h2, h3, h4, h5, h6")
+    ):
         text = _clean_text(node.get_text(" ", strip=True))
         if any(pattern.search(text) for pattern in patterns):
             node.decompose()
