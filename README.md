@@ -351,7 +351,11 @@ The temporary runner remains the active home while validation is in progress.
   2018, and 2021 on `ap-parser/0.6.25`: each reached 800/800 QA with zero
   parser errors, overlaps, or hard content anomalies; their audits retained
   12, 57, and 496 selected images respectively (one, one, and two non-hard
-  review candidates).
+  review candidates). AP 2025's completed content audit also records the
+  current `holdout-v56` as formally converged on `ap-parser/0.6.25`: 800/800
+  QA-passing rows, zero parser errors, zero prior/exclusion overlap, zero hard
+  content anomalies, all 800 extraction statuses complete, and 1,884 selected
+  images (two non-hard review candidates).
   AP 2013--2016 have also passed fresh `holdout-v4` on `ap-parser/0.6.25`:
   each reached 800/800 with zero parser errors, overlaps, or hard content
   anomalies, retaining 32, 46, 53, and 19 selected images respectively.
