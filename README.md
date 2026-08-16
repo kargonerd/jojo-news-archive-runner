@@ -349,7 +349,10 @@ The temporary runner remains the active home while validation is in progress.
   so that year was reissued as `holdout-v24` rather than treated as a parser result.
   QA revision 1 now also screens unrecoverable short NPR audio shells from the
   text-article denominator while retaining their raw captures; the affected
-  v23 years are being replayed against that policy.
+  v23 years are being replayed against that policy. Because the v23 2018 plan
+  exhausted at 442 accepted rows, a fresh `holdout-v24` 2018 rotation and a
+  `holdout-v25` 2019 rotation are now dispatched to obtain independent 800-row
+  cohorts from the remaining Wayback candidates.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
