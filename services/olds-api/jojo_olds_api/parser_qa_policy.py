@@ -11,9 +11,10 @@ _QA_POLICY_REVISIONS = {
     "aljazeera": 2,
     "axios": 4,
     "caixin": 1,
-    # SCMP access shells have no recoverable body; retain raw records but
-    # exclude them from article QA denominators.
-    "scmp": 2,
+    # SCMP access shells and image-only slideshow packages have no
+    # recoverable article body; retain raw records but exclude them from
+    # article QA denominators.
+    "scmp": 3,
     # Exclude legacy NYT admin-package pages whose archive snapshot contains
     # only a teaser and no recoverable article body.
     "nyt": 2,

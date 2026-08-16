@@ -1338,12 +1338,24 @@ def record_parser_validation(
                 or article.quality.body_characters < 100
             )
         ):
+            # Newsletter/image packages can be archived as valid Apollo
+            # metadata with a slideshow cover and no prose body. They use
+            # normal ``/news/article/`` URLs, so URL-only screening misses
+            # them; the Apollo marker is the reliable media-only signal.
+            apollo_media_only = bool(
+                re.search(
+                    rb"\"displaySlideShow\"\s*:\s*true",
+                    html_bytes,
+                    re.IGNORECASE,
+                )
+            )
             if (
                 "/infographics/" in capture.canonical_url.casefold()
                 or re.search(
                     r"(?:^|[-/])gallery(?:$|[-/?])",
                     capture.canonical_url.casefold(),
                 )
+                or apollo_media_only
             ):
                 issues.append("nonarticle-desk")
             else:

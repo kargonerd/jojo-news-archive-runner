@@ -2733,7 +2733,7 @@ def test_scmp_access_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.6', 2, 'now')
+        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.6', 3, 'now')
         """
     )
     connection.execute(
@@ -2800,7 +2800,7 @@ def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2016, 2, 'test', 'scmp-parser/0.1.6', 2, 'now')
+        ) VALUES (2016, 2, 'test', 'scmp-parser/0.1.6', 3, 'now')
         """
     )
     for url in urls:
@@ -2845,6 +2845,71 @@ def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
     summary = parser_validation_summary(connection)
     assert summary["years"]["2016"]["evaluated"] == 0
     assert summary["years"]["2016"]["screenedNonArticles"] == 2
+
+
+def test_scmp_apollo_image_only_slideshow_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.scmp.com/news/article/3116952/"
+        "why-chinas-gen-z-are-touching-fish-elderly-influencers-and-more"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2021, 1, 'test', 'scmp-parser/0.1.6', 3, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2021, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Why China's Gen Z are touching fish">
+      <meta property="article:published_time" content="2021-01-08T00:00:00Z">
+      <script>window.__APOLLO_STATE__={"displaySlideShow":true};</script>
+    </head><body><article><h1>Why China's Gen Z are touching fish</h1>
+      <p><img src="https://cdn.i-scmp.com/cover.jpg"></p>
+    </article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="scmp:" + ("m" * 64),
+        publisher="scmp",
+        canonical_url=canonical_url,
+        published_at=datetime(2021, 1, 8, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20210109000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2021"]["evaluated"] == 0
+    assert summary["years"]["2021"]["screenedNonArticles"] == 1
 
 
 def test_npr_short_audio_shell_is_excluded_from_article_cohort(
