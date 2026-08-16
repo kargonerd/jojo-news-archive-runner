@@ -7868,6 +7868,10 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
         ) or re.fullmatch(
             r"subscribe to the life kit newsletter\b.*",
             text,
+        ) or (
+            text.startswith("sign up for our ")
+            and " newsletter" in text
+            and "share it with a friend" in text
         ):
             node.decompose()
     for container in list(soup.select(".container")):
