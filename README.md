@@ -198,14 +198,16 @@ The temporary runner remains the active home while validation is in progress.
   prior/exclusion overlap, all 800 extraction statuses complete, and zero hard
   content anomalies. The audit retained 1,852 selected images and left two
   non-hard review candidates.
-  The current parser is now `nyt-parser/0.8.68`: it filters legacy
+  The current parser is now `nyt-parser/0.8.69`: it filters legacy
   newsgraphics sprite sheets (including the GIF flag sprite found in the 2016
   audit) and standalone `Related` recirculation markers,
   chooses the substantive body when a modern interactive contains a short
   results panel before the main prose, and removes flattened Campaign Reporter
-  newsletter CTAs. Old 0.8.65/0.8.66 replays were stopped; fresh zero-overlap
-  `holdout-v15` runs for 2016--2026 are dispatched, and all earlier NYT evidence
-  remains historical until these audits pass.
+  and Climate Forward newsletter subscription CTAs. The 0.8.68 `holdout-v15`
+  replay exposed the latter CTA in a 2025 article; that batch was stopped
+  after preserving its failure evidence. Fresh zero-overlap `holdout-v16` runs
+  for 2016--2026 are dispatched on 0.8.69, and all earlier NYT evidence remains
+  historical until these audits pass.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, and all 800 extraction statuses complete with zero
