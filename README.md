@@ -394,7 +394,7 @@ The temporary runner remains the active home while validation is in progress.
   2016 audit has 798 complete and 2 partial rows; 2023 has 799 complete and
   1 partial row, while the other years have 800 complete rows. Earlier
   pre-0.1.5 evidence remains historical.
-- NPR's current parser is now `npr-parser/0.1.44`. The v0.1.31/v0.1.32
+- NPR's current parser is now `npr-parser/0.1.45`. The v0.1.31/v0.1.32
   replays exposed legacy podcast, subscription-network, and newsletter CTAs;
   later audits also exposed long podcast/challenge CTAs and legacy `Read more`
   links. The parser removes all of these with regression fixtures. Fresh
@@ -445,6 +445,10 @@ The temporary runner remains the active home while validation is in progress.
   2026 replay now formally converged at 801/801 QA-passing complete rows, zero
   parser errors, zero prior/exclusion overlap, zero hard content anomalies,
   and two non-hard review candidates.
+  The current-parser `holdout-v65` 2025 audit then exposed a Dry January
+  newsletter CTA. `npr-parser/0.1.45` removes that exact interface block; a
+  fresh zero-overlap 2025 replay is required before that year can converge on
+  the current parser.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
