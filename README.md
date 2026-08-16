@@ -112,7 +112,7 @@ The temporary runner remains the active home while validation is in progress.
   chrome, a flattened JSON-LD related-story tail, dead expander/video
   controls, an AMP ``Read more`` link group, and FT brand favicons and v3
   open-graph branding found during partial content audits.
-- Axios's current parser is `axios-parser/0.1.23`, after fixes for partner
+- Axios's current parser is `axios-parser/0.1.24`, after fixes for partner
   financial-newsletter CTAs, short quote-card attributions, malformed URL
   aliases, legacy Draft.js `Read more` headings, and the historical
   ``Sign up for the New Axios Space newsletter`` CTA. The B2 summaries show a
@@ -123,7 +123,10 @@ The temporary runner remains the active home while validation is in progress.
   v12 rotations were stopped. The v13 rotations exposed the newsletter CTA
   in the 2019 audit, plus a standalone YouTube subscription CTA found in the
   2026 audit (including list-item markup); fresh zero-overlap `holdout-v16`
-  runs for 2017--2026 have now been dispatched on 0.1.23. Years 2017--2024
+  runs for 2017--2026 were dispatched on 0.1.23. The 2026 `holdout-v43`
+  audit then found a punctuation-spaced `Subscribe to our YouTube .` variant;
+  `axios-parser/0.1.24` removes that exact whitespace form and requires a fresh
+  zero-overlap replay. Years 2017--2024
   and 2026 have passed the 800-sample content and rotation audits with zero
   hard anomalies; the fresh zero-overlap 2024 replay is 800/800 complete on
   QA revision 4, with 978 selected images and two non-hard review candidates.
