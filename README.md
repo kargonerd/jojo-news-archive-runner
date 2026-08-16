@@ -455,6 +455,10 @@ The temporary runner remains the active home while validation is in progress.
   the manifest contained 12,406 rows but only seven residual incomplete
   candidates and zero source matches were available for replay. The chain was
   stopped without counting it as parser convergence.
+  The current-parser `holdout-v78` probe for 2022 likewise found only 11
+  previously evaluated rows and one residual incomplete candidate with zero
+  source matches; it terminated as source-limited rather than producing a
+  false convergence result.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
