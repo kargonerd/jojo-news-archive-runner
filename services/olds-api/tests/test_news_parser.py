@@ -19123,7 +19123,7 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.4"
+    assert result.extraction.parser_version == "scmp-parser/0.1.5"
 
 
 def test_scmp_parser_recovers_vue_apollo_article_body():
@@ -19134,7 +19134,8 @@ def test_scmp_parser_recovers_vue_apollo_article_body():
           <meta property="article:published_time" content="2016-02-21T18:23:42+08:00">
           <script type="application/ld+json">
             {"@type":"NewsArticle","headline":"Apollo SCMP report",
-             "datePublished":"2016-02-21T18:23:42+08:00"}
+             "datePublished":"2016-02-21T18:23:42+08:00",
+             "image":"https://cdn1.i-scmp.com/cover.jpg"}
           </script>
         </head><body><main><article></article></main>
         <script>window.__APOLLO_STATE__={"contentService":{
@@ -19142,7 +19143,11 @@ def test_scmp_parser_recovers_vue_apollo_article_body():
             {"type":"p","children":[{"type":"text","data":"The complete report is stored in Apollo state."}]},
             {"type":"ad"},
             {"type":"p","children":[{"type":"text","data":"A second paragraph preserves the original reporting context and factual detail."}]}
-          ]}
+          ]},
+          "images":[
+            {"url":"https://cdn1.i-scmp.com/cover.jpg","title":"<p/>"},
+            {"url":"https://cdn1.i-scmp.com/inline.jpg","title":"Photo: Example"}
+          ]
         }};</script></body></html>
         """,
         publisher="scmp",
@@ -19153,7 +19158,11 @@ def test_scmp_parser_recovers_vue_apollo_article_body():
     assert "stored in Apollo state" in result.plain_text
     assert "original reporting context" in result.plain_text
     assert 'data-jojo-source="scmp-apollo-body"' in result.body_html
-    assert result.extraction.parser_version == "scmp-parser/0.1.4"
+    assert [image.original_url for image in result.images] == [
+        "https://cdn1.i-scmp.com/cover.jpg",
+        "https://cdn1.i-scmp.com/inline.jpg",
+    ]
+    assert result.extraction.parser_version == "scmp-parser/0.1.5"
 
 
 def test_scmp_legacy_drupal_pane_content_is_the_article_body():
@@ -19185,7 +19194,7 @@ def test_scmp_legacy_drupal_pane_content_is_the_article_body():
 
     assert result.quality.status.value == "complete"
     assert "additional financial data" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.4"
+    assert result.extraction.parser_version == "scmp-parser/0.1.5"
 
 
 def test_scmp_parser_drops_legacy_bookmark_control_icon():
@@ -19212,7 +19221,7 @@ def test_scmp_parser_drops_legacy_bookmark_control_icon():
         "bookmark-icon.png" in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "scmp-parser/0.1.4"
+    assert result.extraction.parser_version == "scmp-parser/0.1.5"
 
 
 @pytest.mark.parametrize(

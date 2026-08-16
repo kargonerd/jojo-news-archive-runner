@@ -2921,6 +2921,7 @@ def _scmp_apollo_body(soup: BeautifulSoup) -> Tag | None:
 
     decoder = json.JSONDecoder()
     body_arrays: list[list[Any]] = []
+    apollo_images: list[dict[str, Any]] = []
     for script in soup.find_all("script"):
         value = script.string or script.get_text()
         if "__APOLLO_STATE__" not in value or "body(" not in value:
@@ -2935,12 +2936,18 @@ def _scmp_apollo_body(soup: BeautifulSoup) -> Tag | None:
                 continue
             for key, node in _scmp_apollo_walk_items(payload):
                 if not str(key).startswith("body("):
+                    if key == "images" and isinstance(node, list):
+                        apollo_images.extend(
+                            item
+                            for item in node
+                            if isinstance(item, dict)
+                            and _string_or_none(item.get("url"))
+                        )
                     continue
-                if not isinstance(node, dict):
-                    continue
-                body_json = node.get("json")
-                if isinstance(body_json, list):
-                    body_arrays.append(body_json)
+                if isinstance(node, dict):
+                    body_json = node.get("json")
+                    if isinstance(body_json, list):
+                        body_arrays.append(body_json)
     if not body_arrays:
         return None
 
@@ -3007,6 +3014,33 @@ def _scmp_apollo_body(soup: BeautifulSoup) -> Tag | None:
     for body_json in body_arrays:
         for node in body_json:
             append_value(article, node)
+    # SCMP's Apollo body tree often omits inline photos even though the
+    # article object retains them in its direct ``images`` list. The first
+    # image is the cover (already recovered from JSON-LD/OG metadata); append
+    # subsequent editorial images with their titles so they remain available
+    # to the normalized article/image-selection pipeline.
+    seen_images: set[str] = set()
+    for item in apollo_images[1:]:
+        source = _string_or_none(item.get("url"))
+        if not source:
+            continue
+        identity = _image_identity(source)
+        if identity in seen_images:
+            continue
+        seen_images.add(identity)
+        figure = document.new_tag("figure")
+        figure.append(document.new_tag("img", src=source))
+        title = _string_or_none(item.get("title"))
+        caption = (
+            _clean_text(BeautifulSoup(title, "html.parser").get_text(" ", strip=True))
+            if title
+            else None
+        )
+        if caption:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = caption
+            figure.append(figcaption)
+        article.append(figure)
     return article if article.get_text(" ", strip=True) or article.find("img") else None
 
 
