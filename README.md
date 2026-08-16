@@ -135,7 +135,7 @@ The temporary runner remains the active home while validation is in progress.
   removes that exact whitespace form and requires fresh zero-overlap replays.
   Current-version `holdout-v64` (2018), `holdout-v63` (2024), `holdout-v57`
   (2025), and `holdout-v52` (2026) have passed both gates with zero hard
-  anomalies. Fresh current-version `holdout-v109` through `holdout-v114` for
+  anomalies. Fresh current-version `holdout-v115` through `holdout-v120` for
   2017 and 2019--2023 are now running; 2016 remains source-limited.
   The later current-parser `holdout-v63` 2024 replay has now formally
   reconverged on `axios-parser/0.1.24`: 800 current evaluations, zero prior or
