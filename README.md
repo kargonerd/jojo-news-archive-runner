@@ -559,10 +559,10 @@ The temporary runner remains the active home while validation is in progress.
 - Reuters 2020 has now formally converged on `reuters-parser/0.7.25` with a
   fresh zero-overlap `holdout-v42`: 800/800 QA-passing and complete rows, zero
   parser errors, zero prior/exclusion overlap, zero hard content anomalies,
-  and two non-hard review candidates. A separate zero-overlap `holdout-v50`
-  for 2019 has also passed the same gates at 800/800, with two non-hard review
-  candidates. Other Reuters years are being scheduled against their separate
-  historical source windows.
+  and two non-hard review candidates. Separate zero-overlap `holdout-v49` (2016)
+  and `holdout-v50` (2019) have also passed the same gates at 800/800, with
+  one and two non-hard review candidates respectively. Other Reuters years are
+  being scheduled against their separate historical source windows.
 - TODO: migrate the runner, workflows, secrets documentation, and open
   validation history to the public
   [`kargonerd/jojokanbao`](https://github.com/kargonerd/jojokanbao) repository.
