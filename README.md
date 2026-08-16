@@ -507,9 +507,13 @@ The temporary runner remains the active home while validation is in progress.
   now formally passed: 808 and 806 current-version evaluations respectively,
   zero prior/exclusion overlap, 800 audited complete rows each, zero hard
   content anomalies, and two non-hard review candidates each. The 2014
-  replay has reached its 800-row parser-validation target and is awaiting the
-  final audit upload; the other current-version cells are still running or
-  source-limited.
+  replay (`holdout-v106`) has now also formally passed at 854 current-version
+  evaluations, 800 audited complete rows, zero prior/exclusion overlap, zero
+  hard content anomalies, and two non-hard review candidates. The 2015
+  replay exhausted its disjoint source pool at 453 QA-passing rows with three
+  terminal capture errors and is source-limited; 2023 is continuing because a
+  small number of residual source candidates remain. The other current-version
+  cells are still running or source-limited.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
