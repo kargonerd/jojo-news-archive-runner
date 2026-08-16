@@ -1334,11 +1334,14 @@ jobs:
           from jojo_olds_api.publisher_specs import publisher_spec
 
           connection = sqlite3.connect(sys.argv[1])
-          row = connection.execute(
-              "SELECT parser_version FROM parser_validation_config "
-              "WHERE sample_year = ?",
-              (int(sys.argv[3]),),
-          ).fetchone()
+          try:
+              row = connection.execute(
+                  "SELECT parser_version FROM parser_validation_config "
+                  "WHERE sample_year = ?",
+                  (int(sys.argv[3]),),
+              ).fetchone()
+          except sqlite3.OperationalError:
+              row = None
           configured = str(row[0]) if row and row[0] else ""
           current = publisher_spec(sys.argv[2]).parser_version
           print(f"{configured}\t{current}")
