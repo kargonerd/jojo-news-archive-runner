@@ -276,6 +276,9 @@ The temporary runner remains the active home while validation is in progress.
   The current-parser `holdout-v20` replay for NYT 2025 has also passed both
   gates at 800 audited rows, with zero hard anomalies, zero overlap, and no
   missing historical exclusions.
+  The current-parser `holdout-v20` replay for NYT 2020 has now also passed
+  both gates: 800/800 QA-passing complete rows, zero parser errors, zero hard
+  anomalies, two non-hard review candidates, and zero prior/exclusion overlap.
   NYT 2018 has now completed the fresh zero-overlap `holdout-v11` on
   `nyt-parser/0.8.64`: 800/800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, and all 800 extraction statuses complete with zero
