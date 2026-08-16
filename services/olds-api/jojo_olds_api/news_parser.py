@@ -7738,6 +7738,16 @@ def _npr_non_editorial_image_url(url: str) -> bool:
         or "/include/images/facebook-default-wide" in path
         or "/chrome/news/video_generic_" in path
         or "/music/calendar/concert_calendar_" in path
+        # Life Kit playlist artwork is a product/UI icon, not an image from
+        # the story itself.  NPR occasionally exposes it through the article
+        # image metadata (for example the 2024 "Boring Phone" story), where
+        # the generic asset filters above cannot distinguish it from editorial
+        # photography.
+        or (
+            "lifekit" in path
+            and "playlist" in path
+            and "icon" in path
+        )
     )
 
 
