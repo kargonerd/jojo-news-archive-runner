@@ -407,9 +407,14 @@ The temporary runner remains the active home while validation is in progress.
   access shells such as `READ FULL ARTICLE` with no recoverable body. The next
   audit also identified image-only `/infographics/` and `-gallery` pages; QA
   revision 2 screens all three source-limited non-article forms while retaining
-  their raw captures. Fresh `holdout-v3` replays for 2016--2022 are dispatched
-  on the unchanged 0.1.3 parser; the old `holdout-v4` path remains historical
-  0.1.2 evidence.
+  their raw captures. A sampled 2016 capture then exposed a second parser
+  defect: legacy Vue pages can retain the full article only in
+  `window.__APOLLO_STATE__`, while the DOM article node is empty.
+  `scmp-parser/0.1.4` now renders that structured body (with ads and related
+  chrome excluded), and fresh zero-overlap `holdout-v4` replays for 2016--2022
+  are dispatched against it. The 2010--2015 source shard currently exposes
+  fewer than 800 dated candidates per year, and 2023+ remains source-limited
+  pending additional catalog coverage.
 - Nikkei's first 2017 validation reached 800 QA rows but its content audit
   found three embedded `form`/`input`/`button` controls. The parser now removes
   those site-wide controls as `nikkei-parser/0.1.7`; the fresh zero-overlap
