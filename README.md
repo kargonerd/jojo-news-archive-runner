@@ -407,11 +407,11 @@ The temporary runner remains the active home while validation is in progress.
   `nikkei-parser/0.1.7` zero-overlap `holdout-v3` runs are dispatched for
   2012--2019; 2020 has only two dated candidates and 2021--2026 have none,
   so those cells are source-limited rather than parser failures. The current
-  v3 audits for 2017--2019 have now formally passed 800/800 with zero hard
-  anomalies; the 2012--2016 runs remain capture-source limited despite their
-  catalog candidate counts. Lianhe Zaobao
-  current-version 2016, 2018--2024 have now passed their 800-row content
-  audits; 2017 and 2025--2026 remain in progress or source-limited.
+  v3 audits for 2016--2019 have now formally passed 800/800 with zero hard
+  anomalies; the 2012--2015 runs remain capture-source limited despite their
+  catalog candidate counts. Lianhe Zaobao's current-version `holdout-v5`
+  audits now cover every 2016--2026 year at 800 QA-passing rows with zero hard
+  anomalies and zero overlap.
 - Lianhe Zaobao's 2017 validation exposed four genuine short news briefs and
   embedded site controls in earlier parser versions. `zaobao-parser/0.1.5`
   addressed those cases, while a current holdout replay then exposed legacy
