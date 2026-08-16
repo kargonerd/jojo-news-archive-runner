@@ -538,6 +538,9 @@ The temporary runner remains the active home while validation is in progress.
   anomalies. The fresh `holdout-v5` audits for 2019--2024 also reached 800
   complete rows with zero hard anomalies; the remaining cells continue
   running or are source-limited.
+  The current-parser `holdout-v58` replay for 2025 has now also passed both
+  gates at 800/800 complete rows, zero overlap, zero hard anomalies, and eight
+  non-hard review candidates.
 - SCMP 2017's first validation probe was source-limited: the current Wayback
   URL-key shard initially exposed only 32 candidates, and all captured pages
   identified as 1995 articles rather than 2017 publications. The Common Crawl
