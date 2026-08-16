@@ -568,7 +568,7 @@ The temporary runner remains the active home while validation is in progress.
   and two non-hard review candidates. Separate zero-overlap `holdout-v49` (2016)
   and `holdout-v50` (2019) also passed the same gates on `.25` at 800/800, with
   one and two non-hard review candidates respectively. Other Reuters years are
-  being scheduled against their separate historical source windows. The current
+  being scheduled against their separate historical source windows. Current
   `reuters-parser/0.7.27` removes a new social-channel CTA and statbox input
   control found in the 2022
   audit; fresh zero-overlap replays for the previously passing years are now
@@ -576,6 +576,10 @@ The temporary runner remains the active home while validation is in progress.
   `holdout-v54` audit exposed a social-channel CTA (`YouTube`, Telegram, and
   WhatsApp); the fresh `holdout-v59` 2022 replay then exposed the input control,
   so `.27` requires another fresh zero-overlap 2022 replay.
+  That `.27` replay (`holdout-v68`) now passes 800/800 with zero parser errors,
+  zero overlap, zero hard anomalies, and three non-hard review candidates;
+  `.27` replays for 2019 (`holdout-v70`) and 2020 (`holdout-v71`) also pass
+  800/800 with zero hard anomalies.
 - TODO: migrate the runner, workflows, secrets documentation, and open
   validation history to the public
   [`kargonerd/jojokanbao`](https://github.com/kargonerd/jojokanbao) repository.
