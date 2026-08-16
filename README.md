@@ -488,7 +488,10 @@ The temporary runner remains the active home while validation is in progress.
   2023, and 2025 respectively. The source-capable older cells 2010 and
   2013--2015 are also dispatched as `holdout-v96` through `holdout-v99`; the
   `.0.1.46` passes remain historical until these current-version replays pass
-  both gates.
+  both gates. The `.0.1.47` 2021 replay (`holdout-v89`) exhausted its
+  zero-overlap pool at 163 evaluated/QA-passing rows with no actionable source
+  candidates, so that cell is now explicitly source-limited rather than being
+  counted as parser convergence.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
