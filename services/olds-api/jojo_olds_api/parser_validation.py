@@ -1240,15 +1240,14 @@ def record_parser_validation(
             archive_source_spec(capture.publisher),
             capture.canonical_url,
         )
-        if embedded_year is not None or article.published_at is not None:
-            # A stable year encoded in the canonical URL is authoritative for
-            # archives whose mutable interactive pages expose a later update
-            # timestamp as datePublished.
-            sample_year = (
-                embedded_year
-                if embedded_year is not None
-                else article.published_at.year
-            )
+        if embedded_year is not None:
+            # The validation cohort is assigned from the source catalog's
+            # publication year.  A parser-visible ``datePublished`` can be
+            # stale (or reflect a later/earlier update) and must not move a
+            # sample into another year's target.  Only a stable year encoded
+            # in the canonical URL is authoritative enough to repair a
+            # misplaced catalog row.
+            sample_year = embedded_year
             values["sample_year"] = sample_year
             if sample_year != planned_year:
                 connection.execute(

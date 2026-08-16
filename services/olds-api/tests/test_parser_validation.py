@@ -3508,7 +3508,7 @@ def test_validation_accepts_wsj_business_wire_source_attribution(
     assert summary["years"]["2020"]["issueCounts"] == {}
 
 
-def test_validation_uses_parsed_publication_year_not_capture_year(
+def test_validation_keeps_catalog_year_when_parsed_publication_year_differs(
     tmp_path: Path,
 ):
     connection = _state_with_years(tmp_path)
@@ -3574,8 +3574,8 @@ def test_validation_uses_parsed_publication_year_not_capture_year(
     ).fetchone()[0]
 
     assert result["plannedYear"] == 2020
-    assert result["year"] == 2021
-    assert stored_year == 2021
+    assert result["year"] == 2020
+    assert stored_year == 2020
 
 
 def test_completed_sample_can_be_replayed_from_capture_state(tmp_path: Path):
