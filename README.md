@@ -126,21 +126,17 @@ The temporary runner remains the active home while validation is in progress.
 - Axios's current parser is `axios-parser/0.1.24`, after fixes for partner
   financial-newsletter CTAs, short quote-card attributions, malformed URL
   aliases, legacy Draft.js `Read more` headings, and the historical
-  ``Sign up for the New Axios Space newsletter`` CTA. The B2 summaries show a
-  current-version `holdout-v11` pass for 2018, while several other year
-  summaries still carry older parser versions; those are historical evidence,
-  not current convergence. A fresh `holdout-v12` run reached 800 rows for
-  2017 but its content audit exposed that heading defect, so the superseded
-  v12 rotations were stopped. The v13 rotations exposed the newsletter CTA
-  in the 2019 audit, plus a standalone YouTube subscription CTA found in the
-  2026 audit (including list-item markup); fresh zero-overlap `holdout-v16`
-  runs for 2017--2026 were dispatched on 0.1.23. The 2026 `holdout-v43`
-  audit then found a punctuation-spaced `Subscribe to our YouTube .` variant;
-  `axios-parser/0.1.24` removes that exact whitespace form and requires a fresh
-  zero-overlap replay. Years 2017--2024
-  and 2026 have passed the 800-sample content and rotation audits with zero
-  hard anomalies; the fresh zero-overlap 2024 replay is 800/800 complete on
-  QA revision 4, with 978 selected images and two non-hard review candidates.
+  ``Sign up for the New Axios Space newsletter`` CTA. The earlier `holdout-v16`
+  rotations for 2017--2023 used `axios-parser/0.1.23` and are now historical,
+  not current convergence evidence. That cohort exposed the newsletter CTA in
+  the 2019 audit, plus a standalone YouTube subscription CTA in the 2026 audit
+  (including list-item markup). The 2026 `holdout-v43` audit then found a
+  punctuation-spaced `Subscribe to our YouTube .` variant; `axios-parser/0.1.24`
+  removes that exact whitespace form and requires fresh zero-overlap replays.
+  Current-version `holdout-v64` (2018), `holdout-v63` (2024), `holdout-v57`
+  (2025), and `holdout-v52` (2026) have passed both gates with zero hard
+  anomalies. Fresh current-version `holdout-v109` through `holdout-v114` for
+  2017 and 2019--2023 are now running; 2016 remains source-limited.
   The later current-parser `holdout-v63` 2024 replay has now formally
   reconverged on `axios-parser/0.1.24`: 800 current evaluations, zero prior or
   exclusion overlap, 800 audited complete rows, zero hard anomalies, and 982
