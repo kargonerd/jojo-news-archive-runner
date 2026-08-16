@@ -449,8 +449,9 @@ The temporary runner remains the active home while validation is in progress.
   and two non-hard review candidates.
   The current-parser `holdout-v65` 2025 audit then exposed a Dry January
   newsletter CTA. `npr-parser/0.1.45` removes that exact interface block; a
-  fresh zero-overlap 2025 replay is required before that year can converge on
-  the current parser.
+  fresh zero-overlap `holdout-v74` 2025 replay now passes 800/800 with zero
+  parser errors, zero overlap, zero hard anomalies, and two non-hard review
+  candidates.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
