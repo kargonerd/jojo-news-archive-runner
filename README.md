@@ -407,7 +407,7 @@ The temporary runner remains the active home while validation is in progress.
   2020; 0.1.39 removed that legacy `subscribe to our newsletter` form. The
   fresh `holdout-v31` rotations then exposed an excerpt copyright tail in
   2013; 0.1.40 removes that exact notice. Fresh zero-overlap `holdout-v32`
-  rotations for 2010--2026 are now running against the fixed parser. The
+  rotations for 2010--2026 were run against the fixed parser. The
   current v32 evidence has already passed 800/800 content and zero-overlap
   audits for 2010, 2012--2015, 2021--2023, and 2025 on 0.1.40; 2024 exposed
   one limited-run sleep-newsletter CTA, so `npr-parser/0.1.41` is being
@@ -422,7 +422,9 @@ The temporary runner remains the active home while validation is in progress.
   2010, 2013--2015, 2021, 2023--2025 are also formally passing on the current parser;
   2022 currently has 566/800 eligible rows and is source-limited. 2012 remains below
   the target; 2011 and 2020 remain below the target, 2026 is still capturing, and 2016--2019 are
-  source-limited in this manifest.
+  source-limited in this manifest. The 2012 and 2016 automatic retries were
+  stopped after their current v33/v32 plans exposed only 323 and 8 rows
+  respectively; they are source-limited, not parser failures.
 - NPR 2012's fresh zero-overlap `holdout-v14` has now formally converged at
   800/800 on `npr-parser/0.1.26`: QA 100%, zero parser errors, zero prior or
   exclusion overlap, zero hard content anomalies, all 800 extraction statuses
