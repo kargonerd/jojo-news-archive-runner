@@ -486,7 +486,7 @@ The temporary runner remains the active home while validation is in progress.
   with a regression fixture; fresh zero-overlap `.0.1.47` replays are now
   dispatched as `holdout-v87` through `holdout-v91` for 2026, 2024, 2021,
   2023, and 2025 respectively. The source-capable older cells 2010 and
-  2013--2015 are also dispatched as `holdout-v92` through `holdout-v95`; the
+  2013--2015 are also dispatched as `holdout-v96` through `holdout-v99`; the
   `.0.1.46` passes remain historical until these current-version replays pass
   both gates.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
