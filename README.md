@@ -535,6 +535,10 @@ The temporary runner remains the active home while validation is in progress.
   hard anomalies; 2017 is now included, while 2021--2022
   remain source-limited because the unexcluded exact-capture pools are too
   small. Earlier v6 evidence remains historical for those cells.
+  The fresh zero-overlap `holdout-v48` 2017 replay independently confirmed
+  `scmp-parser/0.1.6` at 815 evaluated rows (800 audited complete rows), with
+  zero parser errors, zero overlap, zero hard content anomalies, and no review
+  candidates.
   The 2010--2015 source shard currently exposes
   fewer than 800 dated candidates per year, and 2023+ remains source-limited
   pending additional catalog coverage.
@@ -555,8 +559,10 @@ The temporary runner remains the active home while validation is in progress.
 - Reuters 2020 has now formally converged on `reuters-parser/0.7.25` with a
   fresh zero-overlap `holdout-v42`: 800/800 QA-passing and complete rows, zero
   parser errors, zero prior/exclusion overlap, zero hard content anomalies,
-  and two non-hard review candidates. Other Reuters years are being scheduled
-  against their separate historical source windows.
+  and two non-hard review candidates. A separate zero-overlap `holdout-v50`
+  for 2019 has also passed the same gates at 800/800, with two non-hard review
+  candidates. Other Reuters years are being scheduled against their separate
+  historical source windows.
 - TODO: migrate the runner, workflows, secrets documentation, and open
   validation history to the public
   [`kargonerd/jojokanbao`](https://github.com/kargonerd/jojokanbao) repository.
