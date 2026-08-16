@@ -11706,6 +11706,9 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^subscribe to (?:the )?.+ newsletter\b.*$"),
         re.compile(
+            r"(?i)^subscribe to the times space and astronomy calendar\b.*$"
+        ),
+        re.compile(
             r"(?i)^if you are not a subscriber to this newsletter\b"
         ),
         re.compile(r"(?i)^browse our full range of times newsletters\b"),
