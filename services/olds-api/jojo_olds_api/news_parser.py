@@ -8751,7 +8751,14 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         if text in _EXACT_NOISE_TEXT:
             node.decompose()
         elif (
-            spec.publisher in {"aljazeera", "ap", "caixin", "npr", "wsj"}
+            spec.publisher in {
+                "aljazeera",
+                "ap",
+                "caixin",
+                "ft",
+                "npr",
+                "wsj",
+            }
             and len(text) >= 2
             and set(text) == {"_"}
         ):
@@ -12298,6 +12305,49 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             aside.decompose()
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
+        folded_text = text.casefold()
+        if re.fullmatch(r"_{2,}", text):
+            node.decompose()
+            continue
+        # Very old Lex pages flatten the column's contact/subscription
+        # boilerplate into the article body. These paragraphs are template
+        # chrome, not reporting, and otherwise trigger the interface-noise
+        # audit through their separator line.
+        if folded_text.startswith("to e-mail the lex team "):
+            node.decompose()
+            continue
+        if folded_text.startswith("the lex column is now on twitter"):
+            node.decompose()
+            continue
+        if (
+            folded_text.startswith("lex is the ft")
+            and "agenda-setting column" in folded_text
+        ):
+            node.decompose()
+            continue
+        if (
+            folded_text.startswith("related links:")
+            and len(node.select("a[href]")) >= 2
+        ):
+            node.decompose()
+            continue
+        if folded_text == "subscribe now":
+            node.decompose()
+            continue
+        if folded_text.startswith(
+            "if you have questions or comments, please e-mail help@ft.com"
+        ):
+            node.decompose()
+            continue
+        if re.fullmatch(
+            r"(?:us and canada|asia|uk, europe and rest of the world)\s*:\s*"
+            r"\+?[\d ()-]+"
+            r"(?:\s+(?:asia|uk, europe and rest of the world)\s*:\s*"
+            r"\+?[\d ()-]+)*",
+            folded_text,
+        ):
+            node.decompose()
+            continue
         if text.casefold() in {"sign in", "already a member? sign in"}:
             node.decompose()
             continue
