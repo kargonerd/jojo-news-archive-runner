@@ -13956,6 +13956,8 @@ def _nyt_non_editorial_image(url: str) -> bool:
     parts = urlsplit(url)
     if (parts.hostname or "").casefold() != "static01.nyt.com":
         return False
+    if "healthquiz-art/" in parts.path.casefold():
+        return True
     return bool(
         re.search(
             r"(?:^|/)\d{1,4}[^/]*_icon/",
