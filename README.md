@@ -522,7 +522,7 @@ The temporary runner remains the active home while validation is in progress.
   evaluated/QA-passing rows; both are source-limited rather than parser
   failures. The 2021 replay captured 30 pages, all screened as non-article desk
   content, and is likewise source-limited. NPR 2013's Common Crawl supplement
-  has now produced 726 dated article candidates (990 raw candidates), which,
+  has now produced 1,226 dated article candidates (1,669 raw candidates), which,
   combined with its primary Wayback pool, is sufficient for a fresh 800-row
   replay; the restarted v105 batch has now merged that catalog and is running
   against an 846-row plan. NPR 2023 is continuing while its Common Crawl
