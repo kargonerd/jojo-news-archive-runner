@@ -408,7 +408,7 @@ The temporary runner remains the active home while validation is in progress.
   2016 audit has 798 complete and 2 partial rows; 2023 has 799 complete and
   1 partial row, while the other years have 800 complete rows. Earlier
   pre-0.1.5 evidence remains historical.
-- NPR's current parser is now `npr-parser/0.1.47`. The v0.1.31/v0.1.32
+- NPR's current parser is now `npr-parser/0.1.48`. The v0.1.31/v0.1.32
   replays exposed legacy podcast, subscription-network, and newsletter CTAs;
   later audits also exposed long podcast/challenge CTAs and legacy `Read more`
   links. The parser removes all of these with regression fixtures. Fresh
@@ -495,6 +495,14 @@ The temporary runner remains the active home while validation is in progress.
   formally passed at 814 evaluated captures and 800 audited complete rows,
   with zero parser errors, zero prior/exclusion overlap, zero hard anomalies,
   and two non-hard review candidates.
+  The `.0.1.47` 2025 audit then exposed a Pod Club newsletter CTA
+  (`sign up for the Pod Club newsletter: www.npr.org/podclub`).
+  `npr-parser/0.1.48` removes that exact interface block with a regression
+  fixture. Fresh zero-overlap `.0.1.48` replays are now dispatched as
+  `holdout-v100` through `holdout-v108` for 2026, 2024, 2023, 2025, 2010,
+  2013, 2014, 2015, and 2021 respectively; all earlier `.0.1.47` results are
+  historical until the current-version gates pass or a cell is confirmed
+  source-limited.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
