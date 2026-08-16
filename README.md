@@ -655,11 +655,14 @@ The temporary runner remains the active home while validation is in progress.
   Expanded Common Crawl coverage now also allows fresh zero-overlap `holdout-v49`
   (2021) and `holdout-v50` (2022) to formally pass on `scmp-parser/0.1.6`:
   each has 800/800 QA-passing complete rows, zero parser errors, zero hard
-  anomalies, and zero prior/exclusion overlap. A current-parser `validation`
-  baseline for 2023 is in progress and has reached 650/800 QA-passing rows.
-  The 2010--2015 source shard currently exposes
-  fewer than 800 dated candidates per year; later years remain source-limited
-  pending additional catalog coverage.
+  anomalies, and zero prior/exclusion overlap. The current-parser `validation`
+  baseline for 2023 has now reached 800/800 QA-passing rows with zero hard
+  anomalies and two non-hard review candidates. Its fresh zero-overlap
+  `holdout-v1` currently has 265/800 eligible rows after excluding the 800-row
+  baseline; it remains source-limited while the Common Crawl catalog expands.
+  The 2010--2015 source shard currently exposes fewer than 800 dated candidates
+  per year; later years remain source-limited pending additional catalog
+  coverage.
 - Nikkei's first 2017 validation reached 800 QA rows but its content audit
   found three embedded `form`/`input`/`button` controls. The parser now removes
   those site-wide controls as `nikkei-parser/0.1.7`; the fresh zero-overlap
