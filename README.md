@@ -112,6 +112,11 @@ The temporary runner remains the active home while validation is in progress.
   chrome, a flattened JSON-LD related-story tail, dead expander/video
   controls, an AMP ``Read more`` link group, and FT brand favicons and v3
   open-graph branding found during partial content audits.
+  The current-parser `holdout-v13` 2019 cell has now also passed both formal
+  gates: 800 current evaluations, zero prior/exclusion overlap, zero hard
+  anomalies, and 800 audited rows (799 complete and one allowed partial).
+  Its audit retained 628 selected images and left two non-hard review
+  candidates; the other v13 cells remain in progress.
 - Axios's current parser is `axios-parser/0.1.24`, after fixes for partner
   financial-newsletter CTAs, short quote-card attributions, malformed URL
   aliases, legacy Draft.js `Read more` headings, and the historical
