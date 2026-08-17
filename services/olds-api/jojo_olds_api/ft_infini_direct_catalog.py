@@ -634,6 +634,19 @@ def _scan_parquet_file(
         )
         if len(_SIGNIFICANT_TOKEN_RE.findall(headline.casefold())) < 4:
             continue
+        # Infini-News contains FT subscription/paywall landing pages whose
+        # extracted title is only a generic "Subscribe to FT.com" label.
+        # They are deliberately rejected by the capture validator because
+        # they do not identify the article headline; filter them here so the
+        # direct catalog does not spend retries on a known non-article row.
+        headline_tokens = set(
+            _SIGNIFICANT_TOKEN_RE.findall(headline.casefold())
+        )
+        if (
+            "subscribe" in headline_tokens
+            and {"ft", "com"}.issubset(headline_tokens)
+        ):
+            continue
         text_length = _optional_int(values["text_length"][row_index])
         if text_length is None or text_length < MINIMUM_TEXT_CHARACTERS:
             continue

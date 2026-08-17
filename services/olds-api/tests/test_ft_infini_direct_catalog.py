@@ -196,6 +196,48 @@ def test_scan_accepts_only_provenance_safe_ft_rows(monkeypatch):
     assert articles[0]["warcFilename"].startswith("CC-NEWS-")
 
 
+def test_scan_skips_generic_ft_subscription_titles(monkeypatch):
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    table = pa.table(
+        {
+            "url": [canonical_url],
+            "url_hostname": ["www.ft.com"],
+            "warc_filename": ["CC-NEWS-20161228120000-00001.warc.gz"],
+            "publish_date": ["2016-12-28"],
+            "title": ["Subscribe to FT.com"],
+            "text_length": [1200],
+            "language": ["eng_Latn"],
+        }
+    )
+
+    class OpenFile:
+        def open(self):
+            return self
+
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return None
+
+    import fsspec
+
+    monkeypatch.setattr(fsspec, "open", lambda *_args, **_kwargs: OpenFile())
+    monkeypatch.setattr(catalog.pq, "read_table", lambda *_args, **_kwargs: table)
+
+    articles = catalog._scan_parquet_file(
+        "data/year=2016/month=12/part-test.parquet",
+        global_offset=10_000,
+        year=2016,
+        capture_urls={canonical_url},
+    )
+
+    assert articles == []
+
+
 def test_offsets_candidates_and_retry_state_are_persisted(tmp_path: Path):
     connection, canonical_url = _state(tmp_path)
     files = [
