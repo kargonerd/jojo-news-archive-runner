@@ -147,6 +147,11 @@ The temporary runner remains the active home while validation is in progress.
   formally converged: 802 current evaluations, 800 audited complete rows,
   zero parser errors, zero prior or exclusion overlap, zero hard anomalies,
   and 703 selected images.
+  The `.25` `holdout-v125` replay for 2021 has now also formally converged:
+  801 current evaluations, 800 audited complete rows, zero parser errors,
+  zero prior or exclusion overlap, zero hard anomalies, and 996 selected
+  images; one repeated editor's-note block remains a non-hard review
+  candidate.
   The superseded `0.1.24` replays for 2018, 2024, 2025, and 2026 had passed
   both gates before this defect was found, but they are retained only as
   historical evidence; the v121--v130 rotations must pass on `0.1.25` before
