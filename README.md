@@ -124,8 +124,12 @@ The temporary runner remains the active home while validation is in progress.
   2020 audit then exposed a split two-paragraph `Coronavirus business update`
   newsletter promo; `ft-parser/0.8.49` removes that interface pair with a
   regression fixture. Fresh zero-overlap `holdout-v15` replays for 2016--2020
-  are now running as the fresh zero-overlap `holdout-v16` cohort on the patched parser; none is counted as current-version
-  convergence until both formal gates pass.
+  are now running as the fresh zero-overlap `holdout-v16` cohort on the patched
+  parser. The current `.49` FT 2016 `holdout-v16` replay has now formally
+  converged: 800/800 audited complete rows, QA 100%, zero parser errors, zero
+  prior/exclusion overlap, zero hard content anomalies, and 272 selected images
+  (one non-hard repeated-block review candidate); the other v16 cells remain in
+  progress and are not counted until both formal gates pass.
   The archive client now enforces a wall-clock limit over each complete
   streamed response, rather than limiting only individual socket reads, so a
   slow-trickling replay cannot occupy a validation worker indefinitely. FT's
