@@ -4086,6 +4086,43 @@ def test_ft_validation_defers_timemap_until_retry():
     ) == (True, True, True)
 
 
+def test_ft_first_pass_still_uses_manifest_candidates_without_timemap(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.ft.com/content/example"
+    snapshot_url = (
+        "https://web.archive.org/web/20200101120000id_/" + canonical_url
+    )
+    client = StubArchiveClient(
+        {
+            snapshot_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                snapshot_url,
+            )
+        }
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2020-01-01T00:00:00Z",
+        section=None,
+        candidates=(candidate(snapshot_url, "20200101120000"),),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        enable_wayback_timemap_fallback=False,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [snapshot_url]
+
+
 def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
     first = archive_fallback_policy(
         publisher="wsj",

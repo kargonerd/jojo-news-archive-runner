@@ -1300,6 +1300,53 @@ def capture_item(
             )
             candidates_considered.extend(common_crawl_candidates)
             consider_candidates(common_crawl_candidates)
+    elif item.publisher == "ft":
+        # The first FT validation pass deliberately skips the expensive
+        # Wayback timemap lookup.  That must not also skip the exact Wayback
+        # candidates already present in the manifest; those are the cheapest
+        # and highest-yield captures and are the reason for deferring the
+        # timemap rather than disabling Wayback entirely.
+        if (
+            not ft_infini_origin_validated
+            and (best_response is None or best_response[5] < 100)
+        ):
+            consider_candidates(item.candidates)
+        consider_ft_title_index()
+        consider_ft_dynamic_syndication()
+        if (
+            not ft_infini_origin_validated
+            and enable_common_crawl_fallback
+            and (best_response is None or best_response[5] < 100)
+        ):
+            try:
+                common_crawl_candidates = discover_common_crawl_candidates(
+                    item.canonical_url,
+                    published_at=item.published_at,
+                    archive_client=archive_client,
+                )
+            except Exception as exc:
+                failures.append(f"commoncrawl-index:{type(exc).__name__}")
+                common_crawl_candidates = ()
+            existing_urls = {
+                (
+                    candidate.snapshot_url,
+                    candidate.warc_offset,
+                    candidate.warc_length,
+                )
+                for candidate in candidates_considered
+            }
+            common_crawl_candidates = tuple(
+                candidate
+                for candidate in common_crawl_candidates
+                if (
+                    candidate.snapshot_url,
+                    candidate.warc_offset,
+                    candidate.warc_length,
+                )
+                not in existing_urls
+            )
+            candidates_considered.extend(common_crawl_candidates)
+            consider_candidates(common_crawl_candidates)
     else:
         published = _parse_iso_datetime(item.published_at)
         if (
