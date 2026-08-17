@@ -1470,6 +1470,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          next_workers="$DOWNLOAD_WORKERS"
+          if [ "$PUBLISHER" = "axios" ] && [ "$next_workers" -gt 8 ]; then
+            # Wayback starts returning connection/time-out errors when the
+            # Axios sitemap queue is replayed at the larger generic fan-out.
+            # Keep the current batch intact, but make future continuations
+            # less wasteful and more likely to obtain usable captures.
+            next_workers=8
+          fi
           for attempt in 1 2 3 4 5; do
             if gh workflow run parser-validation-accelerator.yml \
               --ref "$GITHUB_REF_NAME" \
@@ -1478,7 +1486,7 @@ jobs:
               -f year="$SAMPLE_YEAR" \
               -f source_manifest_shard="$SOURCE_MANIFEST_SHARD" \
               -f max_captures="$MAX_CAPTURES" \
-              -f workers="$DOWNLOAD_WORKERS" \
+              -f workers="$next_workers" \
               -f max_runtime_minutes="$MAX_RUNTIME_MINUTES" \
               -f auto_continue=true \
               -f enable_ft_infini_direct_discovery="$ENABLE_FT_INFINI_DIRECT_DISCOVERY" \

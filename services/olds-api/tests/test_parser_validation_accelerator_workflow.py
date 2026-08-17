@@ -70,6 +70,13 @@ def test_accelerator_merges_axio_common_crawl_with_sitemap_catalog() -> None:
     assert 'auxiliary_merged_source_manifest' in workflow
 
 
+def test_accelerator_caps_future_axios_continuation_fanout() -> None:
+    workflow = _workflow_text()
+
+    assert 'if [ "$PUBLISHER" = "axios" ] && [ "$next_workers" -gt 8 ]' in workflow
+    assert '-f workers="$next_workers"' in workflow
+
+
 def test_accelerator_does_not_silently_relax_exclusions() -> None:
     workflow = _workflow_text()
 
