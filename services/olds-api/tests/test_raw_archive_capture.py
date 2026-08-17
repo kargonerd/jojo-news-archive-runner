@@ -45,6 +45,7 @@ from jojo_olds_api.raw_archive_capture import (
     _common_crawl_discovery_urls,
     _decode_archived_html_content,
     _ft_capture_parser_evidence,
+    _fetch_usable_candidate,
     _nikkei_capture_parser_evidence,
     _wsj_capture_parser_evidence,
     archive_fallback_policy,
@@ -1038,6 +1039,37 @@ def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
     assert mismatched_result["status"] == "error"
     assert "publication-date-mismatch" in mismatched_result["error"]
     assert mismatched_client.requests == [row_url]
+
+
+def test_ft_infini_subscription_shell_is_skipped_without_network():
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    candidate = CaptureCandidate(
+        provider=CaptureProvider.INFINI_NEWS,
+        snapshot_url=(
+            "https://datasets-server.huggingface.co/rows?"
+            "dataset=ruggsea%2Finfini-news-corpus&config=year_2018&"
+            "split=train&offset=12345&length=1"
+        ),
+        source_url=canonical_url,
+        expected_headline="Purchase a Digital Trial subscription for",
+        warc_filename="CC-NEWS-20180328120000-00001.warc.gz",
+    )
+    client = StubArchiveClient({})
+
+    response, failure = _fetch_usable_candidate(
+        candidate,
+        archive_client=client,
+        maximum_html_bytes=1_000_000,
+        canonical_url=canonical_url,
+        publisher="ft",
+    )
+
+    assert response is None
+    assert failure is None
+    assert client.requests == []
 
 
 def test_ft_jina_reader_html_is_validated_as_derived_origin(

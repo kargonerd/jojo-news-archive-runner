@@ -35,6 +35,7 @@ from .common_crawl import (
 from .infini_news import (
     INFINI_DATASET,
     INFINI_DATASET_ROWS_ENDPOINT,
+    is_ft_subscription_headline,
 )
 from .ghostarchive import (
     discover_ghostarchive_candidates,
@@ -2112,6 +2113,15 @@ def _fetch_usable_candidate(
 ]:
     transport_signals: dict[str, object] = {}
     try:
+        if (
+            publisher == "ft"
+            and candidate.provider == CaptureProvider.INFINI_NEWS
+            and is_ft_subscription_headline(candidate.expected_headline)
+        ):
+            # These catalog rows are recurring access shells, not article
+            # records.  Skip them without a network request or an error so
+            # the remaining archive candidates can be tried immediately.
+            return None, None
         if candidate.provider == CaptureProvider.COMMON_CRAWL:
             status_code, headers, content, final_url = (
                 fetch_common_crawl_candidate(

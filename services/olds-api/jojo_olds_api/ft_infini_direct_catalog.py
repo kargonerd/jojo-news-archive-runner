@@ -14,7 +14,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from .archive_sources import archive_source_spec, normalize_article_url
-from .ft_syndication_catalog import infini_news_row_url
+from .infini_news import (
+    infini_news_row_url,
+    is_ft_subscription_headline,
+)
 from .news_models import CaptureCandidate, CaptureProvider
 
 
@@ -639,7 +642,7 @@ def _scan_parquet_file(
         # They are deliberately rejected by the capture validator because
         # they do not identify the article headline; filter them here so the
         # direct catalog does not spend retries on a known non-article row.
-        if _is_ft_subscription_headline(headline):
+        if is_ft_subscription_headline(headline):
             continue
         text_length = _optional_int(values["text_length"][row_index])
         if text_length is None or text_length < MINIMUM_TEXT_CHARACTERS:
@@ -756,31 +759,6 @@ def _resolve_url(path: str) -> str:
 def _is_ft_hostname(hostname: str) -> bool:
     normalized = hostname.strip().casefold().rstrip(".")
     return normalized == "ft.com" or normalized.endswith(".ft.com")
-
-
-def _is_ft_subscription_headline(headline: str) -> bool:
-    normalized = " ".join(headline.casefold().split())
-    tokens = set(_SIGNIFICANT_TOKEN_RE.findall(normalized))
-    if (
-        "subscribe" not in tokens
-        and "subscriber" not in tokens
-        and "subscription" not in tokens
-    ):
-        return False
-    # Infini-News exposes several recurring FT access-shell labels.  Keep
-    # this narrow to subscription language so legitimate headlines that only
-    # mention FT membership are not discarded.
-    return (
-        "subscribe to read" in normalized
-        or "become an ft subscriber" in normalized
-        or "subscribe to ft" in normalized
-        or "purchase a digital trial" in normalized
-        or (
-            "subscription" in tokens
-            and {"purchase", "digital"}.issubset(tokens)
-        )
-        or {"ft", "com"}.issubset(tokens)
-    )
 
 
 def _normalize_ft_url(spec, source_url: str) -> str | None:
