@@ -233,7 +233,11 @@ The temporary runner remains the active home while validation is in progress.
   preserved. Keep completing both broader resumable catalogs for future
   zero-overlap rotations. After the separator fix, Caixin 2017 has now also
   passed the current `caixin-parser/0.1.10` validation at 800/800 with zero
-  parser errors, zero hard content anomalies, and 22 selected images.
+  parser errors, zero hard content anomalies, and 22 selected images. The
+  fresh independent `holdout-v48` rotation for 2017 has now formally
+  converged as well: 800/800 QA-passing rows, zero parser errors, zero
+  prior/exclusion overlap, zero hard content anomalies, and 25 selected
+  images (one non-hard review candidate).
   Caixin 2019's fresh zero-overlap `holdout-v1` has now formally converged on
   the same parser: 800/800 QA-passing rows, zero parser errors, zero
   prior/exclusion overlap, zero hard content anomalies, and 4 selected images
