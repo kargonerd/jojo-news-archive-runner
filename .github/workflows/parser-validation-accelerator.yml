@@ -879,6 +879,12 @@ jobs:
             # secondary archives should get a chance when Wayback stalls.
             request_timeout=15
           fi
+          if [ "$PUBLISHER" = "wsj" ]; then
+            # WSJ's current Wayback endpoint is returning 503/slow reads.
+            # Keep the first manifest pass responsive; retry continuations
+            # still use the same candidates plus the staged archives.
+            request_timeout=10
+          fi
           effective_max_captures="$MAX_CAPTURES"
           # The historical FT replay queue spends a material part of each
           # bounded batch on archive admission and fallback setup.  Keep the
