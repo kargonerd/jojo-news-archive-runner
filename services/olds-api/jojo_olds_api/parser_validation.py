@@ -24,6 +24,7 @@ from .news_models import ArticleStatus, ContentType, RawCapture
 from .news_parser import parse_article
 from .parser_qa_policy import qa_policy_revision
 from .publisher_specs import publisher_spec
+from .infini_news import is_ft_subscription_headline
 
 
 SCHEMA_VERSION = "jojo-parser-validation/2"
@@ -2002,9 +2003,9 @@ def _select_additional_samples(
         )
         is not None
     }
-    rows: Iterable[tuple[str]] = connection.execute(
+    rows: Iterable[tuple[str, str]] = connection.execute(
         f"""
-        SELECT capture.canonical_url
+        SELECT capture.canonical_url, capture.candidates_json
         FROM captures AS capture
         LEFT JOIN parser_validation_samples AS sample
           ON sample.canonical_url=capture.canonical_url
@@ -2029,7 +2030,24 @@ def _select_additional_samples(
         parameters,
     )
     seen_normalized = excluded_normalized | selected_normalized
-    for (canonical_url,) in rows:
+    for canonical_url, candidates_json in rows:
+        if publisher == "ft" and direct_provider == "infini-news":
+            try:
+                candidates = json.loads(str(candidates_json))
+            except (TypeError, ValueError):
+                candidates = []
+            if any(
+                isinstance(candidate, dict)
+                and str(candidate.get("provider") or "") == "infini-news"
+                and is_ft_subscription_headline(
+                    candidate.get("expectedHeadline")
+                )
+                for candidate in candidates
+            ):
+                # Infini-News access-shell rows are retained in the capture
+                # state for provenance, but must not consume a direct-source
+                # validation slot. They have no article headline to validate.
+                continue
         normalized_url = article_deduplication_key(
             source_spec,
             str(canonical_url),

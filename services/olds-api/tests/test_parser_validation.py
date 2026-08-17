@@ -2000,6 +2000,79 @@ def test_validation_plan_prioritizes_indexed_wsj_full_text_sources(
     ]
 
 
+def test_ft_direct_plan_skips_infini_access_shell_titles(tmp_path: Path):
+    manifest = tmp_path / "ft-infini-shells.jsonl"
+    shell_url = "https://www.ft.com/content/00000000-0000-4000-8000-000000000001"
+    article_url = "https://www.ft.com/content/00000000-0000-4000-8000-000000000002"
+
+    def infini(url: str, offset: int, headline: str) -> dict[str, object]:
+        return {
+            "provider": "infini-news",
+            "snapshotUrl": (
+                "https://datasets-server.huggingface.co/rows?"
+                "dataset=ruggsea%2Finfini-news-corpus&config=year_2017&"
+                f"split=train&offset={offset}&length=1"
+            ),
+            "sourceUrl": url,
+            "expectedHeadline": headline,
+            "warcFilename": "CC-NEWS-20170101000000-00001.warc.gz",
+        }
+
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "publisher": "ft",
+                    "canonical_url": url,
+                    "published_at": "2017-01-01T00:00:00Z",
+                    "candidates": [candidate],
+                }
+            )
+            + "\n"
+            for url, candidate in (
+                (
+                    shell_url,
+                    infini(
+                        shell_url,
+                        1,
+                        "All the benefits of Premium Digital, plus:",
+                    ),
+                ),
+                (
+                    article_url,
+                    infini(article_url, 2, "A real FT article headline"),
+                ),
+            )
+        ),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="ft",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="ft",
+    )
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ft",
+        from_year=2017,
+        to_year=2017,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    assert connection.execute(
+        "SELECT canonical_url FROM parser_validation_samples"
+    ).fetchone()[0] == article_url
+
+
 def test_validation_plan_prioritizes_large_modern_wsj_snapshots(
     tmp_path: Path,
 ):
