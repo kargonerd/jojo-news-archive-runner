@@ -4171,6 +4171,53 @@ def test_ft_first_pass_still_uses_manifest_candidates_without_timemap(
     assert client.limited_calls == [(snapshot_url, 1, 12.0)]
 
 
+def test_ft_first_pass_bounds_duplicate_manifest_snapshots(tmp_path: Path):
+    canonical_url = "https://www.ft.com/content/example-duplicates"
+    first_url = (
+        "https://web.archive.org/web/20200101120000id_/" + canonical_url
+    )
+    second_url = (
+        "https://web.archive.org/web/20200102120000id_/" + canonical_url
+    )
+    client = StubArchiveClient(
+        {
+            first_url: (503, {"content-type": "text/html"}, b"", first_url),
+            second_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                second_url,
+            ),
+        }
+    )
+    client.attempts = 1
+    client.timeout = 12.0
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2020-01-01T00:00:00Z",
+        section=None,
+        candidates=(
+            candidate(first_url, "20200101120000"),
+            candidate(second_url, "20200102120000"),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        enable_wayback_timemap_fallback=False,
+        enable_common_crawl_fallback=False,
+        enable_arquivo_pt_fallback=False,
+    )
+
+    assert result["status"] == "error"
+    assert client.requests[0] == first_url
+    assert second_url not in client.requests
+
+
 def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
     first = archive_fallback_policy(
         publisher="wsj",

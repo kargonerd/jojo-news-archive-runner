@@ -1306,12 +1306,16 @@ def capture_item(
         # Wayback timemap lookup.  That must not also skip the exact Wayback
         # candidates already present in the manifest; those are the cheapest
         # and highest-yield captures and are the reason for deferring the
-        # timemap rather than disabling Wayback entirely.
+        # timemap rather than disabling Wayback entirely.  A manifest row can
+        # contain several duplicate snapshots, though; probing all of them on
+        # the first pass makes one dead Wayback host hold a worker for minutes.
+        # Keep the first pass bounded to the first snapshot and let a retry
+        # (which enables the timemap policy) exhaust the complete set.
         if (
             not ft_infini_origin_validated
             and (best_response is None or best_response[5] < 100)
         ):
-            consider_candidates(item.candidates)
+            consider_candidates(item.candidates[:1])
         consider_ft_title_index()
         consider_ft_dynamic_syndication()
         if (
