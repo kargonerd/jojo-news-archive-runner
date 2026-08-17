@@ -639,13 +639,7 @@ def _scan_parquet_file(
         # They are deliberately rejected by the capture validator because
         # they do not identify the article headline; filter them here so the
         # direct catalog does not spend retries on a known non-article row.
-        headline_tokens = set(
-            _SIGNIFICANT_TOKEN_RE.findall(headline.casefold())
-        )
-        if (
-            "subscribe" in headline_tokens
-            and {"ft", "com"}.issubset(headline_tokens)
-        ):
+        if _is_ft_subscription_headline(headline):
             continue
         text_length = _optional_int(values["text_length"][row_index])
         if text_length is None or text_length < MINIMUM_TEXT_CHARACTERS:
@@ -762,6 +756,22 @@ def _resolve_url(path: str) -> str:
 def _is_ft_hostname(hostname: str) -> bool:
     normalized = hostname.strip().casefold().rstrip(".")
     return normalized == "ft.com" or normalized.endswith(".ft.com")
+
+
+def _is_ft_subscription_headline(headline: str) -> bool:
+    normalized = " ".join(headline.casefold().split())
+    tokens = set(_SIGNIFICANT_TOKEN_RE.findall(normalized))
+    if "subscribe" not in tokens and "subscriber" not in tokens:
+        return False
+    # Infini-News exposes several recurring FT access-shell labels.  Keep
+    # this narrow to subscription language so legitimate headlines that only
+    # mention FT membership are not discarded.
+    return (
+        "subscribe to read" in normalized
+        or "become an ft subscriber" in normalized
+        or "subscribe to ft" in normalized
+        or {"ft", "com"}.issubset(tokens)
+    )
 
 
 def _normalize_ft_url(spec, source_url: str) -> str | None:

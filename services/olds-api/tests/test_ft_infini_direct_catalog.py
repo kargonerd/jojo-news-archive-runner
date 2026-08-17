@@ -238,6 +238,19 @@ def test_scan_skips_generic_ft_subscription_titles(monkeypatch):
     assert articles == []
 
 
+def test_ft_subscription_headline_filter_covers_paywall_variants():
+    assert catalog._is_ft_subscription_headline("Subscribe to FT.com")
+    assert catalog._is_ft_subscription_headline(
+        "Become an FT subscriber to read: Big Centamin investors"
+    )
+    assert catalog._is_ft_subscription_headline(
+        "Subscribe to read: Catch up on our 5 best weekend reads"
+    )
+    assert not catalog._is_ft_subscription_headline(
+        "FT subscribers weigh in on the budget"
+    )
+
+
 def test_offsets_candidates_and_retry_state_are_persisted(tmp_path: Path):
     connection, canonical_url = _state(tmp_path)
     files = [
