@@ -850,8 +850,14 @@ jobs:
           }
 
           request_interval=0.5
+          request_timeout=30
           if [ "$PUBLISHER" = "nyt" ]; then
             request_interval=1.5
+          fi
+          if [ "$PUBLISHER" = "ft" ]; then
+            # FT's first-pass Wayback candidates are already bounded and the
+            # secondary archives should get a chance when Wayback stalls.
+            request_timeout=15
           fi
           effective_max_captures="$MAX_CAPTURES"
           # The historical FT replay queue spends a material part of each
@@ -878,7 +884,7 @@ jobs:
             --output-dir "$LOCAL_ROOT/raw"
             --workers "$DOWNLOAD_WORKERS"
             --min-request-interval "$request_interval"
-            --timeout 30
+            --timeout "$request_timeout"
             --attempts "$archive_attempts"
             --max-captures "$effective_max_captures"
             --max-runtime-minutes "$effective_runtime_minutes"
