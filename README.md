@@ -145,7 +145,11 @@ The temporary runner remains the active home while validation is in progress.
   of underscores; `axios-parser/0.1.26` removes that visual rule for Axios and
   adds a regression fixture. All `.25` replays are now historical and fresh
   zero-overlap `.26` cohorts must replace them before any year is counted
-  again. The next current-version replays for 2017--2026 (excluding
+  again. The fresh zero-overlap `.26` `holdout-v132` replay for 2017 has now
+  formally converged: 800/800 audited and complete, QA 100%, zero parser
+  errors, zero prior/exclusion overlap, zero hard content anomalies, and 673
+  selected images. The remaining current-version replays for 2018--2026
+  (excluding
   source-limited 2016) are being dispatched; 2016 remains source-limited. The
   earlier `.25` `holdout-v121` replay for 2017 and `holdout-v125` replay for
   2021 had formally converged (802/800 and 801/800 respectively), but both
