@@ -71,6 +71,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-captures", type=int)
     parser.add_argument("--max-runtime-minutes", type=float)
     parser.add_argument("--max-record-attempts", type=int, default=3)
+    parser.add_argument(
+        "--stop-after-errors",
+        type=int,
+        default=0,
+        help=(
+            "Stop submitting new captures after this many errors in the "
+            "current batch; in-flight work is still checkpointed."
+        ),
+    )
     parser.add_argument("--retry-errors", action="store_true")
     parser.add_argument(
         "--enable-common-crawl-fallback",
@@ -185,6 +194,8 @@ def main() -> int:
     publisher_spec(args.publisher)
     if args.workers < 1:
         raise SystemExit("--workers must be positive")
+    if args.stop_after_errors < 0:
+        raise SystemExit("--stop-after-errors must not be negative")
     if args.max_record_attempts < 1:
         raise SystemExit("--max-record-attempts must be positive")
     if not args.manifest.exists():
@@ -386,6 +397,7 @@ def main() -> int:
     )
     completed = 0
     failures = 0
+    stopped_for_error_limit = False
     runtime_limit_reached = False
     maximum_html_bytes = args.max_html_mb * 1024 * 1024
     iterator = iter(items)
@@ -393,7 +405,11 @@ def main() -> int:
 
     def submit_one(executor: ThreadPoolExecutor) -> bool:
         nonlocal runtime_limit_reached
-        if validation_ready or validation_target_reached:
+        if (
+            validation_ready
+            or validation_target_reached
+            or stopped_for_error_limit
+        ):
             return False
         if deadline is not None and time.monotonic() >= deadline:
             runtime_limit_reached = True
@@ -481,6 +497,11 @@ def main() -> int:
                     )
                     completed += 1
                     failures += result["status"] == "error"
+                    if (
+                        args.stop_after_errors > 0
+                        and failures >= args.stop_after_errors
+                    ):
+                        stopped_for_error_limit = True
                     if args.stop_when_validation_ready:
                         validation_ready = bool(
                             parser_validation_summary(connection)["ready"]
@@ -535,6 +556,7 @@ def main() -> int:
             "completedThisRun": completed,
             "errorsThisRun": failures,
             "stoppedForRuntimeLimit": runtime_limit_reached,
+            "stoppedForErrorLimit": stopped_for_error_limit,
             "stoppedForValidationReady": validation_ready,
             "stoppedForValidationTarget": validation_target_reached,
             "finishedAt": datetime.now(timezone.utc).isoformat(),

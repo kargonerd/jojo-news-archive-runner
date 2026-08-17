@@ -931,6 +931,12 @@ jobs:
             --progress-every 25
             --minimum-free-gb 2
           )
+          if [ "$PUBLISHER" = "wsj" ]; then
+            # Wayback/Arquivo shell failures are currently dominant for WSJ.
+            # Checkpoint early and let the next continuation try Common Crawl
+            # instead of spending the whole batch repeating the same shells.
+            args+=(--stop-after-errors 500)
+          fi
           if [ "${{ steps.before.outputs.retry_errors }}" = "true" ]; then
             args+=(--retry-errors)
           fi
