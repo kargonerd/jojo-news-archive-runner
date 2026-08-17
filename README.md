@@ -577,7 +577,10 @@ The temporary runner remains the active home while validation is in progress.
   capture errors and is source-limited. The 2026 replay exhausted its available
   pool at 40 evaluated/QA-passing rows, while 2010 reached 350
   evaluated/QA-passing rows; both are source-limited rather than parser
-  failures. The 2021 replay captured 30 pages, all screened as non-article desk
+  failures. A fresh current-parser `holdout-v110` replay after the 2010
+  Common Crawl hydration pass found only 13 actionable residual rows: eight
+  were old template/non-article pages and five ended in capture errors, so it
+  remains source-limited rather than parser-limited. The 2021 replay captured 30 pages, all screened as non-article desk
   content, and is likewise source-limited. NPR 2013's Common Crawl supplement
   has now produced 1,726 dated article candidates (2,751 raw candidates), which,
   combined with its primary Wayback pool, is sufficient for a fresh 800-row
