@@ -171,6 +171,11 @@ The temporary runner remains the active home while validation is in progress.
   exclusion overlap, zero hard content anomalies, and 957 selected images.
   Its only review candidate is a non-hard repeated-block group containing
   genuine ``what they're saying:`` labels and editor-update notices.
+  The same current-parser rotation has now formally converged for 2019
+  (`holdout-v133`), 2021 (`holdout-v135`), and 2022 (`holdout-v136`): each
+  has 800 audited complete rows, zero parser errors, zero prior/exclusion
+  overlap, zero hard content anomalies, and only non-hard repeated-block
+  review candidates.
   remaining current-version replays for 2018--2026 (excluding source-limited
   2016 and converged 2023) are being dispatched; 2016 remains source-limited.
   The
