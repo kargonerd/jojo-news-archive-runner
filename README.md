@@ -250,9 +250,10 @@ The temporary runner remains the active home while validation is in progress.
   `Article Not Supported` and `To Read the Full Story`, while retaining their
   raw captures. Current 0.8.55 zero-overlap audits have now passed for 2016,
   2018, 2019, 2021, and 2022 at 800+ rows with zero hard anomalies; the 2013
-  cell remains source-limited. A fresh zero-overlap `holdout-v10` replay for
-  2020 is now running against `wsj-parser/0.8.55`; its earlier checkpoint is
-  not treated as current-version convergence evidence.
+  cell remains source-limited. The earlier zero-overlap `holdout-v10` replay
+  for 2020 was cancelled at 435/800 complete rows and is not convergence
+  evidence. A fresh zero-overlap `holdout-v11` replay is now running against
+  `wsj-parser/0.8.55`.
 - NYT 2019 `holdout-v2` has formally converged at 800/800 on
   `nyt-parser/0.8.62`: QA 100%, zero parser errors, zero prior/exclusion
   overlap, and all 800 content-audit rows complete with zero hard anomalies.
