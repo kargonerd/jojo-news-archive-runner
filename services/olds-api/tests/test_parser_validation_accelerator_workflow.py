@@ -57,6 +57,19 @@ def test_accelerator_uses_all_original_validation_states_as_exclusions() -> None
     assert '--sample-year "$SAMPLE_YEAR"' in import_section
 
 
+def test_accelerator_merges_axio_common_crawl_with_sitemap_catalog() -> None:
+    workflow = _workflow_text()
+
+    assert (
+        'auxiliary_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/'
+        'news-archive/v1/axios/2017-2026/commoncrawl-prefix"'
+        in workflow
+    )
+    assert 'AUXILIARY_SOURCE_ROOT:' in workflow
+    assert '"${AUXILIARY_SOURCE_ROOT}/catalog/manifest.jsonl.gz"' in workflow
+    assert 'auxiliary_merged_source_manifest' in workflow
+
+
 def test_accelerator_does_not_silently_relax_exclusions() -> None:
     workflow = _workflow_text()
 
