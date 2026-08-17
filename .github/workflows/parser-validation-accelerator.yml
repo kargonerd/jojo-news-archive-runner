@@ -864,6 +864,14 @@ jobs:
           if [ "$PUBLISHER" = "ft" ] && [ "$effective_runtime_minutes" -lt 30 ]; then
             effective_runtime_minutes=30
           fi
+          archive_attempts=2
+          if [ "$PUBLISHER" = "ft" ]; then
+            # FT's Wayback candidates frequently return retryable timemap
+            # errors. A second application-level replay only delays the
+            # Common Crawl/Arquivo fallbacks; keep one bounded attempt for
+            # FT while retaining two attempts for other publishers.
+            archive_attempts=1
+          fi
           args=(
             --publisher "$PUBLISHER"
             --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
@@ -871,7 +879,7 @@ jobs:
             --workers "$DOWNLOAD_WORKERS"
             --min-request-interval "$request_interval"
             --timeout 30
-            --attempts 2
+            --attempts "$archive_attempts"
             --max-captures "$effective_max_captures"
             --max-runtime-minutes "$effective_runtime_minutes"
             --max-record-attempts "$MAX_RECORD_ATTEMPTS"
