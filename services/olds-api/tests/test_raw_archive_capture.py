@@ -4202,7 +4202,7 @@ def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
         second.wayback_timemap,
         second.common_crawl,
         second.arquivo_pt,
-    ) == (True, False, True)
+    ) == (True, True, True)
     assert (
         third.wayback_timemap,
         third.common_crawl,

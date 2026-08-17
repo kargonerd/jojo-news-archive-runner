@@ -1918,7 +1918,7 @@ def archive_fallback_policy(
         # secondary archives after the cheap manifest candidates are spent.
         return ArchiveFallbackPolicy(
             wayback_timemap=prior_attempts >= 1,
-            common_crawl=prior_attempts >= 2,
+            common_crawl=prior_attempts >= 1,
             arquivo_pt=prior_attempts >= 1,
         )
     if publisher == "nikkei" and parser_validation_enabled:
