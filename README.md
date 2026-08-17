@@ -156,9 +156,13 @@ The temporary runner remains the active home while validation is in progress.
   again. The fresh zero-overlap `.26` `holdout-v132` replay for 2017 has now
   formally converged: 800/800 audited and complete, QA 100%, zero parser
   errors, zero prior/exclusion overlap, zero hard content anomalies, and 673
-  selected images. The remaining current-version replays for 2018--2026
-  (excluding
-  source-limited 2016) are being dispatched; 2016 remains source-limited. The
+  selected images. The fresh `.26` `holdout-v137` replay for 2023 has now also
+  formally converged: 800/800 audited and complete, QA 100%, zero parser
+  errors, zero prior/exclusion overlap, zero hard content anomalies, and 992
+  selected images (one non-hard repeated-block review candidate). The
+  remaining current-version replays for 2018--2026 (excluding source-limited
+  2016 and converged 2023) are being dispatched; 2016 remains source-limited.
+  The
   validation workflow now merges the existing Axios Common Crawl catalog with
   the Sitemap/Wayback catalog for future continuation batches.
   earlier `.25` `holdout-v121` replay for 2017 and `holdout-v125` replay for
