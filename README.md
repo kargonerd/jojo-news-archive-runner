@@ -151,6 +151,8 @@ The temporary runner remains the active home while validation is in progress.
   selected images. The remaining current-version replays for 2018--2026
   (excluding
   source-limited 2016) are being dispatched; 2016 remains source-limited. The
+  validation workflow now merges the existing Axios Common Crawl catalog with
+  the Sitemap/Wayback catalog for future continuation batches.
   earlier `.25` `holdout-v121` replay for 2017 and `holdout-v125` replay for
   2021 had formally converged (802/800 and 801/800 respectively), but both
   are now historical because `.26` changes the parser contract; their audit
