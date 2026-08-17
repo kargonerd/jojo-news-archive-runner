@@ -679,7 +679,11 @@ The temporary runner remains the active home while validation is in progress.
   source-limited while the Common Crawl catalog expands.
   The 2010--2015 source shard currently exposes fewer than 800 dated candidates
   per year; later years remain source-limited pending additional catalog
-  coverage.
+  coverage. The first fresh 2023 probe (`holdout-v51`) found 1,272 catalog
+  candidates, but all were already covered by the baseline and prior-holdout
+  exclusion union, leaving zero actionable rows; it is retained as a
+  source-capacity diagnostic, not convergence evidence. Common Crawl
+  expansion is continuing before the next disjoint 2023 replay.
 - Nikkei's first 2017 validation reached 800 QA rows but its content audit
   found three embedded `form`/`input`/`button` controls. The parser now removes
   those site-wide controls as `nikkei-parser/0.1.7`; the fresh zero-overlap
