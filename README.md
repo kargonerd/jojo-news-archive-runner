@@ -292,13 +292,14 @@ The temporary runner remains the active home while validation is in progress.
   2018, 2019, 2021, and 2022 at 800+ rows with zero hard anomalies; the 2013
   cell remains source-limited. The earlier zero-overlap `holdout-v10` replay
   for 2020 was cancelled at 435/800 complete rows and is not convergence
-  evidence. A fresh zero-overlap `holdout-v11` replay is now running against
-  `wsj-parser/0.8.55`.
-  Its first pass is intentionally checkpoint-bounded: each URL first tries a
-  single manifest snapshot with a short timeout, while continuation batches
-  revisit all snapshots and enable timemap/secondary-archive fallbacks. This
-  prevents a transient Wayback 503 from occupying every worker before retry
-  evidence is available.
+  evidence. A fresh zero-overlap `holdout-v11` replay against
+  `wsj-parser/0.8.55` was then checkpoint-bounded and cancelled after its
+  1,489 eligible candidates produced 1,471 archive/paywall-shell failures and
+  zero valid captures; its raw checkpoint and failure evidence are retained as
+  a source-capacity TODO, not convergence evidence. The first pass tried one
+  manifest snapshot per URL with a short timeout, while continuation batches
+  were prepared to revisit all snapshots and enable timemap/secondary-archive
+  fallbacks, preventing transient Wayback 503s from occupying every worker.
 - NYT 2019 `holdout-v2` has formally converged at 800/800 on
   `nyt-parser/0.8.62`: QA 100%, zero parser errors, zero prior/exclusion
   overlap, and all 800 content-audit rows complete with zero hard anomalies.
