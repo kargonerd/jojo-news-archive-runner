@@ -185,8 +185,11 @@ The temporary runner remains the active home while validation is in progress.
   The fresh `.26` 2025 replay (`holdout-v139`) has also formally converged:
   800/800 audited complete rows, QA 100%, zero parser errors, zero
   prior/exclusion overlap, zero hard content anomalies, and 950 selected
-  images (two non-hard review candidates). The 2024 replay remains in
-  progress; 2016 remains source-limited.
+  images (two non-hard review candidates). The fresh `.26` 2024 replay
+  (`holdout-v138`) has now formally converged as well: 800/800 audited
+  complete rows, QA 100%, zero parser errors, zero prior/exclusion overlap,
+  zero hard content anomalies, and 904 selected images (one non-hard
+  repeated-block review candidate). 2016 remains source-limited.
   The
   validation workflow now merges the existing Axios Common Crawl catalog with
   the Sitemap/Wayback catalog for future continuation batches.
