@@ -88,7 +88,7 @@ The temporary runner remains the active home while validation is in progress.
   changes.
 - FT 2016 `holdout-v9` and FT 2017 `holdout-v8` formally converged on the
   previous `ft-parser/0.8.42`, but their evidence is now historical. The
-  current parser is now `ft-parser/0.8.48`, which removes residual `Sign in`
+  current parser is now `ft-parser/0.8.49`, which removes residual `Sign in`
   paragraphs and buttons plus the FT Business School briefing CTA found in
   the 2020 audit; fresh `holdout-v11` runs for
   FT 2016--2020 v11 runs are historical while the current parser is being
@@ -122,7 +122,7 @@ The temporary runner remains the active home while validation is in progress.
   that exact chrome and marks the recognizable no-prose Infini access shell as
   truncated; its regression fixture and the full 1,055-test suite pass. The v14
   2020 audit then exposed a split two-paragraph `Coronavirus business update`
-  newsletter promo; `ft-parser/0.8.48` removes that interface pair with a
+  newsletter promo; `ft-parser/0.8.49` removes that interface pair with a
   regression fixture. Fresh zero-overlap `holdout-v15` replays for 2016--2020
   are now running on the patched parser; none is counted as current-version
   convergence until both formal gates pass.

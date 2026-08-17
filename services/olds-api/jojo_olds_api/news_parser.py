@@ -12330,6 +12330,8 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             "section.article-list, "
             "form.n-myft-ui, "
             "form[class*='n-myft-ui'], "
+            "[data-component-id='myft-preferences-modal'], "
+            "[class*='n-myft-ui'], "
             ".video__placeholder__up-next, "
             ".o-video__play-button, "
             ".player__video-trigger, "
