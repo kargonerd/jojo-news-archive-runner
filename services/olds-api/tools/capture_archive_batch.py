@@ -318,9 +318,17 @@ def main() -> int:
         args.stop_when_validation_ready
         and parser_validation_summary(connection)["ready"]
     )
+    infini_metadata_pending = bool(
+        isinstance(infini_direct_result, dict)
+        and not infini_direct_result.get("metadataReady", True)
+    )
     items = (
         []
-        if validation_ready or validation_target_reached
+        if (
+            validation_ready
+            or validation_target_reached
+            or infini_metadata_pending
+        )
         else pending_captures(
             connection,
             retry_errors=args.retry_errors,
