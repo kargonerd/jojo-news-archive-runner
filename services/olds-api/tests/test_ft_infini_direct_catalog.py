@@ -249,6 +249,16 @@ def test_ft_subscription_headline_filter_covers_paywall_variants():
     assert catalog.is_ft_subscription_headline(
         "Purchase a Digital Trial subscription for"
     )
+    assert catalog.is_ft_subscription_headline(
+        "All the benefits of Premium Digital, plus:"
+    )
+    assert catalog.is_ft_subscription_headline(
+        "All the benefits of Standard Digital, plus:"
+    )
+    assert catalog.is_ft_subscription_headline(
+        "You must be a Premium Subscriber to read: Financial Times"
+    )
+    assert catalog.is_ft_subscription_headline("Register to read: Financial Times")
     assert not catalog.is_ft_subscription_headline(
         "FT subscribers weigh in on the budget"
     )

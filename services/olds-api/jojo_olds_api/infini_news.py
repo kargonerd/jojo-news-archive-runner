@@ -28,6 +28,18 @@ def infini_news_row_url(year: int, document_index: int) -> str:
 def is_ft_subscription_headline(value: str | None) -> bool:
     """Return whether an Infini-News title is a recurring FT access shell."""
     normalized = " ".join(str(value or "").casefold().split())
+    # Older Infini-News rows often use the subscription landing-page copy as
+    # the title rather than an article headline.  These variants do not
+    # contain ``subscribe``/``subscription`` tokens, so handle them before
+    # the token-based checks below.  Keeping this predicate title-only avoids
+    # rejecting legitimate articles that merely discuss subscriptions.
+    if (
+        "all the benefits of premium digital" in normalized
+        or "all the benefits of standard digital" in normalized
+        or normalized.startswith("register to read")
+        or normalized.startswith("you must be a premium subscriber to read")
+    ):
+        return True
     tokens = set(_SIGNIFICANT_TOKEN_RE.findall(normalized))
     if not (
         {"subscribe", "subscriber", "subscription"} & tokens
