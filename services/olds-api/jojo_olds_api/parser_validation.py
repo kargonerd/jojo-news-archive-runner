@@ -855,7 +855,14 @@ def pending_parser_validation_urls(
                             END
                         END,
                         CASE
-                            WHEN capture.publisher != 'wsj' THEN 0
+                            WHEN capture.publisher = 'ft'
+                              AND EXISTS (
+                                SELECT 1
+                                FROM json_each(capture.candidates_json)
+                                WHERE json_extract(value, '$.provider')
+                                    = 'infini-news'
+                            ) THEN 0
+                            WHEN capture.publisher != 'wsj' THEN 1
                             -- The validation cohort remains the same random
                             -- sample.  Only execute its already-indexed,
                             -- provenance-bearing full-text candidates before
