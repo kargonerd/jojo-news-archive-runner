@@ -126,7 +126,7 @@ The temporary runner remains the active home while validation is in progress.
   regression fixture. Fresh zero-overlap `holdout-v15` replays for 2016--2020
   are now running on the patched parser; none is counted as current-version
   convergence until both formal gates pass.
-- Axios's current parser is `axios-parser/0.1.25`, after fixes for partner
+- Axios's current parser is `axios-parser/0.1.26`, after fixes for partner
   financial-newsletter CTAs, short quote-card attributions, malformed URL
   aliases, legacy Draft.js `Read more` headings, and the historical
   ``Sign up for the New Axios Space newsletter`` CTA. The earlier `holdout-v16`
@@ -140,22 +140,22 @@ The temporary runner remains the active home while validation is in progress.
   Draft.js CTA whose linked ``here`` text was split as ``h ere``:
   ``Subscribe to our newsletters here and check out our news stream here.``
   `axios-parser/0.1.25` removes that exact normalized interface block with a
-  regression fixture. All prior `0.1.24` audits are now historical. Fresh
-  current-version `holdout-v121` through `holdout-v130` replays for 2017--2026
-  (excluding source-limited 2016) are being dispatched; 2016 remains
-  source-limited. The first `.25` replay, `holdout-v121` for 2017, has now
-  formally converged: 802 current evaluations, 800 audited complete rows,
-  zero parser errors, zero prior or exclusion overlap, zero hard anomalies,
-  and 703 selected images.
-  The `.25` `holdout-v125` replay for 2021 has now also formally converged:
-  801 current evaluations, 800 audited complete rows, zero parser errors,
-  zero prior or exclusion overlap, zero hard anomalies, and 996 selected
-  images; one repeated editor's-note block remains a non-hard review
-  candidate.
+  regression fixture. All prior `0.1.24` audits are now historical. A fresh
+  `.25` replay exposed an Axios 2018 legacy article separator consisting only
+  of underscores; `axios-parser/0.1.26` removes that visual rule for Axios and
+  adds a regression fixture. All `.25` replays are now historical and fresh
+  zero-overlap `.26` cohorts must replace them before any year is counted
+  again. The next current-version replays for 2017--2026 (excluding
+  source-limited 2016) are being dispatched; 2016 remains source-limited. The
+  earlier `.25` `holdout-v121` replay for 2017 and `holdout-v125` replay for
+  2021 had formally converged (802/800 and 801/800 respectively), but both
+  are now historical because `.26` changes the parser contract; their audit
+  evidence remains preserved in B2 and must not be counted for current
+  convergence.
   The superseded `0.1.24` replays for 2018, 2024, 2025, and 2026 had passed
   both gates before this defect was found, but they are retained only as
-  historical evidence; the v121--v130 rotations must pass on `0.1.25` before
-  those years are counted again.
+  historical evidence; fresh `.26` rotations must pass before those years are
+  counted again.
 - Caixin 2013 holdout-v1 has formally converged at 800/800 on
   `caixin-parser/0.1.9` with QA revision 1, zero prior-cohort overlap, zero
   hard content anomalies, and all 228 selected images preserved. The parser
