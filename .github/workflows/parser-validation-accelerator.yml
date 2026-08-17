@@ -742,11 +742,14 @@ jobs:
           # partner or archive circuit must never hold the validation batch
           # indefinitely; the primary Wayback/Common Crawl replay remains
           # sufficient to make progress and will resume this lookup later.
-          if ! timeout 600 python \
-            services/olds-api/tools/enrich_ft_validation_candidates.py \
+          # Mirror enrichment is optional. Keep it strictly bounded so a
+          # slow partner/index cannot consume the entire validation batch;
+          # the primary Wayback/Common Crawl replay remains authoritative.
+          if ! timeout --kill-after=15s 180s python \
+              services/olds-api/tools/enrich_ft_validation_candidates.py \
               --state "$LOCAL_ROOT/raw/capture.sqlite3" \
               --output-dir "$LOCAL_ROOT/raw" \
-              --limit 600 \
+              --limit 200 \
               --workers "$DOWNLOAD_WORKERS" \
               --github-output "$GITHUB_OUTPUT"; then
             echo "::warning::FT mirror pre-index timed out or failed; continuing with archive replay."
