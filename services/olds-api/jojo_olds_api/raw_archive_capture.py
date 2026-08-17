@@ -1398,7 +1398,18 @@ def capture_item(
                 candidates_considered.extend(legacy_candidates)
                 consider_candidates(legacy_candidates)
         if best_response is None:
-            consider_candidates(item.candidates)
+            manifest_candidates = item.candidates
+            if (
+                item.publisher == "wsj"
+                and not enable_wayback_timemap_fallback
+            ):
+                # The first WSJ pass is deliberately a cheap, checkpointable
+                # probe. Wayback currently returns intermittent 503s; trying
+                # every duplicate snapshot here can hold one URL for minutes.
+                # Retry continuations revisit the full candidate set and add
+                # timemap/secondary-archive fallbacks.
+                manifest_candidates = item.candidates[:1]
+            consider_candidates(manifest_candidates)
 
     # In the independent WSJ retry cohort, every observed secondary-archive
     # success came from Arquivo.pt while Common Crawl contributed none.  Try
