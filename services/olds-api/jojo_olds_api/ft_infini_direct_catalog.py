@@ -761,7 +761,11 @@ def _is_ft_hostname(hostname: str) -> bool:
 def _is_ft_subscription_headline(headline: str) -> bool:
     normalized = " ".join(headline.casefold().split())
     tokens = set(_SIGNIFICANT_TOKEN_RE.findall(normalized))
-    if "subscribe" not in tokens and "subscriber" not in tokens:
+    if (
+        "subscribe" not in tokens
+        and "subscriber" not in tokens
+        and "subscription" not in tokens
+    ):
         return False
     # Infini-News exposes several recurring FT access-shell labels.  Keep
     # this narrow to subscription language so legitimate headlines that only
