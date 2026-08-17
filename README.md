@@ -478,7 +478,7 @@ The temporary runner remains the active home while validation is in progress.
   2016 audit has 798 complete and 2 partial rows; 2023 has 799 complete and
   1 partial row, while the other years have 800 complete rows. Earlier
   pre-0.1.5 evidence remains historical.
-- NPR's current parser is now `npr-parser/0.1.48`. The v0.1.31/v0.1.32
+- NPR's current parser is now `npr-parser/0.1.49`. The v0.1.31/v0.1.32
   replays exposed legacy podcast, subscription-network, and newsletter CTAs;
   later audits also exposed long podcast/challenge CTAs and legacy `Read more`
   links. The parser removes all of these with regression fixtures. Fresh
