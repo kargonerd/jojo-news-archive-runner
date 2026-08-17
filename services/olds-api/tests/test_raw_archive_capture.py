@@ -4102,7 +4102,7 @@ def test_wsj_validation_defers_timemap_until_retry():
     )
     assert (retry.wayback_timemap, retry.common_crawl, retry.arquivo_pt) == (
         True,
-        False,
+        True,
         True,
     )
 
