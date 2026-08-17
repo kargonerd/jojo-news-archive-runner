@@ -4062,6 +4062,30 @@ def test_wsj_validation_uses_bounded_timemap_on_first_attempt():
     )
 
 
+def test_ft_validation_defers_timemap_until_retry():
+    first = archive_fallback_policy(
+        publisher="ft",
+        parser_validation_enabled=True,
+        prior_attempts=0,
+    )
+    retry = archive_fallback_policy(
+        publisher="ft",
+        parser_validation_enabled=True,
+        prior_attempts=1,
+    )
+
+    assert (
+        first.wayback_timemap,
+        first.common_crawl,
+        first.arquivo_pt,
+    ) == (False, True, True)
+    assert (
+        retry.wayback_timemap,
+        retry.common_crawl,
+        retry.arquivo_pt,
+    ) == (True, True, True)
+
+
 def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
     first = archive_fallback_policy(
         publisher="wsj",

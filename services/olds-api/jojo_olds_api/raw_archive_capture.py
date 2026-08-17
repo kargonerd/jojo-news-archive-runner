@@ -1227,7 +1227,7 @@ def capture_item(
         consider_ft_dynamic_syndication()
     consider_ft_ghostarchive()
 
-    if item.publisher == "ft":
+    if item.publisher == "ft" and enable_wayback_timemap_fallback:
         # Exact Wayback captures have historically produced far more usable FT
         # articles than Common Crawl WARC records. Try the nearest exact
         # snapshots first and avoid three index plus Range lookups when one is
@@ -1840,6 +1840,15 @@ def archive_fallback_policy(
 ) -> ArchiveFallbackPolicy:
     if prior_attempts < 0:
         raise ValueError("prior_attempts must not be negative")
+    if publisher == "ft" and parser_validation_enabled:
+        # FT timemap discovery is expensive and often returns retryable
+        # archive errors. Let the first pass use existing exact candidates
+        # plus the secondary archives; a retry can pay for timemap selection.
+        return ArchiveFallbackPolicy(
+            wayback_timemap=prior_attempts >= 1,
+            common_crawl=True,
+            arquivo_pt=True,
+        )
     if publisher == "wsj" and parser_validation_enabled:
         # Publication-near WSJ captures are frequently metered previews, but
         # later/larger digests for the same URL can contain the full article.
