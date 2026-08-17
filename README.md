@@ -126,6 +126,12 @@ The temporary runner remains the active home while validation is in progress.
   regression fixture. Fresh zero-overlap `holdout-v15` replays for 2016--2020
   are now running on the patched parser; none is counted as current-version
   convergence until both formal gates pass.
+  The FT Infini-News direct catalog also contains recurring access-shell titles
+  such as ``All the benefits of Premium Digital, plus:`` and ``Register to
+  read: Financial Times``. The capture filter now excludes these title-only
+  shells before network capture (commit `56440b1`), while retaining their
+  source rows and raw evidence; subsequent FT continuations use the narrower
+  candidate pool.
 - Axios's current parser is `axios-parser/0.1.26`, after fixes for partner
   financial-newsletter CTAs, short quote-card attributions, malformed URL
   aliases, legacy Draft.js `Read more` headings, and the historical
