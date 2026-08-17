@@ -2155,12 +2155,21 @@ def _fetch_usable_candidate(
                 "ft.com"
             )
         ):
+            # Respect the batch-level retry/timeout budget.  FT historically
+            # used a hard-coded two-attempt, 30-second limited fetch here,
+            # which silently defeated the validation workflow's one-attempt
+            # first pass and could occupy a worker for minutes on a dead
+            # Wayback snapshot.
+            configured_attempts = int(getattr(archive_client, "attempts", 2))
+            configured_timeout = float(
+                getattr(archive_client, "timeout", 30.0)
+            )
             status_code, headers, content, final_url = _fetch_limited_archive(
                 archive_client,
                 candidate.snapshot_url,
                 maximum_bytes=maximum_html_bytes,
-                attempts=2,
-                timeout=30.0,
+                attempts=max(1, min(2, configured_attempts)),
+                timeout=max(1.0, min(30.0, configured_timeout)),
             )
         else:
             status_code, headers, content, final_url = archive_client.fetch(

@@ -453,6 +453,9 @@ class StubArchiveClient:
     def __init__(self, responses: dict[str, tuple[int, dict[str, str], bytes, str]]):
         self.responses = responses
         self.requests: list[str] = []
+        self.limited_calls: list[tuple[str, int, float]] = []
+        self.attempts = 2
+        self.timeout = 30.0
 
     def fetch(self, url: str, *, maximum_bytes: int):
         self.requests.append(url)
@@ -460,6 +463,17 @@ class StubArchiveClient:
         if len(response[2]) > maximum_bytes:
             raise ValueError("too large")
         return response
+
+    def fetch_limited(
+        self,
+        url: str,
+        *,
+        maximum_bytes: int,
+        attempts: int,
+        timeout: float,
+    ):
+        self.limited_calls.append((url, attempts, timeout))
+        return self.fetch(url, maximum_bytes=maximum_bytes)
 
 
 def test_caixin_capture_skips_shell_and_uses_complete_later_candidate(
@@ -4103,6 +4117,8 @@ def test_ft_first_pass_still_uses_manifest_candidates_without_timemap(
             )
         }
     )
+    client.attempts = 1
+    client.timeout = 12.0
     item = ManifestItem(
         publisher="ft",
         canonical_url=canonical_url,
@@ -4121,6 +4137,7 @@ def test_ft_first_pass_still_uses_manifest_candidates_without_timemap(
 
     assert result["status"] == "complete"
     assert client.requests == [snapshot_url]
+    assert client.limited_calls == [(snapshot_url, 1, 12.0)]
 
 
 def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
