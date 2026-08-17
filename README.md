@@ -124,7 +124,7 @@ The temporary runner remains the active home while validation is in progress.
   2020 audit then exposed a split two-paragraph `Coronavirus business update`
   newsletter promo; `ft-parser/0.8.49` removes that interface pair with a
   regression fixture. Fresh zero-overlap `holdout-v15` replays for 2016--2020
-  are now running on the patched parser; none is counted as current-version
+  are now running as the fresh zero-overlap `holdout-v16` cohort on the patched parser; none is counted as current-version
   convergence until both formal gates pass.
   The FT Infini-News direct catalog also contains recurring access-shell titles
   such as ``All the benefits of Premium Digital, plus:`` and ``Register to
