@@ -103,7 +103,12 @@ class ArchiveClient:
         client = getattr(self._local, "client", None)
         if client is None:
             transport = httpx.HTTPTransport(
-                retries=2,
+                # Retry policy belongs to ArchiveClient._fetch, which records
+                # archive failures, applies the circuit breaker, and can
+                # switch Wayback HTTPS to HTTP.  Transport-level retries
+                # silently multiply that policy and leave validation workers
+                # occupied for minutes on dead archive captures.
+                retries=0,
                 limits=httpx.Limits(
                     max_connections=2,
                     max_keepalive_connections=1,
