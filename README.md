@@ -126,6 +126,12 @@ The temporary runner remains the active home while validation is in progress.
   regression fixture. Fresh zero-overlap `holdout-v15` replays for 2016--2020
   are now running as the fresh zero-overlap `holdout-v16` cohort on the patched parser; none is counted as current-version
   convergence until both formal gates pass.
+  The archive client now enforces a wall-clock limit over each complete
+  streamed response, rather than limiting only individual socket reads, so a
+  slow-trickling replay cannot occupy a validation worker indefinitely. FT's
+  first validation pass probes only the first manifest snapshot per URL;
+  retry continuations exhaust the remaining snapshots and staged secondary
+  archives.
   The FT Infini-News direct catalog also contains recurring access-shell titles
   such as ``All the benefits of Premium Digital, plus:`` and ``Register to
   read: Financial Times``. The capture filter now excludes these title-only
