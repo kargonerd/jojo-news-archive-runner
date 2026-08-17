@@ -62,7 +62,6 @@ from jojo_olds_api.raw_archive_capture import (
     discover_ft_syndication_candidates,
     discover_reuters_syndication_candidates,
     discover_wayback_timemap_candidates,
-    defer_expensive_archive_fallbacks,
     ft_google_news_headline_search_url,
     ft_google_news_partner_search_url,
     ftchinese_title_search_url,
@@ -4085,26 +4084,26 @@ def test_wsj_retry_prefers_validated_arquivo_pt_before_common_crawl(
     assert capture.quality_signals["arquivoPtReplayValidated"] is True
 
 
-def test_wsj_validation_uses_bounded_timemap_on_first_attempt():
-    assert not defer_expensive_archive_fallbacks(
+def test_wsj_validation_defers_timemap_until_retry():
+    first = archive_fallback_policy(
         publisher="wsj",
         parser_validation_enabled=True,
         prior_attempts=0,
     )
-    assert not defer_expensive_archive_fallbacks(
+    retry = archive_fallback_policy(
         publisher="wsj",
         parser_validation_enabled=True,
         prior_attempts=1,
     )
-    assert not defer_expensive_archive_fallbacks(
-        publisher="wsj",
-        parser_validation_enabled=False,
-        prior_attempts=0,
+    assert (first.wayback_timemap, first.common_crawl, first.arquivo_pt) == (
+        False,
+        False,
+        False,
     )
-    assert not defer_expensive_archive_fallbacks(
-        publisher="npr",
-        parser_validation_enabled=True,
-        prior_attempts=0,
+    assert (retry.wayback_timemap, retry.common_crawl, retry.arquivo_pt) == (
+        True,
+        False,
+        True,
     )
 
 
@@ -4198,7 +4197,7 @@ def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
         first.wayback_timemap,
         first.common_crawl,
         first.arquivo_pt,
-    ) == (True, False, False)
+    ) == (False, False, False)
     assert (
         second.wayback_timemap,
         second.common_crawl,

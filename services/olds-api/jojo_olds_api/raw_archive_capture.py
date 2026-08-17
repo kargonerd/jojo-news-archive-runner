@@ -1900,12 +1900,13 @@ def archive_fallback_policy(
     if publisher == "wsj" and parser_validation_enabled:
         # Publication-near WSJ captures are frequently metered previews, but
         # later/larger digests for the same URL can contain the full article.
-        # Timemap selection is bounded and ranks those large distinct digests
-        # first, so use it on the first validation pass.  Deferring it until a
-        # retry forced large holdout cohorts to exhaust thousands of known
-        # snippets before reaching the high-yield exact snapshots.
+        # The first pass must nevertheless stay bounded: when Wayback is
+        # returning 503s, probing a timemap after every three manifest
+        # snapshots can hold a worker for minutes without producing a
+        # checkpoint.  Retry continuations enable the bounded timemap and
+        # secondary archives after the cheap manifest candidates are spent.
         return ArchiveFallbackPolicy(
-            wayback_timemap=True,
+            wayback_timemap=prior_attempts >= 1,
             common_crawl=prior_attempts >= 2,
             arquivo_pt=prior_attempts >= 1,
         )

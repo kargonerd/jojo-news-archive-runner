@@ -898,6 +898,12 @@ jobs:
             # FT while retaining two attempts for other publishers.
             archive_attempts=1
           fi
+          if [ "$PUBLISHER" = "wsj" ]; then
+            # Wayback 503s otherwise make each manifest URL spend a second
+            # application retry behind the shared circuit breaker. A later
+            # continuation retries errored rows with the full fallback policy.
+            archive_attempts=1
+          fi
           args=(
             --publisher "$PUBLISHER"
             --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
