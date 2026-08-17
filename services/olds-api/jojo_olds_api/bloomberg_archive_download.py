@@ -245,6 +245,12 @@ class ArchiveClient:
         for attempt in range(maximum_attempts):
             self._wait_for_circuit(url)
             self.rate_limiter.wait()
+            # httpx's read timeout is applied per socket read.  A replay
+            # endpoint can therefore keep a worker occupied indefinitely by
+            # sending a trickle of bytes just inside that per-read timeout.
+            # Bound the complete response as well so validation batches remain
+            # resumable and a stalled archive cannot consume every worker.
+            response_deadline = time.monotonic() + max(1.0, request_timeout)
             try:
                 with self._get_client().stream(
                     "GET",
@@ -276,6 +282,10 @@ class ArchiveClient:
                     chunks = []
                     byte_count = 0
                     for chunk in response.iter_bytes():
+                        if time.monotonic() >= response_deadline:
+                            raise TimeoutError(
+                                "archive response exceeded wall-clock timeout"
+                            )
                         byte_count += len(chunk)
                         if byte_count > maximum_bytes:
                             raise ValueError(
@@ -288,7 +298,11 @@ class ArchiveClient:
                 last_error = exc
                 if attempt + 1 < maximum_attempts:
                     time.sleep(exc.retry_after or min(60.0, 2.0 ** attempt))
-            except (httpx.TransportError, httpx.TimeoutException) as exc:
+            except (
+                httpx.TransportError,
+                httpx.TimeoutException,
+                TimeoutError,
+            ) as exc:
                 last_error = exc
                 self._record_failure(url)
                 if attempt + 1 < maximum_attempts:
