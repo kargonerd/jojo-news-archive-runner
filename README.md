@@ -166,6 +166,11 @@ The temporary runner remains the active home while validation is in progress.
   formally converged: 800/800 audited and complete, QA 100%, zero parser
   errors, zero prior/exclusion overlap, zero hard content anomalies, and 992
   selected images (one non-hard repeated-block review candidate). The
+  fresh `.26` `holdout-v134` replay for 2020 has now also formally converged:
+  800/800 audited complete rows, QA 100%, zero parser errors, zero prior or
+  exclusion overlap, zero hard content anomalies, and 957 selected images.
+  Its only review candidate is a non-hard repeated-block group containing
+  genuine ``what they're saying:`` labels and editor-update notices.
   remaining current-version replays for 2018--2026 (excluding source-limited
   2016 and converged 2023) are being dispatched; 2016 remains source-limited.
   The
