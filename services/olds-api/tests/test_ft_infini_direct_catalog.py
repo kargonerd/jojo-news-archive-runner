@@ -246,6 +246,9 @@ def test_ft_subscription_headline_filter_covers_paywall_variants():
     assert catalog._is_ft_subscription_headline(
         "Subscribe to read: Catch up on our 5 best weekend reads"
     )
+    assert catalog._is_ft_subscription_headline(
+        "Purchase a Digital Trial subscription for"
+    )
     assert not catalog._is_ft_subscription_headline(
         "FT subscribers weigh in on the budget"
     )

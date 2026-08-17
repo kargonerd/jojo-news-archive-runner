@@ -770,6 +770,11 @@ def _is_ft_subscription_headline(headline: str) -> bool:
         "subscribe to read" in normalized
         or "become an ft subscriber" in normalized
         or "subscribe to ft" in normalized
+        or "purchase a digital trial" in normalized
+        or (
+            "subscription" in tokens
+            and {"purchase", "digital"}.issubset(tokens)
+        )
         or {"ft", "com"}.issubset(tokens)
     )
 
