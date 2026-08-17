@@ -131,7 +131,9 @@ The temporary runner remains the active home while validation is in progress.
   read: Financial Times``. The capture filter now excludes these title-only
   shells before network capture (commit `56440b1`), while retaining their
   source rows and raw evidence; subsequent FT continuations use the narrower
-  candidate pool.
+  candidate pool. The validation planner also excludes those same title-only
+  Infini rows from direct-provider samples, so they cannot consume a holdout
+  slot even when a previous checkpoint already contains them.
 - Axios's current parser is `axios-parser/0.1.26`, after fixes for partner
   financial-newsletter CTAs, short quote-card attributions, malformed URL
   aliases, legacy Draft.js `Read more` headings, and the historical
