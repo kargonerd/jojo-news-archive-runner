@@ -616,7 +616,13 @@ The temporary runner remains the active home while validation is in progress.
   `holdout-v113` for 2025 has now formally converged as well: 800 audited
   complete rows, 100% QA, zero parser errors, zero hard anomalies, zero
   prior/exclusion overlap, and 2,673 selected images (two non-hard review
-  candidates). Fresh `.49` replays for 2011 and 2014 remain in progress.
+  candidates). The fresh `.49` replay for 2014 remains in progress.
+  The `.49` `holdout-v114` replay for 2011 has now formally converged as
+  well: 800 audited complete rows, 100% QA, zero parser errors, zero hard
+  anomalies, zero prior/exclusion overlap, and 1,175 selected images (two
+  non-hard review candidates). NPR 2014 is being resumed from 799/800 after
+  an automatic-continuation guard incorrectly skipped its final one-row
+  batch.
   The v34 2026 replay reached 800/800 with zero parser errors, but its content
   audit exposed a Planet Money newsletter CTA. `npr-parser/0.1.43` removes
   that exact interface block; v34 is superseded and a fresh zero-overlap v35
