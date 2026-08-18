@@ -1300,14 +1300,18 @@ def parse_article(
             spec.publisher == "wsj"
             and content_type == ContentType.ARTICLE
         )
-        # Al Jazeera publishes legitimate short briefs; a 300-character
-        # floor keeps empty shells out without discarding two-paragraph
-        # reports preserved by Wayback.
-        else 300
+        # Al Jazeera publishes legitimate short briefs and image-led
+        # explainers; use the parser's normal 100-character floor for those,
+        # while retaining the stricter floor for sparse interactive shells.
+        else _MINIMUM_BODY_CHARACTERS
         if (
             spec.publisher == "aljazeera"
-            and content_type
-            in {ContentType.ARTICLE, ContentType.INTERACTIVE}
+            and content_type == ContentType.ARTICLE
+        )
+        else 500
+        if (
+            spec.publisher == "aljazeera"
+            and content_type == ContentType.INTERACTIVE
         )
         else _MINIMUM_BODY_CHARACTERS
     )
