@@ -1204,6 +1204,21 @@ def parse_article(
             )
         )
     )
+    # A small set of NYT visual features (notably T Magazine) is published
+    # as one or two figures plus captions and only a short editorial dek.  It
+    # is still a recoverable image-led article: the figure/caption payload is
+    # the body, rather than an empty interactive shell.  Do not manufacture
+    # prose, but do allow the preserved image/caption record to pass the
+    # short-body gate.
+    nyt_image_led_editorial = (
+        spec.publisher == "nyt"
+        and content_type == ContentType.ARTICLE
+        and _nyt_image_led_editorial(
+            soup,
+            body=clean_body,
+            canonical_url=canonical_url,
+        )
+    )
     embedded_nontext_content = bool(
         content_type
         in {
@@ -1318,6 +1333,7 @@ def parse_article(
     if (
         len(plain_text) < minimum_body_characters
         and not image_led_gallery
+        and not nyt_image_led_editorial
         and not embedded_nontext_content
         and not publisher_notice
         and not structured_short_record
@@ -5294,6 +5310,44 @@ def _nyt_should_select_gallery_body(
         len(substantive) < 2
         or sum(len(text) for text in substantive) < 300
     )
+
+
+def _nyt_image_led_editorial(
+    soup: BeautifulSoup,
+    *,
+    body: BeautifulSoup,
+    canonical_url: str,
+) -> bool:
+    """Recognize short NYT visual features whose figures are the body.
+
+    These pages are ordinary ``ARTICLE`` records rather than NYT galleries:
+    the HTML contains a short dek followed by figure/caption blocks.  Keep
+    the rule deliberately narrow so an unhydrated interactive shell cannot
+    satisfy the short-body exemption.
+    """
+    if "/interactive/" in canonical_url.casefold():
+        return False
+    article_body = body.select_one(
+        "[name='articleBody'], section[name='articleBody'], article"
+    )
+    if not isinstance(article_body, Tag):
+        article_body = soup.select_one(
+            "[name='articleBody'], section[name='articleBody'], article"
+        )
+    if not isinstance(article_body, Tag):
+        return False
+    figures = article_body.select("figure")
+    if not figures:
+        return False
+    captions = [
+        _clean_text(caption.get_text(" ", strip=True))
+        for caption in article_body.select("figure figcaption")
+    ]
+    caption_characters = sum(len(value) for value in captions)
+    has_media = article_body.select_one(
+        "figure img[src], figure source[srcset], figure [data-testid='lazy-image']"
+    ) is not None
+    return has_media and caption_characters >= 60
 
 
 def _nyt_legacy_slideshow_json_rows(

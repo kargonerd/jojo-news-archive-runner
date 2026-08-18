@@ -1452,6 +1452,21 @@ def record_parser_validation(
             # payload there is no recoverable article body to validate.
             issues.append("nonarticle-desk")
         if (
+            capture.publisher == "nyt"
+            and article.quality.status != ArticleStatus.COMPLETE
+            and article.quality.body_characters < 200
+        ):
+            # A few NYT URLs are briefly exposed as an Editors' Note before
+            # the promised story is published. Wayback preserves that
+            # placeholder faithfully, but it is not an article body and
+            # should not consume an independent parser sample.
+            placeholder_text = article.plain_text.casefold()
+            if (
+                "published prematurely" in placeholder_text
+                and "will be available" in placeholder_text
+            ):
+                issues.append("nonarticle-desk")
+        if (
             capture.publisher == "aljazeera"
             and article.quality.body_characters < 300
             and article.plain_text.casefold().startswith(
