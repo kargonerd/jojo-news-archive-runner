@@ -35,6 +35,10 @@ def test_generic_interface_noise_requires_standalone_trending_stories():
             "trending stories on social media."
         ]
     )
+    assert _has_generic_interface_noise(["read more:"])
+    assert not _has_generic_interface_noise(
+        ["read more:"], allow_editorial_read_more=True
+    )
 from jojo_olds_api.raw_archive_capture import (
     completed_raw_capture,
     initialize_capture_schema,
@@ -2807,7 +2811,7 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2022, 1, 'test', 'aljazeera-parser/0.1.5', 2, 'now')
+        ) VALUES (2022, 1, 'test', 'aljazeera-parser/0.1.6', 2, 'now')
         """
     )
     connection.execute(
@@ -2871,7 +2875,7 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
             qa_revision, extraction_status, content_type, qa_pass,
             body_characters, block_count, warnings_json, issues_json,
             parsed_at
-        ) VALUES (?, 'aljazeera', 2022, 'aljazeera-parser/0.1.5', 2,
+        ) VALUES (?, 'aljazeera', 2022, 'aljazeera-parser/0.1.6', 2,
                   'complete', 'article', 1, 1200, 3, '[]', '[]', 'now')
         """,
         ("https://www.aljazeera.com/news/2022/11/29/regular-article",),

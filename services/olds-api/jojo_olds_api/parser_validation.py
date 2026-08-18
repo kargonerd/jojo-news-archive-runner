@@ -205,11 +205,15 @@ def _has_publisher_interface_noise(
     return False
 
 
-def _has_generic_interface_noise(blocks: list[str]) -> bool:
+def _has_generic_interface_noise(
+    blocks: list[str],
+    *,
+    allow_editorial_read_more: bool = False,
+) -> bool:
     """Detect standalone interface chrome without matching normal prose."""
     return any(
         text == "0 min read"
-        or text == "read more:"
+        or (text == "read more:" and not allow_editorial_read_more)
         or text == "promoted content"
         or text in _EXACT_UI_NOISE_BLOCKS
         or (len(text) >= 2 and set(text) == {"_"})
@@ -1438,6 +1442,18 @@ def record_parser_validation(
         ):
             issues.append("nonarticle-desk")
         if (
+            capture.publisher == "aljazeera"
+            and article.quality.body_characters < 300
+            and article.plain_text.casefold().startswith(
+                "al jazeera has removed this story"
+            )
+        ):
+            # Wayback preserves a small number of publisher takedown notices
+            # in place of the original story. They are valid archive captures
+            # but not article bodies, so keep them out of the parser-error
+            # gate while retaining the raw object for provenance.
+            issues.append("nonarticle-desk")
+        if (
             article.quality.status != ArticleStatus.COMPLETE
             and not nontext_content
             and "nonarticle-desk" not in issues
@@ -1457,7 +1473,8 @@ def record_parser_validation(
             if block.text and _normalize_text(block.text)
         ]
         if _has_generic_interface_noise(
-            normalized_blocks
+            normalized_blocks,
+            allow_editorial_read_more=capture.publisher == "aljazeera",
         ) or _has_publisher_interface_noise(
             capture.publisher,
             [
