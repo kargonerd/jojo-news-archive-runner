@@ -12159,7 +12159,9 @@ def _remove_reuters_promos(soup: BeautifulSoup) -> None:
 
     for node in list(soup.select("p, h2, h3, h4, h5, h6")):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
-        if text.startswith(
+        if text in {"share this article", "whatsapp print pdf"}:
+            node.decompose()
+        elif text.startswith(
             "register now for free unlimited access to reuters.com"
         ) or text.startswith(
             "the company and law firm names shown above are generated "
