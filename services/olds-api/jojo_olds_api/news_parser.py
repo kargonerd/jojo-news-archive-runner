@@ -4352,14 +4352,35 @@ def _wsj_declared_word_count(soup: BeautifulSoup) -> int | None:
 def _wsj_unsupported_media_gallery(soup: BeautifulSoup) -> Tag | None:
     """Recover the synopsis when an old slideshow app cannot be replayed."""
     shell = soup.select_one(".wsj-snippet-body, .wsj-snippet-login")
-    if not isinstance(shell, Tag):
-        return None
-    shell_text = shell.get_text(" ", strip=True).casefold()
-    if (
-        "media that is not currently supported" not in shell_text
-        or soup.select_one(".slideshow-article") is None
-    ):
-        return None
+    if isinstance(shell, Tag):
+        shell_text = shell.get_text(" ", strip=True).casefold()
+        if (
+            "media that is not currently supported" not in shell_text
+            or soup.select_one(".slideshow-article") is None
+        ):
+            return None
+    else:
+        # Infini-News sometimes materializes an old WSJ photo story as a tiny
+        # derived document.  It has no replayable slide payload and its body
+        # consists solely of the explicit unsupported-media notice followed by
+        # subscription/navigation chrome.  Returning an empty article keeps
+        # the record as a gallery shell while preventing interface prose from
+        # entering the canonical body.
+        derived = soup.select_one(
+            "article[data-jojo-representation='derived-infini-news']"
+        )
+        if not isinstance(derived, Tag):
+            return None
+        derived_text = derived.get_text(" ", strip=True).casefold()
+        if (
+            "article not supported" not in derived_text
+            or "media that is not currently supported" not in derived_text
+            or "to read the full story" not in derived_text
+        ):
+            return None
+        document = BeautifulSoup("<article></article>", "html.parser")
+        article = document.article
+        return article if isinstance(article, Tag) else None
     description = _first_text(
         _meta_content(soup, "name", "description"),
         _meta_content(soup, "property", "og:description"),
