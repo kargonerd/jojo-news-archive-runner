@@ -1300,7 +1300,10 @@ def parse_article(
             spec.publisher == "wsj"
             and content_type == ContentType.ARTICLE
         )
-        else 500
+        # Al Jazeera publishes legitimate short briefs; a 300-character
+        # floor keeps empty shells out without discarding two-paragraph
+        # reports preserved by Wayback.
+        else 300
         if (
             spec.publisher == "aljazeera"
             and content_type
