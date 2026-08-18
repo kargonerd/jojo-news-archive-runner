@@ -9047,6 +9047,24 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
         if text in _EXACT_NOISE_TEXT:
             node.decompose()
+        elif spec.publisher == "aljazeera" and text in {
+            "related",
+            "back to top",
+        }:
+            # Legacy Al Jazeera article wrappers expose these navigation
+            # labels as ordinary paragraphs inside the story body.
+            node.decompose()
+        elif (
+            spec.publisher == "aljazeera"
+            and text.startswith(
+                "the views expressed in this article are the author’s own"
+            )
+            and "al jazeera" in text
+            and "editorial policy" in text
+        ):
+            # Opinion pages repeat this site disclaimer in the body; it is
+            # publisher chrome rather than reporting.
+            node.decompose()
         elif (
             spec.publisher in {
                 "aljazeera",
