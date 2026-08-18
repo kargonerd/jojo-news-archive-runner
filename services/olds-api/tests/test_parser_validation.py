@@ -3347,6 +3347,73 @@ def test_empty_axios_video_does_not_fill_article_validation_target(
     assert result["issues"] == ["empty-nontext-content"]
 
 
+def test_axios_special_report_landing_page_is_screened_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.axios.com/2021/06/14/"
+        "hospitals-predatory-medical-billing"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2021, 1, 'test', 'axios-parser/0.1.26', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2021, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="How America's top hospitals send patient costs soaring">
+      <meta property="article:published_time"
+            content="2021-06-14T00:00:00Z">
+    </head><body><main>
+      <p>Special report: How America's top hospitals send patient costs soaring</p>
+      <a href="https://www.axios.com/special-report">Read the story</a>
+    </main></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="axios:" + ("a" * 64),
+        publisher="axios",
+        canonical_url=canonical_url,
+        published_at=datetime(2021, 6, 14, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.COMMON_CRAWL,
+            snapshot_url="https://data.commoncrawl.org/example.warc",
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2021"]["evaluated"] == 0
+    assert summary["years"]["2021"]["screenedNonArticles"] == 1
+
+
 def test_axios_internal_fixture_does_not_fill_article_validation_target(
     tmp_path: Path,
 ):
@@ -3361,7 +3428,7 @@ def test_axios_internal_fixture_does_not_fill_article_validation_target(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2017, 1, 'test', 'axios-parser/0.1.26', 4, 'now')
+        ) VALUES (2017, 1, 'test', 'axios-parser/0.1.26', 5, 'now')
         """
     )
     connection.execute(
@@ -3424,7 +3491,7 @@ def test_malformed_axios_url_alias_does_not_fill_validation_target(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2025, 1, 'test', 'axios-parser/0.1.26', 4, 'now')
+        ) VALUES (2025, 1, 'test', 'axios-parser/0.1.26', 5, 'now')
         """
     )
     connection.execute(

@@ -9,7 +9,7 @@ _QA_POLICY_REVISIONS = {
     # notice; exclude those non-recoverable dynamic packages from the article
     # cohort while retaining their raw captures and content type.
     "aljazeera": 2,
-    "axios": 4,
+    "axios": 5,
     "caixin": 1,
     # SCMP access shells and image-only slideshow packages have no
     # recoverable article body; retain raw records but exclude them from

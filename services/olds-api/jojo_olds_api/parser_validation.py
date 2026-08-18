@@ -1311,6 +1311,23 @@ def record_parser_validation(
             article.headline,
         ):
             issues.append("nonarticle-desk")
+        # Axios special-report landing pages expose a headline and a poster
+        # image but only a short ``Read the story`` hand-off to the actual
+        # package. Preserve the landing page while excluding it from the
+        # text-article denominator.
+        if (
+            capture.publisher == "axios"
+            and article.quality.body_characters < 100
+            and article.quality.status != ArticleStatus.COMPLETE
+        ):
+            axios_text = _normalize_text(
+                BeautifulSoup(html_bytes, "html.parser").get_text(
+                    " ",
+                    strip=True,
+                )
+            ).casefold()
+            if "special report" in axios_text and "read the story" in axios_text:
+                issues.append("nonarticle-desk")
         if capture.publisher == "axios" and normalize_article_url(
             archive_source_spec("axios"),
             capture.canonical_url,
