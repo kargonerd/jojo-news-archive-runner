@@ -1454,6 +1454,15 @@ def record_parser_validation(
             # gate while retaining the raw object for provenance.
             issues.append("nonarticle-desk")
         if (
+            capture.publisher == "aljazeera"
+            and article.content_type == ContentType.ARTICLE
+            and article.quality.body_characters == 0
+        ):
+            # A handful of legacy Al Jazeera URLs are article shells whose
+            # archived page has no recoverable prose at all. Keep the raw
+            # capture, but do not let an empty shell consume an article slot.
+            issues.append("nonarticle-desk")
+        if (
             article.quality.status != ArticleStatus.COMPLETE
             and not nontext_content
             and "nonarticle-desk" not in issues
