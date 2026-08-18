@@ -14902,7 +14902,10 @@ def _extract_authors(
 def _content_type(article: dict[str, Any], canonical_url: str) -> ContentType:
     article_type = article.get("@type") if article else None
     url = canonical_url.casefold()
-    if article_type == "LiveBlogPosting" or re.search(r"/live(?:/|$)", url):
+    if article_type == "LiveBlogPosting" or re.search(
+        r"/(?:live|liveblog)(?:/|$)",
+        url,
+    ):
         return ContentType.LIVEBLOG
     if "newsletter" in url:
         return ContentType.NEWSLETTER
