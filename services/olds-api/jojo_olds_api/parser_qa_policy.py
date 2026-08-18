@@ -15,6 +15,10 @@ _QA_POLICY_REVISIONS = {
     # recoverable article body; retain raw records but exclude them from
     # article QA denominators.
     "scmp": 3,
+    # Zaobao's sitemap includes interactive packages and horse-racing result
+    # desks.  These records are useful raw captures but are not recoverable
+    # text-news articles for the parser cohort.
+    "zaobao": 1,
     # Exclude legacy NYT admin-package pages whose archive snapshot contains
     # only a teaser and no recoverable article body.
     "nyt": 2,

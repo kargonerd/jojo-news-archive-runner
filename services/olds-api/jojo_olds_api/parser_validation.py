@@ -1399,6 +1399,20 @@ def record_parser_validation(
                     )
                 ):
                     issues.append("nonarticle-desk")
+        # Zaobao's article sitemap also contains interactive packages and
+        # horse-racing result pages.  The former can arrive through a
+        # canonical news URL but redirect to ``interactive.zaobao.com.sg``;
+        # the latter expose a short structured-results shell rather than a
+        # text article.  Keep both captures for provenance without counting
+        # them as parser extraction failures.
+        if capture.publisher == "zaobao":
+            final_url = (capture.final_url or "").casefold()
+            canonical_url = capture.canonical_url.casefold()
+            if (
+                "interactive.zaobao.com.sg" in final_url
+                or "/horse-racing/race-results/" in canonical_url
+            ):
+                issues.append("nonarticle-desk")
         # NPR's legacy audio-only pages can retain a headline and player while
         # exposing no recoverable text body. Preserve the raw/audio record,
         # but do not let an unrecoverable short audio shell fill an article

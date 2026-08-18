@@ -2867,7 +2867,6 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
     assert result["issues"] == ["nonarticle-desk"]
     assert summary["years"]["2022"]["evaluated"] == 0
     assert summary["years"]["2022"]["screenedNonArticles"] == 1
-
     connection.execute(
         """
         INSERT INTO parser_validation_results(
@@ -2885,6 +2884,88 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
     assert summary["years"]["2022"]["qaPassed"] == 1
     assert summary["years"]["2022"]["screenedNonArticles"] == 1
 
+
+@pytest.mark.parametrize(
+    ("canonical_url", "final_url", "html"),
+    [
+        (
+            "https://www.zaobao.com.sg/news/singapore/"
+            "story20260810-9494116",
+            "https://web.archive.org/web/20260811015845id_/"
+            "https://interactive.zaobao.com.sg/2026/sg61-national-day-parade-2026-moments/",
+            b"<html><head><title>Interactive package</title>"
+            b"<meta property='og:title' content='Interactive package'>"
+            b"<meta property='article:published_time' content='2026-08-10T00:00:00Z'>"
+            b"</head>"
+            b"<body><main>Interactive package</main></body></html>",
+        ),
+        (
+            "https://www.zaobao.com.sg/horse-racing/race-results/"
+            "story20260526-9105820",
+            "https://www.zaobao.com.sg/horse-racing/race-results/"
+            "story20260526-9105820",
+            b"<html><head><title>Race results</title>"
+            b"<meta property='og:title' content='Race results'>"
+            b"<meta property='article:published_time' content='2026-05-26T00:00:00Z'>"
+            b"</head>"
+            b"<body><article><p>Race results.</p></article></body></html>",
+        ),
+    ],
+)
+def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
+    tmp_path: Path,
+    canonical_url: str,
+    final_url: str,
+    html: bytes,
+):
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.8', 1, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2026, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="zaobao:" + ("a" * 64),
+        publisher="zaobao",
+        canonical_url=canonical_url,
+        published_at=datetime(2026, 5, 26, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20260626000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=final_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2026"]["evaluated"] == 0
+    assert summary["years"]["2026"]["screenedNonArticles"] == 1
 
 def test_scmp_access_shell_is_excluded_from_article_cohort(
     tmp_path: Path,
