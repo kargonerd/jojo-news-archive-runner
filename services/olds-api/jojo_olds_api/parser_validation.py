@@ -1488,6 +1488,24 @@ def record_parser_validation(
             # capture, but do not let an empty shell consume an article slot.
             issues.append("nonarticle-desk")
         if (
+            capture.publisher == "aljazeera"
+            and article.quality.body_characters < 100
+        ):
+            # Legacy Al Jazeera infographics are sometimes classified as
+            # ordinary articles because the archived HTML retains the title
+            # and a single "Download a gif" link but not the interactive
+            # payload. Keep the shell for provenance without treating it as
+            # a parser extraction failure.
+            aljazeera_text = article.plain_text.casefold()
+            if (
+                "download a gif" in aljazeera_text
+                and (
+                    "interactive" in aljazeera_text
+                    or "infographic" in aljazeera_text
+                )
+            ):
+                issues.append("nonarticle-desk")
+        if (
             article.quality.status != ArticleStatus.COMPLETE
             and not nontext_content
             and "nonarticle-desk" not in issues
