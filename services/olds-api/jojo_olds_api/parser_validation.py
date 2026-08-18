@@ -1442,6 +1442,16 @@ def record_parser_validation(
         ):
             issues.append("nonarticle-desk")
         if (
+            capture.publisher == "nyt"
+            and "/interactive/" in capture.canonical_url.casefold()
+            and article.content_type in {ContentType.ARTICLE, ContentType.OPINION}
+            and article.quality.body_characters < 100
+        ):
+            # Some Wayback captures retain only the interactive shell and a
+            # short visual-series description. Without the embedded graphic
+            # payload there is no recoverable article body to validate.
+            issues.append("nonarticle-desk")
+        if (
             capture.publisher == "aljazeera"
             and article.quality.body_characters < 300
             and article.plain_text.casefold().startswith(
