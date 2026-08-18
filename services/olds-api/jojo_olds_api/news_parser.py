@@ -12111,7 +12111,8 @@ def _remove_reuters_promos(soup: BeautifulSoup) -> None:
         soup.select(
             ".rich-share, [data-testid='rich-share'], "
             ".Image_expand-button, .Slideshow_expand-button, "
-            "[aria-label='Expand Image Slideshow']"
+            "[aria-label='Expand Image Slideshow'], "
+            ".share-icon-container, #jMore-PopUp"
         )
     ):
         node.decompose()
