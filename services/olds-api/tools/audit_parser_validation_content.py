@@ -394,7 +394,9 @@ def audit_content(
             for text in set(normalized_blocks):
                 if 4 <= len(text) <= 500:
                     block_articles[text].add(canonical_url)
-                if _INTERFACE_TEXT_RE.search(text):
+                if _INTERFACE_TEXT_RE.search(text) and not (
+                    publisher == "aljazeera" and text == "read more:"
+                ):
                     hard_anomalies.append(
                         {
                             "type": "interface-text",
