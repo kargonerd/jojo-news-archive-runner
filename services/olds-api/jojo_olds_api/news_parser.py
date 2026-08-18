@@ -12389,6 +12389,10 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             re.IGNORECASE,
         ),
         re.compile(r"^click to read story$", re.IGNORECASE),
+        re.compile(
+            r"^sign up for the wsj book club here\.?$",
+            re.IGNORECASE,
+        ),
         re.compile(r"^corrections?\s*&\s*amplifications$", re.IGNORECASE),
         re.compile(
             r"^today[’']s top supply chain and logistics news from wsj$",
