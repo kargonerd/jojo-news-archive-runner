@@ -169,7 +169,7 @@ def test_formal_cohort_import_requires_sample_and_result_years_to_match(
         """
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, updated_at
-        ) VALUES (2021, 1, 'seed', 'nyt-parser/0.8.73', 'now')
+        ) VALUES (2021, 1, 'seed', 'nyt-parser/0.8.74', 'now')
         """
     )
     # This URL was planned for 2020 but has a stale 2021 result row.  A
@@ -199,7 +199,7 @@ def test_formal_cohort_import_requires_sample_and_result_years_to_match(
             canonical_url, publisher, sample_year, parser_version,
             extraction_status, qa_pass, warnings_json, issues_json,
             parsed_at
-        ) VALUES (?, 'nyt', 2021, 'nyt-parser/0.8.73',
+        ) VALUES (?, 'nyt', 2021, 'nyt-parser/0.8.74',
                   'complete', 1, '[]', '[]', 'now')
         """,
         (
@@ -212,7 +212,7 @@ def test_formal_cohort_import_requires_sample_and_result_years_to_match(
             canonical_url, publisher, sample_year, parser_version,
             extraction_status, qa_pass, warnings_json, issues_json,
             parsed_at
-        ) VALUES (?, 'nyt', 2021, 'nyt-parser/0.8.73',
+        ) VALUES (?, 'nyt', 2021, 'nyt-parser/0.8.74',
                   'complete', 1, '[]', '[]', 'now')
         """,
         (
