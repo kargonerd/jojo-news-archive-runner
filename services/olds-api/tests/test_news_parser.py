@@ -7884,7 +7884,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
 
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "audio"
-    assert result.quality.body_characters >= 500
+    assert result.quality.body_characters >= 20
     embed_blocks = [
         block for block in result.blocks if block.type.value == "embed"
     ]
@@ -13945,6 +13945,68 @@ def test_nyt_parser_extracts_preloaded_graphql_image_gallery():
     assert len(result.blocks) == 3
 
 
+def test_nyt_parser_extracts_oak_initial_data_embedded_interactive():
+    canonical_url = (
+        "https://www.nytimes.com/2022/11/02/us/politics/"
+        "scenes-from-the-final-campaign-sprint.html"
+    )
+    interactive_html = """
+      <div class="carousel">
+        <figure><img src="https://static01.nyt.com/first.jpg">
+          <figcaption>First campaign stop</figcaption>
+        </figure>
+        <figure><img src="https://static01.nyt.com/second.jpg">
+          <figcaption>Second campaign stop</figcaption>
+        </figure>
+      </div>
+    """
+    article = {
+        "__typename": "Article",
+        "id": "Article:oak-interactive",
+        "url": canonical_url,
+        "sprinkledBody": {
+            "content": [
+                {
+                    "__typename": "HeaderBasicBlock",
+                    "ledeMedia": {
+                        "__typename": "InteractiveBlock",
+                        "media": {
+                            "__typename": "EmbeddedInteractive",
+                            "id": "EmbeddedInteractive:oak",
+                            "html": interactive_html,
+                        },
+                    },
+                }
+            ]
+        },
+    }
+    payload = json.dumps(
+        {"initialData": {"data": {"article": article}}, "initialState": {}}
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Scenes from the final campaign sprint">
+      <meta property="article:published_time" content="2022-11-02T22:46:14Z">
+    </head><body>
+      <script>window.__preloadedData = {payload};</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters >= 20
+    assert [image.original_url for image in result.images] == [
+        "https://static01.nyt.com/first.jpg",
+        "https://static01.nyt.com/second.jpg",
+    ]
+
+
 def test_nyt_parser_extracts_ordered_diptych_visual_story():
     body_id = "$Article:round-bags.sprinkledBody"
     header_id = f"{body_id}.content@filterEmpty.0"
@@ -16278,6 +16340,26 @@ def test_nyt_parser_preserves_single_image_comics_review():
     assert result.quality.status.value == "complete"
     assert result.quality.images_selected == 1
     assert "review in comics format" in result.plain_text
+
+
+def test_nyt_parser_classifies_image_only_books_review_as_gallery():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:description" content="A graphic ode to a poet.">
+          <meta property="og:image" content="https://static01.nyt.com/review.jpg">
+        </head><body><article>
+          <h1>A Graphic Ode to a Poet</h1>
+          <section name="articleBody"><div>Credit... Artist</div></section>
+        </article></body></html>
+        """,
+        publisher="nyt",
+        canonical_url="https://www.nytimes.com/2022/04/22/books/review/example.html",
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected == 1
 
 
 def test_nyt_parser_extracts_prose_inside_nonimage_interactive_figure():

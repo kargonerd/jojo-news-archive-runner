@@ -264,6 +264,16 @@ def parse_article(
             < len(preloaded_body.get_text(" ", strip=True))
         ):
             body = preloaded_body
+        embedded_interactive_body = _nyt_preloaded_embedded_interactive_body(
+            soup,
+        )
+        if embedded_interactive_body is not None and (
+            body is None
+            or len(embedded_interactive_body.get_text(" ", strip=True))
+            > len(body.get_text(" ", strip=True))
+        ):
+            body = embedded_interactive_body
+            nyt_interactive_body_selected = True
         adventure_body = _nyt_adventure_resource_body(
             soup,
             dependent_resources=dependent_resources or {},
@@ -1229,6 +1239,16 @@ def parse_article(
                     soup,
                     canonical_url=canonical_url,
                 )
+            )
+            # Standalone legacy interactives advertise their page type in
+            # metadata even when the archived shell contains only a lede and
+            # an external graphic bundle. Preserve that package as a valid
+            # non-text record instead of reporting an extraction failure.
+            or (
+                spec.publisher == "nyt"
+                and content_type == ContentType.INTERACTIVE
+                and len(plain_text) < _MINIMUM_BODY_CHARACTERS
+                and _nyt_has_interactive_metadata(soup)
             )
             # NPR's pre-HTML5 story template represented some intentionally
             # short radio segments with only the editorial description in
@@ -4965,7 +4985,66 @@ def _string_list(value: Any) -> list[str]:
 def _nyt_preloaded_state(soup: BeautifulSoup) -> dict[str, Any]:
     payload = _nyt_preloaded_payload(soup)
     state = payload.get("initialState")
-    return state if isinstance(state, dict) else {}
+    if isinstance(state, dict) and state:
+        return state
+
+    # Newer NYT Oak pages serialize the GraphQL result under
+    # ``initialData.data.article`` while leaving ``initialState`` empty.  The
+    # older parser helpers intentionally operate on a normalized reference
+    # map, so index the nested GraphQL objects and expose the sprinkled body
+    # blocks under the same key shape used by the legacy payload.
+    initial_data = payload.get("initialData")
+    article = (
+        initial_data.get("data", {}).get("article")
+        if isinstance(initial_data, dict)
+        and isinstance(initial_data.get("data"), dict)
+        else None
+    )
+    if not isinstance(article, dict):
+        return {}
+    normalized: dict[str, Any] = {}
+
+    def index(value: Any) -> None:
+        if isinstance(value, list):
+            for child in value:
+                index(child)
+            return
+        if not isinstance(value, dict):
+            return
+        identifier = value.get("id")
+        if isinstance(identifier, str):
+            normalized[identifier] = value
+        for child in value.values():
+            index(child)
+
+    index(article)
+    article_id = article.get("id")
+    if isinstance(article_id, str):
+        normalized[article_id] = article
+    sprinkled = article.get("sprinkledBody")
+    content = sprinkled.get("content") if isinstance(sprinkled, dict) else None
+    if isinstance(article_id, str) and isinstance(content, list):
+        for index_value, block in enumerate(content):
+            if isinstance(block, dict):
+                block_path = (
+                    f"{article_id}.sprinkledBody.content.{index_value}"
+                )
+
+                def index_block(value: Any, path: str) -> None:
+                    if isinstance(value, list):
+                        for child_index, child in enumerate(value):
+                            index_block(child, f"{path}.{child_index}")
+                        return
+                    if not isinstance(value, dict):
+                        return
+                    if "__typename" in value:
+                        normalized[path] = value
+                    for key, child in value.items():
+                        if isinstance(child, (dict, list)):
+                            index_block(child, f"{path}.{key}")
+
+                index_block(block, block_path)
+    return normalized
 
 
 def _nyt_preloaded_payload(soup: BeautifulSoup) -> dict[str, Any]:
@@ -6594,6 +6673,71 @@ def _nyt_preloaded_article_body(
     return article
 
 
+def _nyt_preloaded_embedded_interactive_body(
+    soup: BeautifulSoup,
+) -> Tag | None:
+    """Recover Oak embedded interactives serialized only in GraphQL state."""
+    state = _nyt_preloaded_state(soup)
+    html_values = [
+        value.get("html")
+        for value in state.values()
+        if isinstance(value, dict)
+        and value.get("__typename") == "EmbeddedInteractive"
+        and isinstance(value.get("html"), str)
+    ]
+    if not html_values:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    seen_urls: set[str] = set()
+    for raw_html in html_values:
+        fragment = BeautifulSoup(raw_html, "html.parser")
+        fragment_root = fragment.body or fragment
+        text = _clean_text(fragment_root.get_text(" ", strip=True))
+        image_urls: list[str] = []
+        for match in re.finditer(
+            r"(?i)(?:https?:)?//(?:graphics\d*|static\d*)"
+            r"\.(?:nytimes|nyt)\.com/[^\"'<>\s]+?"
+            r"\.(?:jpe?g|png|gif)(?:\?[^\"'<>\s]*)?",
+            raw_html.replace("\\/", "/"),
+        ):
+            url = match.group(0)
+            if url.startswith("//"):
+                url = f"https:{url}"
+            identity = _image_identity(url)
+            if identity in seen_urls:
+                continue
+            seen_urls.add(identity)
+            image_urls.append(url)
+        if not text and not image_urls:
+            continue
+        wrapper = document.new_tag("div")
+        wrapper["data-jojo-embedded-interactive"] = "true"
+        for child in list(fragment_root.contents):
+            wrapper.append(child)
+        article.append(wrapper)
+        captions = [
+            _tag_text(node)
+            for node in fragment.select("figcaption")
+            if _tag_text(node)
+        ]
+        for index, url in enumerate(image_urls):
+            figure = document.new_tag("figure")
+            image = document.new_tag("img")
+            image["src"] = url
+            if index < len(captions):
+                image["alt"] = captions[index]
+            figure.append(image)
+            if index < len(captions):
+                caption = document.new_tag("figcaption")
+                caption.string = captions[index]
+                figure.append(caption)
+            article.append(figure)
+    return article if article.select_one("p, figure, img, iframe") else None
+
+
 def _nyt_preloaded_article_metadata(
     soup: BeautifulSoup,
     *,
@@ -8066,6 +8210,19 @@ def _npr_story_audio_url(
     return None
 
 
+def _nyt_has_interactive_metadata(soup: BeautifulSoup) -> bool:
+    metadata = " ".join(
+        value
+        for value in (
+            _meta_content(soup, "name", "typ"),
+            _meta_content(soup, "name", "template"),
+            _tag_attribute(soup.select_one("html[class]"), "class"),
+        )
+        if value
+    )
+    return "interactive" in metadata.casefold()
+
+
 def _nyt_media_content_type(
     soup: BeautifulSoup,
     *,
@@ -8075,6 +8232,32 @@ def _nyt_media_content_type(
 ) -> ContentType:
     if structured_image_gallery_selected:
         return ContentType.GALLERY
+    if _nyt_has_interactive_metadata(soup):
+        return ContentType.INTERACTIVE
+    # A subset of NYT Books Review visual essays is intentionally a single
+    # illustration with a credit line.  The archived shell has no prose
+    # article body, but its structured description and lead image are the
+    # complete editorial record; classify it as a gallery instead of marking
+    # the parser partial.
+    if "/books/review/" in canonical_url.casefold():
+        description = _first_text(
+            _meta_content(soup, "name", "description"),
+            _meta_content(soup, "property", "og:description"),
+        )
+        article_body = soup.select_one(
+            "section[name='articleBody'], .meteredContent"
+        )
+        body_text = (
+            _clean_text(article_body.get_text(" ", strip=True))
+            if isinstance(article_body, Tag)
+            else ""
+        )
+        if (
+            description
+            and len(body_text) < 100
+            and soup.select_one("meta[property='og:image']")
+        ):
+            return ContentType.GALLERY
     if (
         soup.find(
             string=lambda value: isinstance(value, Comment)
