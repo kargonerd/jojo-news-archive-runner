@@ -3632,6 +3632,84 @@ def test_ft_capture_checks_later_exact_wayback_versions_before_common_crawl(
     assert result["capture"].quality_score == 100
 
 
+def test_ft_capture_falls_back_to_amp_timemap_when_canonical_is_empty(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.ft.com/content/example"
+    amp_url = "https://amp.ft.com/content/example"
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.ft.com%2Fcontent%2Fexample"
+    )
+    amp_timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Famp.ft.com%2Fcontent%2Fexample"
+    )
+    replay_url = (
+        "https://web.archive.org/web/20190926012847id_/" + amp_url
+    )
+    timemap_header = [
+        "urlkey",
+        "timestamp",
+        "original",
+        "mimetype",
+        "statuscode",
+        "digest",
+    ]
+    amp_timemap = json.dumps(
+        [
+            timemap_header,
+            [
+                "com,ft)/content/example",
+                "20190926012847",
+                amp_url,
+                "text/html",
+                "200",
+                "AMP-EXACT",
+            ],
+        ]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                json.dumps([]).encode(),
+                timemap_url,
+            ),
+            amp_timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                amp_timemap,
+                amp_timemap_url,
+            ),
+            replay_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                replay_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2018-09-01T00:00:00Z",
+        section=None,
+        candidates=(),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [timemap_url, amp_timemap_url, replay_url]
+    assert result["capture"].selected_candidate.snapshot_url == replay_url
+    assert result["capture"].selected_candidate.provider == CaptureProvider.WAYBACK
+
+
 def test_bloomberg_capture_falls_back_to_exact_timemap_snapshot(
     tmp_path: Path,
 ):
@@ -5285,6 +5363,10 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
         "https%3A%2F%2Fwww.ft.com%2Fcontent%2F"
         "d8f6d8af-8235-43ae-a946-6d51da973ca4"
     )
+    amp_timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Famp.ft.com%2Fcontent%2F"
+        "d8f6d8af-8235-43ae-a946-6d51da973ca4"
+    )
     ghost_search_url = ghostarchive_search_url(canonical_url)
     canonical_search_url = ft_syndication_search_url(item)
     google_headline_search_url = ft_google_news_headline_search_url(item)
@@ -5367,6 +5449,12 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
                 ).encode(),
                 timemap_url,
             ),
+            amp_timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                json.dumps([]).encode(),
+                amp_timemap_url,
+            ),
             snapshot_url: (
                 200,
                 {"content-type": "text/html; charset=utf-8"},
@@ -5401,6 +5489,7 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
         google_headline_search_url,
         ghost_search_url,
         timemap_url,
+        amp_timemap_url,
         snapshot_url,
         ftchinese_search_url,
         title_search_url,

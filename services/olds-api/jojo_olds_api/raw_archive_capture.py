@@ -2699,9 +2699,47 @@ def discover_wayback_timemap_candidates(
     *,
     archive_client: ArchiveClient,
     maximum_candidates: int = WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES,
+    _include_ft_amp: bool = True,
 ) -> tuple[CaptureCandidate, ...]:
     if maximum_candidates < 1:
         raise ValueError("maximum_candidates must be positive")
+    amp_candidates: tuple[CaptureCandidate, ...] | None = None
+    parsed_canonical = urlsplit(item.canonical_url)
+    amp_item: ManifestItem | None = None
+    if (
+        _include_ft_amp
+        and item.publisher == "ft"
+        and parsed_canonical.hostname in {"ft.com", "www.ft.com"}
+        and parsed_canonical.path.startswith("/content/")
+    ):
+        amp_item = ManifestItem(
+            publisher=item.publisher,
+            canonical_url=f"https://amp.ft.com{parsed_canonical.path}",
+            published_at=item.published_at,
+            section=item.section,
+            candidates=(),
+        )
+
+    def fallback_amp_candidates() -> tuple[CaptureCandidate, ...]:
+        nonlocal amp_candidates
+        if amp_candidates is not None:
+            return amp_candidates
+        if amp_item is None:
+            amp_candidates = ()
+            return amp_candidates
+        try:
+            amp_candidates = discover_wayback_timemap_candidates(
+                amp_item,
+                archive_client=archive_client,
+                maximum_candidates=maximum_candidates,
+                _include_ft_amp=False,
+            )
+        except Exception:
+            # The canonical timemap remains authoritative when the AMP
+            # timemap circuit is unavailable; do not turn an AMP probe into
+            # a hard capture failure.
+            amp_candidates = ()
+        return amp_candidates
     timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?" + urlencode(
         {"url": item.canonical_url}
     )
@@ -2714,18 +2752,33 @@ def discover_wayback_timemap_candidates(
     )
     content_type = headers.get("content-type", "").casefold()
     if status_code != 200 or not content:
+        amp = fallback_amp_candidates()
+        if amp:
+            return amp[:maximum_candidates]
         raise ValueError(f"Wayback timemap returned HTTP {status_code}")
     if "json" not in content_type and not content.lstrip().startswith(b"["):
+        amp = fallback_amp_candidates()
+        if amp:
+            return amp[:maximum_candidates]
         raise ValueError("Wayback timemap did not return JSON")
     payload = json.loads(content)
     if not isinstance(payload, list) or not payload:
+        amp = fallback_amp_candidates()
+        if amp:
+            return amp[:maximum_candidates]
         return ()
     header = payload[0]
     if not isinstance(header, list):
+        amp = fallback_amp_candidates()
+        if amp:
+            return amp[:maximum_candidates]
         raise ValueError("Wayback timemap header is invalid")
     columns = {str(value).casefold(): index for index, value in enumerate(header)}
     required = {"timestamp", "original", "mimetype", "statuscode"}
     if not required.issubset(columns):
+        amp = fallback_amp_candidates()
+        if amp:
+            return amp[:maximum_candidates]
         raise ValueError("Wayback timemap is missing required columns")
 
     candidates: list[CaptureCandidate] = []
@@ -2767,6 +2820,13 @@ def discover_wayback_timemap_candidates(
                 ),
             )
         )
+
+    amp = fallback_amp_candidates() if not candidates else ()
+    seen_urls = {candidate.snapshot_url for candidate in candidates}
+    for candidate in amp:
+        if candidate.snapshot_url not in seen_urls:
+            candidates.append(candidate)
+            seen_urls.add(candidate.snapshot_url)
 
     candidates.sort(
         key=lambda candidate: _timemap_candidate_sort_key(
