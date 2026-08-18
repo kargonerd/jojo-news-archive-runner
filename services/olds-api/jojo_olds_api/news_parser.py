@@ -6604,7 +6604,14 @@ def _nyt_preloaded_article_body(
     )
     if not isinstance(target, dict):
         return None
-    body = _nyt_state_reference(state, target.get("body"))
+    # Legacy pages expose the article body as ``body`` while older Oak
+    # payloads use the richer ``sprinkledBody`` field.  The latter is often
+    # an inline document rather than a reference, so preserve it as a
+    # fallback when ``body`` is absent.
+    body = _nyt_state_reference(
+        state,
+        target.get("body") or target.get("sprinkledBody"),
+    )
     if body is None:
         return None
     references = next(
