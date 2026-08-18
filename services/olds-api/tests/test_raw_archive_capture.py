@@ -903,7 +903,7 @@ def test_ft_manifest_partner_copy_requires_strict_validation(
     assert not any("datasets-server.huggingface.co" in url for url in client.requests)
 
 
-def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
+def test_ft_direct_infini_origin_falls_back_after_validation_failure(
     tmp_path: Path,
 ):
     headline = "Financial Times tests a complete direct-origin article"
@@ -1035,9 +1035,16 @@ def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
         maximum_html_bytes=1_000_000,
     )
 
-    assert mismatched_result["status"] == "error"
-    assert "publication-date-mismatch" in mismatched_result["error"]
-    assert mismatched_client.requests == [row_url]
+    # A bad Infini row must not suppress a usable Wayback capture for the
+    # same canonical article.  Older code returned immediately here and
+    # never reached the AMP/Wayback fallback candidates.
+    assert mismatched_result["status"] == "complete"
+    assert (
+        mismatched_result["capture"].selected_candidate.snapshot_url
+        == wayback_url
+    )
+    assert mismatched_client.requests[0] == row_url
+    assert mismatched_client.requests[-1] == wayback_url
 
 
 def test_ft_infini_subscription_shell_is_skipped_without_network():

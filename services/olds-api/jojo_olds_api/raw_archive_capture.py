@@ -685,7 +685,6 @@ def capture_item(
     ] | None = None
     ft_raw_partner_validated = False
     ft_infini_origin_validated = False
-    ft_infini_origin_validation_failed = False
     ft_title_index_attempted = False
     ft_dynamic_syndication_attempted = False
     ft_ghostarchive_attempted = False
@@ -724,7 +723,6 @@ def capture_item(
         nonlocal best_response
         nonlocal ft_raw_partner_validated
         nonlocal ft_infini_origin_validated
-        nonlocal ft_infini_origin_validation_failed
         for candidate in candidates:
             if (
                 candidate.provider == CaptureProvider.INFINI_NEWS
@@ -908,8 +906,6 @@ def capture_item(
                         )
                     )
                 if not validated:
-                    if direct_infini_origin:
-                        ft_infini_origin_validation_failed = True
                     failures.append(
                         (
                             "ft-archive-origin"
@@ -1202,19 +1198,6 @@ def capture_item(
         )
     )
     consider_candidates(direct_infini_candidates)
-    if (
-        ft_infini_origin_validation_failed
-        and not ft_infini_origin_validated
-        and best_response is None
-    ):
-        return {
-            "canonicalUrl": item.canonical_url,
-            "status": "error",
-            "capture": None,
-            "recordPath": None,
-            "error": "; ".join(failures[-8:])
-            or "FT Infini-News origin validation failed",
-        }
     expected_publication_date = _parse_iso_datetime(item.published_at)
     if (
         item.publisher == "ft"
