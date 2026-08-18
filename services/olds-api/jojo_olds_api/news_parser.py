@@ -12971,6 +12971,10 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
             r"(?i)^coronavirus business update\s+sign up here "
             r"for our newsletter\b"
         ),
+        re.compile(
+            r"(?i)^subscribe to the financial times chatbot here\.?\s*"
+            r"it[’']s best viewed on a mobile device\.?$"
+        ),
     )
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
