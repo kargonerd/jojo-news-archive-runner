@@ -14375,7 +14375,9 @@ def _nyt_non_editorial_image(url: str) -> bool:
         return True
     return bool(
         re.search(
-            r"(?:^|/)\d{1,4}[^/]*_icon/",
+            # NYT has used both ``_icon`` and ``-icon`` directory names for
+            # social/quiz renditions (for example ``11Well-HealthQuiz-icon``).
+            r"(?:^|/)\d{1,4}[^/]*(?:[_-])icon/",
             parts.path,
             flags=re.IGNORECASE,
         )
