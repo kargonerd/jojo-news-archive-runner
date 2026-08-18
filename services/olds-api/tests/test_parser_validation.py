@@ -1443,7 +1443,7 @@ def test_qa_revision_change_replays_without_replacing_cohort(
         )
     )
 
-    assert refreshed["parserVersion"] == "wsj-parser/0.8.56"
+    assert refreshed["parserVersion"] == "wsj-parser/0.8.57"
     assert refreshed["qaRevision"] == 2
     assert refreshed["years"]["2020"]["evaluated"] == 0
     assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 0
@@ -3237,7 +3237,7 @@ def test_wsj_media_unsupported_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2018, 1, 'test', 'wsj-parser/0.8.56', 2, 'now')
+        ) VALUES (2018, 1, 'test', 'wsj-parser/0.8.57', 2, 'now')
         """
     )
     connection.execute(
