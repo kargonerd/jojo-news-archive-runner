@@ -13606,6 +13606,30 @@ def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:
         node.decompose()
     for paragraph in list(soup.select("p")):
         text = _clean_text(paragraph.get_text(" ", strip=True)).casefold()
+        if re.fullmatch(r"[（(]\s*财新记者[^()（）]{1,120}[)）]", text):
+            # Older Caixin pages repeat the reporter credit as a standalone
+            # paragraph inside the article body. The canonical byline is
+            # already extracted from page metadata, so this is template
+            # chrome rather than reporting prose.
+            paragraph.decompose()
+            continue
+        if (
+            text.startswith("欢迎关注财新网")
+            and ("公号" in text or "公众号" in text)
+        ) or (
+            text.startswith("《知识分子》是由")
+            and "移动新媒体平台" in text
+        ) or (
+            text.startswith("撰写：财小智")
+            and "责编：财小新" in text
+        ) or (
+            text.startswith("今日敏感舆情指数")
+            and "财新数据" in text
+        ):
+            # These recurring paragraphs are account promotion or generated
+            # data-service notices embedded by Caixin's section templates.
+            paragraph.decompose()
+            continue
         if (
             text.startswith("推荐进入")
             and "财新数据库" in text

@@ -20727,7 +20727,45 @@ def test_caixin_parser_removes_subscription_marketing_from_body():
     assert "财新数据库" not in result.plain_text
     assert "更多精彩内容请点击" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+
+
+def test_caixin_parser_removes_repeated_section_boilerplate_from_body():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="财新历史报道">
+          <meta property="article:published_time"
+                content="2024-02-01T12:00:00Z">
+        </head><body><article id="Main_Content_Val">
+          <p>这段正文保留政策背景、事实经过和相关数据，足以构成完整报道。</p>
+          <p>（财新记者 汪苏）</p>
+          <p>欢迎关注财新网政经频道公号“锣鼓巷”</p>
+          <p>《知识分子》是由饶毅、鲁白、谢宇三位学者创办的移动新媒体平台，
+          致力于关注科学、人文、思想。</p>
+          <p>撰写：财小智 责编：财小新</p>
+          <p>今日敏感舆情指数，面向所有A股上市公司，获取更多财新数据通服务。</p>
+          <p>第二段正文继续说明事件影响和后续变化，供历史研究使用。</p>
+          <p>报道还保留了相关机构回应、时间线和公开资料来源，便于读者核对事实，
+          也确保历史版本在解析后仍然具有足够的上下文和可复核性。</p>
+        </article></body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://china.caixin.com/2024-02-01/102162595.html",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "保留政策背景" in result.plain_text
+    assert "第二段正文继续说明" in result.plain_text
+    for chrome in (
+        "财新记者",
+        "欢迎关注财新网",
+        "《知识分子》是由",
+        "财小智",
+        "今日敏感舆情指数",
+    ):
+        assert chrome not in result.plain_text
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_legacy_parser_extracts_single_page_photo_story():
@@ -20760,7 +20798,7 @@ def test_caixin_legacy_parser_extracts_single_page_photo_story():
     assert result.images[0].original_url.endswith("/100128465.jpg")
     assert result.images[0].caption == "外资投行逐渐进入经纪业务领域。东方IC"
     assert result.blocks[0].type == BlockType.IMAGE
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_legacy_parser_rejects_incomplete_multipage_photo_story():
@@ -20788,7 +20826,7 @@ def test_caixin_legacy_parser_rejects_incomplete_multipage_photo_story():
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "incomplete-gallery" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_video_parser_reads_visible_chinese_timestamp():
@@ -20817,7 +20855,7 @@ def test_caixin_video_parser_reads_visible_chinese_timestamp():
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.content_type == ContentType.VIDEO
     assert result.published_at.isoformat() == "2010-01-04T11:34:00+08:00"
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
@@ -20868,7 +20906,7 @@ def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
         BlockType.PARAGRAPH,
         BlockType.PARAGRAPH,
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_legacy_parser_removes_pagination_and_source_boilerplate():
@@ -20910,7 +20948,7 @@ def test_caixin_legacy_parser_removes_pagination_and_source_boilerplate():
     assert "MarketWatch拥有位于三大洲" not in result.plain_text
     assert "第1页" not in result.plain_text
     assert "yinduBottom" not in result.body_html
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_legacy_parser_removes_two_sessions_topic_link():
@@ -20942,7 +20980,7 @@ def test_caixin_legacy_parser_removes_two_sessions_topic_link():
     assert "行政长官将访问北京" in result.plain_text
     assert "更多报道详见" not in result.plain_text
     assert "两会特别报道" not in result.plain_text
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_parser_removes_underscore_only_legacy_separator():
@@ -20965,7 +21003,7 @@ def test_caixin_parser_removes_underscore_only_legacy_separator():
 
     assert "_________________________________________________" not in result.plain_text
     assert "这是正文内容" in result.plain_text
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_legacy_parser_preserves_direct_body_text_nodes():
@@ -21008,7 +21046,7 @@ def test_caixin_legacy_parser_preserves_direct_body_text_nodes():
     assert "原文地址" in result.plain_text
     assert "MarketWatch拥有位于三大洲" not in result.plain_text
     assert result.blocks[0].type == BlockType.PARAGRAPH
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_legacy_parser_rejects_structured_site_logo():
@@ -21044,7 +21082,7 @@ def test_caixin_legacy_parser_rejects_structured_site_logo():
     assert [image.original_url for image in result.images] == [
         "http://img.caixin.com/2010-02-01/hearing.jpg"
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
@@ -21085,7 +21123,7 @@ def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
     assert "ranking entry" not in result.plain_text
     assert "<input" not in result.body_html
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node():
@@ -21123,7 +21161,7 @@ def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node()
     assert "<input" not in result.body_html
     assert result.blocks == []
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_parser_rejects_common_logo_with_edition_suffix():
@@ -21152,7 +21190,7 @@ def test_caixin_parser_rejects_common_logo_with_edition_suffix():
 
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_caixin_legacy_parser_preserves_short_editorial_correction():
@@ -21195,7 +21233,7 @@ def test_caixin_legacy_parser_preserves_short_editorial_correction():
     assert "腾讯微博" not in result.plain_text
     assert result.images == []
     assert "structured-short-record" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.12"
+    assert result.extraction.parser_version == "caixin-parser/0.1.13"
 
 
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():
