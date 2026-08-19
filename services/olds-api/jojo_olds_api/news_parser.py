@@ -8196,6 +8196,18 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
             and "share it with a friend" in text
         ):
             node.decompose()
+    # A modern NPR audio-story template can place a bare ``RELATED`` marker
+    # inside ``#storytext`` followed by a related-program card and the show's
+    # subscription/music chrome.  It has no class or heading hook, so the
+    # generic container cleanup above cannot see it.  Once this exact marker
+    # appears in the story body, everything after it is presentation chrome,
+    # not part of the article transcript.
+    for marker in list(soup.select("#storytext > p")):
+        if _clean_text(marker.get_text(" ", strip=True)).casefold() != "related":
+            continue
+        for sibling in list(marker.find_next_siblings()):
+            sibling.decompose()
+        marker.decompose()
     for container in list(soup.select(".container")):
         header = container.select_one(":scope > .conheader")
         header_text = _clean_text(
