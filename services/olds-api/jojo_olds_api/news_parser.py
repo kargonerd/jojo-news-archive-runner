@@ -290,6 +290,20 @@ def parse_article(
             structured_image_gallery_selected = True
     if body is None:
         body = _select_body(soup, spec)
+    if body is None and spec.publisher == "wsj":
+        # A subset of legacy WSJ captures contains malformed HTML that
+        # Python's built-in ``html.parser`` treats as an unclosed comment.
+        # The same bytes are recoverable with lxml, and losing the article
+        # entirely is worse than using the optional tolerant parser here.
+        try:
+            fallback_soup = BeautifulSoup(html_bytes, "lxml")
+        except Exception:
+            fallback_soup = None
+        if fallback_soup is not None:
+            fallback_body = _select_body(fallback_soup, spec)
+            if fallback_body is not None:
+                soup = fallback_soup
+                body = fallback_body
     if spec.publisher == "scmp":
         # The Vue-era SCMP pages frequently put the complete article in the
         # Apollo cache while the visible DOM contains only an empty shell.
