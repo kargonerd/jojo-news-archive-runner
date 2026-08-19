@@ -21391,7 +21391,7 @@ def test_aljazeera_parser_classifies_liveblog_url_without_json_ld():
 
     assert result.content_type == ContentType.LIVEBLOG
     assert result.quality.status == ArticleStatus.PARTIAL
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.13"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
 
 
 def test_aljazeera_parser_classifies_short_embedded_video_report():
@@ -21429,7 +21429,7 @@ def test_aljazeera_parser_classifies_short_embedded_video_report():
         and block.embed_url == "https://www.youtube.com/embed/FBnUNOj4Boo"
         for block in result.blocks
     )
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.13"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
 
 
 def test_aljazeera_parser_marks_short_timeline_shell_as_interactive_partial():
@@ -21456,7 +21456,7 @@ def test_aljazeera_parser_marks_short_timeline_shell_as_interactive_partial():
     assert result.content_type == ContentType.INTERACTIVE
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "body-too-short" in result.quality.warnings
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.13"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
 
 
 def test_aljazeera_parser_extracts_migrated_gallery_figures():
@@ -21498,7 +21498,7 @@ def test_aljazeera_parser_extracts_migrated_gallery_figures():
     assert result.images[0].caption == (
         "Survivors gather after the earthquake [Reuters]"
     )
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.13"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
 
 
 def test_aljazeera_parser_removes_live_update_underscore_separators():
@@ -21524,7 +21524,7 @@ def test_aljazeera_parser_removes_live_update_underscore_separators():
 
     assert "__________________________________________________________" not in result.plain_text
     assert "Substantive update text" in result.plain_text
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.13"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
 
 
 def test_aljazeera_parser_removes_standalone_live_update_read_more_link():
@@ -21550,7 +21550,7 @@ def test_aljazeera_parser_removes_standalone_live_update_read_more_link():
     assert "latest update explains" in result.plain_text
     assert '<p><a href="/news/previous-update">Read more</a></p>' not in result.body_html
     assert "Read more" in result.body_html
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.13"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
 
 
 def test_aljazeera_parser_removes_legacy_body_navigation_and_disclaimer():
@@ -21566,6 +21566,9 @@ def test_aljazeera_parser_removes_legacy_body_navigation_and_disclaimer():
       <p>Back to top</p>
       <p>The views expressed in this article are the author&#x2019;s own and do not
       necessarily reflect Al Jazeera&#x2019;s editorial policy.</p>
+      <p>Recommended stories</p>
+      <p>The views expressed in this article are the author&#x2019;s own and do not
+      necessarily reflect Al Jazeera&#x2019;s editorial stance.</p>
       <p>The report concludes with a documented timeline of events.</p>
     </article></body></html>
     """
@@ -21582,8 +21585,9 @@ def test_aljazeera_parser_removes_legacy_body_navigation_and_disclaimer():
     assert "substantive report explains" in result.plain_text
     assert "Related" not in result.plain_text
     assert "Back to top" not in result.plain_text
+    assert "Recommended stories" not in result.plain_text
     assert "views expressed in this article" not in result.plain_text
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.13"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
 
 
 def test_aljazeera_gallery_with_image_only_archive_is_complete():
@@ -21607,4 +21611,4 @@ def test_aljazeera_gallery_with_image_only_archive_is_complete():
 
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.COMPLETE
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.13"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"

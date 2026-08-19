@@ -9136,6 +9136,7 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
             "back to top",
             "read more",
             "read more:",
+            "recommended stories",
         }:
             # Legacy Al Jazeera article wrappers expose these navigation
             # labels as ordinary paragraphs inside the story body. Live
@@ -9149,7 +9150,10 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
                 "the views expressed in this article are the author’s own"
             )
             and "al jazeera" in text
-            and "editorial policy" in text
+            and (
+                "editorial policy" in text
+                or "editorial stance" in text
+            )
         ):
             # Opinion pages repeat this site disclaimer in the body; it is
             # publisher chrome rather than reporting.
