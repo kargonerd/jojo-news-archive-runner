@@ -20,7 +20,7 @@ _QA_POLICY_REVISIONS = {
     # SCMP access shells and image-only slideshow packages have no
     # recoverable article body; retain raw records but exclude them from
     # article QA denominators.
-    "scmp": 3,
+    "scmp": 4,
     # Zaobao's sitemap includes interactive packages, horse-racing result
     # desks, and legacy forum shells with no headline/body. These records are
     # useful raw captures but are not recoverable text-news articles for the

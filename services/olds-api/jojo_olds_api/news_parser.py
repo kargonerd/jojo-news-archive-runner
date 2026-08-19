@@ -590,6 +590,8 @@ def parse_article(
         _remove_axios_body_chrome(clean_body)
     if spec.publisher == "npr":
         _remove_npr_body_chrome(clean_body)
+    if spec.publisher == "scmp":
+        _remove_scmp_body_chrome(clean_body)
     _remove_noise(clean_body, spec)
     if spec.publisher == "wsj":
         inset_tables = _wsj_inset_table_body(soup)
@@ -3080,12 +3082,23 @@ def _scmp_apollo_body(soup: BeautifulSoup) -> Tag | None:
         for node in body_json:
             append_value(article, node)
     # SCMP's Apollo body tree often omits inline photos even though the
-    # article object retains them in its direct ``images`` list. The first
-    # image is the cover (already recovered from JSON-LD/OG metadata); append
-    # subsequent editorial images with their titles so they remain available
-    # to the normalized article/image-selection pipeline.
+    # article object retains them in its direct ``images`` list.  The cache
+    # also contains queue/more-on-this images; those are not part of the
+    # article and were previously appended as body media.  When Apollo gives
+    # us normalized ``content(...).images`` references, keep only those
+    # article-scoped images.  Older fixtures expose an unscoped list, for
+    # which retaining everything after the cover preserves the legacy path.
+    scoped_article_images = [
+        item for item in apollo_images
+        if _scmp_apollo_article_image(item)
+    ]
+    selected_images = (
+        scoped_article_images
+        if scoped_article_images
+        else apollo_images[1:]
+    )
     seen_images: set[str] = set()
-    for item in apollo_images[1:]:
+    for item in selected_images:
         source = _string_or_none(item.get("url"))
         if not source:
             continue
@@ -3107,6 +3120,31 @@ def _scmp_apollo_body(soup: BeautifulSoup) -> Tag | None:
             figure.append(figcaption)
         article.append(figure)
     return article if article.get_text(" ", strip=True) or article.find("img") else None
+
+
+def _scmp_apollo_article_image(item: dict[str, Any]) -> bool:
+    """Identify images referenced by the current Apollo article object."""
+
+    pending: list[Any] = [item]
+    has_article_reference = False
+    has_related_reference = False
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            for key, child in value.items():
+                for text in (
+                    key if isinstance(key, str) else "",
+                    child if isinstance(child, str) else "",
+                ):
+                    if ".content(" in text:
+                        has_article_reference = True
+                    if ".moreOnThisArticles" in text:
+                        has_related_reference = True
+                if isinstance(child, (dict, list)):
+                    pending.append(child)
+        elif isinstance(value, list):
+            pending.extend(value)
+    return has_article_reference and not has_related_reference
 
 
 def _scmp_apollo_walk_items(value: Any) -> Iterable[tuple[Any, Any]]:
@@ -13405,6 +13443,24 @@ def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
             and not _clean_text(figure.get_text(" ", strip=True))
         ):
             figure.decompose()
+
+
+def _remove_scmp_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove SCMP letter-submission boilerplate from Apollo article bodies."""
+
+    # The Apollo ``articleBody`` for Letter to the Editor pages prepends a
+    # site-wide invitation to submit letters.  It is JSON-LD/Apollo chrome,
+    # not part of the recovered letter, and repeats across many unrelated
+    # captures.  Match the stable contact/submission wording rather than a
+    # broad ``letter`` selector so ordinary editorial prose is preserved.
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True)).casefold()
+        if (
+            text.startswith("feel strongly about these letters")
+            and "letters@scmp.com" in text
+            and "submissions should not exceed" in text
+        ):
+            paragraph.decompose()
 
 
 def _remove_zaobao_body_chrome(soup: BeautifulSoup) -> None:

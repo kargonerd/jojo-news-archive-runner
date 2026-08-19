@@ -20312,7 +20312,7 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.6"
+    assert result.extraction.parser_version == "scmp-parser/0.1.7"
 
 
 def test_scmp_parser_recovers_vue_apollo_article_body():
@@ -20351,7 +20351,43 @@ def test_scmp_parser_recovers_vue_apollo_article_body():
         "https://cdn1.i-scmp.com/cover.jpg",
         "https://cdn1.i-scmp.com/inline.jpg",
     ]
-    assert result.extraction.parser_version == "scmp-parser/0.1.6"
+    assert result.extraction.parser_version == "scmp-parser/0.1.7"
+
+
+def test_scmp_apollo_letter_body_removes_submission_chrome_and_related_media():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Letters on public policy">
+          <meta property="article:published_time" content="2022-03-22T08:00:00Z">
+          <script type="application/ld+json">
+            {"@type":"NewsArticle","headline":"Letters on public policy",
+             "datePublished":"2022-03-22T08:00:00Z",
+             "image":"https://cdn.i-scmp.com/lead.jpg"}
+          </script>
+        </head><body><main><article></article></main>
+        <script>window.__APOLLO_STATE__={"contentService":{
+          "body({})":{"type":"json","json":[
+            {"type":"p","children":[{"type":"text","data":"Feel strongly about these letters, or any other aspects of the news? Share your views by emailing us your Letter to the Editor at letters@scmp.com or filling in this Google form. Submissions should not exceed 400 words, and must include your full name and address, plus a phone number for verification."}]},
+            {"type":"p","children":[{"type":"text","data":"The letter explains the policy background and the public response in detail. It cites the latest figures, describes the effect on residents, and asks officials to publish a transparent timetable for the next review."}]}
+          ]},
+          "content({}).images.0":{"url":"https://cdn.i-scmp.com/lead.jpg",
+            "style({})":{"id":"$ROOT_QUERY.content({}).images.0.style"}},
+          "content({}).moreOnThisArticles.0.images.0":{"url":"https://cdn.i-scmp.com/related.jpg",
+            "style({})":{"id":"$ROOT_QUERY.content({}).moreOnThisArticles.0.images.0.style"}}
+        }};</script></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/comment/letters/article/3170000/letters",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "policy background" in result.plain_text
+    assert "feel strongly about these letters" not in result.plain_text.casefold()
+    assert "letters@scmp.com" not in result.plain_text
+    assert not any("related.jpg" in image.original_url for image in result.images)
+    assert any("lead.jpg" in image.original_url for image in result.images)
+    assert result.extraction.parser_version == "scmp-parser/0.1.7"
 
 
 def test_scmp_legacy_drupal_pane_content_is_the_article_body():
@@ -20383,7 +20419,7 @@ def test_scmp_legacy_drupal_pane_content_is_the_article_body():
 
     assert result.quality.status.value == "complete"
     assert "additional financial data" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.6"
+    assert result.extraction.parser_version == "scmp-parser/0.1.7"
 
 
 def test_scmp_parser_drops_legacy_bookmark_control_icon():
@@ -20410,7 +20446,7 @@ def test_scmp_parser_drops_legacy_bookmark_control_icon():
         "bookmark-icon.png" in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "scmp-parser/0.1.6"
+    assert result.extraction.parser_version == "scmp-parser/0.1.7"
 
 
 @pytest.mark.parametrize(
