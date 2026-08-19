@@ -21,6 +21,20 @@ def test_normalizes_text_and_image_identity() -> None:
     assert image_identity("HTTPS://IMG.EXAMPLE/a.jpg?width=1200#x") == (
         "https://img.example/a.jpg"
     )
+    assert image_identity(
+        "http://s1.reutersmedia.net/resources/r/"
+        "?m=02&d=20120310&t=2&i=580898814&w=1200&r=CBRE82902CK00"
+    ) == image_identity(
+        "http://s1.reutersmedia.net/resources/r/"
+        "?m=02&d=20120310&t=2&i=580898814&w=20&r=CBRE82902CK00"
+    )
+    assert image_identity(
+        "http://s1.reutersmedia.net/resources/r/"
+        "?m=02&d=20120310&t=2&i=580898814&r=OTHER"
+    ) != image_identity(
+        "http://s1.reutersmedia.net/resources/r/"
+        "?m=02&d=20120310&t=2&i=580898814&r=CBRE82902CK00"
+    )
 
 
 def test_interface_text_detector_does_not_match_ordinary_prose() -> None:

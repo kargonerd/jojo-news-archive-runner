@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 import re
 import sqlite3
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 
@@ -133,12 +133,26 @@ def normalize_text(value: str | None) -> str:
 
 def image_identity(value: str) -> str:
     parts = urlsplit(value)
+    query = ""
+    # Legacy Reuters stores the media identity in the query string of the
+    # generic ``/resources/r/`` path.  Dropping the whole query collapses
+    # unrelated article images into one audit identity; retain the media
+    # identifiers while ignoring only rendition/placeholder dimensions.
+    if parts.path.casefold().endswith("/resources/r/"):
+        resize_keys = {"w", "fh", "fw", "ll", "pl", "sq"}
+        query = urlencode(
+            sorted(
+                (key, item)
+                for key, item in parse_qsl(parts.query, keep_blank_values=False)
+                if key.casefold() not in resize_keys and item
+            )
+        )
     return urlunsplit(
         (
             parts.scheme.casefold(),
             parts.netloc.casefold(),
             parts.path,
-            "",
+            query,
             "",
         )
     )
