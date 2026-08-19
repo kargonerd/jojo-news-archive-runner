@@ -13476,7 +13476,7 @@ def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
 
 
 def _remove_scmp_body_chrome(soup: BeautifulSoup) -> None:
-    """Remove SCMP letter-submission boilerplate from Apollo article bodies."""
+    """Remove recurring SCMP site chrome from recovered article bodies."""
 
     # The Apollo ``articleBody`` for Letter to the Editor pages prepends a
     # site-wide invitation to submit letters.  It is JSON-LD/Apollo chrome,
@@ -13489,6 +13489,44 @@ def _remove_scmp_body_chrome(soup: BeautifulSoup) -> None:
             text.startswith("feel strongly about these letters")
             and "letters@scmp.com" in text
             and "submissions should not exceed" in text
+        ):
+            paragraph.decompose()
+            continue
+
+        # Older SCMP JSON-LD/Apollo captures flatten promotional cards into
+        # ordinary ``p`` nodes.  These cards are especially common in the
+        # 2019--2020 business and technology corpus, where they can recur in
+        # hundreds of otherwise unrelated articles.  Require the stable
+        # campaign wording so that ordinary reporting that mentions a report,
+        # survey, or social network is retained.
+        is_china_ai_promo = (
+            "china ai report" in text
+            and (
+                "scmp research" in text
+                or text.startswith("purchase the china ai report")
+                or text.startswith("sign up now and get")
+            )
+        )
+        is_china_tech_promo = (
+            text.startswith("for more insights into china tech")
+            and ("china internet report" in text or "abacus" in text)
+        )
+        is_scmp_survey_cta = (
+            text.startswith("help us understand what you are interested in")
+            and "five-minute survey" in text
+        )
+        is_social_cta = text.startswith(
+            (
+                "want more articles like this? follow scmp film",
+                "want more stories like this? sign up here",
+                "connect with us on twitter and facebook",
+            )
+        )
+        if (
+            is_china_ai_promo
+            or is_china_tech_promo
+            or is_scmp_survey_cta
+            or is_social_cta
         ):
             paragraph.decompose()
 

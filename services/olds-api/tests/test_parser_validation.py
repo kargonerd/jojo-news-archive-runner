@@ -3233,7 +3233,7 @@ def test_scmp_access_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.7', 4, 'now')
+        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.8', 4, 'now')
         """
     )
     connection.execute(
@@ -3300,7 +3300,7 @@ def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2016, 2, 'test', 'scmp-parser/0.1.7', 4, 'now')
+        ) VALUES (2016, 2, 'test', 'scmp-parser/0.1.8', 4, 'now')
         """
     )
     for url in urls:
@@ -3361,7 +3361,7 @@ def test_scmp_apollo_image_only_slideshow_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2021, 1, 'test', 'scmp-parser/0.1.7', 4, 'now')
+        ) VALUES (2021, 1, 'test', 'scmp-parser/0.1.8', 4, 'now')
         """
     )
     connection.execute(

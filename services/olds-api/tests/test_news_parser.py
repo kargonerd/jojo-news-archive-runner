@@ -20408,7 +20408,7 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.7"
+    assert result.extraction.parser_version == "scmp-parser/0.1.8"
 
 
 def test_scmp_parser_recovers_vue_apollo_article_body():
@@ -20447,7 +20447,7 @@ def test_scmp_parser_recovers_vue_apollo_article_body():
         "https://cdn1.i-scmp.com/cover.jpg",
         "https://cdn1.i-scmp.com/inline.jpg",
     ]
-    assert result.extraction.parser_version == "scmp-parser/0.1.7"
+    assert result.extraction.parser_version == "scmp-parser/0.1.8"
 
 
 def test_scmp_apollo_letter_body_removes_submission_chrome_and_related_media():
@@ -20483,7 +20483,44 @@ def test_scmp_apollo_letter_body_removes_submission_chrome_and_related_media():
     assert "letters@scmp.com" not in result.plain_text
     assert not any("related.jpg" in image.original_url for image in result.images)
     assert any("lead.jpg" in image.original_url for image in result.images)
-    assert result.extraction.parser_version == "scmp-parser/0.1.7"
+    assert result.extraction.parser_version == "scmp-parser/0.1.8"
+
+
+def test_scmp_parser_removes_flattened_subscription_and_social_chrome():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="SCMP business report">
+          <meta property="article:published_time" content="2020-04-14T12:00:09+08:00">
+        </head><body><main><article class="article__body">
+          <p>The original reporting paragraph contains the tender details,
+          market context, and enough factual material to remain editorial.</p>
+          <p><span>Sign up now and get a 10% discount off the China AI Report
+          2020 by SCMP Research. Learn about the AI ambitions of Alibaba,
+          Baidu and JD.com through our in-depth case studies.</span></p>
+          <p>For more insights into China tech, sign up for our tech
+          newsletters and download the comprehensive 2019 China Internet
+          Report. Also roam China Tech City at our sister site Abacus.</p>
+          <p>Help us understand what you are interested in so that we can
+          improve SCMP and provide a better experience. Take this five-minute
+          survey on how you engage with SCMP and the news.</p>
+          <p>Want more articles like this? Follow SCMP Film on Facebook.</p>
+          <p>The closing paragraph preserves the article's conclusion and
+          contains additional reporting context for readers.</p>
+        </article></main></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/business/article/3079596/scmp-business-report",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "original reporting paragraph" in result.plain_text
+    assert "closing paragraph" in result.plain_text
+    assert "China AI Report" not in result.plain_text
+    assert "China Internet Report" not in result.plain_text
+    assert "five-minute survey" not in result.plain_text
+    assert "Follow SCMP Film" not in result.plain_text
+    assert result.extraction.parser_version == "scmp-parser/0.1.8"
 
 
 def test_scmp_legacy_drupal_pane_content_is_the_article_body():
@@ -20515,7 +20552,7 @@ def test_scmp_legacy_drupal_pane_content_is_the_article_body():
 
     assert result.quality.status.value == "complete"
     assert "additional financial data" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.7"
+    assert result.extraction.parser_version == "scmp-parser/0.1.8"
 
 
 def test_scmp_parser_drops_legacy_bookmark_control_icon():
@@ -20542,7 +20579,7 @@ def test_scmp_parser_drops_legacy_bookmark_control_icon():
         "bookmark-icon.png" in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "scmp-parser/0.1.7"
+    assert result.extraction.parser_version == "scmp-parser/0.1.8"
 
 
 @pytest.mark.parametrize(
