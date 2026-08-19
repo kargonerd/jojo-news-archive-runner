@@ -9192,7 +9192,7 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
                         "npr transcripts are created on a rush deadline"
                     )
                     and "authoritative record of npr's programming is the audio"
-                    in text
+                    in text.replace("’", "'").replace("‘", "'")
                 )
             )
         ):
