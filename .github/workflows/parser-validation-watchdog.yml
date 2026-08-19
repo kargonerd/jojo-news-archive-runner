@@ -33,7 +33,7 @@ env:
   # other in-scope publisher eligible for per-year 800-row validation; the
   # planner filters years whose source catalogs are unavailable or exhausted.
   VALIDATION_PUBLISHERS: >-
-    ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin
+    ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin reuters
   DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
 jobs:
