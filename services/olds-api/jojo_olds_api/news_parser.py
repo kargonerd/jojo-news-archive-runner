@@ -85,6 +85,7 @@ _EXACT_NOISE_TEXT = {
     "advertisement",
     "advertiser content",
     "sponsored content",
+    "trending stories",
 }
 _NYT_ATTENDEE_RE = re.compile(
     r'name:"((?:\\.|[^"\\])*)",caption:"((?:\\.|[^"\\])*)"'

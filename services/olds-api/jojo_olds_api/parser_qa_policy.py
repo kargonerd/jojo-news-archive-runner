@@ -41,7 +41,9 @@ _QA_POLICY_REVISIONS = {
     # Reuters press-release bodies can contain legitimate copyright language;
     # the interface-noise rule now limits legal-footer detection to short
     # standalone blocks.
-    "reuters": 1,
+    # Reuters syndicated pages can expose a standalone "Trending Stories"
+    # label. The parser now removes that UI node before extraction.
+    "reuters": 2,
 }
 
 
