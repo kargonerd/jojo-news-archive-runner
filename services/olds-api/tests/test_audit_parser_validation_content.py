@@ -114,6 +114,16 @@ def test_suspicious_image_detector_distinguishes_movie_from_user_avatar() -> Non
         "https://media.npr.org/assets/bakertaylor/covers/i/"
         "icon/9781481425155_custom-8876aa5ad899201e6e17f23bd38d750f4ea8f0ea-s1200.jpg"
     )
+    assert not _suspicious_selected_image(
+        "https://static01.nyt.com/images/2020/03/26/us/"
+        "onpolitics-2020-eyeballs-icon/"
+        "onpolitics-2020-eyeballs-icon-videoSixteenByNineJumbo1600.jpg"
+    )
+    assert not _suspicious_selected_image(
+        "https://www.aljazeera.com/wp-content/uploads/2024/08/"
+        "2024-08-21T140803Z_769601242_RC2DK9AZISKK_RTRMADP_3_"
+        "UKRAINE-CRISIS-RUSSIA-FIRE-ICON-1724250953.jpg"
+    )
 
 
 def test_url_year_mismatch_detects_misdated_nyt_interactive() -> None:

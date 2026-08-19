@@ -77,8 +77,24 @@ def nyt_raw_interactive_prose_characters(
 
 
 def _suspicious_selected_image(value: str) -> bool:
-    path = urlsplit(value).path.casefold()
+    parsed = urlsplit(value)
+    path = parsed.path.casefold()
     filename = path.rsplit("/", 1)[-1]
+    # Some publishers use ``-icon-`` as part of a genuine editorial image
+    # slug (for example NYT On Politics artwork and Reuters-sourced Al
+    # Jazeera photos).  Restrict the generic icon check to UI-looking assets;
+    # these media-hosted image paths are article artwork, not controls.
+    if (
+        re.search(
+            r"(?:^|/)[^/]*-icon-[^/]+\.(?:jpe?g|png|webp)$",
+            path,
+        )
+        and (
+            parsed.netloc.casefold() == "static01.nyt.com"
+            or "/wp-content/uploads/" in path
+        )
+    ):
+        return False
     # NPR's legacy book-review pages use the ``icon`` directory for genuine
     # Baker & Taylor cover art.  It is editorial media, not a UI icon.
     if "/assets/bakertaylor/covers/" in path:

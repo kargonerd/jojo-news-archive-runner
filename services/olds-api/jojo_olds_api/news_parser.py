@@ -12156,6 +12156,9 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         re.compile(r"(?i)^sign up for the campaign reporter\b.*$"),
         re.compile(r"(?i)^sign up for the campaign reporter\.?$"),
         re.compile(
+            r"(?i)^sign up for the rest of the challenge\b.*$"
+        ),
+        re.compile(
             r"(?i)^sign up for the call on .+\bhere\s*\.?$"
         ),
         re.compile(r"(?i)^subscribe to (?:the )?.+ newsletter\b.*$"),
