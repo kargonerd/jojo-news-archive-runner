@@ -6,6 +6,7 @@ feedparser==6.0.11
 httpx==0.26.0
 python-dateutil==2.8.2
 beautifulsoup4==4.12.3
+lxml==5.1.0
 soupsieve==2.9.1
 Brotli==1.1.0
 pyarrow==17.0.0
