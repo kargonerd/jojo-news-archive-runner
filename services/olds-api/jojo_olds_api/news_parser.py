@@ -9121,6 +9121,20 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         ):
             node.decompose()
         elif (
+            spec.publisher == "reuters"
+            and text in {
+                "subscribe to gift this article",
+                "gift 5 articles to anyone you choose each month when you subscribe.",
+                "already a subscriber?",
+                "read more",
+                "fetching latest articles",
+            }
+        ):
+            # Syndicated Reuters copies on AFR and similar partners can keep
+            # a short paywall/recirculation tail after the licensed story.
+            # Remove only the standalone UI blocks; preserve article prose.
+            node.decompose()
+        elif (
             spec.publisher == "bloomberg"
             and node.name in {"p", "li", "span"}
             and text.startswith(
