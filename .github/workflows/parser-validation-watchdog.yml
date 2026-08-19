@@ -34,7 +34,9 @@ env:
   # planner filters years whose source catalogs are unavailable or exhausted.
   VALIDATION_PUBLISHERS: >-
     ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin reuters
-  DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+  # Manual runs from a parser-iteration branch must dispatch jobs from that
+  # same ref; scheduled runs on the default branch continue to use main.
+  DISPATCH_REF: ${{ github.ref_name }}
 
 jobs:
   dispatch:
@@ -302,7 +304,7 @@ jobs:
             pages="$(jq -r '.maxDiscoveryPages' <<<"$task")"
             runner="$(jq -r '.runnerOs' <<<"$task")"
             gh workflow run news-raw-archive.yml \
-              --ref "$DEFAULT_BRANCH" \
+              --ref "$DISPATCH_REF" \
               -f publisher="$publisher" \
               -f from_year="$from_year" \
               -f to_year="$to_year" \
@@ -337,7 +339,7 @@ jobs:
           # Each dispatched validation run starts with an 800-article budget,
           # matching the project's independent-sample acceptance gate.
           gh workflow run parser-validation-accelerator.yml \
-              --ref "$DEFAULT_BRANCH" \
+              --ref "$DISPATCH_REF" \
               -f publisher="$publisher" \
               -f cohort="$cohort" \
               -f year="$year" \
