@@ -67,7 +67,7 @@ PUBLISHER_SPECS = {
     ),
     "wsj": PublisherSpec(
         publisher="wsj",
-        parser_version="wsj-parser/0.8.58",
+        parser_version="wsj-parser/0.8.59",
         domains=("wsj.com", "www.wsj.com"),
         default_language="en",
         edition="us",
@@ -75,6 +75,8 @@ PUBLISHER_SPECS = {
             "[data-type='article-body']",
             "[data-testid='article-body']",
             ".article-content",
+            "#articleTabs_panel_article .article.story",
+            "#articleTabs_panel_article",
             "article",
         ),
         remove_selectors=(
