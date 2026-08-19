@@ -1536,6 +1536,19 @@ def record_parser_validation(
                 )
             ):
                 issues.append("nonarticle-desk")
+            # Older Al Jazeera interactive packages can be archived as a
+            # normal News article even though the only body text is a handoff
+            # to a client-rendered timeline or Storify story. Keep the raw
+            # capture for provenance, but do not count the short handoff as a
+            # parser extraction failure.
+            if (
+                "view the historical context" in aljazeera_text
+                or (
+                    "view the story" in aljazeera_text
+                    and "storify" in aljazeera_text
+                )
+            ):
+                issues.append("nonarticle-desk")
         if (
             article.quality.status != ArticleStatus.COMPLETE
             and not nontext_content

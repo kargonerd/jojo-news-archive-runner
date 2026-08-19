@@ -2811,7 +2811,7 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2022, 1, 'test', 'aljazeera-parser/0.1.11', 2, 'now')
+        ) VALUES (2022, 1, 'test', 'aljazeera-parser/0.1.12', 2, 'now')
         """
     )
     connection.execute(
@@ -2874,7 +2874,7 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
             qa_revision, extraction_status, content_type, qa_pass,
             body_characters, block_count, warnings_json, issues_json,
             parsed_at
-        ) VALUES (?, 'aljazeera', 2022, 'aljazeera-parser/0.1.11', 2,
+        ) VALUES (?, 'aljazeera', 2022, 'aljazeera-parser/0.1.12', 2,
                   'complete', 'article', 1, 1200, 3, '[]', '[]', 'now')
         """,
         ("https://www.aljazeera.com/news/2022/11/29/regular-article",),
@@ -2883,6 +2883,76 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
     assert summary["years"]["2022"]["evaluated"] == 1
     assert summary["years"]["2022"]["qaPassed"] == 1
     assert summary["years"]["2022"]["screenedNonArticles"] == 1
+
+
+def test_short_aljazeera_interactive_handoff_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.aljazeera.com/news/2011/1/11/"
+        "algeria-a-timeline-of-discontent"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2011, 1, 'test', 'aljazeera-parser/0.1.12', 2, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2011, 'priority', 'now')
+        """
+        ,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Algeria: A timeline of discontent">
+      <meta property="article:published_time" content="2011-01-11T00:00:00Z">
+    </head><body><main><article>
+      <h1>Algeria: A timeline of discontent</h1>
+      <p>View the historical context for the latest uprising in Algeria.</p>
+    </article></main></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="aljazeera:" + ("b" * 64),
+        publisher="aljazeera",
+        canonical_url=canonical_url,
+        published_at=datetime(2011, 1, 11, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20250317223512id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "partial"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2011"]["evaluated"] == 0
+    assert summary["years"]["2011"]["screenedNonArticles"] == 1
 
 
 @pytest.mark.parametrize(
