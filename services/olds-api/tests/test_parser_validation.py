@@ -186,6 +186,14 @@ def test_publisher_interface_noise_detects_reuters_legal_suffixes():
         "reuters",
         ["the court reserved all rights while considering the appeal."],
     )
+    long_press_release = "substantive reporting. " * 100
+    assert not _has_publisher_interface_noise(
+        "reuters",
+        [
+            long_press_release
+            + "copyright protection exists. all rights reserved."
+        ],
+    )
 
 
 def test_publisher_interface_noise_detects_ft_newsletter_promos():

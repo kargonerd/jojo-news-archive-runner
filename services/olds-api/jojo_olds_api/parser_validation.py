@@ -177,7 +177,13 @@ def _has_publisher_interface_noise(
     if publisher == "reuters":
         return any(
             (
-                "all rights reserved" in text
+                # Reuters press releases can legitimately discuss copyright
+                # and include an ``all rights reserved`` sentence in the
+                # substantive body.  Interface footers are short standalone
+                # blocks; require a bounded block length before classifying
+                # this legal boilerplate as publisher chrome.
+                len(text) <= 1000
+                and "all rights reserved" in text
                 and any(
                     marker in text
                     for marker in (
@@ -189,7 +195,10 @@ def _has_publisher_interface_noise(
                     )
                 )
             )
-            or "republication or redistribution ofreuters content" in text
+            or (
+                len(text) <= 1000
+                and "republication or redistribution ofreuters content" in text
+            )
             for text in blocks
         )
     if publisher == "ft":
