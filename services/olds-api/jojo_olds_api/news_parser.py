@@ -14913,6 +14913,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/default-social",
             "/defaultpromocrop.",
             "/rcom-default.png",
+            "/reuters-default.png",
             "/r-generic-hdr.png",
             "/images/reuters.jpg",
             "twitter_ms_fdnoir.png",
@@ -14939,6 +14940,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "axios-placeholder-",
             "/social/breaking-news.png",
             "/include/images/facebook-default.jpg",
+            "add-the-print-as-a-trusted-source-",
         )
     )
 
