@@ -49,7 +49,6 @@ _UI_NOISE_PHRASES = (
     "promoted by revcontent",
     "sponsored content from around the web",
     "more from reuters sponsored content",
-    "share this article",
     "our standards: the thomson reuters trust principles",
     "get livefyre",
     "text size regular medium large",
@@ -232,6 +231,10 @@ def _has_generic_interface_noise(
         or text.startswith("recommended *")
         or text.startswith("share on twitter (opens new window)")
         or text.startswith("follow the topics in this ")
+        # A standalone share control is interface chrome.  Do not match the
+        # phrase anywhere inside a paragraph: legacy NYT essays legitimately
+        # use prose such as “By the way, share this article. Please.”
+        or text == "share this article"
         or (
             text.startswith("get alerts on ")
             and text.endswith(" when a new story is published")

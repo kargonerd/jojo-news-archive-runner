@@ -39,6 +39,13 @@ def test_generic_interface_noise_requires_standalone_trending_stories():
     assert not _has_generic_interface_noise(
         ["read more:"], allow_editorial_read_more=True
     )
+
+
+def test_generic_interface_noise_does_not_match_editorial_share_sentence():
+    assert _has_generic_interface_noise(["share this article"])
+    assert not _has_generic_interface_noise(
+        ["by the way, share this article. please."]
+    )
 from jojo_olds_api.raw_archive_capture import (
     completed_raw_capture,
     initialize_capture_schema,
@@ -2756,7 +2763,7 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
         )
-            VALUES (2020, 1, 'test', 'nyt-parser/0.8.78', 2, 'now')
+            VALUES (2020, 1, 'test', 'nyt-parser/0.8.78', 3, 'now')
         """
     )
     connection.execute(
@@ -3817,7 +3824,7 @@ def test_nyt_print_utility_entry_is_screened_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-            ) VALUES (?, 1, 'test', 'nyt-parser/0.8.78', 2, 'now')
+            ) VALUES (?, 1, 'test', 'nyt-parser/0.8.78', 3, 'now')
         """,
         (sample_year,),
     )

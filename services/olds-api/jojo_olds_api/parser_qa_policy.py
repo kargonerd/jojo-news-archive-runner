@@ -30,7 +30,10 @@ _QA_POLICY_REVISIONS = {
     "zaobao": 3,
     # Exclude legacy NYT admin-package pages whose archive snapshot contains
     # only a teaser and no recoverable article body.
-    "nyt": 2,
+    # Legacy NYT prose can contain the words "share this article" as an
+    # editorial sentence; the generic interface detector now only treats an
+    # exact standalone share-control block as noise.
+    "nyt": 3,
     # NPR's legacy audio-only pages can retain metadata and a player while
     # exposing no recoverable article body. Keep those captures, but exclude
     # them from the text-article QA denominator.
