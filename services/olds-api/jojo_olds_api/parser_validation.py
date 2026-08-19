@@ -1464,6 +1464,18 @@ def record_parser_validation(
                 # navigation shells. Retain the capture but keep it out of
                 # the recoverable text-article denominator.
                 issues.append("nonarticle-desk")
+            elif (
+                article.quality.status != ArticleStatus.COMPLETE
+                and article.quality.body_characters < 100
+                and (
+                    article.quality.body_characters == 0
+                    or "点击视频" in article.plain_text
+                    or "视频观看" in article.plain_text
+                )
+            ):
+                # Legacy Zaobao video teasers and empty special-report shells
+                # retain a headline/images but no recoverable article prose.
+                issues.append("nonarticle-desk")
         # NPR's legacy audio-only pages can retain a headline and player while
         # exposing no recoverable text body. Preserve the raw/audio record,
         # but do not let an unrecoverable short audio shell fill an article
