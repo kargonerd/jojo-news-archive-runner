@@ -3809,7 +3809,7 @@ def test_caixin_photo_desk_does_not_fill_article_validation_target(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-            ) VALUES (2010, 1, 'test', 'caixin-parser/0.1.11', 1, 'now')
+            ) VALUES (2010, 1, 'test', 'caixin-parser/0.1.12', 1, 'now')
         """
     )
     connection.execute(

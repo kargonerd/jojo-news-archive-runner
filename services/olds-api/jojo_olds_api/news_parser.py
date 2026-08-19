@@ -13571,7 +13571,7 @@ def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:
         ) or (
             text.startswith("本文内容精选自财新高端订阅产品")
             and "财新数据通" in text
-        ):
+        ) or text.startswith(">>更多精彩内容请点击"):
             # Current and legacy Caixin pages append subscription marketing
             # inside the article wrapper. It is site chrome, not reporting.
             container = paragraph.find_parent(
@@ -14513,7 +14513,10 @@ def _caixin_non_editorial_image_url(url: str) -> bool:
         and path.endswith("/images/channel/content/images/fullurl.gif")
     ) or (
         host == "file.caixin.com"
-        and path.endswith("/file/vip/images/code.jpg")
+        and (
+            path.endswith("/file/vip/images/code.jpg")
+            or path.endswith("/images/common/images/shareimg.jpg")
+        )
     ) or (
         host == "file.caixin.com"
         and re.search(
@@ -14521,6 +14524,9 @@ def _caixin_non_editorial_image_url(url: str) -> bool:
             path,
         )
         is not None
+    ) or (
+        host == "entities.caixin.com"
+        and path.endswith("/support.png")
     )
 
 
