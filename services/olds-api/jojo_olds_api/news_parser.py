@@ -1031,7 +1031,7 @@ def parse_article(
                 continue
             if (
                 spec.publisher == "nikkei"
-                and _nikkei_non_editorial_image_url(image.original_url)
+                and _nikkei_non_editorial_image_candidate(image)
             ):
                 continue
             if (
@@ -14501,6 +14501,16 @@ def _nikkei_non_editorial_image_url(url: str) -> bool:
             "/.resources/k-components/square.rev-",
             "paid-banner",
         )
+    )
+
+
+def _nikkei_non_editorial_image_candidate(image: ImageCandidate) -> bool:
+    """Reject Nikkei chrome images whose legacy markup only exposes size."""
+    return _nikkei_non_editorial_image_url(image.original_url) or (
+        image.width is not None
+        and image.height is not None
+        and image.width <= 120
+        and image.height <= 50
     )
 
 

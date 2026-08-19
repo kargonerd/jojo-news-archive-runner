@@ -20083,7 +20083,7 @@ def test_nikkei_legacy_parser_extracts_print_date_and_article_text():
     assert result.published_at.isoformat() == "2013-09-11T00:00:00+09:00"
     assert "価格や通信料金" in result.plain_text
     assert result.quality.body_characters >= 100
-    assert result.extraction.parser_version == "nikkei-parser/0.1.7"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
 
 
 def test_nikkei_legacy_parser_joins_split_body_around_editorial_photo():
@@ -20142,7 +20142,7 @@ def test_nikkei_legacy_parser_joins_split_body_around_editorial_photo():
         BlockType.PARAGRAPH,
     ]
     assert result.quality.body_characters >= 150
-    assert result.extraction.parser_version == "nikkei-parser/0.1.7"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
 
 
 def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
@@ -20173,7 +20173,7 @@ def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
     assert result.published_at.isoformat() == "2012-12-13T00:00:00+09:00"
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "nikkei-parser/0.1.7"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
 
 
 def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
@@ -20215,7 +20215,7 @@ def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
         for block in result.blocks
         if block.type == BlockType.IMAGE
     } == {result.images[0].asset_id}
-    assert result.extraction.parser_version == "nikkei-parser/0.1.7"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
 
 
 @pytest.mark.parametrize(
@@ -20254,6 +20254,32 @@ def test_nikkei_preserves_legacy_editorial_photo_url():
         "https://www.nikkei.com/content/pic/20141026/"
         "96958A9F889DE5EAE5EBE2E1E2E2E0E1.jpg"
     )
+
+
+def test_nikkei_parser_drops_tiny_nikkei_plus_logo_from_body_media():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="日経ニュース">
+          <meta property="article:published_time" content="2017-11-13T12:00:00Z">
+        </head><body><main><article>
+          <section data-track-article-content>
+            <p>これは十分な長さのニュース本文であり、政策と市場の背景を説明して、
+            小さなブランドロゴが編集画像として保存されないことを確認します。</p>
+            <figure><img width="110" height="35"
+              src="https://www.nikkei.com/content/pic/20171113/"
+              alt=""></figure>
+            <p>続く段落では関係者の発言と历史背景を补充し、記事を完全なものにします。</p>
+          </section>
+        </article></main></body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url="https://www.nikkei.com/article/DGXTINYLOGO000000",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.quality.images_selected == 0
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
 
 
 def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
@@ -20310,7 +20336,7 @@ def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
     assert "paid-banner" not in result.body_html
     assert len(result.images) == 1
     assert len(result.images[0].candidate_urls) == 2
-    assert result.extraction.parser_version == "nikkei-parser/0.1.7"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
 
 
 def test_nikkei_modern_parser_removes_embedded_site_controls():
