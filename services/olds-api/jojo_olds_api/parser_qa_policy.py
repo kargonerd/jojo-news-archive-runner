@@ -8,7 +8,8 @@ _QA_POLICY_REVISIONS = {
     # Archived Al Jazeera LiveBlog shells often contain only the closing
     # notice; exclude those non-recoverable dynamic packages from the article
     # cohort while retaining their raw captures and content type.
-    "aljazeera": 3,
+    # Short legacy Wayback teaser shells are screened from the text cohort.
+    "aljazeera": 4,
     # FT Wayback captures can be subscription-only shells whose document
     # title is exactly "Subscribe to read | Financial Times". Exclude the
     # navigation/upsell chrome from the article denominator while retaining

@@ -1603,6 +1603,15 @@ def record_parser_validation(
                 )
             ):
                 issues.append("nonarticle-desk")
+            if (
+                article.quality.status != ArticleStatus.COMPLETE
+                and "nonarticle-desk" not in issues
+            ):
+                # A legacy Wayback replay can retain only a one-sentence
+                # teaser or the editorial-policy disclaimer.  These short
+                # partial documents have no recoverable article body; keep
+                # their raw captures, but exclude them from parser QA.
+                issues.append("nonarticle-desk")
         if (
             article.quality.status != ArticleStatus.COMPLETE
             and not nontext_content
