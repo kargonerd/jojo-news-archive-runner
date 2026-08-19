@@ -13565,6 +13565,24 @@ def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:
     for paragraph in list(soup.select("p")):
         text = _clean_text(paragraph.get_text(" ", strip=True)).casefold()
         if (
+            text.startswith("推荐进入")
+            and "财新数据库" in text
+            and "可随时查阅" in text
+        ) or (
+            text.startswith("本文内容精选自财新高端订阅产品")
+            and "财新数据通" in text
+        ):
+            # Current and legacy Caixin pages append subscription marketing
+            # inside the article wrapper. It is site chrome, not reporting.
+            container = paragraph.find_parent(
+                ("div", "aside"), class_=lambda value: value and "lanmu_textend" in value
+            )
+            if isinstance(container, Tag):
+                container.decompose()
+            else:
+                paragraph.decompose()
+            continue
+        if (
             text.startswith("更多报道详见：")
             and paragraph.select_one(
                 "a[href*='caixin.com/'][href*='/2013lh/']"
