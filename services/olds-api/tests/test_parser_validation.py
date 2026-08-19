@@ -3044,6 +3044,15 @@ def test_ft_subscribe_shell_is_excluded_from_article_cohort(
             b"</head>"
             b"<body><article><p>Race results.</p></article></body></html>",
         ),
+        (
+            "https://www.zaobao.com.sg/forum/paradigm/"
+            "story20160107-568087",
+            "https://www.zaobao.com.sg/forum/paradigm/"
+            "story20160107-568087",
+            b"<html><head><meta property='article:published_time' "
+            b"content='2016-01-07T00:00:00Z'></head>"
+            b"<body><div id='navigation-shell'>Forum</div></body></html>",
+        ),
     ],
 )
 def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
@@ -3059,7 +3068,7 @@ def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.8', 1, 'now')
+        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.8', 2, 'now')
         """
     )
     connection.execute(
@@ -3097,7 +3106,10 @@ def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
     summary = parser_validation_summary(connection)
 
     assert result["qaPass"] is False
-    assert result["issues"] == ["nonarticle-desk"]
+    expected_issues = ["nonarticle-desk"]
+    if "/forum/" in canonical_url:
+        expected_issues.append("missing-headline")
+    assert result["issues"] == expected_issues
     assert summary["years"]["2026"]["evaluated"] == 0
     assert summary["years"]["2026"]["screenedNonArticles"] == 1
 

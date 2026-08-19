@@ -1442,6 +1442,16 @@ def record_parser_validation(
                 or "/horse-racing/race-results/" in canonical_url
             ):
                 issues.append("nonarticle-desk")
+            elif (
+                "/forum/" in canonical_url
+                and article.quality.status == ArticleStatus.UNSUPPORTED
+                and not article.headline
+                and article.quality.body_characters < 100
+            ):
+                # A subset of legacy Zaobao forum URLs survive as empty
+                # navigation shells. Retain the capture but keep it out of
+                # the recoverable text-article denominator.
+                issues.append("nonarticle-desk")
         # NPR's legacy audio-only pages can retain a headline and player while
         # exposing no recoverable text body. Preserve the raw/audio record,
         # but do not let an unrecoverable short audio shell fill an article
