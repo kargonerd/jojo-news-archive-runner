@@ -2834,7 +2834,7 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2022, 1, 'test', 'aljazeera-parser/0.1.12', 4, 'now')
+        ) VALUES (2022, 1, 'test', 'aljazeera-parser/0.1.13', 4, 'now')
         """
     )
     connection.execute(
@@ -2897,7 +2897,7 @@ def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
             qa_revision, extraction_status, content_type, qa_pass,
             body_characters, block_count, warnings_json, issues_json,
             parsed_at
-        ) VALUES (?, 'aljazeera', 2022, 'aljazeera-parser/0.1.12', 4,
+        ) VALUES (?, 'aljazeera', 2022, 'aljazeera-parser/0.1.13', 4,
                   'complete', 'article', 1, 1200, 3, '[]', '[]', 'now')
         """,
         ("https://www.aljazeera.com/news/2022/11/29/regular-article",),
@@ -2922,7 +2922,7 @@ def test_short_aljazeera_interactive_handoff_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2011, 1, 'test', 'aljazeera-parser/0.1.12', 4, 'now')
+        ) VALUES (2011, 1, 'test', 'aljazeera-parser/0.1.13', 4, 'now')
         """
     )
     connection.execute(
@@ -2992,7 +2992,7 @@ def test_short_aljazeera_legacy_teaser_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2010, 1, 'test', 'aljazeera-parser/0.1.12', 4, 'now')
+        ) VALUES (2010, 1, 'test', 'aljazeera-parser/0.1.13', 4, 'now')
         """
     )
     connection.execute(

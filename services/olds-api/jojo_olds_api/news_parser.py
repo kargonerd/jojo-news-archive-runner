@@ -9120,9 +9120,14 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         elif spec.publisher == "aljazeera" and text in {
             "related",
             "back to top",
+            "read more",
+            "read more:",
         }:
             # Legacy Al Jazeera article wrappers expose these navigation
-            # labels as ordinary paragraphs inside the story body.
+            # labels as ordinary paragraphs inside the story body. Live
+            # update captures also emit a standalone link to the preceding
+            # update; keep linked ``Read more here`` prose, but drop the
+            # label-only block.
             node.decompose()
         elif (
             spec.publisher == "aljazeera"
