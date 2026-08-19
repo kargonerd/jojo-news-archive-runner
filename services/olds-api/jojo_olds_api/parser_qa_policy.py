@@ -35,7 +35,9 @@ _QA_POLICY_REVISIONS = {
     # WSJ Infini-News captures can preserve a media-only "Article Not
     # Supported" shell and related subscription chrome without the article
     # body. Keep those raw records but exclude them from text-article QA.
-    "wsj": 2,
+    # WSJ article paragraphs can contain an inline, parenthesized newsletter
+    # mention.  Only short standalone promo blocks count as interface noise.
+    "wsj": 3,
     # Reuters press-release bodies can contain legitimate copyright language;
     # the interface-noise rule now limits legal-footer detection to short
     # standalone blocks.

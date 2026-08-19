@@ -78,6 +78,14 @@ def test_publisher_interface_noise_detects_wsj_promo_sequences():
         "wsj",
         ["the article discussed free resources and live updates."],
     )
+    assert not _has_publisher_interface_noise(
+        "wsj",
+        [
+            "substantive reporting about the deal. (sign up for our "
+            "markets newsletter, a premarkets primer packed with news, "
+            "trends and ideas.)"
+        ],
+    )
 
 
 def test_axios_internal_fixture_detection_requires_known_slug_and_headline():
@@ -1452,7 +1460,7 @@ def test_qa_revision_change_replays_without_replacing_cohort(
     )
 
     assert refreshed["parserVersion"] == "wsj-parser/0.8.57"
-    assert refreshed["qaRevision"] == 2
+    assert refreshed["qaRevision"] == 3
     assert refreshed["years"]["2020"]["evaluated"] == 0
     assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 0
     assert current == original
@@ -3391,7 +3399,7 @@ def test_wsj_media_unsupported_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2018, 1, 'test', 'wsj-parser/0.8.57', 2, 'now')
+        ) VALUES (2018, 1, 'test', 'wsj-parser/0.8.57', 3, 'now')
         """
     )
     connection.execute(
@@ -3972,7 +3980,7 @@ def test_validation_accepts_wsj_business_wire_source_attribution(
     assert result["qaPass"] is True
     assert result["issues"] == []
     assert summary["formatVersion"] == "jojo-parser-validation/2"
-    assert summary["years"]["2020"]["qaRevision"] == 2
+    assert summary["years"]["2020"]["qaRevision"] == 3
     assert summary["years"]["2020"]["qaPassed"] == 1
     assert summary["years"]["2020"]["issueCounts"] == {}
 

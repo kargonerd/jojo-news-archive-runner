@@ -137,7 +137,10 @@ def _has_publisher_interface_noise(
         if theme_navigation.issubset(set(blocks)):
             return True
         if any(
-            "sign up for our" in text and "newsletter" in text
+            len(text) <= 300
+            and text.startswith("sign up for our")
+            and "sign up for our" in text
+            and "newsletter" in text
             for text in blocks
         ):
             return True
