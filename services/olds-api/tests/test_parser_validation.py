@@ -3057,7 +3057,7 @@ def test_ft_subscribe_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2022, 1, 'test', 'ft-parser/0.8.50', 1, 'now')
+        ) VALUES (2022, 1, 'test', 'ft-parser/0.8.51', 2, 'now')
         """
     )
     connection.execute(

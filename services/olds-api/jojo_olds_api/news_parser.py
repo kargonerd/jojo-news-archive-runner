@@ -12677,7 +12677,7 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
     for aside in list(soup.select("aside")):
         if any(
             _clean_text(node.get_text(" ", strip=True)).casefold()
-            == "read more"
+            in {"read more", "continue reading"}
             for node in aside.select("a, p")
         ):
             aside.decompose()
@@ -12819,7 +12819,10 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
                 )
                 and " newsletter" in text
             )
-            or text == "letter in response to this article:"
+            or text in {
+                "letter in response to this article:",
+                "letter in response to this report:",
+            }
         ):
             tail_markers.append(node)
     if not tail_markers:
