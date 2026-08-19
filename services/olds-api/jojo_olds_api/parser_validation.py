@@ -1340,6 +1340,18 @@ def record_parser_validation(
             ("https://photos.caixin.com/", "https://video.caixin.com/")
         ):
             issues.append("nonarticle-desk")
+        # FT Wayback snapshots sometimes contain only the subscription shell.
+        # Its title is stable and the apparent body is entirely navigation and
+        # upsell chrome, so preserve the capture but keep it out of article QA.
+        if capture.publisher == "ft":
+            ft_soup = BeautifulSoup(html_bytes, "html.parser")
+            title = (
+                _normalize_text(ft_soup.title.get_text(" ", strip=True))
+                if ft_soup.title
+                else ""
+            ).casefold()
+            if title == "subscribe to read | financial times":
+                issues.append("nonarticle-desk")
         # NYT's sitemap includes utility entries from the printed-paper
         # package. Empty corrections notices and the one-line quotation card
         # are editorial metadata, not news articles to count toward the
@@ -1568,19 +1580,25 @@ def record_parser_validation(
             for block in article.blocks
             if block.text and _normalize_text(block.text)
         ]
-        if _has_generic_interface_noise(
-            normalized_blocks,
-            allow_editorial_read_more=capture.publisher == "aljazeera",
-        ) or _has_publisher_interface_noise(
-            capture.publisher,
-            [
-                *normalized_blocks,
-                *(
-                    [_normalize_text(article.description).casefold()]
-                    if article.description
-                    else []
-                ),
-            ],
+        if (
+            "nonarticle-desk" not in issues
+            and (
+                _has_generic_interface_noise(
+                    normalized_blocks,
+                    allow_editorial_read_more=capture.publisher == "aljazeera",
+                )
+                or _has_publisher_interface_noise(
+                    capture.publisher,
+                    [
+                        *normalized_blocks,
+                        *(
+                            [_normalize_text(article.description).casefold()]
+                            if article.description
+                            else []
+                        ),
+                    ],
+                )
+            )
         ):
             issues.append("interface-noise-in-body")
         if (

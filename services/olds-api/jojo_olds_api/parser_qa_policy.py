@@ -9,6 +9,11 @@ _QA_POLICY_REVISIONS = {
     # notice; exclude those non-recoverable dynamic packages from the article
     # cohort while retaining their raw captures and content type.
     "aljazeera": 2,
+    # FT Wayback captures can be subscription-only shells whose document
+    # title is exactly "Subscribe to read | Financial Times". Exclude the
+    # navigation/upsell chrome from the article denominator while retaining
+    # the raw capture for provenance.
+    "ft": 1,
     "axios": 5,
     "caixin": 1,
     # SCMP access shells and image-only slideshow packages have no

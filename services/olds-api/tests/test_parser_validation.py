@@ -2955,6 +2955,70 @@ def test_short_aljazeera_interactive_handoff_is_excluded_from_article_cohort(
     assert summary["years"]["2011"]["screenedNonArticles"] == 1
 
 
+def test_ft_subscribe_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.ft.com/content/0872c199-8078-4742-8d53-093911c1fc0d"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2022, 1, 'test', 'ft-parser/0.8.50', 1, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2022, 'priority', 'now')
+        """
+        ,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head><title>Subscribe to read | Financial Times</title>
+      <meta property="og:title" content="Subscribe to read">
+      <meta property="article:published_time" content="2022-01-01T00:00:00Z">
+    </head><body><main>
+      <p>Become an FT subscriber to read this article.</p>
+      <nav>Financial Times Subscribe Sign In Search the FT</nav>
+    </main></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="ft:" + ("c" * 64),
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at=datetime(2022, 1, 1, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20220730084044id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["issues"] == ["nonarticle-desk"]
+    assert result["qaPass"] is False
+    assert summary["years"]["2022"]["evaluated"] == 0
+    assert summary["years"]["2022"]["screenedNonArticles"] == 1
+
+
 @pytest.mark.parametrize(
     ("canonical_url", "final_url", "html"),
     [
