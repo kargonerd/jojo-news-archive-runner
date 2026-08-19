@@ -20923,7 +20923,7 @@ def test_zaobao_parser_extracts_embedded_rsc_publication_date():
     assert result.quality.status.value == "complete"
     assert result.published_at is not None
     assert result.published_at.isoformat() == "2016-01-20T18:38:00+08:00"
-    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.9"
 
 
 def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
@@ -20947,7 +20947,7 @@ def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
 
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.COMPLETE
-    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.9"
 
 
 def test_zaobao_parser_accepts_a_short_but_complete_news_brief():
@@ -20967,7 +20967,7 @@ def test_zaobao_parser_accepts_a_short_but_complete_news_brief():
     assert result.quality.body_characters < 100
     assert "body-too-short" not in result.quality.warnings
     assert "project starts next month" in result.plain_text
-    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.9"
 
 
 def test_zaobao_parser_accepts_a_sub_sixty_character_wire_brief():
@@ -20989,7 +20989,7 @@ def test_zaobao_parser_accepts_a_sub_sixty_character_wire_brief():
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.quality.body_characters < 60
     assert "body-too-short" not in result.quality.warnings
-    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.9"
 
 
 def test_zaobao_parser_removes_embedded_site_controls():
@@ -21015,7 +21015,40 @@ def test_zaobao_parser_removes_embedded_site_controls():
     assert not result.body_html.casefold().count("<button")
     assert not result.body_html.casefold().count("<form")
     assert not result.body_html.casefold().count("<input")
-    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.9"
+
+
+def test_zaobao_parser_removes_freemium_roadblock_and_default_artwork():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="Zaobao freemium report">
+        </head><body><article>
+          <div class="article-content-rawhtml">
+            <p>这是历史报道的第一段，包含足够的新闻事实和背景信息。</p>
+            <div id="freemium_subscribe">
+              <p>此文章为早报 订户 专享内容，什么是订户专享内容？</p>
+              <p>请您选择以下方式，阅读全文：</p>
+              <p>已是早报订户，请您登录后继续阅读全文。</p>
+              <p>新用户体验价，每月只需 $0.99*。</p>
+              <a><img data-src="https://static.zaobao.com/s3fs-public/"
+                "freemium_images/20210209/399-default-desktop-l_0_2.jpg"></a>
+            </div>
+            <p>第二段继续报道事件经过和相关背景，供读者核对。</p>
+          </div>
+        </article></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url="https://www.zaobao.com.sg/news/test-20210402",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "订户专享内容" not in result.plain_text
+    assert "新用户体验价" not in result.plain_text
+    assert "阅读全文" not in result.plain_text
+    assert "default-desktop" not in result.body_html
+    assert result.images == []
+    assert result.extraction.parser_version == "zaobao-parser/0.1.9"
 
 
 def test_zaobao_parser_extracts_legacy_article_content_and_visible_date():
@@ -21041,7 +21074,7 @@ def test_zaobao_parser_extracts_legacy_article_content_and_visible_date():
     assert result.published_at.isoformat() == "2017-03-03T00:00:00+08:00"
     assert "政府公布新的公共服务计划" in result.plain_text
     assert "分享" not in result.plain_text
-    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.9"
 
 
 def test_zaobao_parser_extracts_underscore_article_content_body():
@@ -21066,7 +21099,7 @@ def test_zaobao_parser_extracts_underscore_article_content_body():
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.published_at is not None
     assert "猴年贺岁档推出" in result.plain_text
-    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.9"
 
 
 def test_zaobao_legacy_visual_photo_record_is_a_complete_gallery():
@@ -21097,7 +21130,7 @@ def test_zaobao_legacy_visual_photo_record_is_a_complete_gallery():
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.COMPLETE
     assert "body-too-short" not in result.quality.warnings
-    assert result.extraction.parser_version == "zaobao-parser/0.1.8"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.9"
 
 
 def test_aljazeera_parser_classifies_liveblog_url_without_json_ld():

@@ -28,7 +28,7 @@ _QA_POLICY_REVISIONS = {
     # A small set of Wayback packages retain only a video teaser or an empty
     # special-report shell. Keep the raw capture, but exclude it from the
     # recoverable text-article denominator.
-    "zaobao": 3,
+    "zaobao": 4,
     # Exclude legacy NYT admin-package pages whose archive snapshot contains
     # only a teaser and no recoverable article body.
     # Legacy NYT prose can contain the words "share this article" as an

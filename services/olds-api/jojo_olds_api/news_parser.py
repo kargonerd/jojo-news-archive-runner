@@ -964,6 +964,11 @@ def parse_article(
         ):
             continue
         if (
+            spec.publisher == "zaobao"
+            and _zaobao_non_editorial_image_url(url)
+        ):
+            continue
+        if (
             spec.publisher == "caixin"
             and _caixin_non_editorial_image_url(url)
         ):
@@ -1011,6 +1016,11 @@ def parse_article(
             if (
                 spec.publisher == "nikkei"
                 and _nikkei_non_editorial_image_url(image.original_url)
+            ):
+                continue
+            if (
+                spec.publisher == "zaobao"
+                and _zaobao_non_editorial_image_url(image.original_url)
             ):
                 continue
             if (
@@ -13404,6 +13414,42 @@ def _remove_zaobao_body_chrome(soup: BeautifulSoup) -> None:
     for node in list(soup.select("button, form, input, select, textarea")):
         node.decompose()
 
+    # Freemium snapshots put the subscription roadblock and its generic
+    # fallback artwork inside the same article wrapper as the recovered
+    # paragraphs. Keep the editorial prose, but never archive the paywall UI
+    # or its repeated default images as article content.
+    for node in list(
+        soup.select(
+            "#freemium_subscribe, .freemium_subscribe, "
+            ".microtransaction-body, .microtransaction-option"
+        )
+    ):
+        node.decompose()
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True))
+        if (
+            text.startswith("此文章为早报")
+            and "专享内容" in text
+        ) or text in {
+            "请您选择以下方式，阅读全文：",
+            "已是早报订户，请您登录后继续阅读全文。",
+        } or text.startswith("新用户体验价"):
+            paragraph.decompose()
+    for image in list(soup.select("img")):
+        urls = _image_urls(image, base_url="https://www.zaobao.com.sg/")
+        if not urls or not all(
+            _zaobao_non_editorial_image_url(url) for url in urls
+        ):
+            continue
+        container = image.find_parent(("figure", "a"))
+        image.decompose()
+        if (
+            isinstance(container, Tag)
+            and not container.get_text(" ", strip=True)
+            and not container.select_one("img")
+        ):
+            container.decompose()
+
 
 def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:
     """Remove legacy Caixin print controls and subscription QR images."""
@@ -14096,6 +14142,9 @@ def _image_candidate(
     if _is_placeholder_image_url(url):
         role = ImageRole.LOGO
         reasons = [*reasons, "generic-publisher-branding"]
+    if spec.publisher == "zaobao" and _zaobao_non_editorial_image_url(url):
+        role = ImageRole.LOGO
+        reasons = [*reasons, "zaobao-paywall-default-artwork"]
     if spec.publisher == "nyt" and _nyt_generic_branding_image(url):
         role = ImageRole.LOGO
         reasons = [*reasons, "generic-publisher-branding"]
@@ -14382,6 +14431,26 @@ def _scmp_non_editorial_image_url(url: str) -> bool:
                 path,
                 flags=re.IGNORECASE,
             )
+        )
+    )
+
+
+def _zaobao_non_editorial_image_url(url: str) -> bool:
+    """Recognize Zaobao paywall/default artwork, not story media."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").casefold()
+    path = unquote(parts.path).casefold()
+    if host not in {"www.zaobao.com.sg", "static.zaobao.com"}:
+        return False
+    return bool(
+        re.search(
+            r"/themes/custom/zbsg2020/images/default-img\.png$|"
+            r"/dist/images/zbsg/default-image\.png$|"
+            r"/zbsg/zaobaosg-facebook-share\.png$|"
+            r"/freemium_images/[^/]+/[^/]*default[-_](?:desktop|mobile)[^/]*\.(?:gif|jpe?g|png|webp)$|"
+            r"/(?:11_mobile_updated_covid_19_0|desktop_covid_19_0)\.png$",
+            path,
+            flags=re.IGNORECASE,
         )
     )
 
