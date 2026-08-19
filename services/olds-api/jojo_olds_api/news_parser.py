@@ -9175,11 +9175,22 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
             node.decompose()
         elif (
             spec.publisher == "npr"
-            and "disclaimer" in {
-                str(value).casefold()
-                for value in (node.get("class") or [])
-            }
-            and "for personal, noncommercial use only" in text
+            and (
+                (
+                    "disclaimer" in {
+                        str(value).casefold()
+                        for value in (node.get("class") or [])
+                    }
+                    and "for personal, noncommercial use only" in text
+                )
+                or (
+                    text.startswith(
+                        "npr transcripts are created on a rush deadline"
+                    )
+                    and "authoritative record of npr's programming is the audio"
+                    in text
+                )
+            )
         ):
             node.decompose()
         elif (
