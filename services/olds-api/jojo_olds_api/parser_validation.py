@@ -1559,6 +1559,11 @@ def record_parser_validation(
                     "view the story" in aljazeera_text
                     and "storify" in aljazeera_text
                 )
+                or "viewing this from your mobile" in aljazeera_text
+                or (
+                    "al jazeera round table" in aljazeera_text
+                    and "expert commentary" in aljazeera_text
+                )
             ):
                 issues.append("nonarticle-desk")
         if (
