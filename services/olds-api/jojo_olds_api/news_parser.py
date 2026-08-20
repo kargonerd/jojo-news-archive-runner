@@ -12125,6 +12125,24 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     for button in list(soup.select("button")):
         button.decompose()
 
+    # Some syndicated legacy NYT pages flatten the subscription control to a
+    # bare anchor inside the selected story body.  It is interface chrome, not
+    # article prose; only remove an anchor whose complete visible label is the
+    # standalone control word so that ordinary editorial links remain intact.
+    for anchor in list(soup.select("a")):
+        if _clean_text(anchor.get_text(" ", strip=True)).casefold() != "subscribe":
+            continue
+        parent = anchor.parent
+        parent_text = (
+            _clean_text(parent.get_text(" ", strip=True)).casefold()
+            if isinstance(parent, Tag)
+            else ""
+        )
+        if parent_text == "subscribe":
+            parent.decompose()
+        else:
+            anchor.decompose()
+
     # Learning Network articles can append a small recirculation list inside
     # the broad story body, immediately before the contributor credit. Remove
     # only an exact ``Related`` heading followed by linked bullet paragraphs;
