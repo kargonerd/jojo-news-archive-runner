@@ -170,6 +170,19 @@ def test_rotation_audit_failure_blocks_checkpoint_publish_and_chaining() -> None
     assert '"${REMOTE_ROOT}/state/rotation-audit.json"' in publish
 
 
+def test_auto_continuation_resolves_source_shard_for_current_year() -> None:
+    workflow = _workflow_text()
+    dispatch = workflow[
+        workflow.index("Dispatch next validation batch") :
+    ]
+
+    assert "resolve_parser_source_shard.py" in dispatch
+    assert '--publisher "$PUBLISHER"' in dispatch
+    assert '--year "$SAMPLE_YEAR"' in dispatch
+    assert "next_source_manifest_shard=" in dispatch
+    assert '-f source_manifest_shard="$next_source_manifest_shard"' in dispatch
+
+
 def test_content_audit_failure_is_persisted_but_blocks_chaining() -> None:
     workflow = _workflow_text()
 

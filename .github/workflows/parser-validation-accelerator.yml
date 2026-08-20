@@ -1511,13 +1511,23 @@ jobs:
             # less wasteful and more likely to obtain usable captures.
             next_workers=8
           fi
+          # A continuation may inherit a broad source window from the
+          # previous batch even when this year belongs to another shard
+          # (for example, Nikkei 2010/2011 versus 2016-2026, or Axios 2026).
+          # Resolve the canonical shard for this exact publisher/year before
+          # dispatching the next checkpoint.
+          next_source_manifest_shard="$(
+            python services/olds-api/tools/resolve_parser_source_shard.py \
+              --publisher "$PUBLISHER" \
+              --year "$SAMPLE_YEAR"
+          )"
           for attempt in 1 2 3 4 5; do
             if gh workflow run parser-validation-accelerator.yml \
               --ref "$GITHUB_REF_NAME" \
               -f publisher="$PUBLISHER" \
               -f cohort="$COHORT" \
               -f year="$SAMPLE_YEAR" \
-              -f source_manifest_shard="$SOURCE_MANIFEST_SHARD" \
+              -f source_manifest_shard="$next_source_manifest_shard" \
               -f max_captures="$MAX_CAPTURES" \
               -f workers="$next_workers" \
               -f max_runtime_minutes="$MAX_RUNTIME_MINUTES" \
