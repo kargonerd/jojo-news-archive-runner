@@ -282,9 +282,34 @@ jobs:
                 )
             ] | length' "$runs"
           )"
+          # Classify active parser runs against the current required cohort.
+          # A superseded holdout may still be downloading a large old batch,
+          # but it must not starve the fresh parser cohort that replaced it.
+          # The probe reuses the restored B2 state and emits only a compact
+          # JSON plan; its normal task list is disabled with max-dispatch=0.
+          validation_probe="$RUNNER_TEMP/validation-capacity-probe.json"
+          python \
+            services/olds-api/tools/plan_parser_validation_watchdog.py \
+            --state-root "$RUNNER_TEMP/archive-state" \
+            --active-titles "$active" \
+            --available-source-shards \
+              "$RUNNER_TEMP/available-source-shards.txt" \
+            --source-capacity-root "$RUNNER_TEMP/source-capacity" \
+            --max-dispatch 0 \
+            --publishers $VALIDATION_PUBLISHERS \
+            --output "$validation_probe" \
+            > "$RUNNER_TEMP/validation-capacity-probe.log"
+          superseded_active_count="$(
+            jq -r '.activeSupersededRunCount // 0' "$validation_probe"
+          )"
+          effective_active_count=$((active_count - superseded_active_count))
+          if [ "$effective_active_count" -lt 0 ]; then
+            effective_active_count=0
+          fi
+          echo "Active runs total=$active_count; superseded parser runs exempt=$superseded_active_count; effective=$effective_active_count."
           # This watchdog itself occupies one runner while planning. Its slot
           # becomes available as soon as dispatch completes.
-          available=$((MAX_STANDARD_CONCURRENCY - active_count + 1))
+          available=$((MAX_STANDARD_CONCURRENCY - effective_active_count + 1))
           if [ "$available" -lt 0 ]; then
             available=0
           fi

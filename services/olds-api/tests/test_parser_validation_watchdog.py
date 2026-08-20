@@ -239,8 +239,10 @@ def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
     }
 
     assert plan["readyCells"] == 0
-    assert plan["activeCells"] == 1
-    assert ("ft", 2018) not in cells
+    assert plan["activeCells"] == 0
+    assert plan["activeCurrentRunCount"] == 0
+    assert plan["activeSupersededRunCount"] == 1
+    assert ("ft", 2018) in cells
     ft_2018 = next(
         row
         for row in plan["cellProgress"]
@@ -249,7 +251,46 @@ def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
     assert ft_2018["evaluated"] == 0
     assert ft_2018["replayableEvaluated"] == 500
     assert ft_2018["parserVersion"] is None
-    assert ft_2018["active"] is True
+    assert ft_2018["active"] is False
+
+
+def test_watchdog_does_not_let_superseded_holdout_block_new_parser(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "holdout-v214/ft/2012/state/summary.json",
+        publisher="ft",
+        year=2012,
+        evaluated=554,
+        parser_version="ft-parser/0.8.51",
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=["parser-holdout-v214-ft-2012"],
+        max_dispatch=1,
+        publishers=["ft"],
+    )
+
+    assert plan["activeCells"] == 0
+    assert plan["activeCurrentRunCount"] == 0
+    assert plan["activeSupersededRunCount"] == 1
+    assert plan["activeSupersededTitles"] == [
+        "parser-holdout-v214-ft-2012"
+    ]
+    assert plan["tasks"] == [
+        {
+            "publisher": "ft",
+            "year": 2012,
+            "sourceManifestShard": "ft/2010-2015/sitemap-wayback",
+            "runnerOs": "ubuntu-latest",
+            "currentEvaluated": 0,
+            "replayableEvaluated": 554,
+            "parserVersion": "ft-parser/0.8.52",
+            "cohort": "holdout-v215",
+        }
+    ]
 
 
 def test_watchdog_accepts_ready_holdout_and_tracks_active_holdout(

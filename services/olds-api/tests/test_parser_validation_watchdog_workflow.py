@@ -48,6 +48,10 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "--publishers $VALIDATION_PUBLISHERS" in workflow
     assert "cohort=\"$(jq -r '.cohort'" in workflow
     assert '-f cohort="$cohort"' in workflow
+    assert "validation-capacity-probe.json" in workflow
+    assert "activeSupersededRunCount" in workflow
+    assert "effective_active_count" in workflow
+    assert "superseded parser runs exempt" in workflow
     assert "--json status,displayTitle,createdAt" in workflow
     assert "fromdateiso8601" in workflow
     assert "$now - 18000" in workflow

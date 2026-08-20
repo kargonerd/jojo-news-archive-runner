@@ -53,9 +53,9 @@ PROVEN_ROTATED_VALIDATION_CELLS = {
     ("npr", 2026),
 }
 ACTIVE_TITLE_RE = re.compile(
-    r"^parser-(?:qa|validation|holdout-v[1-9][0-9]*)-"
-    r"(aljazeera|ap|axios|bloomberg|caixin|ft|nikkei|npr|nyt|reuters|scmp|wsj|zaobao)-"
-    r"(20\d{2})$"
+    r"^parser-(?P<cohort>qa|validation|holdout-v[1-9][0-9]*)-"
+    r"(?P<publisher>aljazeera|ap|axios|bloomberg|caixin|ft|nikkei|npr|nyt|reuters|scmp|wsj|zaobao)-"
+    r"(?P<year>20\d{2})$"
 )
 
 
@@ -350,14 +350,48 @@ def plan_validation_dispatch(
         cell["selectedCohort"] = selected_cohort
 
     active_cells: set[tuple[str, int]] = set()
+    active_current_titles: list[str] = []
+    active_superseded_titles: list[str] = []
     for title in active_titles:
         match = ACTIVE_TITLE_RE.match(title.strip())
         if match is None:
             continue
-        publisher, year = match.groups()
+        publisher = match.group("publisher")
+        year = match.group("year")
         parsed_year = int(year)
-        if (publisher, parsed_year) in progress:
-            active_cells.add((publisher, parsed_year))
+        cell_key = (publisher, parsed_year)
+        if cell_key not in progress:
+            continue
+        cell = progress[cell_key]
+        title_cohort = match.group("cohort")
+        # `qa` is a legacy spelling for the baseline validation cohort.  A
+        # numbered holdout is compared against the exact required/current
+        # cohort below, so an old holdout cannot block a fresh parser run.
+        if title_cohort == "qa":
+            title_cohort = "validation"
+        required_cohort = cell.get("requiredCohort")
+        selected_cohort = cell.get("selectedCohort")
+        if isinstance(required_cohort, str) and required_cohort:
+            expected_cohort = required_cohort
+            is_current = title_cohort == expected_cohort
+        elif isinstance(selected_cohort, str) and selected_cohort:
+            expected_cohort = (
+                selected_cohort
+                if re.fullmatch(r"holdout-v[1-9][0-9]*", selected_cohort)
+                else "validation"
+            )
+            is_current = title_cohort == expected_cohort
+        else:
+            # No checkpoint exists yet for this cell.  Do not speculate that
+            # an active holdout is stale; it may be the first task creating
+            # the required checkpoint, and dispatching a duplicate would
+            # violate the per-cell single-writer guarantee.
+            is_current = True
+        if is_current:
+            active_cells.add(cell_key)
+            active_current_titles.append(title.strip())
+        else:
+            active_superseded_titles.append(title.strip())
 
     ready_cells = {
         cell for cell, values in progress.items() if values["ready"]
@@ -458,6 +492,10 @@ def plan_validation_dispatch(
         "targetCells": len(progress),
         "readyCells": len(ready_cells),
         "activeCells": len(active_cells),
+        "activeCurrentRunCount": len(active_current_titles),
+        "activeSupersededRunCount": len(active_superseded_titles),
+        "activeCurrentTitles": active_current_titles,
+        "activeSupersededTitles": active_superseded_titles,
         "capacityDeficientCells": len(capacity_deficient_cells),
         "contentAuditFailedCells": len(content_audit_failed_cells),
         "pendingCells": len(progress) - len(ready_cells),
