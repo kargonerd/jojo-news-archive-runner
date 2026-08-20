@@ -68,6 +68,8 @@ jobs:
             listing="$RUNNER_TEMP/summary-listing.txt"
             errors="$RUNNER_TEMP/summary-listing-errors.txt"
             if ! rclone lsf "$remote_dir" --files-only \
+                --timeout 30s --contimeout 10s \
+                --retries 1 --low-level-retries 1 \
                 >"$listing" 2>"$errors"; then
               if grep -qiE "directory not found|object not found" "$errors"; then
                 return 0

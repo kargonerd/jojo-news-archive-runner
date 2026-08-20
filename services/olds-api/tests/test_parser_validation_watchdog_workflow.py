@@ -32,6 +32,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "ready: [" in workflow
     assert "capacityDeficient: [" in workflow
     assert 'object_listing="$(\n              rclone lsl' in workflow
+    assert 'rclone lsf "$remote_dir" --files-only \\\n                --timeout 30s --contimeout 10s' in workflow
     assert '&& [ -n "$object_listing" ]; then' in workflow
     assert "VALIDATION_PUBLISHERS:" in workflow
     assert (
