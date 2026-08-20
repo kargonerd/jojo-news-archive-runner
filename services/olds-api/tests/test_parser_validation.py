@@ -3324,7 +3324,7 @@ def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.11', 5, 'now')
+        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.12', 5, 'now')
         """
     )
     connection.execute(
@@ -3384,7 +3384,7 @@ def test_zaobao_short_forum_shell_with_headline_is_screened(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2020, 1, 'test', 'zaobao-parser/0.1.11', 5, 'now')
+        ) VALUES (2020, 1, 'test', 'zaobao-parser/0.1.12', 5, 'now')
         """
     )
     connection.execute(

@@ -1501,7 +1501,7 @@ def record_parser_validation(
                 issues.append("nonarticle-desk")
             elif (
                 "/shorts/" in canonical_url
-                and article.quality.status != ArticleStatus.COMPLETE
+                and article.content_type == ContentType.VIDEO
                 and article.quality.body_characters < 100
             ):
                 # The modern ``shorts`` desk can be a video-first package.

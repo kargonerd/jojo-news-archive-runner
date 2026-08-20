@@ -15206,6 +15206,13 @@ def _extract_authors(
 def _content_type(article: dict[str, Any], canonical_url: str) -> ContentType:
     article_type = article.get("@type") if article else None
     url = canonical_url.casefold()
+    if (
+        "zaobao.com.sg" in url
+        and "/shorts/" in url
+    ):
+        # Zaobao's modern shorts desk is video-first even when the archived
+        # JSON-LD incorrectly declares the package as a NewsArticle.
+        return ContentType.VIDEO
     if article_type == "LiveBlogPosting" or re.search(
         r"/(?:live|liveblog)(?:/|$)",
         url,
