@@ -9151,7 +9151,7 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
         for node in soup.select(selector):
             node.decompose()
     for node in soup.select(
-        "p, div, span, h1, h2, h3, h4, h5, h6"
+        "p, li, div, span, h1, h2, h3, h4, h5, h6"
     ):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
         if text in _EXACT_NOISE_TEXT:
