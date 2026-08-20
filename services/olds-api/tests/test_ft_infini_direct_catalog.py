@@ -321,7 +321,7 @@ def test_merge_materializes_direct_article_absent_from_manifest(tmp_path: Path):
     assert row is not None
     publisher, published_at, status, candidates_json = row
     assert publisher == "ft"
-    assert published_at == "2016-08-28"
+    assert published_at == "2016-08-28T00:00:00+00:00"
     assert status == "pending"
     candidates = json.loads(candidates_json)
     assert candidates[0]["provider"] == "infini-news"

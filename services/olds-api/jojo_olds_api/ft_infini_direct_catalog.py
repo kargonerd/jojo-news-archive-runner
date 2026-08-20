@@ -258,6 +258,9 @@ def merge_ft_infini_direct_candidates(
                         str(canonical_url).encode("utf-8")
                     ).hexdigest()
                 )
+                capture_published_at = str(published_at)
+                if len(capture_published_at) == 10:
+                    capture_published_at += "T00:00:00+00:00"
                 connection.execute(
                     """
                     INSERT INTO captures(
@@ -276,7 +279,7 @@ def merge_ft_infini_direct_candidates(
                     (
                         str(canonical_url),
                         article_id,
-                        str(published_at),
+                        capture_published_at,
                         candidate_json,
                         now,
                     ),
