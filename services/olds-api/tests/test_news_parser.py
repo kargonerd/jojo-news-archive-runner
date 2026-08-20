@@ -20877,7 +20877,7 @@ def test_caixin_parser_removes_subscription_marketing_from_body():
     assert "财新数据库" not in result.plain_text
     assert "更多精彩内容请点击" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_parser_removes_repeated_section_boilerplate_from_body():
@@ -20915,7 +20915,7 @@ def test_caixin_parser_removes_repeated_section_boilerplate_from_body():
         "今日敏感舆情指数",
     ):
         assert chrome not in result.plain_text
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_legacy_parser_extracts_single_page_photo_story():
@@ -20948,7 +20948,7 @@ def test_caixin_legacy_parser_extracts_single_page_photo_story():
     assert result.images[0].original_url.endswith("/100128465.jpg")
     assert result.images[0].caption == "外资投行逐渐进入经纪业务领域。东方IC"
     assert result.blocks[0].type == BlockType.IMAGE
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_legacy_parser_rejects_incomplete_multipage_photo_story():
@@ -20976,7 +20976,7 @@ def test_caixin_legacy_parser_rejects_incomplete_multipage_photo_story():
     assert result.content_type == ContentType.GALLERY
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "incomplete-gallery" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_video_parser_reads_visible_chinese_timestamp():
@@ -21005,7 +21005,7 @@ def test_caixin_video_parser_reads_visible_chinese_timestamp():
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.content_type == ContentType.VIDEO
     assert result.published_at.isoformat() == "2010-01-04T11:34:00+08:00"
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
@@ -21056,7 +21056,7 @@ def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
         BlockType.PARAGRAPH,
         BlockType.PARAGRAPH,
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_legacy_parser_removes_pagination_and_source_boilerplate():
@@ -21098,7 +21098,7 @@ def test_caixin_legacy_parser_removes_pagination_and_source_boilerplate():
     assert "MarketWatch拥有位于三大洲" not in result.plain_text
     assert "第1页" not in result.plain_text
     assert "yinduBottom" not in result.body_html
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_legacy_parser_removes_two_sessions_topic_link():
@@ -21130,7 +21130,7 @@ def test_caixin_legacy_parser_removes_two_sessions_topic_link():
     assert "行政长官将访问北京" in result.plain_text
     assert "更多报道详见" not in result.plain_text
     assert "两会特别报道" not in result.plain_text
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_parser_removes_underscore_only_legacy_separator():
@@ -21153,7 +21153,36 @@ def test_caixin_parser_removes_underscore_only_legacy_separator():
 
     assert "_________________________________________________" not in result.plain_text
     assert "这是正文内容" in result.plain_text
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
+
+
+def test_caixin_legacy_template_skips_empty_logo_heading():
+    result = parse_article(
+        """
+        <html><head>
+          <title>中介机构称八成国企设置了年终奖_政经频道_财新网</title>
+          <meta property="article:published_time"
+            content="2011-01-14T08:00:00+08:00">
+        </head><body>
+          <div class="head"><div class="topUp"><h1 class="logo" id="logoV4"></h1></div></div>
+          <div class="the_content article">
+            <div class="conTit"><h1>中介机构称八成国企设置了年终奖</h1></div>
+            <div id="Main_Content_Val">
+              <p>【财新网】（记者 兰方）春节将至，职场人士又开始盘点单位发放的年终奖。</p>
+              <p>调查显示，年终奖与员工离职率息息相关，规范发放制度有助于保持公平。</p>
+              <p>报告还指出，企业应当明确发放标准和考核依据，及时向员工说明相关安排，避免因为信息不透明而产生误解和争议。</p>
+            </div>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://china.caixin.com/2011-01-14/100217026.html",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.headline == "中介机构称八成国企设置了年终奖"
+    assert "年终奖与员工离职率" in result.plain_text
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_legacy_parser_preserves_direct_body_text_nodes():
@@ -21196,7 +21225,7 @@ def test_caixin_legacy_parser_preserves_direct_body_text_nodes():
     assert "原文地址" in result.plain_text
     assert "MarketWatch拥有位于三大洲" not in result.plain_text
     assert result.blocks[0].type == BlockType.PARAGRAPH
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_legacy_parser_rejects_structured_site_logo():
@@ -21232,7 +21261,7 @@ def test_caixin_legacy_parser_rejects_structured_site_logo():
     assert [image.original_url for image in result.images] == [
         "http://img.caixin.com/2010-02-01/hearing.jpg"
     ]
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
@@ -21273,7 +21302,7 @@ def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
     assert "ranking entry" not in result.plain_text
     assert "<input" not in result.body_html
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node():
@@ -21311,7 +21340,7 @@ def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node()
     assert "<input" not in result.body_html
     assert result.blocks == []
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_parser_rejects_common_logo_with_edition_suffix():
@@ -21340,7 +21369,7 @@ def test_caixin_parser_rejects_common_logo_with_edition_suffix():
 
     assert result.quality.status == ArticleStatus.COMPLETE
     assert result.images == []
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_caixin_legacy_parser_preserves_short_editorial_correction():
@@ -21383,7 +21412,7 @@ def test_caixin_legacy_parser_preserves_short_editorial_correction():
     assert "腾讯微博" not in result.plain_text
     assert result.images == []
     assert "structured-short-record" in result.quality.warnings
-    assert result.extraction.parser_version == "caixin-parser/0.1.13"
+    assert result.extraction.parser_version == "caixin-parser/0.1.14"
 
 
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():

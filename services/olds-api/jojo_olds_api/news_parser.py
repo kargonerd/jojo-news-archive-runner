@@ -670,6 +670,9 @@ def parse_article(
         _nikkei_legacy_headline(soup)
         if spec.publisher == "nikkei"
         else None,
+        _caixin_legacy_headline(soup)
+        if spec.publisher == "caixin"
+        else None,
         _meta_content(soup, "property", "og:title"),
         _meta_content(soup, "name", "twitter:title"),
         _tag_text(soup.select_one("article h1, main h1, h1")),
@@ -15463,6 +15466,21 @@ def _nikkei_legacy_headline(soup: BeautifulSoup) -> str | None:
         title,
     ).strip()
     return title or None
+
+
+def _caixin_legacy_headline(soup: BeautifulSoup) -> str | None:
+    """Skip the empty site-logo ``h1`` in Caixin's legacy template."""
+
+    # Older Caixin pages put an empty ``h1.logo`` before the real headline
+    # under ``.the_content``.  ``select_one('h1')`` therefore returns the
+    # logo and leaves an otherwise usable article without a headline.
+    for node in soup.select(".the_content h1, #Main_Content_Val h1, h1"):
+        if "logo" in (node.get("class") or []):
+            continue
+        value = _tag_text(node)
+        if value:
+            return value
+    return None
 
 
 def _nikkei_truncated_body(
