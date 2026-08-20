@@ -279,6 +279,19 @@ jobs:
             echo "Published live discovery checkpoint."
           }
           run_catalog() {
+            if [ "$MAX_DISCOVERY_PAGES" = "0" ]; then
+              # A sidecar-only checkpoint refreshes scheduling metadata for
+              # an existing manifest without rediscovering URLs or touching
+              # raw objects. This is intentionally bounded and resumable.
+              if [ ! -s "$manifest" ]; then
+                echo "Manifest-sidecar refresh requires an existing manifest." >&2
+                return 2
+              fi
+              echo "complete=true" >> "$GITHUB_OUTPUT"
+              echo "capture_ready=true" >> "$GITHUB_OUTPUT"
+              echo "should_continue=false" >> "$GITHUB_OUTPUT"
+              return 0
+            fi
             if [ "$MANIFEST_MODE" = "sitemap-wayback" ]; then
               python services/olds-api/tools/build_sitemap_manifest.py \
                 --publisher "$PUBLISHER" \

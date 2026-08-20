@@ -218,3 +218,18 @@ def test_validation_only_archive_chain_releases_runner_at_ready_gate() -> None:
         '-f stop_when_validation_ready="${{ inputs.stop_when_validation_ready }}"'
         in continuation_section
     )
+
+
+def test_zero_discovery_pages_refreshes_only_manifest_sidecar() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    catalog_section = workflow[
+        workflow.index("run_catalog() {") : workflow.index(
+            'if [ "$MANIFEST_MODE" = "sitemap-wayback" ]; then',
+            workflow.index("run_catalog() {"),
+        )
+    ]
+
+    assert 'if [ "$MAX_DISCOVERY_PAGES" = "0" ]; then' in catalog_section
+    assert "Manifest-sidecar refresh requires an existing manifest." in catalog_section
+    assert 'echo "complete=true"' in catalog_section
+    assert 'echo "should_continue=false"' in catalog_section
