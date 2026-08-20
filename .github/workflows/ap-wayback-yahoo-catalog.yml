@@ -83,7 +83,12 @@ jobs:
             exit 2
           fi
           local_root="$RUNNER_TEMP/ap-wayback-yahoo-${FROM_YEAR}-${TO_YEAR}"
-          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/ap/${FROM_YEAR}-${TO_YEAR}/legacy-archive"
+          # The validation accelerator merges AP legacy supplements from the
+          # canonical 2010-2015 source window. Keep the output there even when
+          # a bounded discovery run covers only 2010-2012; publishing under a
+          # literal input-year range would make the catalog invisible to the
+          # zero-overlap validator.
+          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/ap/2010-2015/legacy-archive"
           mkdir -p "$local_root/catalog" "$local_root/state"
           {
             echo "local_root=$local_root"
