@@ -1459,7 +1459,8 @@ def record_parser_validation(
                 issues.append("nonarticle-desk")
             elif (
                 "/forum/" in canonical_url
-                and article.quality.status == ArticleStatus.UNSUPPORTED
+                and article.quality.status
+                in {ArticleStatus.UNSUPPORTED, ArticleStatus.PARTIAL}
                 and not article.headline
                 and article.quality.body_characters < 100
             ):

@@ -3145,6 +3145,16 @@ def test_ft_subscribe_shell_is_excluded_from_article_cohort(
             b"<body><div id='navigation-shell'>Forum</div></body></html>",
         ),
         (
+            "https://www.zaobao.com.sg/forum/views/opinion/"
+            "story20160206-579360",
+            "https://www.zaobao.com.sg/forum/views/opinion/"
+            "story20160206-579360",
+            b"<html><head><meta property='article:published_time' "
+            b"content='2016-02-06T00:00:00Z'></head>"
+            b"<body><article><p>A short forum teaser survives this replay."
+            b"</p></article></body></html>",
+        ),
+        (
             "https://www.zaobao.com.sg/news/singapore/"
             "story20221017-1323482",
             "https://www.zaobao.com.sg/news/singapore/"
@@ -3174,7 +3184,7 @@ def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.9', 4, 'now')
+        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.10', 4, 'now')
         """
     )
     connection.execute(
