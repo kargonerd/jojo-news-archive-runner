@@ -238,6 +238,96 @@ def test_scan_skips_generic_ft_subscription_titles(monkeypatch):
     assert articles == []
 
 
+def test_scan_can_discover_new_ft_urls_without_manifest_filter(monkeypatch):
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "b604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    table = pa.table(
+        {
+            "url": [canonical_url],
+            "url_hostname": ["www.ft.com"],
+            "warc_filename": ["CC-NEWS-20160828120000-00001.warc.gz"],
+            "publish_date": ["2016-08-28"],
+            "title": ["A newly discovered Financial Times article"],
+            "text_length": [5000],
+            "language": ["eng_Latn"],
+        }
+    )
+
+    class OpenFile:
+        def open(self):
+            return self
+
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return None
+
+    import fsspec
+
+    monkeypatch.setattr(fsspec, "open", lambda *_args, **_kwargs: OpenFile())
+    monkeypatch.setattr(catalog.pq, "read_table", lambda *_args, **_kwargs: table)
+
+    articles = catalog._scan_parquet_file(
+        "data/year=2016/month=08/part-test.parquet",
+        global_offset=10_000,
+        year=2016,
+    )
+
+    assert len(articles) == 1
+    assert articles[0]["canonicalUrl"] == canonical_url
+
+
+def test_merge_materializes_direct_article_absent_from_manifest(tmp_path: Path):
+    connection, _canonical_url = _state(tmp_path)
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "b604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    catalog._store_scanned_articles(
+        connection,
+        year=2016,
+        path="data/year=2016/month=08/part-test.parquet",
+        articles=[
+            {
+                "canonicalUrl": canonical_url,
+                "sourceUrl": canonical_url,
+                "publishedAt": "2016-08-28",
+                "expectedHeadline": "A newly discovered Financial Times article",
+                "documentIndex": 12345,
+                "textLength": 5000,
+                "warcFilename": "CC-NEWS-20160828120000-00001.warc.gz",
+                "parquetRowIndex": 3,
+                "samplePriority": "0" * 64,
+            }
+        ],
+    )
+
+    assert catalog.merge_ft_infini_direct_candidates(
+        connection,
+        year=2016,
+    ) == 1
+
+    row = connection.execute(
+        """
+        SELECT publisher, published_at, status, candidates_json
+        FROM captures
+        WHERE canonical_url=?
+        """,
+        (canonical_url,),
+    ).fetchone()
+    assert row is not None
+    publisher, published_at, status, candidates_json = row
+    assert publisher == "ft"
+    assert published_at == "2016-08-28"
+    assert status == "pending"
+    candidates = json.loads(candidates_json)
+    assert candidates[0]["provider"] == "infini-news"
+    assert candidates[0]["sourceUrl"] == canonical_url
+
+
 def test_ft_subscription_headline_filter_covers_paywall_variants():
     assert catalog.is_ft_subscription_headline("Subscribe to FT.com")
     assert catalog.is_ft_subscription_headline(

@@ -184,12 +184,13 @@ def merge_ft_infini_direct_candidates(
             article.canonical_url,
             article.source_url,
             article.expected_headline,
+            article.published_at,
             article.document_index,
             article.warc_filename,
             capture.candidates_json,
             capture.status
         FROM ft_infini_direct_articles AS article
-        JOIN captures AS capture
+        LEFT JOIN captures AS capture
           ON capture.canonical_url=article.canonical_url
         WHERE article.source_year=?
         ORDER BY article.sample_priority
@@ -203,12 +204,17 @@ def merge_ft_infini_direct_candidates(
             canonical_url,
             source_url,
             expected_headline,
+            published_at,
             document_index,
             warc_filename,
             candidates_json,
             status,
         ) in rows:
-            candidates = json.loads(str(candidates_json))
+            candidates = (
+                json.loads(str(candidates_json))
+                if candidates_json is not None
+                else []
+            )
             snapshot_url = infini_news_row_url(
                 year,
                 int(document_index),
@@ -235,6 +241,48 @@ def merge_ft_infini_direct_candidates(
                     exclude_none=True,
                 ),
             )
+            candidate_json = json.dumps(
+                candidates,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            if status is None:
+                # A direct Infini row can be the first provenance source for
+                # an FT article.  Materialize it as a normal pending capture
+                # so the existing capture worker, derived-HTML safeguards,
+                # parser, and 800-item validation gate handle it identically
+                # to a manifest row.
+                article_id = (
+                    "ft:"
+                    + hashlib.sha256(
+                        str(canonical_url).encode("utf-8")
+                    ).hexdigest()
+                )
+                connection.execute(
+                    """
+                    INSERT INTO captures(
+                        canonical_url,
+                        article_id,
+                        publisher,
+                        published_at,
+                        section,
+                        candidates_json,
+                        status,
+                        attempts,
+                        updated_at
+                    ) VALUES (?, ?, 'ft', ?, NULL, ?, 'pending', 0, ?)
+                    ON CONFLICT(canonical_url) DO NOTHING
+                    """,
+                    (
+                        str(canonical_url),
+                        article_id,
+                        str(published_at),
+                        candidate_json,
+                        now,
+                    ),
+                )
+                merged += 1
+                continue
             reset = str(status) != "complete"
             connection.execute(
                 """
@@ -516,17 +564,6 @@ def _scan_pending_files(
         """,
         (year, maximum_files),
     ).fetchall()
-    capture_urls = {
-        str(row[0])
-        for row in connection.execute(
-            """
-            SELECT canonical_url
-            FROM captures
-            WHERE published_at >= ? AND published_at < ?
-            """,
-            (f"{year:04d}-01-01", f"{year + 1:04d}-01-01"),
-        )
-    }
     attempted = 0
     accepted = 0
     errors: list[str] = []
@@ -536,7 +573,12 @@ def _scan_pending_files(
             path,
             global_offset=offset,
             year=year,
-            capture_urls=capture_urls,
+            # The direct catalog is itself a provenance-safe FT source.  Do
+            # not restrict it to URLs already present in the Wayback
+            # manifest: that would turn discovery into a mere candidate
+            # augmenter and make the Infini corpus unable to fill sparse
+            # historical years.
+            capture_urls=None,
         )
 
     deterministic_rows = [
@@ -597,7 +639,7 @@ def _scan_parquet_file(
     *,
     global_offset: int,
     year: int,
-    capture_urls: set[str],
+    capture_urls: set[str] | None = None,
 ) -> list[dict[str, object]]:
     import fsspec
 
@@ -625,7 +667,9 @@ def _scan_parquet_file(
         if not _is_ft_hostname(hostname):
             continue
         canonical_url = _normalize_ft_url(spec, source_url)
-        if canonical_url is None or canonical_url not in capture_urls:
+        if canonical_url is None:
+            continue
+        if capture_urls is not None and canonical_url not in capture_urls:
             continue
         published_at = _parse_publish_date(
             values["publish_date"][row_index]
