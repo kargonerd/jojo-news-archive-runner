@@ -7954,6 +7954,59 @@ def test_stored_wsj_subscription_shell_still_rejects_short_preview(
     assert reason == "subscription-shell"
 
 
+def test_stored_wsj_video_with_auth_marker_is_not_requeued(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.wsj.com/article/legacy-video-123"
+    html = b"""
+    <html><head>
+      <title>Legacy WSJ Video</title>
+      <meta name="description" content="WSJ reporters examine the
+      recovery and its strategic options in this video report.">
+    </head><body>
+      <div class="account-navigation">Sign in to continue</div>
+      <script>var AT_VARS={articleType:"Video - WSJ",
+        publicationDate:"2011-12-15"};</script>
+      <div id="masterVideoCenter"><div id="videoPlayer"></div></div>
+    </body></html>
+    """ + (b" " * 2_048)
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="wsj:" + ("v" * 64),
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at=datetime(2011, 12, 15, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20111215163504id_/"
+                + canonical_url
+            ),
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=25,
+        raw_html=blob,
+    )
+
+    _, signals = score_raw_capture(
+        html,
+        http_status=200,
+        content_type="text/html",
+        final_url=canonical_url,
+    )
+    reason = completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    )
+
+    assert signals["authenticationShell"] is True
+    assert reason is None
+
+
 @pytest.mark.parametrize(
     ("publisher", "canonical_url", "expected_reason"),
     [

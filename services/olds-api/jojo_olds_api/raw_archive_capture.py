@@ -7161,6 +7161,18 @@ def completed_capture_rejection_reason(
         content_type=capture.content_type,
         final_url=capture.final_url,
     )
+    # Keep the stored-capture gate aligned with the candidate gate above.
+    # Legacy WSJ video pages commonly include the site's registration/login
+    # module even though the archived video package itself is complete.  The
+    # live candidate path already admits those pages when the WSJ parser can
+    # recover a usable video; the reproducibility pass must not requeue them
+    # merely because the generic shell detector sees the navigation marker.
+    wsj_parser_usable: bool | None = None
+    if capture.publisher == "wsj":
+        wsj_parser_usable, _ = _wsj_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
     structured_subscription_article = bool(
         signals["subscriptionShell"]
         and _structured_subscription_article_usable(
@@ -7178,7 +7190,16 @@ def completed_capture_rejection_reason(
             "server-placeholder-shell",
             bool(signals["serverPlaceholderShell"]),
         ),
-        ("authentication-shell", bool(signals["authenticationShell"])),
+        (
+            "authentication-shell",
+            bool(
+                signals["authenticationShell"]
+                and not (
+                    capture.publisher == "wsj"
+                    and wsj_parser_usable is True
+                )
+            ),
+        ),
         ("access-challenge-shell", bool(signals["accessChallengeShell"])),
         (
             "subscription-shell",
@@ -7205,9 +7226,10 @@ def completed_capture_rejection_reason(
         if not usable:
             return "bloomberg-origin-parser-incomplete"
     if capture.publisher == "wsj":
-        usable, _ = _wsj_capture_parser_evidence(
-            content,
-            canonical_url=capture.canonical_url,
+        usable = (
+            wsj_parser_usable
+            if wsj_parser_usable is not None
+            else False
         )
         if not usable:
             return "wsj-capture-parser-incomplete"
