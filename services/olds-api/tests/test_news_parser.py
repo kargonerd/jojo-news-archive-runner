@@ -20599,7 +20599,7 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.9"
+    assert result.extraction.parser_version == "scmp-parser/0.1.10"
 
 
 def test_scmp_parser_recovers_vue_apollo_article_body():
@@ -20638,7 +20638,7 @@ def test_scmp_parser_recovers_vue_apollo_article_body():
         "https://cdn1.i-scmp.com/cover.jpg",
         "https://cdn1.i-scmp.com/inline.jpg",
     ]
-    assert result.extraction.parser_version == "scmp-parser/0.1.9"
+    assert result.extraction.parser_version == "scmp-parser/0.1.10"
 
 
 def test_scmp_apollo_letter_body_removes_submission_chrome_and_related_media():
@@ -20674,7 +20674,7 @@ def test_scmp_apollo_letter_body_removes_submission_chrome_and_related_media():
     assert "letters@scmp.com" not in result.plain_text
     assert not any("related.jpg" in image.original_url for image in result.images)
     assert any("lead.jpg" in image.original_url for image in result.images)
-    assert result.extraction.parser_version == "scmp-parser/0.1.9"
+    assert result.extraction.parser_version == "scmp-parser/0.1.10"
 
 
 def test_scmp_parser_removes_flattened_subscription_and_social_chrome():
@@ -20711,7 +20711,33 @@ def test_scmp_parser_removes_flattened_subscription_and_social_chrome():
     assert "China Internet Report" not in result.plain_text
     assert "five-minute survey" not in result.plain_text
     assert "Follow SCMP Film" not in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.9"
+    assert result.extraction.parser_version == "scmp-parser/0.1.10"
+
+
+def test_scmp_parser_removes_underscore_only_editorial_separator():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="SCMP timeline report">
+          <meta property="article:published_time"
+                content="2018-10-23T06:49:16+08:00">
+        </head><body><article>
+          <p>The report opens with substantial historical context and
+          explains the events in detail for readers.</p>
+          <p>___</p>
+          <p>The timeline continues with additional reporting and a clear
+          explanation of what happened next.</p>
+        </article></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/article/2169741/scmp-timeline-report",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "___" not in result.plain_text
+    assert "historical context" in result.plain_text
+    assert "what happened next" in result.plain_text
+    assert result.extraction.parser_version == "scmp-parser/0.1.10"
 
 
 def test_scmp_legacy_drupal_pane_content_is_the_article_body():
@@ -20743,7 +20769,7 @@ def test_scmp_legacy_drupal_pane_content_is_the_article_body():
 
     assert result.quality.status.value == "complete"
     assert "additional financial data" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.9"
+    assert result.extraction.parser_version == "scmp-parser/0.1.10"
 
 
 def test_scmp_parser_drops_legacy_bookmark_control_icon():
@@ -20770,7 +20796,7 @@ def test_scmp_parser_drops_legacy_bookmark_control_icon():
         "bookmark-icon.png" in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "scmp-parser/0.1.9"
+    assert result.extraction.parser_version == "scmp-parser/0.1.10"
 
 
 @pytest.mark.parametrize(

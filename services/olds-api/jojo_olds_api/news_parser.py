@@ -9182,13 +9182,14 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
                 "caixin",
                 "ft",
                 "npr",
+                "scmp",
                 "wsj",
             }
             and len(text) >= 2
             and set(text) == {"_"}
         ):
-            # Al Jazeera live-update pages, Axios/ Caixin legacy pages, NPR
-            # legacy/transcript pages and WSJ press-release feeds use
+            # Al Jazeera live-update pages, Axios/Caixin/SCMP legacy pages,
+            # NPR legacy/transcript pages and WSJ press-release feeds use
             # underscore-only paragraphs as visual rules. They are interface
             # separators, not article copy, and otherwise survive as ordinary
             # text blocks.
