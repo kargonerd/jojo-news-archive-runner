@@ -309,6 +309,31 @@ jobs:
                   activeCells: $validations[0].activeCells,
                   pendingCells: $validations[0].pendingCells,
                   summariesRead: $validations[0].summariesRead,
+                  ready: [
+                    $validations[0].cellProgress[]
+                    | select(.ready == true)
+                    | {
+                        publisher,
+                        year,
+                        evaluated,
+                        completeRate,
+                        qaPassRate,
+                        parserVersion,
+                        selectedCohort
+                      }
+                  ],
+                  capacityDeficient: [
+                    $validations[0].cellProgress[]
+                    | select(.capacityDeficient == true)
+                    | {
+                        publisher,
+                        year,
+                        eligibleCandidates,
+                        eligibleCandidateUpperBound,
+                        replayableEvaluated,
+                        selectedCohort
+                      }
+                  ],
                   unresolved: [
                     $validations[0].cellProgress[]
                     | select(.ready == false)
