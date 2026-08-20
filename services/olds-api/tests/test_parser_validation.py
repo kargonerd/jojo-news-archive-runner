@@ -1084,6 +1084,36 @@ def test_validation_only_does_not_fill_batch_from_excluded_old_cohort(
     assert summary["years"]["2020"]["excludedCandidates"] == 1
 
 
+def test_validation_capacity_deduplicates_exclusion_url_aliases(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        ) VALUES (?, 'validation-v2', '2026-08-10T00:00:00Z')
+        """,
+        ("http://www.apnews.com/article/2020-0/?utm_source=archive",),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2020"]["eligibleCandidates"] == 9
+    assert summary["years"]["2020"]["excludedCandidates"] == 1
+
+
 def test_validation_only_requires_validation_prioritization(tmp_path: Path):
     connection = _state_with_years(tmp_path)
 

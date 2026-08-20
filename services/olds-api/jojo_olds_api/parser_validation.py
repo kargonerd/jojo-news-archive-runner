@@ -1956,12 +1956,39 @@ def parser_validation_summary(
         )
         capacity: dict[str, int] = {}
         if has_captures:
+            # Capacity must use the same normalized URL identity as holdout
+            # selection.  Counting raw canonical rows here can overstate the
+            # fresh sample pool when HTTP/HTTPS, www, query, or trailing-slash
+            # aliases exist: the planner correctly treats those aliases as
+            # overlap, while the old summary reported them as eligible.
             start = f"{int(sample_year):04d}-01-01"
             end = f"{int(sample_year) + 1:04d}-01-01"
-            capacity["eligibleCandidates"] = int(
-                connection.execute(
+            publisher_row = connection.execute(
+                "SELECT publisher FROM captures LIMIT 1"
+            ).fetchone()
+            if publisher_row is None:
+                capacity["eligibleCandidates"] = 0
+                capacity["excludedCandidates"] = 0
+            else:
+                source_spec = archive_source_spec(str(publisher_row[0]))
+                excluded_normalized = {
+                    normalized
+                    for (canonical_url,) in connection.execute(
+                        "SELECT canonical_url FROM parser_validation_exclusions"
+                    )
+                    if (
+                        normalized := article_deduplication_key(
+                            source_spec,
+                            str(canonical_url),
+                        )
+                    )
+                    is not None
+                }
+                eligible_normalized: set[str] = set()
+                excluded_year_normalized: set[str] = set()
+                for (canonical_url,) in connection.execute(
                     """
-                    SELECT COUNT(*)
+                    SELECT capture.canonical_url
                     FROM captures AS capture
                     WHERE capture.published_at >= ?
                       AND capture.published_at < ?
@@ -1969,31 +1996,21 @@ def parser_validation_summary(
                         capture.status != 'complete'
                         OR capture.raw_path IS NOT NULL
                       )
-                      AND NOT EXISTS (
-                        SELECT 1
-                        FROM parser_validation_exclusions AS exclusion
-                        WHERE exclusion.canonical_url=capture.canonical_url
-                      )
                     """,
                     (start, end),
-                ).fetchone()[0]
-            )
-            capacity["excludedCandidates"] = int(
-                connection.execute(
-                    """
-                    SELECT COUNT(*)
-                    FROM captures AS capture
-                    WHERE capture.published_at >= ?
-                      AND capture.published_at < ?
-                      AND EXISTS (
-                        SELECT 1
-                        FROM parser_validation_exclusions AS exclusion
-                        WHERE exclusion.canonical_url=capture.canonical_url
-                      )
-                    """,
-                    (start, end),
-                ).fetchone()[0]
-            )
+                ):
+                    normalized = article_deduplication_key(
+                        source_spec,
+                        str(canonical_url),
+                    )
+                    if normalized is None:
+                        continue
+                    if normalized in excluded_normalized:
+                        excluded_year_normalized.add(normalized)
+                    else:
+                        eligible_normalized.add(normalized)
+                capacity["eligibleCandidates"] = len(eligible_normalized)
+                capacity["excludedCandidates"] = len(excluded_year_normalized)
         issue_counts: Counter[str] = Counter()
         failure_examples: list[dict[str, object]] = []
         failure_rows = connection.execute(
