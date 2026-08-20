@@ -299,7 +299,7 @@ PUBLISHER_SPECS = {
     ),
     "scmp": PublisherSpec(
         publisher="scmp",
-        parser_version="scmp-parser/0.1.8",
+        parser_version="scmp-parser/0.1.9",
         domains=("scmp.com", "www.scmp.com"),
         default_language="en",
         edition="hk",

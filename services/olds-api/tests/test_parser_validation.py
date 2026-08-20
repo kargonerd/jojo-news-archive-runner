@@ -3243,7 +3243,7 @@ def test_scmp_access_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.8', 4, 'now')
+        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.9', 4, 'now')
         """
     )
     connection.execute(
@@ -3302,6 +3302,7 @@ def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
     urls = (
         "https://www.scmp.com/infographics/article/1916541/infographic-sharing-pie",
         "https://www.scmp.com/sport/article/1995065/rio-olympics-2016-gallery",
+        "https://www.scmp.com/sport/article/1995063/rio-olympics-2016-stars",
     )
     connection = sqlite3.connect(":memory:")
     initialize_parser_validation_schema(connection)
@@ -3310,7 +3311,7 @@ def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2016, 2, 'test', 'scmp-parser/0.1.8', 4, 'now')
+        ) VALUES (2016, 3, 'test', 'scmp-parser/0.1.9', 4, 'now')
         """
     )
     for url in urls:
@@ -3326,7 +3327,9 @@ def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
             tmp_path,
             b"<html><head><meta property='og:title' content='SCMP visual'>"
             b"</head><body><article><h1>SCMP visual</h1>"
-            b"<p>Loading the visual package.</p></article></body></html>",
+            b"<p>Loading the visual package.</p></article>"
+            b"<script>window.__SCMP={\"carousel_slideshow_items\":\"12\"};</script>"
+            b"</body></html>",
         )
         capture = RawCapture(
             article_id="scmp:" + ("g" * 64),
@@ -3354,7 +3357,7 @@ def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
 
     summary = parser_validation_summary(connection)
     assert summary["years"]["2016"]["evaluated"] == 0
-    assert summary["years"]["2016"]["screenedNonArticles"] == 2
+    assert summary["years"]["2016"]["screenedNonArticles"] == 3
 
 
 def test_scmp_apollo_image_only_slideshow_is_excluded_from_article_cohort(
@@ -3371,7 +3374,7 @@ def test_scmp_apollo_image_only_slideshow_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2021, 1, 'test', 'scmp-parser/0.1.8', 4, 'now')
+        ) VALUES (2021, 1, 'test', 'scmp-parser/0.1.9', 4, 'now')
         """
     )
     connection.execute(

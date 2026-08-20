@@ -1417,6 +1417,13 @@ def record_parser_validation(
                     re.IGNORECASE,
                 )
             )
+            carousel_media_only = bool(
+                re.search(
+                    rb"\"carousel_slideshow_items\"\s*:\s*\"[1-9]",
+                    html_bytes,
+                    re.IGNORECASE,
+                )
+            )
             if (
                 "/infographics/" in capture.canonical_url.casefold()
                 or re.search(
@@ -1424,6 +1431,7 @@ def record_parser_validation(
                     capture.canonical_url.casefold(),
                 )
                 or apollo_media_only
+                or carousel_media_only
             ):
                 issues.append("nonarticle-desk")
             else:

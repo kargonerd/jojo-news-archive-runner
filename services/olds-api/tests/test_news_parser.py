@@ -20599,7 +20599,7 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.8"
+    assert result.extraction.parser_version == "scmp-parser/0.1.9"
 
 
 def test_scmp_parser_recovers_vue_apollo_article_body():
@@ -20638,7 +20638,7 @@ def test_scmp_parser_recovers_vue_apollo_article_body():
         "https://cdn1.i-scmp.com/cover.jpg",
         "https://cdn1.i-scmp.com/inline.jpg",
     ]
-    assert result.extraction.parser_version == "scmp-parser/0.1.8"
+    assert result.extraction.parser_version == "scmp-parser/0.1.9"
 
 
 def test_scmp_apollo_letter_body_removes_submission_chrome_and_related_media():
@@ -20674,7 +20674,7 @@ def test_scmp_apollo_letter_body_removes_submission_chrome_and_related_media():
     assert "letters@scmp.com" not in result.plain_text
     assert not any("related.jpg" in image.original_url for image in result.images)
     assert any("lead.jpg" in image.original_url for image in result.images)
-    assert result.extraction.parser_version == "scmp-parser/0.1.8"
+    assert result.extraction.parser_version == "scmp-parser/0.1.9"
 
 
 def test_scmp_parser_removes_flattened_subscription_and_social_chrome():
@@ -20711,7 +20711,7 @@ def test_scmp_parser_removes_flattened_subscription_and_social_chrome():
     assert "China Internet Report" not in result.plain_text
     assert "five-minute survey" not in result.plain_text
     assert "Follow SCMP Film" not in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.8"
+    assert result.extraction.parser_version == "scmp-parser/0.1.9"
 
 
 def test_scmp_legacy_drupal_pane_content_is_the_article_body():
@@ -20743,7 +20743,7 @@ def test_scmp_legacy_drupal_pane_content_is_the_article_body():
 
     assert result.quality.status.value == "complete"
     assert "additional financial data" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.8"
+    assert result.extraction.parser_version == "scmp-parser/0.1.9"
 
 
 def test_scmp_parser_drops_legacy_bookmark_control_icon():
@@ -20770,7 +20770,7 @@ def test_scmp_parser_drops_legacy_bookmark_control_icon():
         "bookmark-icon.png" in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "scmp-parser/0.1.8"
+    assert result.extraction.parser_version == "scmp-parser/0.1.9"
 
 
 @pytest.mark.parametrize(
