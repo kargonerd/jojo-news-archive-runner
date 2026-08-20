@@ -244,29 +244,42 @@ jobs:
           set -euo pipefail
           runs="$RUNNER_TEMP/runs.json"
           active="$RUNNER_TEMP/active-titles.txt"
+          now_epoch="$(date +%s)"
           gh run list --limit 100 \
-            --json status,displayTitle > "$runs"
-          jq -r '
+            --json status,displayTitle,createdAt > "$runs"
+          # GitHub occasionally leaves a queued/waiting run stranded for many
+          # hours (and the cancel API may return 500). Do not let such stale
+          # scheduler entries consume validation capacity; in-progress runs
+          # are always retained in the active set.
+          jq -r --argjson now "$now_epoch" '
             .[]
             | select(
                 .status == "in_progress"
-                or .status == "queued"
-                or .status == "waiting"
-                or .status == "pending"
-                or .status == "requested"
+                or (
+                  (.status == "queued"
+                    or .status == "waiting"
+                    or .status == "pending"
+                    or .status == "requested")
+                  and ((try (.createdAt | fromdateiso8601) catch 0)
+                    >= ($now - 18000))
+                )
               )
             | .displayTitle
           ' "$runs" > "$active"
           active_count="$(
-            jq '[
+            jq --argjson now "$now_epoch" '[
               .[]
               | select(
-                .status == "in_progress"
-                or .status == "queued"
-                or .status == "waiting"
-                or .status == "pending"
-                or .status == "requested"
-              )
+                  .status == "in_progress"
+                  or (
+                    (.status == "queued"
+                      or .status == "waiting"
+                      or .status == "pending"
+                      or .status == "requested")
+                    and ((try (.createdAt | fromdateiso8601) catch 0)
+                      >= ($now - 18000))
+                  )
+                )
             ] | length' "$runs"
           )"
           # This watchdog itself occupies one runner while planning. Its slot

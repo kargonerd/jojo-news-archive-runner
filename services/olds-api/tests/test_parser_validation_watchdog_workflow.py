@@ -48,6 +48,10 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "--publishers $VALIDATION_PUBLISHERS" in workflow
     assert "cohort=\"$(jq -r '.cohort'" in workflow
     assert '-f cohort="$cohort"' in workflow
+    assert "--json status,displayTitle,createdAt" in workflow
+    assert "fromdateiso8601" in workflow
+    assert "$now - 18000" in workflow
+    assert "stale" in workflow.lower()
 
 
 def test_watchdog_dispatches_two_workers_per_validation_job() -> None:
