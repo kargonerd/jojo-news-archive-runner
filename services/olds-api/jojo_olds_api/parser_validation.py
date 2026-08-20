@@ -1469,12 +1469,12 @@ def record_parser_validation(
                 "/forum/" in canonical_url
                 and article.quality.status
                 in {ArticleStatus.UNSUPPORTED, ArticleStatus.PARTIAL}
-                and not article.headline
                 and article.quality.body_characters < 100
             ):
-                # A subset of legacy Zaobao forum URLs survive as empty
-                # navigation shells. Retain the capture but keep it out of
-                # the recoverable text-article denominator.
+                # Legacy Zaobao forum URLs can expose a misleading OG/title
+                # headline while replaying only a short navigation/teaser
+                # shell. Retain the capture but keep it out of the
+                # recoverable text-article denominator.
                 issues.append("nonarticle-desk")
             elif (
                 article.quality.status != ArticleStatus.COMPLETE

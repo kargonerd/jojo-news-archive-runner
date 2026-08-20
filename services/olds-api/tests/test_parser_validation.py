@@ -3214,7 +3214,7 @@ def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.10', 4, 'now')
+        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.11', 4, 'now')
         """
     )
     connection.execute(
@@ -3258,6 +3258,70 @@ def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
     assert result["issues"] == expected_issues
     assert summary["years"]["2026"]["evaluated"] == 0
     assert summary["years"]["2026"]["screenedNonArticles"] == 1
+
+
+def test_zaobao_short_forum_shell_with_headline_is_screened(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.zaobao.com.sg/forum/views/opinion/"
+        "story20201213-1108366"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2020, 1, 'test', 'zaobao-parser/0.1.11', 4, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2020, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = """
+    <html><head>
+      <meta property="og:title" content="论坛观点导读">
+      <meta property="article:published_time" content="2020-12-13T00:00:00Z">
+    </head><body><article><p>这是一段很短的论坛导读。</p></article></body></html>
+    """.encode("utf-8")
+    capture = RawCapture(
+        article_id="zaobao:" + ("f" * 64),
+        publisher="zaobao",
+        canonical_url=canonical_url,
+        published_at=datetime(2020, 12, 13, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20210413044609id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=store_raw_html(tmp_path, html),
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2020"]["evaluated"] == 0
+    assert summary["years"]["2020"]["screenedNonArticles"] == 1
+
 
 def test_scmp_access_shell_is_excluded_from_article_cohort(
     tmp_path: Path,
