@@ -167,6 +167,14 @@ jobs:
           REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
         run: |
           set -euo pipefail
+          # The watchdog uses the capacity sidecar to distinguish an
+          # exhausted NPR year from a catalog that has not been inspected.
+          # Keep it alongside the checkpoint so newly discovered Common
+          # Crawl candidates participate in formal validation planning.
+          python services/olds-api/tools/summarize_archive_manifest.py \
+            --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
+            --publisher npr \
+            --output "$LOCAL_ROOT/catalog/manifest-summary.json"
           python services/olds-api/tools/checkpoint_capture_state.py \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$RUNNER_TEMP/discovery.sqlite3.gz"
@@ -177,6 +185,10 @@ jobs:
           rclone copyto \
             "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
             "${REMOTE_ROOT}/catalog/manifest.jsonl.gz" \
+            --retries 8 --low-level-retries 20
+          rclone copyto \
+            "$LOCAL_ROOT/catalog/manifest-summary.json" \
+            "${REMOTE_ROOT}/catalog/manifest-summary.json" \
             --retries 8 --low-level-retries 20
           rclone copyto \
             "$LOCAL_ROOT/state/summary.json" \

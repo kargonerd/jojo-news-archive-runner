@@ -24,6 +24,9 @@ def test_catalog_is_bounded_checkpointed_and_private() -> None:
     assert "commoncrawl-prefix" in workflow
     assert "discovery.sqlite3.gz" in workflow
     assert "manifest.jsonl.gz" in workflow
+    assert "summarize_archive_manifest.py" in workflow
+    assert '"$LOCAL_ROOT/catalog/manifest-summary.json"' in workflow
+    assert '"${REMOTE_ROOT}/catalog/manifest-summary.json"' in workflow
 
 
 def test_catalog_continues_after_bounded_empty_query_batch() -> None:
