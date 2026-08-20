@@ -173,6 +173,36 @@ jobs:
                 --retries 8 --low-level-retries 20
             fi
           done
+          # Restore capacity sidecars for the other catalog-only supplements
+          # as well. Without these, the planner treats an omitted year as
+          # unknown and can dispatch cells whose merged source has no unseen
+          # candidates (or no rows at all), producing avoidable validation
+          # failures instead of recording a capacity-deficient cell.
+          supplemental_capacity_roots=(
+            "nikkei/2010-2015/commoncrawl-prefix"
+            "nikkei/2016-2026/commoncrawl-prefix"
+            "scmp/2010-2015/commoncrawl-prefix"
+            "scmp/2016-2026/commoncrawl-prefix"
+          )
+          for supplemental_year in $(seq 2010 2026); do
+            supplemental_capacity_roots+=(
+              "npr/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"
+            )
+          done
+          for supplemental_root in "${supplemental_capacity_roots[@]}"; do
+            capacity_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${supplemental_root}/catalog/manifest-summary.json"
+            if capacity_listing="$(
+              rclone lsl "$capacity_remote" \
+                --timeout 30s --contimeout 10s \
+                --retries 1 --low-level-retries 1 \
+                2>/dev/null
+            )" && [ -n "$capacity_listing" ]; then
+              capacity_local="${source_capacity_root}/${supplemental_root}/manifest-summary.json"
+              mkdir -p "$(dirname "$capacity_local")"
+              rclone copyto "$capacity_remote" "$capacity_local" \
+                --retries 8 --low-level-retries 20
+            fi
+          done
           # Formal parser-validation summaries are execution state under v2,
           # not part of a publisher's v1 canonical raw source tree. Restore
           # both the original validation cohort and formal holdout cohorts;
