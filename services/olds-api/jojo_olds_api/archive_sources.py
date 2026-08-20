@@ -76,6 +76,13 @@ ARCHIVE_SOURCE_SPECS = {
             r"^/[a-f0-9]{24,}$",
             r"^/.+-[a-f0-9]{24,}$",
             r"^/dynamic/stories/[a-z0-9]/[a-z0-9_-]+$",
+            # Historical AP wire copies were distributed through Yahoo,
+            # Google Hosted News, and HuffPost.  They remain first-class AP
+            # parser inputs: the partner catalog preserves the source URL so
+            # the raw capture and provenance stay auditable.
+            r"^/s/ap(?:_[A-Za-z0-9_-]+)?/20\d{6}/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+$",
+            r"^/hostednews/ap/article/[A-Za-z0-9_-]+$",
+            r"^/huff-wires/20\d{6}/[A-Za-z0-9_-]+$",
         ),
         rejected_path_patterns=_patterns(
             r"^/(?:hub|video|videos|search|press-releases|newsletters)(?:/|$)",
@@ -84,8 +91,19 @@ ARCHIVE_SOURCE_SPECS = {
             "hosted.ap.org",
             "hosted2.ap.org",
             "bigstory.ap.org",
+            "news.yahoo.com",
+            "www.news.yahoo.com",
+            "google.com",
+            "www.google.com",
+            "huffingtonpost.com",
+            "www.huffingtonpost.com",
         ),
-        preserve_normalized_hosts=("bigstory.ap.org",),
+        preserve_normalized_hosts=(
+            "bigstory.ap.org",
+            "news.yahoo.com",
+            "www.google.com",
+            "www.huffingtonpost.com",
+        ),
     ),
     "wsj": ArchiveSourceSpec(
         publisher="wsj",

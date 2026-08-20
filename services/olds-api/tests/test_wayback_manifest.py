@@ -794,6 +794,27 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         ap,
         "https://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST?SITE=AP",
     ) is None
+    # Partner catalogs retain Yahoo/Google/HuffPost URLs for historical AP
+    # wire copies. They must remain valid AP parser inputs so supplemental
+    # holdout capacity is not discarded by URL normalization.
+    assert normalize_article_url(
+        ap,
+        "http://news.yahoo.com/s/ap/20110111/ap_on_re_eu/iran_nuclear"
+        "?utm_source=test",
+    ) == "https://news.yahoo.com/s/ap/20110111/ap_on_re_eu/iran_nuclear"
+    assert normalize_article_url(
+        ap,
+        "https://www.google.com/hostednews/ap/article/ALeqM5example"
+        "?docId=123",
+    ) == "https://www.google.com/hostednews/ap/article/ALeqM5example"
+    assert normalize_article_url(
+        ap,
+        "https://www.huffingtonpost.com/huff-wires/20110111/example",
+    ) == "https://www.huffingtonpost.com/huff-wires/20110111/example"
+    assert normalize_article_url(
+        ap,
+        "https://news.yahoo.com/s/ap/20110111/not-an-ap-story",
+    ) is None
     assert article_url_publication_year(
         ap,
         "http://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST"
