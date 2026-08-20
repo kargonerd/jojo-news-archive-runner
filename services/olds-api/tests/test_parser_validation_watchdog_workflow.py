@@ -54,6 +54,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "superseded parser runs exempt" in workflow
     assert 'MAX_SUPERSEDED_REFRESH_DISPATCH: "1"' in workflow
     assert "Reserved one parser refresh slot" in workflow
+    assert "catalog_dispatch_limit" in workflow
+    assert "Keeping one dispatch slot reserved" in workflow
     assert "--json status,displayTitle,createdAt" in workflow
     assert "fromdateiso8601" in workflow
     assert "$now - 18000" in workflow

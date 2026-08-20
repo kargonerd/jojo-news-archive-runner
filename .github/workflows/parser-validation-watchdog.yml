@@ -325,13 +325,19 @@ jobs:
           if [ "$dispatches" -gt "$MAX_DISPATCH_PER_RUN" ]; then
             dispatches="$MAX_DISPATCH_PER_RUN"
           fi
+          catalog_dispatch_limit="$dispatches"
+          if [ "$superseded_active_count" -gt 0 ] \
+            && [ "$catalog_dispatch_limit" -gt 0 ]; then
+            catalog_dispatch_limit=$((catalog_dispatch_limit - 1))
+            echo "Keeping one dispatch slot reserved for a fresh parser cohort."
+          fi
           python \
             services/olds-api/tools/plan_source_catalog_watchdog.py \
             --status-root "$RUNNER_TEMP/source-catalog-status" \
             --active-titles "$active" \
             --available-source-shards \
               "$RUNNER_TEMP/available-source-shards.txt" \
-            --max-dispatch "$dispatches" \
+            --max-dispatch "$catalog_dispatch_limit" \
             --max-active-catalogs "$MAX_CATALOG_CONCURRENCY" \
             --output "$RUNNER_TEMP/source-catalog-plan.json"
           catalog_dispatches="$(
