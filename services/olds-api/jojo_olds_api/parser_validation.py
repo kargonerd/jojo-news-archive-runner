@@ -36,6 +36,11 @@ MINIMUM_COMPLETE_RATE = 0.95
 # complete-rate gate remains below 1.0 because valid non-text interactives can
 # intentionally be classified as unsupported while still passing QA.
 MINIMUM_QA_PASS_RATE = 1.0
+# Keep capacity reporting aligned with the capture scheduler.  Capture jobs
+# use three attempts by default; terminal errors at that limit are no longer
+# actionable candidates and must not keep the watchdog dispatching work for
+# an exhausted URL.
+DEFAULT_MAXIMUM_RECORD_ATTEMPTS = 3
 _PAYWALL_PHRASES = (
     "subscribe to read",
     "subscribe to continue",
@@ -1842,7 +1847,11 @@ def record_parser_validation(
 
 def parser_validation_summary(
     connection: sqlite3.Connection,
+    *,
+    maximum_record_attempts: int = DEFAULT_MAXIMUM_RECORD_ATTEMPTS,
 ) -> dict[str, object]:
+    if maximum_record_attempts < 1:
+        raise ValueError("maximum_record_attempts must be positive")
     initialize_parser_validation_schema(
         connection,
         invalidate_stale_results=False,
@@ -2035,11 +2044,18 @@ def parser_validation_summary(
                     WHERE capture.published_at >= ?
                       AND capture.published_at < ?
                       AND (
-                        capture.status != 'complete'
-                        OR capture.raw_path IS NOT NULL
+                        capture.status IN ('pending', 'downloading')
+                        OR (
+                          capture.status='error'
+                          AND capture.attempts < ?
+                        )
+                        OR (
+                          capture.status='complete'
+                          AND capture.raw_path IS NOT NULL
+                        )
                       )
                     """,
-                    (start, end),
+                    (start, end, maximum_record_attempts),
                 ):
                     normalized = article_deduplication_key(
                         source_spec,

@@ -1114,6 +1114,35 @@ def test_validation_capacity_deduplicates_exclusion_url_aliases(
     assert summary["years"]["2020"]["excludedCandidates"] == 1
 
 
+def test_validation_capacity_excludes_terminal_capture_errors(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    terminal_url = "https://apnews.com/article/2020-0"
+    connection.execute(
+        """
+        UPDATE captures
+        SET status='error', attempts=3, last_error='reject-parser-unusable'
+        WHERE canonical_url=?
+        """,
+        (terminal_url,),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2020"]["eligibleCandidates"] == 9
+
+
 def test_validation_only_requires_validation_prioritization(tmp_path: Path):
     connection = _state_with_years(tmp_path)
 
