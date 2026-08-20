@@ -3337,7 +3337,7 @@ def test_scmp_access_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.10', 4, 'now')
+        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.11', 5, 'now')
         """
     )
     connection.execute(
@@ -3390,6 +3390,73 @@ def test_scmp_access_shell_is_excluded_from_article_cohort(
     assert summary["years"]["2018"]["screenedNonArticles"] == 1
 
 
+def test_scmp_short_live_package_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.scmp.com/sport/article/3041121/"
+        "follow-pandaland-crossfit-sanctional-day-two-live"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2019, 1, 'test', 'scmp-parser/0.1.11', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2019, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <title>Follow Pandaland CrossFit Challenge day two as it happened | SCMP</title>
+      <meta property="og:title" content="Follow Pandaland CrossFit Challenge day two as it happened">
+      <meta name="cse_articletype" content="Live">
+      <meta property="article:published_time" content="2019-12-08T09:37:58+08:00">
+    </head><body><article class="live-article__body">
+      <p>Day two of Pandaland in Chengdu is underway and a spot at the CrossFit Games is up for grabs</p>
+    </article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="scmp:" + ("l" * 64),
+        publisher="scmp",
+        canonical_url=canonical_url,
+        published_at=datetime(2019, 12, 8, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.COMMON_CRAWL,
+            snapshot_url="https://data.commoncrawl.org/example.warc.gz",
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "partial"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2019"]["evaluated"] == 0
+    assert summary["years"]["2019"]["screenedNonArticles"] == 1
+
+
 def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
     tmp_path: Path,
 ):
@@ -3405,7 +3472,7 @@ def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2016, 3, 'test', 'scmp-parser/0.1.10', 4, 'now')
+        ) VALUES (2016, 3, 'test', 'scmp-parser/0.1.11', 5, 'now')
         """
     )
     for url in urls:
@@ -3468,7 +3535,7 @@ def test_scmp_apollo_image_only_slideshow_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2021, 1, 'test', 'scmp-parser/0.1.10', 4, 'now')
+        ) VALUES (2021, 1, 'test', 'scmp-parser/0.1.11', 5, 'now')
         """
     )
     connection.execute(

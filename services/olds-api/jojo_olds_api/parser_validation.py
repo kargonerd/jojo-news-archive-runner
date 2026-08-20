@@ -1451,6 +1451,17 @@ def record_parser_validation(
                     )
                 ):
                     issues.append("nonarticle-desk")
+        # SCMP live-sport packages often archive only the introduction while
+        # the update stream is client-rendered and absent from the snapshot.
+        # Keep those raw packages and their LIVEBLOG type, but do not count a
+        # short unrecoverable shell as a text-parser extraction failure.
+        if (
+            capture.publisher == "scmp"
+            and article.content_type == ContentType.LIVEBLOG
+            and article.quality.status != ArticleStatus.COMPLETE
+            and article.quality.body_characters < 200
+        ):
+            issues.append("nonarticle-desk")
         # Zaobao's article sitemap also contains interactive packages and
         # horse-racing result pages.  The former can arrive through a
         # canonical news URL but redirect to ``interactive.zaobao.com.sg``;

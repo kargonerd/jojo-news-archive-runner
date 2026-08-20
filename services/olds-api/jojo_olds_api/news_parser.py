@@ -831,6 +831,12 @@ def parse_article(
     )
     language = _document_language(soup, default=spec.default_language)
     content_type = _content_type(news_article, canonical_url)
+    if spec.publisher == "scmp" and _scmp_live_article(soup):
+        # SCMP marks its legacy live-sport pages with a ``cse_articletype``
+        # metadata value even when JSON-LD still says ``NewsArticle``. Keep
+        # the semantic type so validation can distinguish a missing replayed
+        # update stream from a broken text-article extraction.
+        content_type = ContentType.LIVEBLOG
     npr_audio_url: str | None = None
     if any(
         value.get("@type") == "LiveBlogPosting"
@@ -15222,6 +15228,23 @@ def _content_type(article: dict[str, Any], canonical_url: str) -> ContentType:
     if isinstance(article_type, str) and article_type == "ReportageNewsArticle":
         return ContentType.ARTICLE
     return ContentType.ARTICLE
+
+
+def _scmp_live_article(soup: BeautifulSoup) -> bool:
+    """Recognize SCMP's legacy live packages from explicit page metadata."""
+    article_type = _meta_content(soup, "name", "cse_articletype")
+    if article_type and article_type.casefold().strip() in {
+        "live",
+        "liveblog",
+        "live blog",
+    }:
+        return True
+    return bool(
+        soup.select_one(
+            "[class*='live-article__body'], "
+            "[class*='live-blog__body']"
+        )
+    )
 
 
 def _looks_like_gallery(

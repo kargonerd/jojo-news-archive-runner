@@ -20599,7 +20599,7 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.10"
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
 
 
 def test_scmp_parser_recovers_vue_apollo_article_body():
@@ -20638,7 +20638,7 @@ def test_scmp_parser_recovers_vue_apollo_article_body():
         "https://cdn1.i-scmp.com/cover.jpg",
         "https://cdn1.i-scmp.com/inline.jpg",
     ]
-    assert result.extraction.parser_version == "scmp-parser/0.1.10"
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
 
 
 def test_scmp_apollo_letter_body_removes_submission_chrome_and_related_media():
@@ -20674,7 +20674,7 @@ def test_scmp_apollo_letter_body_removes_submission_chrome_and_related_media():
     assert "letters@scmp.com" not in result.plain_text
     assert not any("related.jpg" in image.original_url for image in result.images)
     assert any("lead.jpg" in image.original_url for image in result.images)
-    assert result.extraction.parser_version == "scmp-parser/0.1.10"
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
 
 
 def test_scmp_parser_removes_flattened_subscription_and_social_chrome():
@@ -20711,7 +20711,7 @@ def test_scmp_parser_removes_flattened_subscription_and_social_chrome():
     assert "China Internet Report" not in result.plain_text
     assert "five-minute survey" not in result.plain_text
     assert "Follow SCMP Film" not in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.10"
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
 
 
 def test_scmp_parser_removes_underscore_only_editorial_separator():
@@ -20737,7 +20737,7 @@ def test_scmp_parser_removes_underscore_only_editorial_separator():
     assert "___" not in result.plain_text
     assert "historical context" in result.plain_text
     assert "what happened next" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.10"
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
 
 
 def test_scmp_legacy_drupal_pane_content_is_the_article_body():
@@ -20769,7 +20769,7 @@ def test_scmp_legacy_drupal_pane_content_is_the_article_body():
 
     assert result.quality.status.value == "complete"
     assert "additional financial data" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.10"
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
 
 
 def test_scmp_parser_drops_legacy_bookmark_control_icon():
@@ -20796,7 +20796,27 @@ def test_scmp_parser_drops_legacy_bookmark_control_icon():
         "bookmark-icon.png" in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "scmp-parser/0.1.10"
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
+
+
+def test_scmp_parser_classifies_explicit_live_package():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Live SCMP report">
+          <meta name="cse_articletype" content="Live">
+          <meta property="article:published_time" content="2020-01-02T00:00:00Z">
+        </head><body><article class="live-article__body">
+          <p>The live introduction is archived, but the update stream is absent.</p>
+        </article></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/sport/article/3041121/example-live",
+    )
+
+    assert result.content_type == ContentType.LIVEBLOG
+    assert result.quality.body_characters > 0
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
 
 
 @pytest.mark.parametrize(
