@@ -25,10 +25,10 @@ _QA_POLICY_REVISIONS = {
     # desks, and legacy forum shells with no headline/body. These records are
     # useful raw captures but are not recoverable text-news articles for the
     # parser cohort.
-    # A small set of Wayback packages retain only a video teaser or an empty
-    # special-report shell. Keep the raw capture, but exclude it from the
-    # recoverable text-article denominator.
-    "zaobao": 4,
+    # A small set of Wayback packages retain only a video teaser, a shorts
+    # video shell, or an empty special-report shell. Keep the raw capture,
+    # but exclude it from the recoverable text-article denominator.
+    "zaobao": 5,
     # Exclude legacy NYT admin-package pages, image-only editorial cartoons,
     # short live-blog shells, and Editors' Note placeholders whose archive
     # snapshot contains no recoverable article body.

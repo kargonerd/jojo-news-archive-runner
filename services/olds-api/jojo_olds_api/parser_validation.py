@@ -1499,6 +1499,16 @@ def record_parser_validation(
                 # Legacy Zaobao video teasers and empty special-report shells
                 # retain a headline/images but no recoverable article prose.
                 issues.append("nonarticle-desk")
+            elif (
+                "/shorts/" in canonical_url
+                and article.quality.status != ArticleStatus.COMPLETE
+                and article.quality.body_characters < 100
+            ):
+                # The modern ``shorts`` desk can be a video-first package.
+                # Its archived HTML retains the headline, poster and related
+                # stories but no text body; do not count that media shell as
+                # a parser extraction failure.
+                issues.append("nonarticle-desk")
         # NPR's legacy audio-only pages can retain a headline and player while
         # exposing no recoverable text body. Preserve the raw/audio record,
         # but do not let an unrecoverable short audio shell fill an article

@@ -3299,6 +3299,16 @@ def test_ft_subscribe_shell_is_excluded_from_article_cohort(
             "</head><body><article><p>快点击视频观看！</p></article>"
             "</body></html>".encode("utf-8"),
         ),
+        (
+            "https://www.zaobao.com.sg/shorts/story20250321-6045580",
+            "https://www.zaobao.com.sg/shorts/story20250321-6045580",
+            "<html><head><meta property='og:title' content='A video short'>"
+            "</head><body><article><h1>A video short</h1>"
+            "<div class='articleBody'><div>延伸阅读</div>"
+            "<img src='https://cassette.sphdigital.com.sg/image/zaobao/poster'>"
+            "</div><video controls></video></article></body></html>"
+            .encode("utf-8"),
+        ),
     ],
 )
 def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
@@ -3314,7 +3324,7 @@ def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.11', 4, 'now')
+        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.11', 5, 'now')
         """
     )
     connection.execute(
@@ -3374,7 +3384,7 @@ def test_zaobao_short_forum_shell_with_headline_is_screened(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2020, 1, 'test', 'zaobao-parser/0.1.11', 4, 'now')
+        ) VALUES (2020, 1, 'test', 'zaobao-parser/0.1.11', 5, 'now')
         """
     )
     connection.execute(
