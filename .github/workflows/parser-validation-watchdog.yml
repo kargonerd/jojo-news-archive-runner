@@ -25,6 +25,10 @@ env:
   # and storage cost have been reviewed.
   MAX_STANDARD_CONCURRENCY: "2"
   MAX_DISPATCH_PER_RUN: "2"
+  # Reserve at most one refresh dispatch when superseded parser cohorts are
+  # still draining. This prevents a parser fix from waiting behind a stale
+  # long-running capture chain without broadly increasing concurrency.
+  MAX_SUPERSEDED_REFRESH_DISPATCH: "1"
   # Keep one slot available for parser iteration while long catalog chains
   # fill the other slot. This avoids blocking all 800-sample work behind the
   # slowest historical CDX prefix.
@@ -312,6 +316,10 @@ jobs:
           available=$((MAX_STANDARD_CONCURRENCY - effective_active_count + 1))
           if [ "$available" -lt 0 ]; then
             available=0
+          fi
+          if [ "$available" -lt 1 ] && [ "$superseded_active_count" -gt 0 ]; then
+            available="$MAX_SUPERSEDED_REFRESH_DISPATCH"
+            echo "Reserved one parser refresh slot while superseded cohorts drain."
           fi
           dispatches="$available"
           if [ "$dispatches" -gt "$MAX_DISPATCH_PER_RUN" ]; then
