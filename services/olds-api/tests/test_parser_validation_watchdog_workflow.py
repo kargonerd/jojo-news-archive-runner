@@ -35,6 +35,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert 'object_listing="$(\n              rclone lsl' in workflow
     assert 'rclone lsf "$remote_dir" --files-only \\\n                --timeout 30s --contimeout 10s' in workflow
     assert '&& [ -n "$object_listing" ]; then' in workflow
+    assert "--retries 3 --low-level-retries 6" in workflow
+    assert "transient 5xx" in workflow
     assert "VALIDATION_PUBLISHERS:" in workflow
     assert (
         "ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin"

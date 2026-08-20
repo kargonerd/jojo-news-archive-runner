@@ -68,9 +68,12 @@ jobs:
             destination="$2"
             listing="$RUNNER_TEMP/summary-listing.txt"
             errors="$RUNNER_TEMP/summary-listing-errors.txt"
+            # B2 occasionally returns a transient 5xx while authorizing the
+            # first request. Keep a single incident from aborting the whole
+            # watchdog before it can plan validation work.
             if ! rclone lsf "$remote_dir" --files-only \
                 --timeout 30s --contimeout 10s \
-                --retries 1 --low-level-retries 1 \
+                --retries 3 --low-level-retries 6 \
                 >"$listing" 2>"$errors"; then
               if grep -qiE "directory not found|object not found" "$errors"; then
                 return 0
@@ -128,7 +131,7 @@ jobs:
               rclone lsl \
                 "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest.jsonl.gz" \
                 --timeout 30s --contimeout 10s \
-                --retries 1 --low-level-retries 1 \
+                --retries 3 --low-level-retries 6 \
                 2>/dev/null
             )" && [ -n "$object_listing" ]; then
               echo "$source_root" >> "$available_source_shards"
@@ -136,7 +139,7 @@ jobs:
               if capacity_listing="$(
                 rclone lsl "$capacity_remote" \
                   --timeout 30s --contimeout 10s \
-                  --retries 1 --low-level-retries 1 \
+                  --retries 3 --low-level-retries 6 \
                   2>/dev/null
               )" && [ -n "$capacity_listing" ]; then
                 capacity_local="${source_capacity_root}/${source_root}/manifest-summary.json"
@@ -149,7 +152,7 @@ jobs:
             if status_listing="$(
               rclone lsl "$status_remote" \
                 --timeout 30s --contimeout 10s \
-                --retries 1 --low-level-retries 1 \
+                --retries 3 --low-level-retries 6 \
                 2>/dev/null
             )" && [ -n "$status_listing" ]; then
               status_local="${source_catalog_status_root}/${source_root}/catalog/status.json"
@@ -167,7 +170,7 @@ jobs:
             if capacity_listing="$(
               rclone lsl "$capacity_remote" \
                 --timeout 30s --contimeout 10s \
-                --retries 1 --low-level-retries 1 \
+                --retries 3 --low-level-retries 6 \
                 2>/dev/null
             )" && [ -n "$capacity_listing" ]; then
               capacity_local="${source_capacity_root}/${supplemental_root}/manifest-summary.json"
@@ -197,7 +200,7 @@ jobs:
             if capacity_listing="$(
               rclone lsl "$capacity_remote" \
                 --timeout 30s --contimeout 10s \
-                --retries 1 --low-level-retries 1 \
+                --retries 3 --low-level-retries 6 \
                 2>/dev/null
             )" && [ -n "$capacity_listing" ]; then
               capacity_local="${source_capacity_root}/${supplemental_root}/manifest-summary.json"
