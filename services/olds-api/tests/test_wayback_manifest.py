@@ -817,6 +817,14 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
     ) is None
     assert article_url_publication_year(
         ap,
+        "https://news.yahoo.com/s/ap/20110111/ap_on_re_eu/iran_nuclear",
+    ) == 2011
+    assert article_url_publication_year(
+        ap,
+        "https://www.huffingtonpost.com/huff-wires/20101223/example",
+    ) == 2010
+    assert article_url_publication_year(
+        ap,
         "http://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST"
         "?SITE=AP&CTIME=2011-01-11-15-30-46",
     ) == 2011

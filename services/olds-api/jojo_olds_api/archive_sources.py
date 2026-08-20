@@ -480,7 +480,21 @@ def article_url_publication_year(
         return published.year if published is not None else None
     if spec.publisher == "ap":
         published = ap_hosted_publication_datetime(normalized)
-        return published.year if published is not None else None
+        if published is not None:
+            return published.year
+        host = (urlsplit(normalized).hostname or "").casefold()
+        if host in {"news.yahoo.com", "www.news.yahoo.com"}:
+            match = re.match(
+                r"^/s/ap(?:_[A-Za-z0-9_-]+)?/(20\d{6})/",
+                path,
+            )
+            if match is not None:
+                return int(match.group(1)[:4])
+        if host in {"huffingtonpost.com", "www.huffingtonpost.com"}:
+            match = re.match(r"^/huff-wires/(20\d{6})/", path)
+            if match is not None:
+                return int(match.group(1)[:4])
+        return None
     if spec.publisher == "nikkei":
         # Legacy Nikkei article IDs encode the publication year and month in
         # segments such as R10C13A9 (2013-09) or Z20C11A4 (2011-04).
