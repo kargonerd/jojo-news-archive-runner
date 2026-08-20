@@ -59,6 +59,7 @@ jobs:
             --non-interactive
 
       - name: Restore validation summaries
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/archive-state"

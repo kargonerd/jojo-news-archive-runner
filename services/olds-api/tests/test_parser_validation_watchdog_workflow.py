@@ -29,6 +29,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
         assert supplemental_root in workflow
     assert '"npr/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"' in workflow
     assert "--source-capacity-root" in workflow
+    assert "- name: Restore validation summaries\n        timeout-minutes: 15" in workflow
     assert "ready: [" in workflow
     assert "capacityDeficient: [" in workflow
     assert 'object_listing="$(\n              rclone lsl' in workflow
