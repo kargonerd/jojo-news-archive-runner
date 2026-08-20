@@ -127,7 +127,7 @@ def test_ap_raw_archive_merges_legacy_manifest_without_duplicate_raw_root() -> N
     ]
 
     assert "inputs.publisher == 'ap'" in merge_section
-    assert "inputs.manifest_mode == 'wayback-urlkey'" in merge_section
+    assert "inputs.manifest_mode == 'sitemap-wayback'" in merge_section
     assert "legacy-archive" in merge_section
     assert "merge_archive_manifests.py" in merge_section
     assert '--input "$supplemental"' in merge_section
