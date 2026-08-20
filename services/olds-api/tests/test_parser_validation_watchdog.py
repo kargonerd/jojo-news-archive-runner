@@ -956,6 +956,40 @@ def test_watchdog_admits_year_with_sufficient_supplemental_capacity(
     assert plan["tasks"][0]["year"] == 2018
 
 
+def test_watchdog_reopens_incomplete_ap_cell_after_supplemental_growth(
+    tmp_path: Path,
+):
+    primary = "ap/2010-2015/sitemap-wayback"
+    supplemental = "ap/2010-2015/legacy-archive"
+    _write_summary(
+        tmp_path,
+        "holdout-v207/ap/2011/state/summary.json",
+        publisher="ap",
+        year=2011,
+        evaluated=0,
+        eligible_candidates=1,
+        excluded_candidates=1317,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["ap"],
+        available_source_shards={primary},
+        source_year_capacities={
+            primary: {2011: 1318},
+            supplemental: {2011: 134075},
+        },
+    )
+
+    assert plan["tasks"][0]["year"] == 2011
+    cell = plan["cellProgress"][0]
+    assert cell["eligibleCandidates"] == 1
+    assert cell["eligibleCandidateUpperBound"] >= 800
+    assert cell["capacityDeficient"] is False
+
+
 def test_watchdog_does_not_sum_subthreshold_sources_to_admit_year(
     tmp_path: Path,
 ):

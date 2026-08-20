@@ -272,6 +272,10 @@ def plan_validation_dispatch(
                 paths.append(summary_path.relative_to(state_root).as_posix())
             if (
                 _integer(row.get("evaluated")) > 0
+                or (
+                    "eligibleCandidates" in row
+                    and "excludedCandidates" in row
+                )
             ):
                 observed = cell["observedRows"]
                 assert isinstance(observed, list)
@@ -334,15 +338,14 @@ def plan_validation_dispatch(
                 publisher=publisher,
                 year=year,
             )
-        if cell["eligibleCandidates"] is None:
-            cell["eligibleCandidateUpperBound"] = (
-                _eligible_candidate_upper_bound(
-                    publisher=publisher,
-                    year=year,
-                    observed_rows=observed_rows,
-                    source_year_capacities=source_year_capacities,
-                )
+        cell["eligibleCandidateUpperBound"] = (
+            _eligible_candidate_upper_bound(
+                publisher=publisher,
+                year=year,
+                observed_rows=observed_rows,
+                source_year_capacities=source_year_capacities,
             )
+        )
         cell["requiredCohort"] = required_cohort
         cell["selectedCohort"] = selected_cohort
 
@@ -473,9 +476,17 @@ def _effective_candidate_capacity(
     cell: Mapping[str, object],
 ) -> int | None:
     exact = cell.get("eligibleCandidates")
-    if exact is not None:
-        return int(exact)
     upper_bound = cell.get("eligibleCandidateUpperBound")
+    if exact is not None:
+        exact_value = int(exact)
+        if upper_bound is not None:
+            target = max(
+                MINIMUM_SAMPLES,
+                _integer(cell.get("target")),
+            )
+            if exact_value < target:
+                return max(exact_value, int(upper_bound))
+        return exact_value
     return None if upper_bound is None else int(upper_bound)
 
 

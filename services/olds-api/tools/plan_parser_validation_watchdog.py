@@ -107,7 +107,7 @@ def _load_source_year_capacities(
     if root is None or not root.is_dir():
         return None
     capacities: dict[str, dict[int, int]] = {}
-    for path in sorted(root.rglob("manifest-summary.json")):
+    for path in sorted(root.rglob("*manifest-summary.json")):
         payload = json.loads(path.read_text(encoding="utf-8"))
         if payload.get("formatVersion") != "jojo-capture-manifest-summary/1":
             raise ValueError(f"unsupported capacity summary: {path}")
@@ -118,11 +118,14 @@ def _load_source_year_capacities(
         publisher = shard.split("/", 1)[0]
         if payload.get("publisher") != publisher:
             raise ValueError(f"capacity summary publisher mismatch: {path}")
-        capacities[shard] = {
-            int(year): int(count)
-            for year, count in year_counts.items()
-            if str(year).isdigit() and int(count) >= 0
-        }
+        shard_capacities = capacities.setdefault(shard, {})
+        for year, count in year_counts.items():
+            if str(year).isdigit() and int(count) >= 0:
+                year_number = int(year)
+                shard_capacities[year_number] = max(
+                    shard_capacities.get(year_number, 0),
+                    int(count),
+                )
     return capacities
 
 
