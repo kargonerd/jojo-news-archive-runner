@@ -666,6 +666,12 @@ The temporary runner remains the active home while validation is in progress.
   statuses complete, and 748 selected images (two non-hard review candidates).
   The Common Crawl supplement exposed 12,931 eligible candidates for that
   cohort.
+  The current v201 replay for 2013 exposed a real legacy-template defect:
+  `_remove_npr_body_chrome` could remove an entire `.transcript` wrapper when
+  its first paragraph began with the NPR copyright disclaimer. `npr-parser/0.1.54`
+  now limits that cleanup to leaf disclaimer nodes and has a regression test;
+  a fresh zero-overlap replay is required before the current parser can be
+  considered converged for the affected cohort.
 - Nikkei's Common Crawl supplement now exposes enough dated candidates for
   2012--2015 (909, 1,055, 915, and 1,085 respectively), and the merged
   2016--2019 windows also have sufficient coverage. Current

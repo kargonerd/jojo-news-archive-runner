@@ -8118,7 +8118,8 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
                 and node.find_parent(class_="container") is not None
             )
         ) or (
-            text.startswith("copyright ©")
+            node.name in {"p", "li", "span"}
+            and text.startswith("copyright ©")
             and "npr. all rights reserved" in text
         ) or text.startswith(
             "listen to yesterday's song of the day"
