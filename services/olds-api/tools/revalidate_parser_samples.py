@@ -46,6 +46,15 @@ def parse_args() -> argparse.Namespace:
             "is present locally. This is an end-of-run reproducibility gate."
         ),
     )
+    parser.add_argument(
+        "--preserve-missing",
+        action="store_true",
+        help=(
+            "Do not reset captures or delete parser results when a raw "
+            "object is unavailable locally. This is for the final "
+            "non-destructive reproducibility audit after a live capture."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -103,6 +112,22 @@ def requeue_missing_validation_capture(
         )
 
 
+def _handle_missing_raw_object(
+    connection: sqlite3.Connection,
+    *,
+    canonical_url: str,
+    preserve_missing: bool,
+) -> bool:
+    """Handle an unavailable object and report whether it was requeued."""
+    if preserve_missing:
+        return False
+    requeue_missing_validation_capture(
+        connection,
+        canonical_url=canonical_url,
+    )
+    return True
+
+
 def main() -> int:
     args = parse_args()
     if args.max_replays < 1 or args.progress_every < 1:
@@ -126,12 +151,13 @@ def main() -> int:
                 ((canonical_url,) for canonical_url, _ in replayable),
             )
         for canonical_url, raw_path in missing_entries:
-            requeue_missing_validation_capture(
+            was_requeued = _handle_missing_raw_object(
                 connection,
                 canonical_url=canonical_url,
+                preserve_missing=args.preserve_missing,
             )
             missing.append(raw_path)
-            requeued += 1
+            requeued += was_requeued
         forced = len(replayable)
     else:
         replayable = []
@@ -160,11 +186,12 @@ def main() -> int:
     for canonical_url, raw_path in pending:
         if not (args.archive_root / raw_path).is_file():
             missing.append(raw_path)
-            requeue_missing_validation_capture(
+            was_requeued = _handle_missing_raw_object(
                 connection,
                 canonical_url=canonical_url,
+                preserve_missing=args.preserve_missing,
             )
-            requeued += 1
+            requeued += was_requeued
             continue
         capture = completed_raw_capture(
             connection,
