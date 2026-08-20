@@ -29,12 +29,13 @@ _QA_POLICY_REVISIONS = {
     # special-report shell. Keep the raw capture, but exclude it from the
     # recoverable text-article denominator.
     "zaobao": 4,
-    # Exclude legacy NYT admin-package pages whose archive snapshot contains
-    # only a teaser and no recoverable article body.
+    # Exclude legacy NYT admin-package pages, image-only editorial cartoons,
+    # short live-blog shells, and Editors' Note placeholders whose archive
+    # snapshot contains no recoverable article body.
     # Legacy NYT prose can contain the words "share this article" as an
     # editorial sentence; the generic interface detector now only treats an
     # exact standalone share-control block as noise.
-    "nyt": 3,
+    "nyt": 4,
     # NPR's legacy audio-only pages can retain metadata and a player while
     # exposing no recoverable article body. Keep those captures, but exclude
     # them from the text-article QA denominator.

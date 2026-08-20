@@ -1543,6 +1543,27 @@ def record_parser_validation(
             issues.append("nonarticle-desk")
         if (
             capture.publisher == "nyt"
+            and article.quality.body_characters < 200
+            and (
+                article.content_type == ContentType.LIVEBLOG
+                or re.search(
+                    r"(?i)/opinion/editorial-cartoon(?:\.html)?$",
+                    capture.canonical_url,
+                )
+                or (
+                    article.headline
+                    and article.headline.casefold().strip()
+                    in {"editors' note", "editors’ note"}
+                )
+            )
+        ):
+            # Wayback can replay a NYT live-blog alias, an image-only
+            # editorial cartoon, or a correction placeholder under a normal
+            # article URL. Preserve the raw capture and metadata, but keep
+            # these non-recoverable packages out of the text-article cohort.
+            issues.append("nonarticle-desk")
+        if (
+            capture.publisher == "nyt"
             and "/interactive/" in capture.canonical_url.casefold()
             and article.content_type in {ContentType.ARTICLE, ContentType.OPINION}
             and article.quality.body_characters < 100

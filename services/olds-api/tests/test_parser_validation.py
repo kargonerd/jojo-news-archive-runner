@@ -2793,7 +2793,7 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
         )
-                VALUES (2020, 1, 'test', 'nyt-parser/0.8.79', 3, 'now')
+                VALUES (2020, 1, 'test', 'nyt-parser/0.8.79', 4, 'now')
         """
     )
     connection.execute(
@@ -2849,6 +2849,106 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
     assert summary["years"]["2020"]["nonTextContent"] == 1
     assert summary["years"]["2020"]["qaPassed"] == 1
     assert summary["years"]["2020"]["unsupported"] == 1
+
+
+@pytest.mark.parametrize(
+    "canonical_url,html,sample_year",
+    [
+        (
+            "https://www.nytimes.com/2014/06/15/opinion/editorial-cartoon.html",
+            b"""
+            <html><head>
+              <title>Opinion | Editorial Cartoon - The New York Times</title>
+              <meta property="og:title" content="Opinion | Editorial Cartoon">
+              <meta property="article:published_time" content="2014-06-15T20:40:04Z">
+              <meta property="og:image" content="https://static01.nyt.com/cartoon.jpg">
+            </head><body><article><p>Promises of universal suffrage for Hong Kong.</p>
+              <img src="https://static01.nyt.com/cartoon.jpg"></article></body></html>
+            """,
+            2014,
+        ),
+        (
+            "https://www.nytimes.com/2020/11/20/us/politics/biden-transgender-day-of-remembrance.html",
+            b"""
+            <html><head>
+              <meta property="og:title" content="On Transgender Day of Remembrance">
+              <meta property="article:published_time" content="2020-11-20T17:47:29Z">
+              <script type="application/ld+json">
+                {"@type":"LiveBlogPosting","headline":"On Transgender Day of Remembrance"}
+              </script>
+            </head><body><article><h1>On Transgender Day of Remembrance</h1></article></body></html>
+            """,
+            2020,
+        ),
+        (
+            "https://www.nytimes.com/2022/07/26/arts/television/tony-dow-dead.html",
+            b"""
+            <html><head>
+              <title>Editors' Note - The New York Times</title>
+              <meta property="og:title" content="Editors' Note">
+              <meta property="og:description" content="An obituary was published in error.">
+              <meta property="article:published_time" content="2022-07-26T17:20:43Z">
+            </head><body><article><h1>Editors' Note</h1></article></body></html>
+            """,
+            2022,
+        ),
+    ],
+)
+def test_nyt_short_nonarticle_packages_are_screened(
+    tmp_path: Path,
+    canonical_url: str,
+    html: bytes,
+    sample_year: int,
+):
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (?, 1, 'test', 'nyt-parser/0.8.79', 4, 'now')
+        """,
+        (sample_year,),
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, ?, 'priority', 'now')
+        """,
+        (canonical_url, sample_year),
+    )
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="nyt:" + ("n" * 64),
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at=datetime(sample_year, 1, 2, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20240101000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"][str(sample_year)]["evaluated"] == 0
+    assert summary["years"][str(sample_year)]["screenedNonArticles"] == 1
 
 
 def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
@@ -4066,7 +4166,7 @@ def test_nyt_print_utility_entry_is_screened_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-                ) VALUES (?, 1, 'test', 'nyt-parser/0.8.79', 3, 'now')
+                ) VALUES (?, 1, 'test', 'nyt-parser/0.8.79', 4, 'now')
         """,
         (sample_year,),
     )
