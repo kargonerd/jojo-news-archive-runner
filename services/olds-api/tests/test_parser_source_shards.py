@@ -57,6 +57,7 @@ def test_parser_source_manifest_shard_rejects_unsupported_cells(
 @pytest.mark.parametrize(
     ("publisher", "year", "expected"),
     [
+        ("ap", 2012, ("ap/2010-2015/legacy-archive",)),
         ("caixin", 2018, ("caixin/2018-2018/commoncrawl-prefix",)),
         ("npr", 2010, ("npr/2010-2010/commoncrawl-prefix",)),
         ("axios", 2025, ("axios/2017-2026/sitemap-wayback",)),

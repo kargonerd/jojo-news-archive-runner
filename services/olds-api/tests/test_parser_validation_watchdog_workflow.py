@@ -20,6 +20,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "--available-source-shards" in workflow
     assert "manifest-summary.json" in workflow
     assert 'supplemental_root="caixin/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"' in workflow
+    assert '"ap/2010-2015/legacy-archive"' in workflow
     for supplemental_root in (
         '"nikkei/2010-2015/commoncrawl-prefix"',
         '"nikkei/2016-2026/commoncrawl-prefix"',

@@ -57,6 +57,8 @@ def parser_supplemental_manifest_shards(
     # Validate the cell and keep its supported-year semantics aligned with
     # parser_source_manifest_shard before deriving supplemental paths.
     parser_source_manifest_shard(publisher, year)
+    if publisher == "ap" and year <= 2015:
+        return ("ap/2010-2015/legacy-archive",)
     if publisher in {"npr", "caixin"}:
         return (f"{publisher}/{year}-{year}/commoncrawl-prefix",)
     if publisher == "axios":

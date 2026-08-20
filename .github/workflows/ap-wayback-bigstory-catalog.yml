@@ -110,6 +110,10 @@ jobs:
             > "$LOCAL_ROOT/state/wayback-bigstory-summary.json"
           gzip -t "$LOCAL_ROOT/catalog/wayback-bigstory-manifest.jsonl.gz"
           test -s "$LOCAL_ROOT/catalog/wayback-bigstory-manifest.jsonl.gz"
+          python services/olds-api/tools/summarize_archive_manifest.py \
+            --manifest "$LOCAL_ROOT/catalog/wayback-bigstory-manifest.jsonl.gz" \
+            --publisher ap \
+            --output "$LOCAL_ROOT/catalog/wayback-bigstory-manifest-summary.json"
 
       - name: Publish manifest and summary
         shell: bash
@@ -121,6 +125,10 @@ jobs:
           rclone copyto \
             "$LOCAL_ROOT/catalog/wayback-bigstory-manifest.jsonl.gz" \
             "${REMOTE_ROOT}/catalog/wayback-bigstory-manifest.jsonl.gz" \
+            --retries 8 --low-level-retries 20
+          rclone copyto \
+            "$LOCAL_ROOT/catalog/wayback-bigstory-manifest-summary.json" \
+            "${REMOTE_ROOT}/catalog/wayback-bigstory-manifest-summary.json" \
             --retries 8 --low-level-retries 20
           rclone copyto \
             "$LOCAL_ROOT/state/wayback-bigstory-summary.json" \

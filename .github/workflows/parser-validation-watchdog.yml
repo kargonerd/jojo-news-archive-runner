@@ -185,6 +185,7 @@ jobs:
           # candidates (or no rows at all), producing avoidable validation
           # failures instead of recording a capacity-deficient cell.
           supplemental_capacity_roots=(
+            "ap/2010-2015/legacy-archive"
             "nikkei/2010-2015/commoncrawl-prefix"
             "nikkei/2016-2026/commoncrawl-prefix"
             "scmp/2010-2015/commoncrawl-prefix"

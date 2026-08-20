@@ -28,7 +28,10 @@ def test_ap_legacy_catalog_workflow_builds_and_publishes_supplement() -> None:
     assert '--capture-to-year "$CAPTURE_TO_YEAR"' in workflow
     assert '--recovery-workers "$RECOVERY_WORKERS"' in workflow
     assert "legacy-archive" in workflow
+    assert "summarize_archive_manifest.py" in workflow
+    assert '"$LOCAL_ROOT/catalog/manifest-summary.json"' in workflow
     assert '"${REMOTE_ROOT}/catalog/manifest.jsonl.gz"' in workflow
+    assert '"${REMOTE_ROOT}/catalog/manifest-summary.json"' in workflow
     assert '"${REMOTE_ROOT}/state/summary.json"' in workflow
     assert "raw/objects" not in workflow
     assert "raw/records" not in workflow
