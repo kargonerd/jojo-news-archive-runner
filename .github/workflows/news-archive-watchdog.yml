@@ -51,7 +51,11 @@ jobs:
           set -euo pipefail
           runs="$RUNNER_TEMP/runs.json"
           active_titles="$RUNNER_TEMP/active-titles.txt"
-          gh run list --repo "$GITHUB_REPOSITORY" --limit 100 \
+          # High-frequency Common Crawl chains can occupy the first 100
+          # repository results. Scope the scan to this dispatch ref and keep
+          # a large page so active catalog/parser jobs are not missed.
+          gh run list --repo "$GITHUB_REPOSITORY" \
+            --branch "$DISPATCH_REF" --limit 1000 \
             --json status,displayTitle > "$runs"
           jq -r '
             .[]

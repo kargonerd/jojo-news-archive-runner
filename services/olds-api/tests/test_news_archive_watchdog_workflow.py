@@ -21,6 +21,8 @@ def test_archive_watchdog_has_one_global_two_slot_dispatcher() -> None:
     assert 'startswith("parser-")' in workflow
     assert "available=$((MAX_STANDARD_CONCURRENCY - active_count))" in workflow
     assert 'if [ "$dispatched" -ge "$available" ]' in workflow
+    assert 'gh run list --repo "$GITHUB_REPOSITORY"' in workflow
+    assert '--branch "$DISPATCH_REF" --limit 1000' in workflow
 
 
 def test_archive_watchdog_is_catalog_only_and_skips_complete_shards() -> None:
