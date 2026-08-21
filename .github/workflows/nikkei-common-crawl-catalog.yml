@@ -57,7 +57,7 @@ on:
       target_articles_per_year:
         description: "Stop catalog discovery after this many URLs per publication year."
         required: true
-        default: "3000"
+        default: "1200"
         type: string
       auto_continue:
         description: "Dispatch the next bounded run after checkpointing."

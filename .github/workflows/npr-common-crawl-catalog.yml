@@ -31,6 +31,11 @@ on:
         required: true
         default: "50"
         type: string
+      target_articles_per_year:
+        description: "Stop discovery after this many URLs per publication year."
+        required: true
+        default: "1200"
+        type: string
       auto_continue:
         description: "Dispatch the next bounded run after checkpointing."
         required: true
@@ -57,6 +62,7 @@ env:
   MAX_PAGES: ${{ inputs.max_pages }}
   MAX_QUERIES: ${{ inputs.max_queries }}
   MAX_HYDRATIONS: ${{ inputs.max_hydrations }}
+  TARGET_ARTICLES_PER_YEAR: ${{ inputs.target_articles_per_year }}
   AUTO_CONTINUE: ${{ inputs.auto_continue }}
 
 jobs:
@@ -109,6 +115,10 @@ jobs:
             echo "max_hydrations must be non-negative." >&2
             exit 2
           fi
+          if ! [[ "$TARGET_ARTICLES_PER_YEAR" =~ ^[1-9][0-9]*$ ]]; then
+            echo "target_articles_per_year must be positive." >&2
+            exit 2
+          fi
           local_root="$RUNNER_TEMP/npr-common-crawl-${FROM_YEAR}-${TO_YEAR}"
           remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/${FROM_YEAR}-${TO_YEAR}/commoncrawl-prefix"
           mkdir -p "$local_root/catalog" "$local_root/state"
@@ -153,6 +163,7 @@ jobs:
             --max-queries "$MAX_QUERIES" \
             --max-errors 3 \
             --max-date-hydrations "$MAX_HYDRATIONS" \
+            --target-articles-per-year "$TARGET_ARTICLES_PER_YEAR" \
             --data-min-request-interval 0.5 \
             --min-request-interval 3 \
             --timeout 45 \
@@ -225,6 +236,7 @@ jobs:
             -f max_pages="$MAX_PAGES" \
             -f max_queries="$MAX_QUERIES" \
             -f max_hydrations="$MAX_HYDRATIONS" \
+            -f target_articles_per_year="$TARGET_ARTICLES_PER_YEAR" \
             -f auto_continue=true
 
       - name: Wake parser validation watchdog

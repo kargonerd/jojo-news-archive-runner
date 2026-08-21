@@ -95,10 +95,10 @@ jobs:
           # parser-validation watchdog independently decides whether a year
           # has enough unseen candidates for its 800-row sample.
           queue='[
-            {"kind":"common-crawl","publisher":"aljazeera","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"3000","runner":"ubuntu-latest"},
-            {"kind":"common-crawl","publisher":"scmp","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"3000","runner":"ubuntu-latest"},
-            {"kind":"common-crawl","publisher":"aljazeera","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"3000","runner":"ubuntu-latest"},
-            {"kind":"common-crawl","publisher":"scmp","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"3000","runner":"ubuntu-latest"},
+            {"kind":"common-crawl","publisher":"aljazeera","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"1200","runner":"ubuntu-latest"},
+            {"kind":"common-crawl","publisher":"scmp","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"1200","runner":"ubuntu-latest"},
+            {"kind":"common-crawl","publisher":"aljazeera","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"1200","runner":"ubuntu-latest"},
+            {"kind":"common-crawl","publisher":"scmp","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"1200","runner":"ubuntu-latest"},
             {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"sitemap-wayback","units":"30","runner":"ubuntu-latest"},
             {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"wayback-urlkey","units":"5","runner":"ubuntu-latest"},
             {"publisher":"ft","fromYear":"2010","toYear":"2015","mode":"sitemap-wayback","units":"1","runner":"ubuntu-latest"},

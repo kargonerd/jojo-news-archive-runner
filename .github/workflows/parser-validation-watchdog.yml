@@ -609,6 +609,8 @@ jobs:
               echo "Common Crawl catalog already complete: $title"
               continue
             fi
+            # Keep 50% headroom above the 800-article validation target;
+            # larger catalogs create a long, low-value date-hydration tail.
             gh workflow run nikkei-common-crawl-catalog.yml \
               --ref "$DISPATCH_REF" \
               -f publisher="$publisher" \
@@ -620,7 +622,7 @@ jobs:
               -f max_pages=1 \
               -f max_queries=8 \
               -f max_hydrations=200 \
-              -f target_articles_per_year=3000 \
+              -f target_articles_per_year=1200 \
               -f auto_continue=true
             echo "Dispatched supplemental Common Crawl catalog: $title"
             break
