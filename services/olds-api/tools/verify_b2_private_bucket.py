@@ -4,7 +4,10 @@ import argparse
 import base64
 import json
 import os
+import time
+from http.client import RemoteDisconnected
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 
 AUTHORIZE_URL = (
@@ -23,9 +26,31 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def request_json(request: Request) -> dict:
-    with urlopen(request, timeout=30) as response:
-        return json.load(response)
+_TRANSIENT_HTTP_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+def request_json(request: Request, *, attempts: int = 4) -> dict:
+    """Read a B2 API response, retrying only transient network failures."""
+    if attempts < 1:
+        raise ValueError("attempts must be positive")
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            with urlopen(request, timeout=30) as response:
+                return json.load(response)
+        except HTTPError as exc:
+            # Bad credentials and missing permissions are deterministic; do
+            # not hide them behind retries. B2 gateway/rate-limit responses
+            # can be transient and are safe to retry.
+            if exc.code not in _TRANSIENT_HTTP_STATUS:
+                raise
+            last_error = exc
+        except (RemoteDisconnected, ConnectionResetError, TimeoutError, URLError) as exc:
+            last_error = exc
+        if attempt + 1 < attempts:
+            time.sleep(min(8.0, 2.0**attempt))
+    assert last_error is not None
+    raise last_error
 
 
 def bucket_type(
