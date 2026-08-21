@@ -173,6 +173,7 @@ def plan_validation_dispatch(
             "screenedNonArticles": 0,
             "qaRevision": None,
             "parserVersion": None,
+            "captureStateExhausted": False,
             "summaryPaths": [],
             "cohortRows": {},
             "observedRows": [],
@@ -248,6 +249,9 @@ def plan_validation_dispatch(
         validation = payload.get("parserValidation")
         if not isinstance(validation, dict):
             continue
+        capture_status = payload.get("capturesByStatus")
+        if not isinstance(capture_status, dict):
+            capture_status = None
         years = validation.get("years")
         if not isinstance(years, dict):
             continue
@@ -262,6 +266,7 @@ def plan_validation_dispatch(
                 **row,
                 "_rotationAudit": rotation_audit,
                 "_contentAudit": content_audit,
+                "_capturesByStatus": capture_status,
             }
             cell = progress[cell_key]
             cell["replayableEvaluated"] = max(
@@ -335,6 +340,9 @@ def plan_validation_dispatch(
                 )
             cell["screenedNonArticles"] = _integer(
                 selected.get("screenedNonArticles")
+            )
+            cell["captureStateExhausted"] = _capture_state_exhausted(
+                selected
             )
             cell["ready"] = _year_ready(
                 selected,
@@ -412,10 +420,15 @@ def plan_validation_dispatch(
     capacity_deficient_cells = {
         cell
         for cell, values in progress.items()
-        if _effective_candidate_capacity(values) is not None
-        and int(_effective_candidate_capacity(values))
-        < int(values["target"])
-        and int(values["evaluated"]) < int(values["target"])
+        if (
+            bool(values["captureStateExhausted"])
+            or (
+                _effective_candidate_capacity(values) is not None
+                and int(_effective_candidate_capacity(values))
+                < int(values["target"])
+                and int(values["evaluated"]) < int(values["target"])
+            )
+        )
     }
     candidates = [
         cell
@@ -485,6 +498,9 @@ def plan_validation_dispatch(
             "capacityDeficient": (
                 (publisher, year) in capacity_deficient_cells
             ),
+            "captureStateExhausted": bool(
+                progress[(publisher, year)]["captureStateExhausted"]
+            ),
             "contentAuditFailed": (
                 (publisher, year) in content_audit_failed_cells
             ),
@@ -544,6 +560,31 @@ def _effective_candidate_capacity(
                 return max(exact_value, int(upper_bound))
         return exact_value
     return None if upper_bound is None else int(upper_bound)
+
+
+def _capture_state_exhausted(row: Mapping[str, object]) -> bool:
+    """Return whether a capture checkpoint is terminally short of samples.
+
+    Candidate counts alone can overstate usable capacity when every remaining
+    URL has already failed at its available archive sources.  Only treat that
+    as exhausted after the checkpoint reports no pending/in-flight captures,
+    at least one transport error, no parser errors, and fewer than the target
+    number of evaluated articles.  A missing status block remains unknown and
+    therefore schedulable.
+    """
+    status = row.get("_capturesByStatus")
+    if not isinstance(status, dict):
+        return False
+    if "pending" not in status or "error" not in status:
+        return False
+    target = max(MINIMUM_SAMPLES, _integer(row.get("target")))
+    return bool(
+        _integer(status.get("pending")) == 0
+        and _integer(status.get("downloading")) == 0
+        and _integer(status.get("error")) > 0
+        and _integer(row.get("errors")) == 0
+        and _integer(row.get("evaluated")) < target
+    )
 
 
 def _eligible_candidate_upper_bound(

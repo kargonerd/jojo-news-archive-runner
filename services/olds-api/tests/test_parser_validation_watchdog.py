@@ -28,6 +28,7 @@ def _write_summary(
     eligible_candidates: int | None = None,
     excluded_candidates: int | None = None,
     screened_nonarticles: int = 0,
+    captures_by_status: dict[str, int] | None = None,
 ) -> None:
     path = root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,6 +60,8 @@ def _write_summary(
                     }
                 }
             }
+    if captures_by_status is not None:
+        payload["capturesByStatus"] = captures_by_status
     if eligible_candidates is not None:
         payload["parserValidation"]["years"][str(year)][
             "eligibleCandidates"
@@ -212,10 +215,11 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "requiredCohort": None,
         "selectedCohort": "source",
         "ready": True,
-        "active": False,
-        "capacityDeficient": False,
-        "contentAuditFailed": False,
-    }
+            "active": False,
+            "capacityDeficient": False,
+            "captureStateExhausted": False,
+            "contentAuditFailed": False,
+        }
 
 
 def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
@@ -976,6 +980,85 @@ def test_watchdog_treats_screened_nonarticles_as_exhausted_capacity(
     assert cell["screenedNonArticles"] == 27
     assert cell["eligibleCandidateUpperBound"] == 0
     assert cell["capacityDeficient"] is True
+
+
+def test_watchdog_marks_terminal_capture_errors_as_exhausted_capacity(
+    tmp_path: Path,
+):
+    shard = "wsj/2016-2026/wayback"
+    _write_summary(
+        tmp_path,
+        "holdout-v196/wsj/2021/state/summary.json",
+        publisher="wsj",
+        year=2021,
+        evaluated=123,
+        eligible_candidates=2290,
+        excluded_candidates=3878,
+        captures_by_status={
+            "complete": 124,
+            "error": 1219,
+            "pending": 0,
+            "downloading": 0,
+        },
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["wsj"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2021: 6178}},
+    )
+
+    assert plan["tasks"] == []
+    assert plan["capacityDeficientCells"] == 1
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["year"] == 2021
+    )
+    assert cell["captureStateExhausted"] is True
+    assert cell["capacityDeficient"] is True
+
+
+def test_watchdog_keeps_inflight_capture_errors_schedulable(
+    tmp_path: Path,
+):
+    shard = "wsj/2016-2026/wayback"
+    _write_summary(
+        tmp_path,
+        "holdout-v196/wsj/2021/state/summary.json",
+        publisher="wsj",
+        year=2021,
+        evaluated=123,
+        eligible_candidates=2290,
+        excluded_candidates=3878,
+        captures_by_status={
+            "complete": 124,
+            "error": 1219,
+            "pending": 10,
+            "downloading": 2,
+        },
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["wsj"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2021: 6178}},
+    )
+
+    assert plan["tasks"][0]["year"] == 2021
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["year"] == 2021
+    )
+    assert cell["captureStateExhausted"] is False
+    assert cell["capacityDeficient"] is False
 
 
 def test_watchdog_reopens_screened_tail_after_source_growth(
