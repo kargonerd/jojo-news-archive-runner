@@ -1396,6 +1396,22 @@ def capture_item(
                 # Retry continuations revisit the full candidate set and add
                 # timemap/secondary-archive fallbacks.
                 manifest_candidates = item.candidates[:1]
+            elif item.publisher == "nikkei":
+                # The merged Nikkei manifest normally contains Wayback rows
+                # before its Common Crawl supplement.  Wayback often serves a
+                # high-scoring member excerpt, while larger Common Crawl WARC
+                # records from the same article can contain the complete body.
+                # Probe the latter first, without weakening the parser gate;
+                # failed/partial records still fall through to Wayback.
+                manifest_candidates = tuple(
+                    sorted(
+                        item.candidates,
+                        key=lambda candidate: _nikkei_candidate_sort_key(
+                            candidate,
+                            published_at=item.published_at,
+                        ),
+                    )
+                )
             consider_candidates(manifest_candidates)
 
     # In the independent WSJ retry cohort, every observed secondary-archive
@@ -6109,6 +6125,23 @@ def _timemap_candidate_sort_key(
     return (
         abs((timestamp - published).total_seconds()),
         candidate.snapshot_url,
+    )
+
+
+def _nikkei_candidate_sort_key(
+    candidate: CaptureCandidate,
+    *,
+    published_at: str | None,
+) -> tuple[bool, bool, int, tuple[float, str]]:
+    """Prefer larger Common Crawl records before metered Wayback shells."""
+    return (
+        candidate.provider != CaptureProvider.COMMON_CRAWL,
+        candidate.byte_count is None,
+        -(candidate.byte_count or 0),
+        _timemap_candidate_sort_key(
+            candidate,
+            published_at=published_at,
+        ),
     )
 
 

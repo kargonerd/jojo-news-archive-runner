@@ -4381,6 +4381,40 @@ def test_nikkei_validation_keeps_timemap_and_stages_slow_fallbacks():
     ) == (True, True, True)
 
 
+def test_nikkei_candidate_order_prefers_large_commoncrawl_records():
+    from jojo_olds_api.raw_archive_capture import _nikkei_candidate_sort_key
+
+    wayback = CaptureCandidate(
+        provider=CaptureProvider.WAYBACK,
+        snapshot_url="https://web.archive.org/web/20150101000000id_/"
+        "https://www.nikkei.com/article/example",
+        captured_at=datetime(2015, 1, 1, tzinfo=timezone.utc),
+        byte_count=200_000,
+    )
+    small_commoncrawl = CaptureCandidate(
+        provider=CaptureProvider.COMMON_CRAWL,
+        snapshot_url="https://data.commoncrawl.org/small.warc.gz",
+        captured_at=datetime(2018, 1, 1, tzinfo=timezone.utc),
+        byte_count=16_000,
+    )
+    large_commoncrawl = CaptureCandidate(
+        provider=CaptureProvider.COMMON_CRAWL,
+        snapshot_url="https://data.commoncrawl.org/large.warc.gz",
+        captured_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        byte_count=33_000,
+    )
+
+    ordered = sorted(
+        (wayback, small_commoncrawl, large_commoncrawl),
+        key=lambda value: _nikkei_candidate_sort_key(
+            value,
+            published_at="2014-01-01T00:00:00+00:00",
+        ),
+    )
+
+    assert ordered == [large_commoncrawl, small_commoncrawl, wayback]
+
+
 @pytest.mark.parametrize(
     ("publisher", "canonical_url"),
     [
