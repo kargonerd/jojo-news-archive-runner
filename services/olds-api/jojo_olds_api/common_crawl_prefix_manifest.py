@@ -222,7 +222,12 @@ class CommonCrawlPrefixClient:
                 return response.json()
             except CommonCrawlNoCapturesError:
                 raise
-            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            except (
+                json.JSONDecodeError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 last_error = exc
                 if attempt + 1 >= self.attempts:
                     break
@@ -255,7 +260,12 @@ class CommonCrawlPrefixClient:
                 return lines
             except CommonCrawlNoCapturesError:
                 raise
-            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            except (
+                json.JSONDecodeError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 last_error = exc
                 if attempt + 1 >= self.attempts:
                     break
