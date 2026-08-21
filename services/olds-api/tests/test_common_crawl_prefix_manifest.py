@@ -763,7 +763,7 @@ def test_hydration_stops_when_year_targets_are_already_satisfied():
     first_compressed = _warc_record(NIKKEI_URL, html)
     second_url = (
         "https://www.nikkei.com/article/"
-        "DGXNASFE22044_X10C13A5TY5001"
+        "AAAAAAFE22044_X10C13A5TY5001"
     )
     second_compressed = _warc_record(second_url, html)
     connection = sqlite3.connect(":memory:")
@@ -784,7 +784,7 @@ def test_hydration_stops_when_year_targets_are_already_satisfied():
         total_pages=1,
     )
     second_row = _nikkei_index_row(
-        "20140830021036",
+        "20200830021036",
         length=len(second_compressed),
     )
     second_row.update(

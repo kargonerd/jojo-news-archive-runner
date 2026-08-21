@@ -1003,14 +1003,35 @@ def process_prefix_date_hydration(
     )
     pending_rows = connection.execute(
         """
-        SELECT canonical_url, attempts
-        FROM prefix_date_hydration
-        WHERE publisher=?
-          AND status IN ('pending', 'retry')
-          AND attempts < ?
-        ORDER BY attempts, updated_at, canonical_url
+        WITH first_capture AS (
+            SELECT canonical_url, MIN(timestamp) AS first_timestamp
+            FROM prefix_undated_candidates
+            GROUP BY canonical_url
+        )
+        SELECT hydration.canonical_url, hydration.attempts
+        FROM prefix_date_hydration AS hydration
+        LEFT JOIN first_capture
+          ON first_capture.canonical_url=hydration.canonical_url
+        WHERE hydration.publisher=?
+          AND hydration.status IN ('pending', 'retry')
+          AND hydration.attempts < ?
+        ORDER BY
+            hydration.attempts,
+            CASE
+                WHEN substr(first_capture.first_timestamp, 1, 4)
+                     BETWEEN ? AND ? THEN 0
+                ELSE 1
+            END,
+            first_capture.first_timestamp,
+            hydration.updated_at,
+            hydration.canonical_url
         """,
-        (spec.publisher, maximum_attempts),
+        (
+            spec.publisher,
+            maximum_attempts,
+            str(int(window["from_year"])),
+            str(int(window["to_year"])),
+        ),
     ).fetchall()
     start = f"{int(window['from_year']):04d}-01-01"
     end = f"{int(window['to_year']) + 1:04d}-01-01"
