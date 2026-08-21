@@ -65,6 +65,9 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "catalog_dispatch_limit" in workflow
     assert "Keeping one dispatch slot reserved" in workflow
     assert "--json status,displayTitle,createdAt" in workflow
+    assert 'gh run list --branch "$DISPATCH_REF" --limit 1000' in workflow
+    assert "--workflow parser-validation-accelerator.yml" in workflow
+    assert 'parser_runs="$RUNNER_TEMP/parser-runs.json"' in workflow
     assert "fromdateiso8601" in workflow
     assert "$now - 18000" in workflow
     assert "stale" in workflow.lower()

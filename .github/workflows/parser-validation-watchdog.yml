@@ -258,10 +258,19 @@ jobs:
         run: |
           set -euo pipefail
           runs="$RUNNER_TEMP/runs.json"
+          parser_runs="$RUNNER_TEMP/parser-runs.json"
           active="$RUNNER_TEMP/active-titles.txt"
           now_epoch="$(date +%s)"
-          gh run list --limit 100 \
+          # Catalog workflows are intentionally frequent and can occupy the
+          # first 100 repository-wide results. Keep the duplicate-avoidance
+          # title list on this dispatch ref, but query parser runs separately
+          # so the standard-concurrency count cannot miss an older holdout.
+          gh run list --branch "$DISPATCH_REF" --limit 1000 \
             --json status,displayTitle,createdAt > "$runs"
+          gh run list \
+            --workflow parser-validation-accelerator.yml \
+            --branch "$DISPATCH_REF" --limit 1000 \
+            --json status,displayTitle,createdAt > "$parser_runs"
           # GitHub occasionally leaves a queued/waiting run stranded for many
           # hours (and the cancel API may return 500). Do not let such stale
           # scheduler entries consume validation capacity; in-progress runs
@@ -303,8 +312,8 @@ jobs:
                   )
                   and (.displayTitle
                     | test("^parser-(validation|holdout-v[0-9]+|smoke-v[0-9]+)-"))
-                )
-            ] | length' "$runs"
+              )
+            ] | length' "$parser_runs"
           )"
           # Classify active parser runs against the current required cohort.
           # A superseded holdout may still be downloading a large old batch,
