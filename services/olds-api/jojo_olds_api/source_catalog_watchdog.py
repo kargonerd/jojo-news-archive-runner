@@ -133,8 +133,12 @@ def plan_source_catalog_dispatch(
     # supplemental catalogs that run outside this bootstrap target list.
     # Otherwise a free slot could start a second catalog and crowd parser
     # validation out of the global two-run budget.
+    # The dedicated Common Crawl workflow is publisher-agnostic: its run name
+    # is ``<publisher>-common-crawl-...``. Do not special-case Nikkei here;
+    # otherwise a second publisher's chain can be started while the catalog
+    # budget is already occupied by NPR, Al Jazeera, SCMP, or another source.
     active_catalogs = sum(
-        title.startswith(("news-raw-", "nikkei-common-crawl-"))
+        title.startswith("news-raw-") or "-common-crawl-" in title
         for title in active
     )
     catalog_slots = max(0, max_active_catalogs - active_catalogs)
