@@ -170,6 +170,7 @@ def plan_validation_dispatch(
             "qaPassRate": 0.0,
             "errors": 0,
             "unboundCaptureInputs": 0,
+            "screenedNonArticles": 0,
             "qaRevision": None,
             "parserVersion": None,
             "summaryPaths": [],
@@ -332,6 +333,9 @@ def plan_validation_dispatch(
                 cell["eligibleCandidates"] = _integer(
                     selected.get("eligibleCandidates")
                 )
+            cell["screenedNonArticles"] = _integer(
+                selected.get("screenedNonArticles")
+            )
             cell["ready"] = _year_ready(
                 selected,
                 cohort=selected_cohort,
@@ -469,6 +473,9 @@ def plan_validation_dispatch(
             "unboundCaptureInputs": int(
                 progress[(publisher, year)]["unboundCaptureInputs"]
             ),
+            "screenedNonArticles": int(
+                progress[(publisher, year)]["screenedNonArticles"]
+            ),
             "qaRevision": progress[(publisher, year)]["qaRevision"],
             "parserVersion": progress[(publisher, year)]["parserVersion"],
             "requiredCohort": progress[(publisher, year)]["requiredCohort"],
@@ -516,7 +523,18 @@ def _effective_candidate_capacity(
     exact = cell.get("eligibleCandidates")
     upper_bound = cell.get("eligibleCandidateUpperBound")
     if exact is not None:
-        exact_value = int(exact)
+        # Non-article screens are consumed from the current cohort's eligible
+        # pool but can never satisfy the article sample target.  Treat them as
+        # exhausted capacity so a tail of infographics/interactive desks does
+        # not trigger another nominal 800-sample run.
+        exact_value = max(
+            0,
+            int(exact)
+            - min(
+                int(exact),
+                max(0, _integer(cell.get("screenedNonArticles"))),
+            ),
+        )
         if upper_bound is not None:
             target = max(
                 MINIMUM_SAMPLES,
@@ -549,10 +567,13 @@ def _eligible_candidate_upper_bound(
     )
     if not known_counts:
         return None
-    # This value is deliberately an upper bound. Distinct source manifests
-    # can overlap, so their sum is safe for impossibility filtering while the
-    # exact merged manifest remains authoritative during sample planning.
-    current_manifest_capacity = sum(known_counts)
+    # This value is deliberately conservative. Supplemental manifests are
+    # often alternate crawls of the same URLs (for example Wayback plus
+    # Common Crawl), so summing their row counts can keep an exhausted cohort
+    # looking schedulable. Until a merged/deduplicated capacity sidecar is
+    # available, use the largest independently deduplicated source and let a
+    # later catalog growth reopen the cell.
+    current_manifest_capacity = max(known_counts)
     evidence: list[tuple[int, int, int]] = []
     for item in observed_rows:
         if not isinstance(item, dict):
@@ -571,11 +592,18 @@ def _eligible_candidate_upper_bound(
         observed_capacity = eligible + excluded
         growth = max(0, current_manifest_capacity - observed_capacity)
         cohort_number = _cohort_number(cohort)
+        screened_nonarticles = max(
+            0,
+            min(
+                eligible,
+                _integer(row.get("screenedNonArticles")),
+            ),
+        )
         evidence.append(
             (
                 cohort_number if cohort_number is not None else 0,
                 _integer(row.get("evaluated")),
-                eligible + growth,
+                max(0, eligible - screened_nonarticles) + growth,
             )
         )
     if not evidence:
