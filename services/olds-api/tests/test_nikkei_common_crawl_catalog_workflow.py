@@ -26,6 +26,8 @@ def test_catalog_hydrates_dates_and_checkpoints_private_state() -> None:
     assert "--page-size 1000" in workflow
     assert "verify_b2_private_bucket.py" in workflow
     assert "checkpoint_capture_state.py" in workflow
+    assert "summarize_archive_manifest.py" in workflow
+    assert "manifest-summary.json" in workflow
     assert "commoncrawl-prefix" in workflow
     assert "discovery.sqlite3.gz" in workflow
     assert "manifest.jsonl.gz" in workflow
