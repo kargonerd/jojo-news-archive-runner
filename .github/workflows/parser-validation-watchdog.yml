@@ -214,6 +214,8 @@ jobs:
             "aljazeera/2016-2026/commoncrawl-prefix"
             "nikkei/2010-2015/commoncrawl-prefix"
             "nikkei/2016-2026/commoncrawl-prefix"
+            "wsj/2010-2015/commoncrawl-prefix"
+            "wsj/2016-2026/commoncrawl-prefix"
             "scmp/2010-2015/commoncrawl-prefix"
             "scmp/2016-2026/commoncrawl-prefix"
           )
@@ -522,6 +524,8 @@ jobs:
             exit 0
           fi
           queue='[
+            {"publisher":"wsj","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
+            {"publisher":"wsj","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
             {"kind":"caixin","year":"2010"},
             {"kind":"caixin","year":"2011"},
             {"kind":"caixin","year":"2012"},

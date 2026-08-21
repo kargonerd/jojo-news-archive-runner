@@ -222,6 +222,13 @@ jobs:
           elif [ "$PUBLISHER" = "nikkei" ]; then
             source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
             supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/nikkei/${source_window}/commoncrawl-prefix"
+          elif [ "$PUBLISHER" = "wsj" ]; then
+            # Early WSJ URL-key coverage is below the 800-row gate for a few
+            # years. Merge the independent Common Crawl catalog when it is
+            # available; the capture step still writes selected raw objects
+            # into the canonical WSJ source root.
+            source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
+            supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/wsj/${source_window}/commoncrawl-prefix"
           elif [ "$PUBLISHER" = "scmp" ]; then
             source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
             supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/scmp/${source_window}/commoncrawl-prefix"

@@ -75,6 +75,13 @@ def parser_supplemental_manifest_shards(
     if publisher == "nikkei":
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return (f"nikkei/{window}/commoncrawl-prefix",)
+    if publisher == "wsj":
+        # The early URL-key catalog is thin for several years (notably
+        # 2010, 2011, and 2013).  Keep Common Crawl as an independent
+        # catalog-only supplement so those years can be reopened when the
+        # primary Wayback shard cannot supply 800 distinct articles.
+        window = "2010-2015" if year <= 2015 else "2016-2026"
+        return (f"wsj/{window}/commoncrawl-prefix",)
     if publisher == "aljazeera":
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return (f"aljazeera/{window}/commoncrawl-prefix",)

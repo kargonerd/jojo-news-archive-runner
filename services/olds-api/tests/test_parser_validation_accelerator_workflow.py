@@ -352,6 +352,22 @@ def test_accelerator_merges_nikkei_common_crawl_supplemental_manifest() -> None:
     )
 
 
+def test_accelerator_merges_wsj_common_crawl_supplemental_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "wsj" ]; then' in workflow
+    assert (
+        "news-archive/v1/wsj/${source_window}/commoncrawl-prefix"
+        in workflow
+    )
+    assert (
+        'SUPPLEMENTAL_SOURCE_ROOT: '
+        '${{ steps.paths.outputs.supplemental_source_root }}'
+    ) in workflow
+    assert '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz"' in workflow
+    assert '--input "$supplemental_source_manifest"' in workflow
+
+
 def test_accelerator_merges_caixin_single_year_common_crawl_manifest() -> None:
     workflow = _workflow_text()
 

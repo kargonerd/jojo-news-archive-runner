@@ -63,6 +63,8 @@ def test_parser_source_manifest_shard_rejects_unsupported_cells(
         ("axios", 2025, ("axios/2017-2026/sitemap-wayback",)),
         ("nikkei", 2014, ("nikkei/2010-2015/commoncrawl-prefix",)),
         ("nikkei", 2024, ("nikkei/2016-2026/commoncrawl-prefix",)),
+        ("wsj", 2011, ("wsj/2010-2015/commoncrawl-prefix",)),
+        ("wsj", 2020, ("wsj/2016-2026/commoncrawl-prefix",)),
         ("aljazeera", 2012, ("aljazeera/2010-2015/commoncrawl-prefix",)),
         ("aljazeera", 2024, ("aljazeera/2016-2026/commoncrawl-prefix",)),
         ("scmp", 2017, ("scmp/2016-2026/commoncrawl-prefix",)),
