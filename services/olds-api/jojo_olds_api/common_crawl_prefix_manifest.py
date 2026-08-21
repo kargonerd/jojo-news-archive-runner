@@ -639,6 +639,59 @@ def reconcile_prefix_year_targets(
         return connection.total_changes - before
 
 
+def _prefix_year_targets_satisfied(
+    connection: sqlite3.Connection,
+    *,
+    target_articles_per_year: int | None = None,
+) -> bool:
+    """Return whether every configured publication year has its target.
+
+    Date hydration can leave a very large tail of undated candidates. Once
+    every configured year already has enough dated canonical URLs, that tail
+    cannot improve the validation catalog and should not keep an auto-resumed
+    source workflow alive.
+    """
+    if target_articles_per_year is None:
+        target_row = connection.execute(
+            "SELECT value FROM prefix_metadata "
+            "WHERE key='target_articles_per_year'"
+        ).fetchone()
+        if target_row is None:
+            return False
+        target_articles_per_year = int(target_row[0])
+    if target_articles_per_year < 1:
+        raise ValueError("target_articles_per_year must be positive")
+    window = dict(
+        connection.execute(
+            "SELECT key, value FROM prefix_metadata "
+            "WHERE key IN ('from_year', 'to_year')"
+        )
+    )
+    if "from_year" not in window or "to_year" not in window:
+        return False
+    configured_years = tuple(
+        str(year)
+        for year in range(int(window["from_year"]), int(window["to_year"]) + 1)
+    )
+    if not configured_years:
+        return False
+    counts = {
+        str(year): int(count)
+        for year, count in connection.execute(
+            """
+            SELECT substr(published_at, 1, 4),
+                   COUNT(DISTINCT canonical_url)
+            FROM prefix_candidates
+            GROUP BY substr(published_at, 1, 4)
+            """
+        )
+    }
+    return all(
+        counts.get(year, 0) >= target_articles_per_year
+        for year in configured_years
+    )
+
+
 def record_prefix_page_count(
     connection: sqlite3.Connection,
     *,
@@ -923,6 +976,7 @@ def process_prefix_date_hydration(
     spec: ArchiveSourceSpec,
     archive_client: CommonCrawlClient,
     maximum: int,
+    target_articles_per_year: int | None = None,
     maximum_html_bytes: int = 15_000_000,
     maximum_attempts: int = 3,
 ) -> dict[str, object]:
@@ -934,6 +988,11 @@ def process_prefix_date_hydration(
         )
     if maximum < 1 or maximum_html_bytes < 1 or maximum_attempts < 1:
         raise ValueError("hydration limits must be positive")
+    if (
+        target_articles_per_year is not None
+        and target_articles_per_year < 1
+    ):
+        raise ValueError("target_articles_per_year must be positive")
     window = dict(
         connection.execute(
             """
@@ -987,8 +1046,18 @@ def process_prefix_date_hydration(
     outside_window = 0
     no_date = 0
     failed = 0
+    attempted = 0
     errors: list[str] = []
     for canonical_url_value, prior_attempts in rows:
+        if (
+            target_articles_per_year is not None
+            and _prefix_year_targets_satisfied(
+                connection,
+                target_articles_per_year=target_articles_per_year,
+            )
+        ):
+            break
+        attempted += 1
         canonical_url = str(canonical_url_value)
         candidate_rows = connection.execute(
             """
@@ -1097,6 +1166,14 @@ def process_prefix_date_hydration(
                     canonical_url=canonical_url,
                     published_at=published_at,
                 )
+        if (
+            target_articles_per_year is not None
+            and _prefix_year_targets_satisfied(
+                connection,
+                target_articles_per_year=target_articles_per_year,
+            )
+        ):
+            break
     remaining = int(
         connection.execute(
             """
@@ -1109,7 +1186,7 @@ def process_prefix_date_hydration(
         ).fetchone()[0]
     )
     return {
-        "attempted": len(rows),
+        "attempted": attempted,
         "found": found,
         "outOfWindow": outside_window,
         "noDate": no_date,
@@ -1301,14 +1378,19 @@ def prefix_summary(connection: sqlite3.Connection) -> dict[str, object]:
         ).fetchone()[0]
     )
     hydration = prefix_date_hydration_summary(connection)
+    target_complete = _prefix_year_targets_satisfied(connection)
     result: dict[str, object] = {
         "formatVersion": SCHEMA_VERSION,
         "queryStatus": query_status,
         "articlesByYear": years,
         "queriesRemaining": remaining,
+        "targetComplete": target_complete,
         "shouldContinue": (
-            remaining > 0
-            or bool(hydration and hydration["remaining"] > 0)
+            not target_complete
+            and (
+                remaining > 0
+                or bool(hydration and hydration["remaining"] > 0)
+            )
         ),
     }
     if hydration is not None:

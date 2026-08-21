@@ -305,7 +305,12 @@ def main() -> int:
                 spec=spec,
                 archive_client=archive_client,
                 maximum=args.max_date_hydrations,
+                target_articles_per_year=args.target_articles_per_year,
                 maximum_html_bytes=args.maximum_html_bytes,
+            )
+            queries_completed_by_target += reconcile_prefix_year_targets(
+                connection,
+                target_articles_per_year=args.target_articles_per_year,
             )
         manifest = export_prefix_manifest(
             connection,

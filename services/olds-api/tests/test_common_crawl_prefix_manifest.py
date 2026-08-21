@@ -753,6 +753,84 @@ def test_hydrates_nikkei_publication_date_from_common_crawl_warc(
     assert exported["candidates"][0]["provider"] == "commoncrawl"
 
 
+def test_hydration_stops_when_year_targets_are_already_satisfied():
+    body = "日経の検証用記事本文です。" * 40
+    html = f"""
+        <html><head><meta property="article:published_time"
+          content="2013-05-26T08:00:00+09:00"></head>
+        <body><article><h1>検証用記事</h1><p>{body}</p></article></body></html>
+    """.encode()
+    first_compressed = _warc_record(NIKKEI_URL, html)
+    second_url = (
+        "https://www.nikkei.com/article/"
+        "DGXNASFE22044_X10C13A5TY5001"
+    )
+    second_compressed = _warc_record(second_url, html)
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("nikkei")
+    collection = _collection()
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2013,
+        to_year=2013,
+        collections=(collection,),
+    )
+    pattern = "www.nikkei.com/article/"
+    record_prefix_page_count(
+        connection,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        total_pages=1,
+    )
+    second_row = _nikkei_index_row(
+        "20140830021036",
+        length=len(second_compressed),
+    )
+    second_row.update(
+        url=second_url,
+        digest="nikkei-digest-second",
+        offset="501",
+    )
+    record_prefix_page(
+        connection,
+        spec=spec,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        page_number=0,
+        total_pages=1,
+        page=PrefixIndexPage(
+            rows=(
+                _nikkei_index_row(
+                    "20140830021036",
+                    length=len(first_compressed),
+                ),
+                second_row,
+            )
+        ),
+    )
+    reconcile_prefix_year_targets(
+        connection,
+        target_articles_per_year=1,
+    )
+
+    hydration = process_prefix_date_hydration(
+        connection,
+        spec=spec,
+        archive_client=_MappedRangeClient(
+            {500: first_compressed, 501: second_compressed}
+        ),
+        maximum=2,
+        target_articles_per_year=1,
+    )
+
+    assert hydration["attempted"] == 1
+    assert hydration["found"] == 1
+    assert hydration["remaining"] == 1
+    assert prefix_summary(connection)["targetComplete"] is True
+    assert prefix_summary(connection)["shouldContinue"] is False
+
+
 def test_hydrates_npr_legacy_story_id_into_requested_year(tmp_path: Path):
     legacy_url = (
         "https://www.npr.org/templates/story/story.php?storyId=131356105"
