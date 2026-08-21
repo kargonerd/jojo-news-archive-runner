@@ -41,6 +41,10 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert '"npr/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"' in workflow
     assert "--source-capacity-root" in workflow
     assert "Dispatch supplemental Common Crawl catalog" in workflow
+    assert "capacity_deficient_cells=$(jq -r '.capacityDeficientCells // 0'" in workflow
+    assert "CAPACITY_DEFICIENT_CELLS:" in workflow
+    assert 'steps.plan.outputs.capacity_deficient_cells != \'0\'' in workflow
+    assert '[ "$capacity_deficient_cells" -eq 0 ]' in workflow
     assert "nikkei-common-crawl-catalog.yml" in workflow
     assert "caixin-common-crawl-catalog.yml" in workflow
     assert '{"kind":"caixin","year":"2010"}' in workflow

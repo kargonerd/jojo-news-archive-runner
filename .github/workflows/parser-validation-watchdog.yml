@@ -411,6 +411,8 @@ jobs:
             "$RUNNER_TEMP/source-catalog-plan.json")" >> "$GITHUB_OUTPUT"
           echo "validation_tasks=$(jq -c '.tasks' \
             "$RUNNER_TEMP/validation-plan.json")" >> "$GITHUB_OUTPUT"
+          echo "capacity_deficient_cells=$(jq -r '.capacityDeficientCells // 0' \
+            "$RUNNER_TEMP/validation-plan.json")" >> "$GITHUB_OUTPUT"
           {
             echo "### Parser validation watchdog"
             echo
@@ -501,21 +503,30 @@ jobs:
       # news-archive watchdog on the default branch.
       - name: Dispatch supplemental Common Crawl catalog
         if: >-
-          ${{
-            steps.plan.outputs.catalog_tasks == '[]' &&
-            steps.plan.outputs.validation_tasks == '[]'
-          }}
+           ${{
+             steps.plan.outputs.catalog_tasks == '[]' &&
+             (
+               steps.plan.outputs.validation_tasks == '[]' ||
+               steps.plan.outputs.capacity_deficient_cells != '0'
+             )
+           }}
         env:
           GH_TOKEN: ${{ github.token }}
           B2_REMOTE: jojo-b2
+          CAPACITY_DEFICIENT_CELLS: ${{ steps.plan.outputs.capacity_deficient_cells }}
         run: |
           set -euo pipefail
           active_titles="$RUNNER_TEMP/active-titles.txt"
           # MAX_CATALOG_CONCURRENCY is one. The bootstrap source planner has
           # already reported no task, so refuse to start a supplemental chain
-          # while any archive/Common Crawl chain is still active.
+          # while any archive/Common Crawl chain is still active. A
+          # capacity-recovery chain is allowed to run alongside long parser
+          # captures; it only builds a compact catalog and does not download
+          # validation HTML.
           parser_active_count="$(grep -Ec '^parser-' "$active_titles" || true)"
-          if [ "$parser_active_count" -ge 2 ]; then
+          capacity_deficient_cells="${CAPACITY_DEFICIENT_CELLS:-0}"
+          if [ "$parser_active_count" -ge 2 ] && \
+             [ "$capacity_deficient_cells" -eq 0 ]; then
             echo "Both standard parser slots are occupied; skip supplemental dispatch."
             exit 0
           fi
