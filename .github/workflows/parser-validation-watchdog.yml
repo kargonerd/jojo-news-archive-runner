@@ -510,12 +510,58 @@ jobs:
             exit 0
           fi
           queue='[
+            {"kind":"caixin","year":"2010"},
+            {"kind":"caixin","year":"2011"},
+            {"kind":"caixin","year":"2012"},
+            {"kind":"caixin","year":"2013"},
+            {"kind":"caixin","year":"2014"},
+            {"kind":"caixin","year":"2015"},
+            {"kind":"caixin","year":"2016"},
+            {"kind":"caixin","year":"2017"},
+            {"kind":"caixin","year":"2018"},
+            {"kind":"caixin","year":"2019"},
+            {"kind":"caixin","year":"2020"},
+            {"kind":"caixin","year":"2021"},
+            {"kind":"caixin","year":"2022"},
+            {"kind":"caixin","year":"2023"},
+            {"kind":"caixin","year":"2024"},
+            {"kind":"caixin","year":"2025"},
+            {"kind":"caixin","year":"2026"},
             {"publisher":"aljazeera","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
             {"publisher":"scmp","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
             {"publisher":"aljazeera","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
             {"publisher":"scmp","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"}
           ]'
           while IFS= read -r task; do
+            kind="$(jq -r '.kind // "prefix"' <<<"$task")"
+            if [ "$kind" = "caixin" ]; then
+              year="$(jq -r '.year' <<<"$task")"
+              title="caixin-common-crawl-${year}"
+              if grep -Fxq "$title" "$active_titles"; then
+                echo "Common Crawl chain already active: $title"
+                continue
+              fi
+              source_root="caixin/${year}-${year}/commoncrawl-prefix"
+              summary="$RUNNER_TEMP/common-crawl-caixin-${year}.json"
+              if rclone copyto \
+                  "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state/summary.json" \
+                  "$summary" \
+                  --timeout 20s --contimeout 10s \
+                  --retries 2 --low-level-retries 4 \
+                  >/dev/null 2>&1 \
+                && jq -e '.shouldContinue == false' "$summary" >/dev/null; then
+                echo "Common Crawl catalog already complete: $title"
+                continue
+              fi
+              gh workflow run caixin-common-crawl-catalog.yml \
+                --ref "$DISPATCH_REF" \
+                -f year="$year" \
+                -f max_pages=20 \
+                -f max_queries=80 \
+                -f auto_continue=true
+              echo "Dispatched supplemental Common Crawl catalog: $title"
+              break
+            fi
             publisher="$(jq -r '.publisher' <<<"$task")"
             from_year="$(jq -r '.fromYear' <<<"$task")"
             to_year="$(jq -r '.toYear' <<<"$task")"

@@ -38,6 +38,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "--source-capacity-root" in workflow
     assert "Dispatch supplemental Common Crawl catalog" in workflow
     assert "nikkei-common-crawl-catalog.yml" in workflow
+    assert "caixin-common-crawl-catalog.yml" in workflow
+    assert '{"kind":"caixin","year":"2010"}' in workflow
     assert 'grep -Eq \'(^news-raw-|-common-crawl-)\'' in workflow
     assert "Both standard parser slots are occupied" in workflow
     assert 'jq -e \'.shouldContinue == false\'' in workflow
