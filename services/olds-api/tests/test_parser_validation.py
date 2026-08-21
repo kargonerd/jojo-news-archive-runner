@@ -3926,7 +3926,7 @@ def test_axios_special_report_landing_page_is_screened_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2021, 1, 'test', 'axios-parser/0.1.26', 5, 'now')
+        ) VALUES (2021, 1, 'test', 'axios-parser/0.1.27', 5, 'now')
         """
     )
     connection.execute(
@@ -3993,7 +3993,7 @@ def test_axios_internal_fixture_does_not_fill_article_validation_target(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2017, 1, 'test', 'axios-parser/0.1.26', 5, 'now')
+        ) VALUES (2017, 1, 'test', 'axios-parser/0.1.27', 5, 'now')
         """
     )
     connection.execute(
@@ -4056,7 +4056,7 @@ def test_malformed_axios_url_alias_does_not_fill_validation_target(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2025, 1, 'test', 'axios-parser/0.1.26', 5, 'now')
+        ) VALUES (2025, 1, 'test', 'axios-parser/0.1.27', 5, 'now')
         """
     )
     connection.execute(

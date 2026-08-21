@@ -1354,7 +1354,6 @@ def record_parser_validation(
         if (
             capture.publisher == "axios"
             and article.quality.body_characters < 100
-            and article.quality.status != ArticleStatus.COMPLETE
         ):
             axios_text = _normalize_text(
                 BeautifulSoup(html_bytes, "html.parser").get_text(
@@ -1363,6 +1362,9 @@ def record_parser_validation(
                 )
             ).casefold()
             if "special report" in axios_text and "read the story" in axios_text:
+                # A structured Axios landing page can be marked COMPLETE
+                # because its only body block is the short ``Read the story``
+                # handoff. It is still not a text article for QA purposes.
                 issues.append("nonarticle-desk")
         if capture.publisher == "axios" and normalize_article_url(
             archive_source_spec("axios"),
