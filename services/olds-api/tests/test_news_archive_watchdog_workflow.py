@@ -54,3 +54,6 @@ def test_archive_watchdog_limits_dispatch_to_active_convergence_set() -> None:
         assert f'"publisher":"{publisher}"' in workflow
     assert "Keep every in-scope publisher eligible" in workflow
     assert "parser-validation watchdog independently decides" in workflow
+    assert "nikkei-common-crawl-catalog.yml" in workflow
+    assert '"kind":"common-crawl"' in workflow
+    assert "collection_from_year" in workflow

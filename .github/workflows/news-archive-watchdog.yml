@@ -22,7 +22,7 @@ env:
   B2_REMOTE: jojo-b2
   MAX_STANDARD_CONCURRENCY: "2"
   MAX_DISPATCH_PER_RUN: "2"
-  DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+  DISPATCH_REF: ${{ github.ref_name }}
 
 jobs:
   dispatch:
@@ -91,6 +91,10 @@ jobs:
           # parser-validation watchdog independently decides whether a year
           # has enough unseen candidates for its 800-row sample.
           queue='[
+            {"kind":"common-crawl","publisher":"aljazeera","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"3000","runner":"ubuntu-latest"},
+            {"kind":"common-crawl","publisher":"scmp","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"3000","runner":"ubuntu-latest"},
+            {"kind":"common-crawl","publisher":"aljazeera","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"3000","runner":"ubuntu-latest"},
+            {"kind":"common-crawl","publisher":"scmp","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016","collectionOrder":"oldest","pages":"1","queries":"8","hydrations":"200","target":"3000","runner":"ubuntu-latest"},
             {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"sitemap-wayback","units":"30","runner":"ubuntu-latest"},
             {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"wayback-urlkey","units":"5","runner":"ubuntu-latest"},
             {"publisher":"ft","fromYear":"2010","toYear":"2015","mode":"sitemap-wayback","units":"1","runner":"ubuntu-latest"},
@@ -116,12 +120,52 @@ jobs:
 
           dispatched=0
           while IFS= read -r task; do
+            kind="$(jq -r '.kind // "archive"' <<<"$task")"
             publisher="$(jq -r '.publisher' <<<"$task")"
             from_year="$(jq -r '.fromYear' <<<"$task")"
             to_year="$(jq -r '.toYear' <<<"$task")"
+            runner="$(jq -r '.runner' <<<"$task")"
+            if [ "$kind" = "common-crawl" ]; then
+              title="${publisher}-common-crawl-${from_year}-${to_year}"
+              if grep -Fxq "$title" "$active_titles"; then
+                echo "Common Crawl chain already active: $title"
+                continue
+              fi
+              source_root="${publisher}/${from_year}-${to_year}/commoncrawl-prefix"
+              summary="$RUNNER_TEMP/common-crawl-summary-${publisher}-${from_year}-${to_year}.json"
+              if rclone copyto \
+                  "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state/summary.json" \
+                  "$summary" \
+                  --timeout 20s --contimeout 10s \
+                  --retries 1 --low-level-retries 1 \
+                  >/dev/null 2>&1 \
+                && jq -e '.shouldContinue == false' "$summary" >/dev/null; then
+                echo "Common Crawl catalog already complete: $title"
+                continue
+              fi
+              gh workflow run nikkei-common-crawl-catalog.yml \
+                --repo "$GITHUB_REPOSITORY" \
+                --ref "$DISPATCH_REF" \
+                -f publisher="$publisher" \
+                -f from_year="$from_year" \
+                -f to_year="$to_year" \
+                -f collection_from_year="$(jq -r '.collectionFromYear' <<<"$task")" \
+                -f collection_to_year="$(jq -r '.collectionToYear' <<<"$task")" \
+                -f collection_order="$(jq -r '.collectionOrder' <<<"$task")" \
+                -f max_pages="$(jq -r '.pages' <<<"$task")" \
+                -f max_queries="$(jq -r '.queries' <<<"$task")" \
+                -f max_hydrations="$(jq -r '.hydrations' <<<"$task")" \
+                -f target_articles_per_year="$(jq -r '.target' <<<"$task")" \
+                -f auto_continue=true
+              echo "Dispatched Common Crawl catalog: $title"
+              dispatched=$((dispatched + 1))
+              if [ "$dispatched" -ge "$available" ]; then
+                break
+              fi
+              continue
+            fi
             mode="$(jq -r '.mode' <<<"$task")"
             units="$(jq -r '.units' <<<"$task")"
-            runner="$(jq -r '.runner' <<<"$task")"
             title="news-raw-${publisher}-${from_year}-${to_year}-${mode}"
             if grep -Fxq "$title" "$active_titles"; then
               echo "Shard already active: $title"
@@ -173,7 +217,7 @@ jobs:
 
             gh workflow run news-raw-archive.yml \
               --repo "$GITHUB_REPOSITORY" \
-              --ref "$DEFAULT_BRANCH" \
+              --ref "$DISPATCH_REF" \
               -f publisher="$publisher" \
               -f from_year="$from_year" \
               -f to_year="$to_year" \
