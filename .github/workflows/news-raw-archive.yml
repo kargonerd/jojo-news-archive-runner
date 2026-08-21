@@ -393,7 +393,9 @@ jobs:
             (inputs.publisher == 'npr' ||
              inputs.publisher == 'axios' ||
              inputs.publisher == 'nikkei' ||
-             inputs.publisher == 'reuters') &&
+             inputs.publisher == 'reuters' ||
+             inputs.publisher == 'scmp' ||
+             inputs.publisher == 'caixin') &&
             inputs.manifest_mode == 'wayback-urlkey' ||
             (inputs.publisher == 'aljazeera' &&
              inputs.manifest_mode == 'sitemap-wayback')

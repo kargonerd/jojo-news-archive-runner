@@ -95,6 +95,8 @@ def test_common_crawl_supplements_merge_without_duplicate_raw_root() -> None:
     assert "inputs.publisher == 'axios'" in merge_section
     assert "inputs.publisher == 'nikkei'" in merge_section
     assert "inputs.publisher == 'reuters'" in merge_section
+    assert "inputs.publisher == 'scmp'" in merge_section
+    assert "inputs.publisher == 'caixin'" in merge_section
     assert "inputs.publisher == 'aljazeera'" in merge_section
     assert "inputs.manifest_mode == 'sitemap-wayback'" in merge_section
     assert "inputs.manifest_mode == 'wayback-urlkey'" in merge_section
