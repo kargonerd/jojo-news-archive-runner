@@ -12894,10 +12894,11 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
         if re.match(r"(?i)^recommended\s*\*", text):
             node.decompose()
             continue
-        if re.match(
-            r"(?i)^follow @financialtimesfashion on instagram\b",
-            text,
-        ):
+        if "follow @financialtimesfashion on instagram" in text.casefold():
+            # Infini-News sometimes flattens the same fashion call-to-action
+            # with the lead-in before the handle (rather than starting with
+            # ``Follow``).  Both forms are publisher chrome, not article
+            # prose, and should be removed before block extraction.
             node.decompose()
             continue
         if re.match(
