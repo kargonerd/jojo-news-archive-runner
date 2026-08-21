@@ -4327,6 +4327,26 @@ def _wsj_subscription_truncation(
     """Reject metered WSJ previews while retaining substantial recovered copy."""
     if content_type != ContentType.ARTICLE:
         return False
+    # WSJ's snippet template is also used for short, complete items such as
+    # Letters.  Those pages retain the generic membership overlay even when
+    # the extracted body reaches the publisher-declared word count.  Check
+    # that explicit completeness signal before treating the overlay as a
+    # truncation marker; a real preview with a larger declared count still
+    # falls through to the existing deficit checks below.
+    declared_word_count = _wsj_declared_word_count(soup)
+    extracted_word_count = len(
+        re.findall(
+            r"[A-Za-z0-9]+(?:['’.-][A-Za-z0-9]+)*",
+            plain_text,
+        )
+    )
+    declared_copy_is_complete = bool(
+        declared_word_count is not None
+        and extracted_word_count >= max(
+            1,
+            int(declared_word_count * 0.85),
+        )
+    )
     if soup.select_one("[class*='ArticleRoadblock' i]") or any(
         _clean_text(node.get_text(" ", strip=True))
         .casefold()
@@ -4350,22 +4370,11 @@ def _wsj_subscription_truncation(
         # preview paragraphs before an explicit membership overlay. Their
         # extracted text may exceed the generic 1,000-character safety
         # threshold even though the article ends at the paywall.
-        return True
+        return not declared_copy_is_complete
     if len(plain_text) >= 1_000:
         return False
-    declared_word_count = _wsj_declared_word_count(soup)
-    extracted_word_count = len(
-        re.findall(
-            r"[A-Za-z0-9]+(?:['’.-][A-Za-z0-9]+)*",
-            plain_text,
-        )
-    )
     if (
-        declared_word_count is not None
-        and extracted_word_count >= max(
-            1,
-            int(declared_word_count * 0.85),
-        )
+        declared_copy_is_complete
     ):
         return False
     if (
