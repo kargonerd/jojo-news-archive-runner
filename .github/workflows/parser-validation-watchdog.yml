@@ -476,10 +476,15 @@ jobs:
             cohort="$(jq -r '.cohort' <<<"$task")"
             shard="$(jq -r '.sourceManifestShard' <<<"$task")"
             runner="$(jq -r '.runnerOs' <<<"$task")"
+            # Do not run the full public Infini-News Parquet metadata scan
+            # inside every fresh FT parser cohort.  A new zero-overlap cohort
+            # has no local direct-discovery checkpoint, so enabling it here
+            # re-reads thousands of HF files before the first archive capture
+            # and can spend the whole hosted-runner window on rate-limited
+            # metadata.  The validation batch uses the existing manifest,
+            # Wayback/Common Crawl and FT syndication candidates; direct
+            # discovery is maintained separately as a reusable catalog.
             enable_ft_infini_direct_discovery=false
-            if [ "$publisher" = "ft" ]; then
-              enable_ft_infini_direct_discovery=true
-            fi
           # Each dispatched validation run starts with an 800-article budget,
           # matching the project's independent-sample acceptance gate.
           gh workflow run parser-validation-accelerator.yml \
