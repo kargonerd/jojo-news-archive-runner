@@ -478,6 +478,81 @@ jobs:
             echo "Dispatched source catalog $publisher/$from_year-$to_year/$mode."
           done < <(jq -c '.[]' <<<"$TASKS")
 
+      # The ordinary source-catalog planner only knows about workflows that
+      # publish catalog/status.json. Common Crawl prefix catalogs are a
+      # separate resumable workflow and publish state/summary.json instead.
+      # Advance one of the capacity-recovery chains when the parser planner
+      # has no ordinary validation/source task to dispatch. This keeps the
+      # branch self-contained; it does not depend on the disabled legacy
+      # news-archive watchdog on the default branch.
+      - name: Dispatch supplemental Common Crawl catalog
+        if: >-
+          ${{
+            steps.plan.outputs.catalog_tasks == '[]' &&
+            steps.plan.outputs.validation_tasks == '[]'
+          }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          B2_REMOTE: jojo-b2
+        run: |
+          set -euo pipefail
+          active_titles="$RUNNER_TEMP/active-titles.txt"
+          # MAX_CATALOG_CONCURRENCY is one. The bootstrap source planner has
+          # already reported no task, so refuse to start a supplemental chain
+          # while any archive/Common Crawl chain is still active.
+          parser_active_count="$(grep -Ec '^parser-' "$active_titles" || true)"
+          if [ "$parser_active_count" -ge 2 ]; then
+            echo "Both standard parser slots are occupied; skip supplemental dispatch."
+            exit 0
+          fi
+          if grep -Eq '(^news-raw-|-common-crawl-)' "$active_titles"; then
+            echo "An archive/Common Crawl chain is already active; skip supplemental dispatch."
+            exit 0
+          fi
+          queue='[
+            {"publisher":"aljazeera","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
+            {"publisher":"scmp","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
+            {"publisher":"aljazeera","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
+            {"publisher":"scmp","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"}
+          ]'
+          while IFS= read -r task; do
+            publisher="$(jq -r '.publisher' <<<"$task")"
+            from_year="$(jq -r '.fromYear' <<<"$task")"
+            to_year="$(jq -r '.toYear' <<<"$task")"
+            title="${publisher}-common-crawl-${from_year}-${to_year}"
+            if grep -Fxq "$title" "$active_titles"; then
+              echo "Common Crawl chain already active: $title"
+              continue
+            fi
+            source_root="${publisher}/${from_year}-${to_year}/commoncrawl-prefix"
+            summary="$RUNNER_TEMP/common-crawl-${publisher}-${from_year}-${to_year}.json"
+            if rclone copyto \
+                "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state/summary.json" \
+                "$summary" \
+                --timeout 20s --contimeout 10s \
+                --retries 2 --low-level-retries 4 \
+                >/dev/null 2>&1 \
+              && jq -e '.shouldContinue == false' "$summary" >/dev/null; then
+              echo "Common Crawl catalog already complete: $title"
+              continue
+            fi
+            gh workflow run nikkei-common-crawl-catalog.yml \
+              --ref "$DISPATCH_REF" \
+              -f publisher="$publisher" \
+              -f from_year="$from_year" \
+              -f to_year="$to_year" \
+              -f collection_from_year="$(jq -r '.collectionFromYear' <<<"$task")" \
+              -f collection_to_year="$(jq -r '.collectionToYear' <<<"$task")" \
+              -f collection_order=oldest \
+              -f max_pages=1 \
+              -f max_queries=8 \
+              -f max_hydrations=200 \
+              -f target_articles_per_year=3000 \
+              -f auto_continue=true
+            echo "Dispatched supplemental Common Crawl catalog: $title"
+            break
+          done < <(jq -c '.[]' <<<"$queue")
+
       - name: Dispatch missing publisher years
         if: ${{ steps.plan.outputs.validation_tasks != '[]' }}
         env:

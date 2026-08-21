@@ -36,6 +36,11 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
         assert supplemental_root in workflow
     assert '"npr/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"' in workflow
     assert "--source-capacity-root" in workflow
+    assert "Dispatch supplemental Common Crawl catalog" in workflow
+    assert "nikkei-common-crawl-catalog.yml" in workflow
+    assert 'grep -Eq \'(^news-raw-|-common-crawl-)\'' in workflow
+    assert "Both standard parser slots are occupied" in workflow
+    assert 'jq -e \'.shouldContinue == false\'' in workflow
     assert "- name: Restore validation summaries\n        timeout-minutes: 15" in workflow
     assert "ready: [" in workflow
     assert "capacityDeficient: [" in workflow
