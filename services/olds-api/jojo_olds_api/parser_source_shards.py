@@ -75,6 +75,9 @@ def parser_supplemental_manifest_shards(
     if publisher == "nikkei":
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return (f"nikkei/{window}/commoncrawl-prefix",)
+    if publisher == "aljazeera":
+        window = "2010-2015" if year <= 2015 else "2016-2026"
+        return (f"aljazeera/{window}/commoncrawl-prefix",)
     if publisher == "scmp":
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return (f"scmp/{window}/commoncrawl-prefix",)

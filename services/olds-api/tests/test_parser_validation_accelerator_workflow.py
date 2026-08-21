@@ -367,6 +367,17 @@ def test_accelerator_merges_reuters_common_crawl_manifest() -> None:
     assert '--input "$supplemental_source_manifest"' in workflow
 
 
+def test_accelerator_merges_aljazeera_common_crawl_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "aljazeera" ]; then' in workflow
+    assert (
+        "news-archive/v1/aljazeera/${source_window}/commoncrawl-prefix"
+        in workflow
+    )
+    assert '--input "$supplemental_source_manifest"' in workflow
+
+
 def test_accelerator_merges_ap_legacy_supplemental_manifest() -> None:
     workflow = _workflow_text()
 

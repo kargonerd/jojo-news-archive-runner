@@ -86,7 +86,7 @@ def test_common_crawl_supplements_merge_without_duplicate_raw_root() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     merge_section = workflow[
         workflow.index(
-            "- name: Merge NPR, Axios, or Nikkei Common Crawl supplemental manifest"
+            "- name: Merge Common Crawl supplemental manifest"
         ) :
         workflow.index("- name: Checkpoint discovery")
     ]
@@ -95,6 +95,8 @@ def test_common_crawl_supplements_merge_without_duplicate_raw_root() -> None:
     assert "inputs.publisher == 'axios'" in merge_section
     assert "inputs.publisher == 'nikkei'" in merge_section
     assert "inputs.publisher == 'reuters'" in merge_section
+    assert "inputs.publisher == 'aljazeera'" in merge_section
+    assert "inputs.manifest_mode == 'sitemap-wayback'" in merge_section
     assert "inputs.manifest_mode == 'wayback-urlkey'" in merge_section
     assert "commoncrawl-prefix" in merge_section
     assert "merge_archive_manifests.py" in merge_section
