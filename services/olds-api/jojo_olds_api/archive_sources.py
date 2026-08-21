@@ -158,9 +158,31 @@ ARCHIVE_SOURCE_SPECS = {
     "reuters": ArchiveSourceSpec(
         publisher="reuters",
         canonical_host="www.reuters.com",
+        # Reuters migrated away from the legacy ``/article/<slug>`` URL
+        # family during the 2010s.  Keep the legacy per-prefix queries (they
+        # are still the best source for early wire stories), but also index
+        # the section-root URLs used by the newer CMS.  Without these roots,
+        # the 2016-2020 shard can appear capacity-deficient even though
+        # Common Crawl/Wayback contain valid ``/world/...`` and
+        # ``/business/...`` stories.
         wayback_patterns=tuple(
             f"www.reuters.com/article/{prefix}*"
             for prefix in _SLUG_PREFIXES
+        ) + tuple(
+            f"www.reuters.com/{section}/*"
+            for section in (
+                "world",
+                "business",
+                "markets",
+                "technology",
+                "legal",
+                "sports",
+                "lifestyle",
+                "science",
+                "fact-check",
+                "breakingviews",
+                "investigates",
+            )
         ),
         accepted_path_patterns=_patterns(
             r"^/article/",

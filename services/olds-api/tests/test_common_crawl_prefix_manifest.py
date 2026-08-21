@@ -193,6 +193,32 @@ def test_scmp_prefix_patterns_include_modern_article_sections():
     )
 
 
+def test_reuters_prefix_patterns_include_modern_section_roots():
+    patterns = prefix_patterns(
+        archive_source_spec("reuters"),
+        from_year=2016,
+        to_year=2020,
+    )
+    assert patterns[:3] == (
+        "www.reuters.com/article/a",
+        "www.reuters.com/article/b",
+        "www.reuters.com/article/c",
+    )
+    assert patterns[-11:] == (
+        "www.reuters.com/world/",
+        "www.reuters.com/business/",
+        "www.reuters.com/markets/",
+        "www.reuters.com/technology/",
+        "www.reuters.com/legal/",
+        "www.reuters.com/sports/",
+        "www.reuters.com/lifestyle/",
+        "www.reuters.com/science/",
+        "www.reuters.com/fact-check/",
+        "www.reuters.com/breakingviews/",
+        "www.reuters.com/investigates/",
+    )
+
+
 def test_prefix_schema_adds_new_collections_without_resetting_progress():
     connection = sqlite3.connect(":memory:")
     spec = archive_source_spec("npr")
