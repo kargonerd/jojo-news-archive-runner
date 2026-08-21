@@ -51,8 +51,20 @@ jobs:
 
       - name: Install rclone
         run: |
-          sudo apt-get update
-          sudo apt-get install -y rclone
+          # Hosted-runner apt mirrors occasionally stall. Keep the watchdog
+          # recoverable and fall back to the upstream static binary instead
+          # of spending its whole timeout waiting on package metadata.
+          if ! timeout 120 sudo apt-get update || \
+             ! timeout 120 sudo apt-get install -y rclone; then
+            rclone_tmp="$(mktemp -d)"
+            curl -fsSL --retry 4 --retry-delay 2 \
+              -o "$rclone_tmp/rclone.zip" \
+              https://downloads.rclone.org/rclone-current-linux-amd64.zip
+            unzip -q "$rclone_tmp/rclone.zip" -d "$rclone_tmp"
+            rclone_binary="$(find "$rclone_tmp" -type f -name rclone -print -quit)"
+            test -n "$rclone_binary"
+            sudo install -m 0755 "$rclone_binary" /usr/local/bin/rclone
+          fi
 
       - name: Validate private B2 storage
         run: |

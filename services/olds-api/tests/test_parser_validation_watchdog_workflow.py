@@ -11,6 +11,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert 'cron: "17,47 * * * *"' in workflow
+    assert "timeout 120 sudo apt-get update" in workflow
+    assert "https://downloads.rclone.org/rclone-current-linux-amd64.zip" in workflow
     assert "news-archive/v2/validation-state" in workflow
     assert '--include "validation/*/*/state/summary.json"' in workflow
     assert '--include "holdout-v*/*/*/state/rotation-audit.json"' in workflow
