@@ -32,6 +32,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
         '"aljazeera/2016-2026/commoncrawl-prefix"',
         '"nikkei/2010-2015/commoncrawl-prefix"',
         '"nikkei/2016-2026/commoncrawl-prefix"',
+        '"ft/2010-2015/commoncrawl-prefix"',
+        '"ft/2016-2026/commoncrawl-prefix"',
         '"wsj/2010-2015/commoncrawl-prefix"',
         '"wsj/2016-2026/commoncrawl-prefix"',
         '"scmp/2010-2015/commoncrawl-prefix"',
@@ -44,6 +46,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "nikkei-common-crawl-catalog.yml" in workflow
     assert "caixin-common-crawl-catalog.yml" in workflow
     assert '{"kind":"caixin","year":"2010"}' in workflow
+    assert '"publisher":"ft","fromYear":"2010","toYear":"2015"' in workflow
     assert '"publisher":"wsj","fromYear":"2010","toYear":"2015"' in workflow
     assert 'grep -Eq \'(^news-raw-|-common-crawl-)\'' in workflow
     assert "Both standard parser slots are occupied" in workflow
