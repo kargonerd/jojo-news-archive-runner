@@ -70,24 +70,29 @@ jobs:
           copy_summary() {
             remote_dir="$1"
             destination="$2"
-            listing="$RUNNER_TEMP/summary-listing.txt"
             errors="$RUNNER_TEMP/summary-listing-errors.txt"
-            # B2 occasionally returns a transient 5xx while authorizing the
-            # first request. Keep a single incident from aborting the whole
-            # watchdog before it can plan validation work.
-            if ! rclone lsf "$remote_dir" --files-only \
+            # Probe the one object we need instead of enumerating every
+            # object in the state directory. B2 buckets contain many
+            # superseded checkpoints, and directory listings can dominate
+            # this watchdog's 15-minute budget. Retries also absorb a
+            # transient 5xx while the object metadata is being read.
+            summary_remote="$remote_dir/summary.json"
+            object_listing=""
+            if ! object_listing="$(
+              rclone lsl "$summary_remote" \
                 --timeout 30s --contimeout 10s \
                 --retries 3 --low-level-retries 6 \
-                >"$listing" 2>"$errors"; then
+                2>"$errors"
+            )"; then
               if grep -qiE "directory not found|object not found" "$errors"; then
                 return 0
               fi
               cat "$errors" >&2
               return 1
             fi
-            if grep -Fxq "summary.json" "$listing"; then
+            if [ -n "$object_listing" ]; then
               mkdir -p "$destination"
-              rclone copyto "$remote_dir/summary.json" \
+              rclone copyto "$summary_remote" \
                 "$destination/summary.json" \
                 --retries 8 --low-level-retries 20
             fi
