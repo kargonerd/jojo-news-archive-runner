@@ -419,6 +419,7 @@ jobs:
                         eligibleCandidates,
                         eligibleCandidateUpperBound,
                         replayableEvaluated,
+                        captureStateExhausted,
                         selectedCohort
                       }
                   ],
