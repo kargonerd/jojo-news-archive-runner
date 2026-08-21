@@ -43,7 +43,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert 'grep -Eq \'(^news-raw-|-common-crawl-)\'' in workflow
     assert "Both standard parser slots are occupied" in workflow
     assert 'jq -e \'.shouldContinue == false\'' in workflow
-    assert "- name: Restore validation summaries\n        timeout-minutes: 15" in workflow
+    assert "- name: Restore validation summaries\n        timeout-minutes: 25" in workflow
     assert "ready: [" in workflow
     assert "capacityDeficient: [" in workflow
     assert 'object_listing="$(\n              rclone lsl' in workflow

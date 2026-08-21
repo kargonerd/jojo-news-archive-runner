@@ -45,7 +45,7 @@ env:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
 
@@ -63,7 +63,7 @@ jobs:
             --non-interactive
 
       - name: Restore validation summaries
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/archive-state"
