@@ -76,5 +76,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
 def test_watchdog_dispatches_two_workers_per_validation_job() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "-f workers=2" in workflow
+    assert "workers=2" in workflow
+    assert 'if [ "$publisher" = "ft" ] || [ "$publisher" = "wsj" ]; then' in workflow
+    assert '-f workers="$workers"' in workflow
     assert "-f workers=8" not in workflow

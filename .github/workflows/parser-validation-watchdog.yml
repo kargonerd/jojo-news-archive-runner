@@ -491,6 +491,13 @@ jobs:
             cohort="$(jq -r '.cohort' <<<"$task")"
             shard="$(jq -r '.sourceManifestShard' <<<"$task")"
             runner="$(jq -r '.runnerOs' <<<"$task")"
+            workers=2
+            if [ "$publisher" = "ft" ] || [ "$publisher" = "wsj" ]; then
+              # These publishers have slow archive responses. The capture
+              # client still enforces one global request every 0.5 seconds;
+              # four workers only hide response latency behind that limiter.
+              workers=4
+            fi
             # Do not run the full public Infini-News Parquet metadata scan
             # inside every fresh FT parser cohort.  A new zero-overlap cohort
             # has no local direct-discovery checkpoint, so enabling it here
@@ -509,7 +516,7 @@ jobs:
               -f year="$year" \
               -f source_manifest_shard="$shard" \
               -f max_captures=800 \
-              -f workers=2 \
+              -f workers="$workers" \
               -f max_runtime_minutes=300 \
               -f auto_continue=true \
               -f enable_ft_infini_direct_discovery="$enable_ft_infini_direct_discovery" \

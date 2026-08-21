@@ -223,6 +223,17 @@ def test_accelerator_enables_archive_fallbacks_for_ft_wsj_and_nikkei() -> None:
     assert "--enable-common-crawl-fallback" in workflow
 
 
+def test_slow_ft_wsj_continuations_overlap_limited_archive_responses() -> None:
+    workflow = _workflow_text()
+    dispatch = workflow[
+        workflow.index("Dispatch next validation batch") :
+    ]
+
+    assert 'if [ "$PUBLISHER" = "ft" ] || [ "$PUBLISHER" = "wsj" ]; then' in dispatch
+    assert "next_workers=4" in dispatch
+    assert "0.5-second request limiter" in dispatch
+
+
 def test_accelerator_preindexes_bounded_wsj_arquivo_catalog_nonfatally() -> None:
     workflow = _workflow_text()
     section = workflow[
