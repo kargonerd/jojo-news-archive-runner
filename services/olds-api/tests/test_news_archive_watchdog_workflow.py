@@ -17,7 +17,7 @@ def test_archive_watchdog_has_one_global_two_slot_dispatcher() -> None:
     assert "strategy:" not in workflow
     assert "matrix:" not in workflow
     assert 'startswith("news-raw-")' in workflow
-    assert 'startswith("nikkei-common-crawl-")' in workflow
+    assert 'contains("-common-crawl-")' in workflow
     assert 'startswith("parser-")' in workflow
     assert "available=$((MAX_STANDARD_CONCURRENCY - active_count))" in workflow
     assert 'if [ "$dispatched" -ge "$available" ]' in workflow
@@ -38,18 +38,19 @@ def test_archive_watchdog_is_catalog_only_and_skips_complete_shards() -> None:
 def test_archive_watchdog_limits_dispatch_to_active_convergence_set() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    for publisher in ("ft", "axios", "caixin"):
-        assert f'"publisher":"{publisher}"' in workflow
     for publisher in (
+        "ft",
+        "axios",
         "wsj",
-        "npr",
         "nyt",
         "ap",
+        "npr",
         "nikkei",
         "zaobao",
         "aljazeera",
         "scmp",
+        "caixin",
     ):
-        assert f'"publisher":"{publisher}"' not in workflow
-    assert "TODO: restore WSJ, NPR, NYT, AP, Nikkei, Zaobao, Al Jazeera" in workflow
-    assert '"publisher":"caixin"' in workflow
+        assert f'"publisher":"{publisher}"' in workflow
+    assert "Keep every in-scope publisher eligible" in workflow
+    assert "parser-validation watchdog independently decides" in workflow

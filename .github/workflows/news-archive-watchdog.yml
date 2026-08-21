@@ -65,7 +65,7 @@ jobs:
             | .displayTitle
             | select(
                 startswith("news-raw-")
-                or startswith("nikkei-common-crawl-")
+                or contains("-common-crawl-")
                 or startswith("parser-")
               )
           ' "$runs" > "$active_titles"
@@ -85,17 +85,31 @@ jobs:
           # formal validation stores only its selected canonical raw samples,
           # while catalog discovery itself stays compact and resumable.
           #
-          # TODO: restore WSJ, NPR, NYT, AP, Nikkei, Zaobao, Al Jazeera, and
-          # SCMP after the reduced FT/Axios/Caixin convergence set is complete.
-          # Existing B2 checkpoints remain resumable, but this queue must not
-          # dispatch new work for deferred publishers. WSJ 2020 is also paused
-          # until its low-yield replay candidate pool has been expanded and
-          # audited (17 accepted samples after 305 capture failures).
+          # Keep every in-scope publisher eligible. These are catalog-only
+          # passes, so a thin or exhausted shard can be recorded without
+          # downloading a second copy of the formal validation cohort. The
+          # parser-validation watchdog independently decides whether a year
+          # has enough unseen candidates for its 800-row sample.
           queue='[
             {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"sitemap-wayback","units":"30","runner":"ubuntu-latest"},
             {"publisher":"axios","fromYear":"2017","toYear":"2026","mode":"wayback-urlkey","units":"5","runner":"ubuntu-latest"},
             {"publisher":"ft","fromYear":"2010","toYear":"2015","mode":"sitemap-wayback","units":"1","runner":"ubuntu-latest"},
             {"publisher":"ft","fromYear":"2016","toYear":"2026","mode":"sitemap-wayback","units":"1","runner":"ubuntu-latest"},
+            {"publisher":"wsj","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"10","runner":"ubuntu-latest"},
+            {"publisher":"wsj","fromYear":"2016","toYear":"2026","mode":"wayback","units":"10","runner":"ubuntu-latest"},
+            {"publisher":"nyt","fromYear":"2010","toYear":"2015","mode":"sitemap-wayback","units":"5","runner":"ubuntu-latest"},
+            {"publisher":"nyt","fromYear":"2016","toYear":"2026","mode":"sitemap-wayback","units":"5","runner":"ubuntu-latest"},
+            {"publisher":"ap","fromYear":"2010","toYear":"2015","mode":"sitemap-wayback","units":"5","runner":"ubuntu-latest"},
+            {"publisher":"ap","fromYear":"2016","toYear":"2026","mode":"sitemap-wayback","units":"5","runner":"ubuntu-latest"},
+            {"publisher":"npr","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"10","runner":"ubuntu-latest"},
+            {"publisher":"npr","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"10","runner":"ubuntu-latest"},
+            {"publisher":"nikkei","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"10","runner":"ubuntu-latest"},
+            {"publisher":"nikkei","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"10","runner":"ubuntu-latest"},
+            {"publisher":"zaobao","fromYear":"2016","toYear":"2026","mode":"sitemap-wayback","units":"30","runner":"ubuntu-latest"},
+            {"publisher":"aljazeera","fromYear":"2010","toYear":"2015","mode":"sitemap-wayback","units":"30","runner":"ubuntu-latest"},
+            {"publisher":"aljazeera","fromYear":"2016","toYear":"2026","mode":"sitemap-wayback","units":"30","runner":"ubuntu-latest"},
+            {"publisher":"scmp","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"10","runner":"ubuntu-latest"},
+            {"publisher":"scmp","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"10","runner":"ubuntu-latest"},
             {"publisher":"caixin","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"20","runner":"ubuntu-latest"},
             {"publisher":"caixin","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"20","runner":"ubuntu-latest"}
           ]'
