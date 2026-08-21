@@ -242,6 +242,7 @@ jobs:
             --include "holdout-v*/*/*/state/rotation-audit.json" \
             --include "validation/*/*/state/content-audit.json" \
             --include "holdout-v*/*/*/state/content-audit.json" \
+            --fast-list \
             --transfers 16 --checkers 32 \
             --retries 8 --low-level-retries 20
 
