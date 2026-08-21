@@ -85,5 +85,9 @@ def test_watchdog_dispatches_two_workers_per_validation_job() -> None:
 
     assert "workers=2" in workflow
     assert 'if [ "$publisher" = "ft" ] || [ "$publisher" = "wsj" ]; then' in workflow
+    assert 'current_evaluated="$(jq -r \'.currentEvaluated // 0\'' in workflow
+    assert '[ "$current_evaluated" -lt 200 ]' in workflow
+    assert "Enabling bounded FT Infini-News discovery" in workflow
+    assert '-f enable_ft_infini_direct_discovery="$enable_ft_infini_direct_discovery"' in workflow
     assert '-f workers="$workers"' in workflow
     assert "-f workers=8" not in workflow

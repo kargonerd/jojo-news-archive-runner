@@ -619,6 +619,7 @@ jobs:
               # four workers only hide response latency behind that limiter.
               workers=4
             fi
+            current_evaluated="$(jq -r '.currentEvaluated // 0' <<<"$task")"
             # Do not run the full public Infini-News Parquet metadata scan
             # inside every fresh FT parser cohort.  A new zero-overlap cohort
             # has no local direct-discovery checkpoint, so enabling it here
@@ -628,6 +629,15 @@ jobs:
             # Wayback/Common Crawl and FT syndication candidates; direct
             # discovery is maintained separately as a reusable catalog.
             enable_ft_infini_direct_discovery=false
+            if [ "$publisher" = "ft" ] && [ "$year" -ge 2016 ] && \
+               [ "$current_evaluated" -lt 200 ]; then
+              # Sparse FT years are otherwise dominated by Wayback transport
+              # failures. Pay the direct-catalog cost once for a fresh cohort
+              # while it is still far from the 800-sample gate; subsequent
+              # continuations reuse the durable catalog/checkpoint.
+              enable_ft_infini_direct_discovery=true
+              echo "Enabling bounded FT Infini-News discovery for $year at $current_evaluated evaluated samples."
+            fi
           # Each dispatched validation run starts with an 800-article budget,
           # matching the project's independent-sample acceptance gate.
           gh workflow run parser-validation-accelerator.yml \
