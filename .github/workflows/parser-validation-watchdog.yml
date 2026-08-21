@@ -340,6 +340,13 @@ jobs:
             dispatches="$MAX_DISPATCH_PER_RUN"
           fi
           catalog_dispatch_limit="$dispatches"
+          if [ "$catalog_dispatch_limit" -gt 0 ]; then
+            # Keep one dispatch for a parser-validation cohort whenever any
+            # standard slot is available. Catalog chains may continue through
+            # later watchdog ticks, while parser iteration must not starve.
+            catalog_dispatch_limit=$((catalog_dispatch_limit - 1))
+            echo "Keeping one dispatch slot reserved for parser validation."
+          fi
           if [ "$superseded_active_count" -gt 0 ] \
             && [ "$catalog_dispatch_limit" -gt 0 ]; then
             catalog_dispatch_limit=$((catalog_dispatch_limit - 1))
