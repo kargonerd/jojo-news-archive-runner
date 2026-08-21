@@ -12911,6 +12911,8 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
         ):
             node.decompose()
 
+    _remove_ft_subscription_offer_chrome(soup)
+
     for marker in list(soup.select("p, h2, h3, h4")):
         if not re.fullmatch(
             r"read more:?",
@@ -12994,6 +12996,69 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             break
         tail = tail.parent
     marker.decompose()
+
+
+def _remove_ft_subscription_offer_chrome(soup: BeautifulSoup) -> None:
+    """Remove modern FT subscription offers flattened into article bodies.
+
+    Wayback captures of FT pages can retain the article together with the
+    current subscription conversion UI. The offer is not consistently wrapped
+    in one stable class, but its short CTA copy is stable enough to remove
+    without touching ordinary reporting that discusses subscriptions.
+    Prefer a marked offer container; otherwise remove only the individual
+    block containing the CTA.
+    """
+    markers = (
+        "subscribe to unlock this article",
+        "try unlimited access",
+        "only $1 for ",
+        "then $75 per month",
+        "complete digital access",
+        "explore more offers",
+    )
+
+    def is_offer_text(value: str) -> bool:
+        folded = _clean_text(value).casefold()
+        return any(
+            folded.startswith(marker) or folded == marker.rstrip()
+            for marker in markers
+        )
+
+    # Newer FT templates usually expose an offer/upsell wrapper. Keep the
+    # selector deliberately narrow and never decompose the article root.
+    for container in list(
+        soup.select(
+            "[class*='paywall' i], [id*='paywall' i], "
+            "[class*='subscription' i], [id*='subscription' i], "
+            "[class*='upsell' i], [id*='upsell' i], "
+            "[class*='offer' i], [id*='offer' i], "
+            "[data-testid*='paywall' i], "
+            "[data-testid*='subscription' i], "
+            "[data-component*='paywall' i], "
+            "[data-component*='subscription' i]"
+        )
+    ):
+        if container.name in {"article", "main", "body", "html"}:
+            continue
+        if is_offer_text(container.get_text(" ", strip=True)):
+            container.decompose()
+
+    # Older captures flatten the offer as ordinary paragraphs/headings. Do
+    # not match arbitrary mentions of subscriptions inside long prose.
+    for node in list(
+        soup.select("p, li, h2, h3, h4, h5, h6, button, a, span")
+    ):
+        if not is_offer_text(node.get_text(" ", strip=True)):
+            continue
+        target = node
+        if node.name in {"a", "button", "span"}:
+            parent = node.find_parent(
+                ("p", "li", "h2", "h3", "h4", "h5", "h6")
+            )
+            if isinstance(parent, Tag):
+                target = parent
+        if target.name not in {"article", "main", "body", "html"}:
+            target.decompose()
 
 
 def _ft_infini_access_shell(soup: BeautifulSoup) -> bool:

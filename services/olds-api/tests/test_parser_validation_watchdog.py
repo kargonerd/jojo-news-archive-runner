@@ -287,7 +287,7 @@ def test_watchdog_does_not_let_superseded_holdout_block_new_parser(
             "runnerOs": "ubuntu-latest",
             "currentEvaluated": 0,
             "replayableEvaluated": 554,
-            "parserVersion": "ft-parser/0.8.52",
+            "parserVersion": "ft-parser/0.8.53",
             "cohort": "holdout-v215",
         }
     ]
