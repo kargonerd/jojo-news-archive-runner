@@ -275,19 +275,28 @@ jobs:
               )
             | .displayTitle
           ' "$runs" > "$active"
+          # Catalog jobs have their own MAX_CATALOG_CONCURRENCY budget and
+          # must not consume the two standard parser-validation slots. The
+          # active-title file above still includes every workflow so the
+          # planners avoid duplicate catalog or parser dispatches; only the
+          # parser run names are counted for standard concurrency here.
           active_count="$(
             jq --argjson now "$now_epoch" '[
               .[]
               | select(
-                  .status == "in_progress"
-                  or (
-                    (.status == "queued"
-                      or .status == "waiting"
-                      or .status == "pending"
-                      or .status == "requested")
-                    and ((try (.createdAt | fromdateiso8601) catch 0)
-                      >= ($now - 18000))
+                  (
+                    .status == "in_progress"
+                    or (
+                      (.status == "queued"
+                        or .status == "waiting"
+                        or .status == "pending"
+                        or .status == "requested")
+                      and ((try (.createdAt | fromdateiso8601) catch 0)
+                        >= ($now - 18000))
+                    )
                   )
+                  and (.displayTitle
+                    | test("^parser-(validation|holdout-v[0-9]+|smoke-v[0-9]+)-"))
                 )
             ] | length' "$runs"
           )"
@@ -315,7 +324,7 @@ jobs:
           if [ "$effective_active_count" -lt 0 ]; then
             effective_active_count=0
           fi
-          echo "Active runs total=$active_count; superseded parser runs exempt=$superseded_active_count; effective=$effective_active_count."
+          echo "Active parser runs total=$active_count; superseded parser runs exempt=$superseded_active_count; effective=$effective_active_count."
           # This watchdog itself occupies one runner while planning. Its slot
           # becomes available as soon as dispatch completes.
           available=$((MAX_STANDARD_CONCURRENCY - effective_active_count + 1))

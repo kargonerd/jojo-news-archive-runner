@@ -57,6 +57,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "activeSupersededRunCount" in workflow
     assert "effective_active_count" in workflow
     assert "superseded parser runs exempt" in workflow
+    assert "only the" in workflow
+    assert "test(\"^parser-(validation|holdout-v[0-9]+|smoke-v[0-9]+)-\")" in workflow
     assert 'MAX_SUPERSEDED_REFRESH_DISPATCH: "1"' in workflow
     assert "Reserved one parser refresh slot" in workflow
     assert "catalog_dispatch_limit" in workflow
