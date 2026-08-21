@@ -358,6 +358,33 @@ def test_prefix_queries_prioritize_recent_collections():
     assert collection_id == "CC-MAIN-2026-30"
 
 
+def test_reuters_prefix_queries_prioritize_modern_section_roots():
+    connection = sqlite3.connect(":memory:")
+    initialize_prefix_schema(
+        connection,
+        spec=archive_source_spec("reuters"),
+        from_year=2016,
+        to_year=2020,
+        collections=(_collection("CC-MAIN-2026-30"),),
+    )
+
+    _, _, pattern, _, _ = next_prefix_query(connection)
+
+    assert pattern in {
+        "www.reuters.com/world/",
+        "www.reuters.com/business/",
+        "www.reuters.com/markets/",
+        "www.reuters.com/technology/",
+        "www.reuters.com/legal/",
+        "www.reuters.com/sports/",
+        "www.reuters.com/lifestyle/",
+        "www.reuters.com/science/",
+        "www.reuters.com/fact-check/",
+        "www.reuters.com/breakingviews/",
+        "www.reuters.com/investigates/",
+    }
+
+
 def test_npr_prefix_queries_probe_legacy_story_ids_first():
     connection = sqlite3.connect(":memory:")
     initialize_prefix_schema(

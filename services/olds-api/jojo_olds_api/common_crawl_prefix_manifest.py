@@ -446,6 +446,12 @@ def next_prefix_query(
         ORDER BY
             attempts,
             CASE
+                -- Reuters' modern CMS moved articles below section roots
+                -- (/world/, /business/, ...).  Probe those roots before the
+                -- legacy /article/<letter> families so a newly-added source
+                -- can contribute candidates without waiting for every old
+                -- prefix/collection pair to be exhausted.
+                WHEN pattern LIKE 'www.reuters.com/%/' THEN -3
                 WHEN pattern LIKE '%/templates/story/story.php'
                   AND collection_id LIKE 'CC-MAIN-2018-%' THEN -2
                 WHEN pattern LIKE '%/templates/story/story.php' THEN -1
