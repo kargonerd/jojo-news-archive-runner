@@ -969,6 +969,68 @@ def test_prefix_client_uses_page_count_then_ndjson_page():
     http_client.close()
 
 
+def test_prefix_client_retries_malformed_json_page_count():
+    page_count_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal page_count_requests
+        if request.url.params.get("showNumPages") == "true":
+            page_count_requests += 1
+            if page_count_requests == 1:
+                return httpx.Response(
+                    200,
+                    text="<html>busy</html>",
+                    request=request,
+                )
+            return httpx.Response(200, json={"pages": 1}, request=request)
+        raise AssertionError("page request was not expected")
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = CommonCrawlPrefixClient(
+        minimum_interval=0,
+        attempts=2,
+        client=http_client,
+    )
+
+    assert (
+        client.page_count(index_url=INDEX_URL, pattern="www.npr.org/2010/")
+        == 1
+    )
+    assert page_count_requests == 2
+    http_client.close()
+
+
+def test_prefix_client_retries_malformed_ndjson_page():
+    page_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal page_requests
+        page_requests += 1
+        if page_requests == 1:
+            return httpx.Response(200, text='{"url":\n', request=request)
+        return httpx.Response(
+            200,
+            text=json.dumps(_index_row("20140307033634", offset=1)) + "\n",
+            request=request,
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = CommonCrawlPrefixClient(
+        minimum_interval=0,
+        attempts=2,
+        client=http_client,
+    )
+
+    page = client.page(
+        index_url=INDEX_URL,
+        pattern="www.npr.org/2010/",
+        page=0,
+    )
+    assert len(page.rows) == 1
+    assert page_requests == 2
+    http_client.close()
+
+
 def test_prefix_client_treats_filtered_no_capture_page_as_empty():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.params.get("showNumPages") == "true":

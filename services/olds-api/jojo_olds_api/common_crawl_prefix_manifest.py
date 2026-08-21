@@ -92,8 +92,7 @@ class CommonCrawlPrefixClient:
             self._client.close()
 
     def collections(self) -> tuple[PrefixCollection, ...]:
-        response = self._get(COLLECTION_INFO_URL)
-        payload = response.json()
+        payload = self._get_json(COLLECTION_INFO_URL)
         if not isinstance(payload, list):
             raise ValueError("Common Crawl collection list is not an array")
         result: list[PrefixCollection] = []
@@ -127,14 +126,13 @@ class CommonCrawlPrefixClient:
 
     def page_count(self, *, index_url: str, pattern: str) -> int:
         try:
-            response = self._get(
+            payload = self._get_json(
                 index_url,
                 params=_query_parameters(pattern, page_size=self.page_size)
                 + [("showNumPages", "true")],
             )
         except CommonCrawlNoCapturesError:
             return 0
-        payload = response.json()
         if not isinstance(payload, dict):
             raise ValueError("Common Crawl page count is not an object")
         pages = _optional_int(payload.get("pages"))
@@ -152,7 +150,7 @@ class CommonCrawlPrefixClient:
         if page < 0:
             raise ValueError("page must not be negative")
         try:
-            response = self._get(
+            lines = self._get_text_lines(
                 index_url,
                 params=_query_parameters(pattern, page_size=self.page_size)
                 + [("page", str(page))],
@@ -160,7 +158,7 @@ class CommonCrawlPrefixClient:
         except CommonCrawlNoCapturesError:
             return PrefixIndexPage(rows=())
         rows: list[dict[str, object]] = []
-        for line in response.text.splitlines():
+        for line in lines:
             if not line.strip():
                 continue
             value = json.loads(line)
@@ -174,10 +172,14 @@ class CommonCrawlPrefixClient:
         url: str,
         *,
         params: list[tuple[str, str]] | None = None,
+        attempts: int | None = None,
     ) -> httpx.Response:
+        request_attempts = self.attempts if attempts is None else attempts
+        if request_attempts < 1:
+            raise ValueError("attempts must be positive")
         last_status: int | None = None
         last_error: Exception | None = None
-        for attempt in range(self.attempts):
+        for attempt in range(request_attempts):
             self.rate_limiter.wait()
             try:
                 response = self._client.get(url, params=params)
@@ -197,13 +199,70 @@ class CommonCrawlPrefixClient:
                 return response
             except (httpx.HTTPError, RuntimeError, ValueError) as exc:
                 last_error = exc
-                if attempt + 1 >= self.attempts:
+                if attempt + 1 >= request_attempts:
                     break
                 time.sleep(min(30.0, 2.0**attempt))
         suffix = f" (last HTTP status {last_status})" if last_status else ""
         raise RuntimeError(
-            f"Common Crawl index query failed after {self.attempts} attempts"
+            f"Common Crawl index query failed after {request_attempts} attempts"
             f"{suffix}"
+        ) from last_error
+
+    def _get_json(
+        self,
+        url: str,
+        *,
+        params: list[tuple[str, str]] | None = None,
+    ) -> object:
+        """Fetch JSON while retrying successful-but-malformed responses."""
+        last_error: Exception | None = None
+        for attempt in range(self.attempts):
+            try:
+                response = self._get(url, params=params, attempts=1)
+                return response.json()
+            except CommonCrawlNoCapturesError:
+                raise
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                last_error = exc
+                if attempt + 1 >= self.attempts:
+                    break
+                time.sleep(min(30.0, 2.0**attempt))
+        raise RuntimeError(
+            "Common Crawl JSON response could not be decoded after "
+            f"{self.attempts} attempts"
+        ) from last_error
+
+    def _get_text_lines(
+        self,
+        url: str,
+        *,
+        params: list[tuple[str, str]] | None = None,
+    ) -> tuple[str, ...]:
+        """Fetch and validate an NDJSON page before recording it."""
+        last_error: Exception | None = None
+        for attempt in range(self.attempts):
+            try:
+                response = self._get(url, params=params, attempts=1)
+                lines = tuple(
+                    line for line in response.text.splitlines() if line.strip()
+                )
+                for line in lines:
+                    value = json.loads(line)
+                    if not isinstance(value, dict):
+                        raise ValueError(
+                            "Common Crawl index row is not an object"
+                        )
+                return lines
+            except CommonCrawlNoCapturesError:
+                raise
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                last_error = exc
+                if attempt + 1 >= self.attempts:
+                    break
+                time.sleep(min(30.0, 2.0**attempt))
+        raise RuntimeError(
+            "Common Crawl NDJSON response could not be decoded after "
+            f"{self.attempts} attempts"
         ) from last_error
 
 
