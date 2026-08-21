@@ -7,6 +7,8 @@ import json
 import re
 import sqlite3
 import struct
+import threading
+import time
 from typing import Iterable
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -32,11 +34,88 @@ HUGGING_FACE_RESOLVE_ENDPOINT = (
 )
 DEFAULT_TARGET_ARTICLES = 850
 DEFAULT_MAXIMUM_FILES_PER_RUN = 1_200
-DEFAULT_METADATA_WORKERS = 24
-DEFAULT_SCAN_WORKERS = 8
+# Hugging Face throttles ranged requests to the public dataset.  A large
+# metadata fan-out looks attractive, but it turns a resumable discovery pass
+# into a wall of 429s and leaves the same files unresolved on every
+# continuation.  Keep the default conservative; callers can still override
+# it explicitly in tests or controlled experiments.
+DEFAULT_METADATA_WORKERS = 4
+DEFAULT_SCAN_WORKERS = 4
+DEFAULT_METADATA_ATTEMPTS = 6
+DEFAULT_REQUEST_INTERVAL = 0.2
+RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
 MINIMUM_TEXT_CHARACTERS = 1_000
 PARQUET_FOOTER_PROBE_BYTES = 32 * 1024
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+class _RequestGate:
+    """Serialize public-dataset requests without serializing file workers."""
+
+    def __init__(self, minimum_interval: float = DEFAULT_REQUEST_INTERVAL):
+        self.minimum_interval = max(0.0, float(minimum_interval))
+        self._lock = threading.Lock()
+        self._next_request_at = 0.0
+
+    def wait(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            delay = max(0.0, self._next_request_at - now)
+            self._next_request_at = (
+                max(now, self._next_request_at) + self.minimum_interval
+            )
+        if delay:
+            time.sleep(delay)
+
+
+def _retry_after_seconds(response) -> float | None:
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+    value = headers.get("retry-after") or headers.get("Retry-After")
+    if value is None:
+        return None
+    try:
+        return max(0.0, float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+def _get_with_retries(
+    http_client,
+    url: str,
+    *,
+    params: dict[str, object] | None = None,
+    headers: dict[str, str] | None = None,
+    request_gate: _RequestGate | None = None,
+    attempts: int = DEFAULT_METADATA_ATTEMPTS,
+):
+    """Fetch a public dataset object while respecting transient throttling."""
+
+    if attempts < 1:
+        raise ValueError("attempts must be positive")
+    for attempt in range(attempts):
+        if request_gate is not None:
+            request_gate.wait()
+        request_kwargs: dict[str, object] = {}
+        if params is not None:
+            request_kwargs["params"] = params
+        if headers is not None:
+            request_kwargs["headers"] = headers
+        response = http_client.get(url, **request_kwargs)
+        status_code = int(getattr(response, "status_code", 200))
+        if status_code not in RETRYABLE_STATUS_CODES or attempt == attempts - 1:
+            return response
+        retry_after = _retry_after_seconds(response)
+        delay = min(
+            30.0,
+            max(
+                0.5 * (2**attempt),
+                retry_after if retry_after is not None else 0.0,
+            ),
+        )
+        time.sleep(delay)
+    raise AssertionError("retry loop returned without a response")
 
 
 def initialize_ft_infini_direct_schema(
@@ -110,13 +189,19 @@ def discover_ft_infini_direct_candidates(
         raise ValueError("worker counts must be positive")
 
     initialize_ft_infini_direct_schema(connection)
-    files = _list_year_parquet_files(http_client, year=year)
+    request_gate = _RequestGate()
+    files = _list_year_parquet_files(
+        http_client,
+        year=year,
+        request_gate=request_gate,
+    )
     _store_file_catalog(connection, year=year, files=files)
     metadata_result = _resolve_file_metadata(
         connection,
         year=year,
         http_client=http_client,
         workers=metadata_workers,
+        request_gate=request_gate,
     )
     unresolved_metadata = int(
         connection.execute(
@@ -318,6 +403,7 @@ def _list_year_parquet_files(
     http_client,
     *,
     year: int,
+    request_gate: _RequestGate | None = None,
 ) -> list[tuple[str, int]]:
     files: dict[str, int] = {}
     for month in range(1, 13):
@@ -327,7 +413,8 @@ def _list_year_parquet_files(
             safe="",
         )
         while url:
-            response = http_client.get(
+            response = _get_with_retries(
+                http_client,
                 url,
                 params={
                     "recursive": "false",
@@ -336,6 +423,7 @@ def _list_year_parquet_files(
                 }
                 if "cursor=" not in url
                 else None,
+                request_gate=request_gate,
             )
             if response.status_code == 404:
                 # The corpus starts in August 2016 and the latest year can be
@@ -405,6 +493,7 @@ def _resolve_file_metadata(
     year: int,
     http_client,
     workers: int,
+    request_gate: _RequestGate | None = None,
 ) -> dict[str, object]:
     rows = connection.execute(
         """
@@ -412,10 +501,10 @@ def _resolve_file_metadata(
         FROM ft_infini_parquet_files
         WHERE source_year=?
           AND row_count IS NULL
-          AND attempts < 3
+          AND attempts < ?
         ORDER BY file_path
         """,
-        (year,),
+        (year, DEFAULT_METADATA_ATTEMPTS),
     ).fetchall()
     completed = 0
     errors: list[str] = []
@@ -426,6 +515,7 @@ def _resolve_file_metadata(
                 http_client,
                 str(path),
                 int(byte_count),
+                request_gate=request_gate,
             ): str(path)
             for path, byte_count in rows
         }
@@ -473,14 +563,18 @@ def _read_parquet_row_count(
     http_client,
     path: str,
     byte_count: int,
+    *,
+    request_gate: _RequestGate | None = None,
 ) -> int:
     if byte_count < 12:
         raise ValueError("Parquet file is too small")
     url = _resolve_url(path)
     probe_start = max(0, byte_count - PARQUET_FOOTER_PROBE_BYTES)
-    probe = http_client.get(
+    probe = _get_with_retries(
+        http_client,
         url,
         headers={"Range": f"bytes={probe_start}-{byte_count - 1}"},
+        request_gate=request_gate,
     )
     probe.raise_for_status()
     expected_probe_size = byte_count - probe_start
@@ -497,9 +591,11 @@ def _read_parquet_row_count(
     if footer_start >= probe_start:
         footer_content = probe.content[footer_start - probe_start :]
     else:
-        footer = http_client.get(
+        footer = _get_with_retries(
+            http_client,
             url,
             headers={"Range": f"bytes={footer_start}-{byte_count - 1}"},
+            request_gate=request_gate,
         )
         footer.raise_for_status()
         footer_content = footer.content

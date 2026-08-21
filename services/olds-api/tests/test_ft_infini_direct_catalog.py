@@ -103,6 +103,45 @@ def test_parquet_footer_row_count_uses_bounded_ranges():
     )
 
 
+def test_public_dataset_requests_back_off_after_rate_limit(monkeypatch):
+    class Response:
+        def __init__(self, status_code: int, retry_after: str | None = None):
+            self.status_code = status_code
+            self.headers = (
+                {"Retry-After": retry_after}
+                if retry_after is not None
+                else {}
+            )
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise AssertionError(f"unexpected HTTP {self.status_code}")
+
+    class Client:
+        def __init__(self):
+            self.responses = [Response(429, "0"), Response(200)]
+            self.calls = 0
+
+        def get(self, _url: str, **_kwargs):
+            response = self.responses[self.calls]
+            self.calls += 1
+            return response
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(catalog.time, "sleep", sleeps.append)
+    client = Client()
+
+    response = catalog._get_with_retries(
+        client,
+        "https://huggingface.co/test",
+        attempts=3,
+    )
+
+    assert response.status_code == 200
+    assert client.calls == 2
+    assert sleeps == [0.5]
+
+
 def test_year_catalog_skips_months_absent_from_partial_years():
     class Response:
         status_code = 404
