@@ -82,13 +82,6 @@ def parser_supplemental_manifest_shards(
         # primary Wayback shard cannot supply 800 distinct articles.
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return (f"wsj/{window}/commoncrawl-prefix",)
-    if publisher == "ft":
-        # FT's early Wayback windows are sparse even when the replay
-        # checkpoint has a few hundred usable URLs.  Keep a publisher-level
-        # Common Crawl catalog available so those years can be reopened
-        # before a formal 800-row run exhausts its candidates.
-        window = "2010-2015" if year <= 2015 else "2016-2026"
-        return (f"ft/{window}/commoncrawl-prefix",)
     if publisher == "aljazeera":
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return (f"aljazeera/{window}/commoncrawl-prefix",)
