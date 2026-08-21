@@ -392,7 +392,8 @@ jobs:
           ${{
             (inputs.publisher == 'npr' ||
              inputs.publisher == 'axios' ||
-             inputs.publisher == 'nikkei') &&
+             inputs.publisher == 'nikkei' ||
+             inputs.publisher == 'reuters') &&
             inputs.manifest_mode == 'wayback-urlkey'
           }}
         shell: bash

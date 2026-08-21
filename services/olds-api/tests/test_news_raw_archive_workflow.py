@@ -82,7 +82,7 @@ def test_catalog_only_wayback_keeps_expanding_after_capture_ready() -> None:
     assert '"${wayback_catalog_args[@]}"' in wayback_section
 
 
-def test_npr_axios_and_nikkei_merge_common_crawl_without_duplicate_raw_root() -> None:
+def test_common_crawl_supplements_merge_without_duplicate_raw_root() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     merge_section = workflow[
         workflow.index(
@@ -94,6 +94,7 @@ def test_npr_axios_and_nikkei_merge_common_crawl_without_duplicate_raw_root() ->
     assert "inputs.publisher == 'npr'" in merge_section
     assert "inputs.publisher == 'axios'" in merge_section
     assert "inputs.publisher == 'nikkei'" in merge_section
+    assert "inputs.publisher == 'reuters'" in merge_section
     assert "inputs.manifest_mode == 'wayback-urlkey'" in merge_section
     assert "commoncrawl-prefix" in merge_section
     assert "merge_archive_manifests.py" in merge_section

@@ -64,6 +64,7 @@ def test_parser_source_manifest_shard_rejects_unsupported_cells(
         ("nikkei", 2014, ("nikkei/2010-2015/commoncrawl-prefix",)),
         ("nikkei", 2024, ("nikkei/2016-2026/commoncrawl-prefix",)),
         ("scmp", 2017, ("scmp/2016-2026/commoncrawl-prefix",)),
+        ("reuters", 2016, ("reuters/2016-2020/commoncrawl-prefix",)),
         ("ft", 2020, ()),
     ],
 )

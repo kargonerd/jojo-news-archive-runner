@@ -356,6 +356,17 @@ def test_accelerator_merges_caixin_single_year_common_crawl_manifest() -> None:
     )
 
 
+def test_accelerator_merges_reuters_common_crawl_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "reuters" ]; then' in workflow
+    assert (
+        "news-archive/v1/reuters/${source_window}/commoncrawl-prefix"
+        in workflow
+    )
+    assert '--input "$supplemental_source_manifest"' in workflow
+
+
 def test_accelerator_merges_ap_legacy_supplemental_manifest() -> None:
     workflow = _workflow_text()
 

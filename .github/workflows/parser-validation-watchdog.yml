@@ -190,6 +190,9 @@ jobs:
           # failures instead of recording a capacity-deficient cell.
           supplemental_capacity_roots=(
             "ap/2010-2015/legacy-archive"
+            "reuters/2010-2015/commoncrawl-prefix"
+            "reuters/2016-2020/commoncrawl-prefix"
+            "reuters/2021-2026/commoncrawl-prefix"
             "nikkei/2010-2015/commoncrawl-prefix"
             "nikkei/2016-2026/commoncrawl-prefix"
             "scmp/2010-2015/commoncrawl-prefix"

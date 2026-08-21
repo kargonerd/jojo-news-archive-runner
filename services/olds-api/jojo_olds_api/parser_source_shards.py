@@ -59,6 +59,15 @@ def parser_supplemental_manifest_shards(
     parser_source_manifest_shard(publisher, year)
     if publisher == "ap" and year <= 2015:
         return ("ap/2010-2015/legacy-archive",)
+    if publisher == "reuters":
+        window = (
+            "2010-2015"
+            if year <= 2015
+            else "2016-2020"
+            if year <= 2020
+            else "2021-2026"
+        )
+        return (f"reuters/{window}/commoncrawl-prefix",)
     if publisher in {"npr", "caixin"}:
         return (f"{publisher}/{year}-{year}/commoncrawl-prefix",)
     if publisher == "axios":

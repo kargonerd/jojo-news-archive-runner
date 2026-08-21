@@ -23,6 +23,9 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert '"ap/2010-2015/legacy-archive"' in workflow
     assert '--include "*manifest-summary.json"' in workflow
     for supplemental_root in (
+        '"reuters/2010-2015/commoncrawl-prefix"',
+        '"reuters/2016-2020/commoncrawl-prefix"',
+        '"reuters/2021-2026/commoncrawl-prefix"',
         '"nikkei/2010-2015/commoncrawl-prefix"',
         '"nikkei/2016-2026/commoncrawl-prefix"',
         '"scmp/2010-2015/commoncrawl-prefix"',
