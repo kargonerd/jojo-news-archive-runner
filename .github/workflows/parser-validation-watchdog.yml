@@ -37,7 +37,7 @@ env:
   # other in-scope publisher eligible for per-year 800-row validation; the
   # planner filters years whose source catalogs are unavailable or exhausted.
   VALIDATION_PUBLISHERS: >-
-    ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin reuters
+    ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin
   # Manual runs from a parser-iteration branch must dispatch jobs from that
   # same ref; scheduled runs on the default branch continue to use main.
   DISPATCH_REF: ${{ github.ref_name }}
