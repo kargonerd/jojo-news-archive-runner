@@ -206,3 +206,9 @@ jobs:
             -f max_pages="$MAX_PAGES" \
             -f max_queries="$MAX_QUERIES" \
             -f auto_continue=true
+
+      - name: Wake parser validation watchdog
+        if: ${{ always() && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/kick-parser-watchdog.sh

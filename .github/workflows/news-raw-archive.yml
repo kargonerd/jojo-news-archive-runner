@@ -1024,6 +1024,12 @@ jobs:
           echo "Unable to dispatch the next archive batch after 5 attempts." >&2
           exit 1
 
+      - name: Wake parser validation watchdog
+        if: ${{ always() && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/kick-parser-watchdog.sh
+
       - name: Propagate capture failure after checkpoint
         if: >-
           ${{
