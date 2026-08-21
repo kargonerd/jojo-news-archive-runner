@@ -14,7 +14,7 @@ _QA_POLICY_REVISIONS = {
     # title is exactly "Subscribe to read | Financial Times". Exclude the
     # navigation/upsell chrome from the article denominator while retaining
     # the raw capture for provenance.
-    "ft": 2,
+    "ft": 3,
     "axios": 5,
     "caixin": 1,
     # SCMP access shells, image-only slideshow packages, and archived live

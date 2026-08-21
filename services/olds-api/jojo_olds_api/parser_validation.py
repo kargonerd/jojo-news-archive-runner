@@ -212,6 +212,22 @@ def _has_publisher_interface_noise(
         return any(
             "stay briefed with our coronavirus newsletter" in text
             or text == "."
+            or text.startswith(
+                "subscribe to the rachman review wherever you get your "
+                "podcasts"
+            )
+            or text == "sign up for the survey!"
+            or (
+                text.startswith("sign up for the britain")
+                and "healthiest workplace survey" in text
+            )
+            or text.startswith(
+                "sign up for the financial times markets news channel"
+            )
+            or re.match(
+                r"^sign up for the ft(?:'|’)s due diligence newsletter\b",
+                text,
+            ) is not None
             or (
                 text.startswith("sign up to scoreboard")
                 and "must-read weekly briefing" in text

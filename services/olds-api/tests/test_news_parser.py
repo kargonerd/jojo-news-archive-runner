@@ -3066,6 +3066,31 @@ def test_ft_parser_removes_standalone_separator_list_items():
     assert all(block.text != "." for block in result.blocks)
 
 
+def test_ft_parser_removes_podcast_and_survey_campaign_promos():
+    reporting = " ".join(["Financial Times reporting sentence."] * 30)
+    result = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="A complete FT report">
+          <meta property="article:published_time"
+                content="2023-01-01T00:00:00Z">
+        </head><body><article><div class="article-body">
+          <p>{reporting}</p>
+          <p>Subscribe to the Rachman Review wherever you get your podcasts
+             - please listen, rate and subscribe.</p>
+          <p>Sign up for the survey!</p>
+          <p>Sign up for the Financial Times markets news channel here.</p>
+          <p>Sign up for the FT’s Due Diligence newsletter: https://ft.com/due-diligence</p>
+        </div></article></body></html>
+        """.encode(),
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/campaign-promos",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.plain_text == reporting
+
+
 def test_ft_parser_rejects_current_open_graph_brand_icon():
     result = parse_article(
         b"""

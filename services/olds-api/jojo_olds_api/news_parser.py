@@ -12836,6 +12836,29 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
         ):
             node.decompose()
             continue
+        # Recent FT podcast, survey, and channel pages flatten promotional
+        # calls-to-action into the article body. They are interface chrome,
+        # not reporting, and otherwise contaminate parser QA samples.
+        if (
+            folded_text.startswith(
+                "subscribe to the rachman review wherever you get your "
+                "podcasts"
+            )
+            or folded_text == "sign up for the survey!"
+            or (
+                folded_text.startswith("sign up for the britain")
+                and "healthiest workplace survey" in folded_text
+            )
+            or folded_text.startswith(
+                "sign up for the financial times markets news channel"
+            )
+            or re.match(
+                r"^sign up for the ft(?:'|’)s due diligence newsletter\b",
+                folded_text,
+            )
+        ):
+            node.decompose()
+            continue
         if re.fullmatch(
             r"(?:us and canada|asia|uk, europe and rest of the world)\s*:\s*"
             r"\+?[\d ()-]+"
