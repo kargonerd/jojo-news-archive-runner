@@ -1561,6 +1561,17 @@ def record_parser_validation(
                 and "to read the full story" in raw_text
             ):
                 issues.append("nonarticle-desk")
+            # Legacy WSJ Video Center pages can retain a headline, a player,
+            # and a one-line description while the transcript is absent from
+            # the archive.  The parser correctly classifies these captures as
+            # VIDEO, but the short description must not count as an article
+            # sample.  Keep the raw capture for provenance and replace it in
+            # the independent article cohort.
+            if (
+                nontext_content
+                and article.quality.body_characters < 200
+            ):
+                issues.append("nonarticle-desk")
         # Some legacy NYT ``admin`` package pages survive in Wayback with
         # only a short teaser; their client-rendered listicle body is absent
         # from the archived HTML. Keep the raw capture, but do not count an

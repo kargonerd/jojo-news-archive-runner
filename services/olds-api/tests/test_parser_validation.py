@@ -1525,7 +1525,7 @@ def test_qa_revision_change_replays_without_replacing_cohort(
         )
     )
 
-    assert refreshed["parserVersion"] == "wsj-parser/0.8.60"
+    assert refreshed["parserVersion"] == "wsj-parser/0.8.61"
     assert refreshed["qaRevision"] == 3
     assert refreshed["years"]["2020"]["evaluated"] == 0
     assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 0
@@ -3802,7 +3802,7 @@ def test_wsj_media_unsupported_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2018, 1, 'test', 'wsj-parser/0.8.60', 3, 'now')
+        ) VALUES (2018, 1, 'test', 'wsj-parser/0.8.61', 3, 'now')
         """
     )
     connection.execute(
@@ -3848,6 +3848,72 @@ def test_wsj_media_unsupported_shell_is_excluded_from_article_cohort(
     assert result["issues"] == ["nonarticle-desk"]
     assert summary["years"]["2018"]["evaluated"] == 0
     assert summary["years"]["2018"]["screenedNonArticles"] == 1
+
+
+def test_wsj_short_video_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.wsj.com/articles/legacy-video-1469663359"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2016, 1, 'test', 'wsj-parser/0.8.61', 3, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2016, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A Legacy WSJ Video">
+      <meta property="article:published_time" content="2016-07-27T00:00:00Z">
+    </head><body><article>
+      <div id="masterVideoCenter"></div>
+      <div id="videoPlayerDescription"><p>Watch the video.</p></div>
+    </article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="wsj:" + ("v" * 64),
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at=datetime(2016, 7, 27, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20160728000000id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "complete"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2016"]["evaluated"] == 0
+    assert summary["years"]["2016"]["screenedNonArticles"] == 1
 
 
 def test_empty_axios_video_does_not_fill_article_validation_target(
