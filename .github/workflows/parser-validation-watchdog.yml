@@ -571,6 +571,8 @@ jobs:
             echo "Supplemental Common Crawl concurrency is full ($active_catalog_count/$MAX_CATALOG_CONCURRENCY); skip dispatch."
             exit 0
           fi
+          catalog_slots=$((MAX_CATALOG_CONCURRENCY - active_catalog_count))
+          echo "Supplemental Common Crawl slots available: $catalog_slots"
           # Capacity-deficient publishers come first so that two parallel
           # slots cannot be consumed by WSJ's two historical windows alone.
           # Once these queues are exhausted, the WSJ windows resume as the
@@ -644,7 +646,11 @@ jobs:
                 -f target_articles_per_year=3000 \
                 -f auto_continue=true
               echo "Dispatched supplemental Common Crawl catalog: $title"
-              break
+              catalog_slots=$((catalog_slots - 1))
+              if [ "$catalog_slots" -le 0 ]; then
+                break
+              fi
+              continue
             fi
             publisher="$(jq -r '.publisher' <<<"$task")"
             from_year="$(jq -r '.fromYear' <<<"$task")"
@@ -700,7 +706,10 @@ jobs:
               -f target_articles_per_year=1200 \
               -f auto_continue=true
             echo "Dispatched supplemental Common Crawl catalog: $title"
-            break
+            catalog_slots=$((catalog_slots - 1))
+            if [ "$catalog_slots" -le 0 ]; then
+              break
+            fi
           done < <(jq -c '.[]' <<<"$queue")
 
       - name: Dispatch missing publisher years
