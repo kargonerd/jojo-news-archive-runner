@@ -2822,7 +2822,7 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
         )
-                VALUES (2020, 1, 'test', 'nyt-parser/0.8.81', 4, 'now')
+                VALUES (2020, 1, 'test', 'nyt-parser/0.8.81', 5, 'now')
         """
     )
     connection.execute(
@@ -2936,7 +2936,7 @@ def test_nyt_short_nonarticle_packages_are_screened(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (?, 1, 'test', 'nyt-parser/0.8.81', 4, 'now')
+        ) VALUES (?, 1, 'test', 'nyt-parser/0.8.81', 5, 'now')
         """,
         (sample_year,),
     )
@@ -2978,6 +2978,73 @@ def test_nyt_short_nonarticle_packages_are_screened(
     assert result["issues"] == ["nonarticle-desk"]
     assert summary["years"][str(sample_year)]["evaluated"] == 0
     assert summary["years"][str(sample_year)]["screenedNonArticles"] == 1
+
+
+def test_nyt_empty_story_shell_is_screened_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.nytimes.com/2022/08/26/opinion/sweat-benefits.html"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2022, 1, 'test', 'nyt-parser/0.8.81', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2022, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Opinion | In Praise of Sweat">
+      <meta property="article:published_time"
+            content="2022-08-26T23:00:06.000Z">
+    </head><body>
+      <article id="story"></article>
+      <p class="author-bio">Mona Chalabi is an illustrator and data journalist.</p>
+    </body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="nyt:" + ("s" * 64),
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at=datetime(2022, 8, 26, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20220902000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] in {"unsupported", "partial"}
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2022"]["evaluated"] == 0
+    assert summary["years"]["2022"]["screenedNonArticles"] == 1
 
 
 def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
@@ -4271,7 +4338,7 @@ def test_nyt_print_utility_entry_is_screened_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-                ) VALUES (?, 1, 'test', 'nyt-parser/0.8.81', 4, 'now')
+                ) VALUES (?, 1, 'test', 'nyt-parser/0.8.81', 5, 'now')
         """,
         (sample_year,),
     )

@@ -1632,6 +1632,22 @@ def record_parser_validation(
             ):
                 issues.append("nonarticle-desk")
         if (
+            capture.publisher == "nyt"
+            and article.quality.status != ArticleStatus.COMPLETE
+            and article.quality.body_characters < 200
+        ):
+            # Some Wayback snapshots preserve the NYT shell and metadata but
+            # leave the canonical story container empty.  The remaining text
+            # is often an author bio or navigation fragment, not recoverable
+            # article prose.  Keep the raw capture, but exclude this
+            # source-limited shell from the article denominator.
+            nyt_soup = BeautifulSoup(html_bytes, "html.parser")
+            story = nyt_soup.find("article", id="story")
+            if story is not None and not _normalize_text(
+                story.get_text(" ", strip=True)
+            ):
+                issues.append("nonarticle-desk")
+        if (
             capture.publisher == "aljazeera"
             and article.quality.body_characters < 300
             and article.plain_text.casefold().startswith(
