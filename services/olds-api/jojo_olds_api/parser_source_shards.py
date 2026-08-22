@@ -68,8 +68,18 @@ def parser_supplemental_manifest_shards(
             else "2021-2026"
         )
         return (f"reuters/{window}/commoncrawl-prefix",)
-    if publisher in {"npr", "caixin"}:
-        return (f"{publisher}/{year}-{year}/commoncrawl-prefix",)
+    if publisher == "npr":
+        shards = [f"npr/{year}-{year}/commoncrawl-prefix"]
+        # A completed broad NPR catalog covers 2012--2016 and contains
+        # substantially more dated candidates than the early per-year
+        # supplements. Keep both sources in the capacity union so a cell can
+        # reopen when that catalog is present without discarding the existing
+        # per-year checkpoint.
+        if 2012 <= year <= 2016:
+            shards.append("npr/2012-2016/commoncrawl-prefix")
+        return tuple(shards)
+    if publisher == "caixin":
+        return (f"caixin/{year}-{year}/commoncrawl-prefix",)
     if publisher == "axios":
         return ("axios/2017-2026/sitemap-wayback",)
     if publisher == "nikkei":

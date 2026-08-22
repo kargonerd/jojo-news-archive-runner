@@ -43,6 +43,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     ):
         assert supplemental_root in workflow
     assert '"npr/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"' in workflow
+    assert '"npr/2012-2016/commoncrawl-prefix"' in workflow
     assert "--source-capacity-root" in workflow
     assert "Dispatch supplemental Common Crawl catalog" in workflow
     assert "capacity_deficient_cells=$(jq -r '.capacityDeficientCells // 0'" in workflow

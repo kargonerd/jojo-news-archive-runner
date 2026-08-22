@@ -211,6 +211,12 @@ jobs:
             # year.  The primary Wayback shard spans a wider source window,
             # so reusing that window here silently ignores the new catalog.
             supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/${SAMPLE_YEAR}-${SAMPLE_YEAR}/commoncrawl-prefix"
+            if [ "$SAMPLE_YEAR" -ge 2012 ] && [ "$SAMPLE_YEAR" -le 2016 ]; then
+              # The broad 2012--2016 catalog has a much larger dated pool
+              # than the thin per-year supplements. Merge it as a second
+              # independent source without replacing the year checkpoint.
+              auxiliary_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/2012-2016/commoncrawl-prefix"
+            fi
           elif [ "$PUBLISHER" = "axios" ]; then
             # Keep the official monthly sitemap as the primary supplement;
             # Common Crawl is a second independent catalog and materially

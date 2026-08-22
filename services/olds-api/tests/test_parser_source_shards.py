@@ -61,6 +61,22 @@ def test_parser_source_manifest_shard_rejects_unsupported_cells(
         ("caixin", 2018, ("caixin/2018-2018/commoncrawl-prefix",)),
         ("npr", 2010, ("npr/2010-2010/commoncrawl-prefix",)),
         ("axios", 2025, ("axios/2017-2026/sitemap-wayback",)),
+        (
+            "npr",
+            2012,
+            (
+                "npr/2012-2012/commoncrawl-prefix",
+                "npr/2012-2016/commoncrawl-prefix",
+            ),
+        ),
+        (
+            "npr",
+            2016,
+            (
+                "npr/2016-2016/commoncrawl-prefix",
+                "npr/2012-2016/commoncrawl-prefix",
+            ),
+        ),
         ("nikkei", 2014, ("nikkei/2010-2015/commoncrawl-prefix",)),
         ("nikkei", 2024, ("nikkei/2016-2026/commoncrawl-prefix",)),
         ("wsj", 2011, ("wsj/2010-2015/commoncrawl-prefix",)),
