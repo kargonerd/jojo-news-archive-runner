@@ -29,10 +29,11 @@ env:
   # still draining. This prevents a parser fix from waiting behind a stale
   # long-running capture chain without broadly increasing concurrency.
   MAX_SUPERSEDED_REFRESH_DISPATCH: "1"
-  # Keep one slot available for parser iteration while long catalog chains
-  # fill the other slot. This avoids blocking all 800-sample work behind the
-  # slowest historical CDX prefix.
-  MAX_CATALOG_CONCURRENCY: "1"
+  # Keep two independent catalog chains moving while the parser-validation
+  # scheduler continues to reserve standard slots for 800-sample cohorts.
+  # Common Crawl workflows are keyed by publisher/window, so this does not
+  # collide with a different publisher's resumable chain.
+  MAX_CATALOG_CONCURRENCY: "2"
   # Bloomberg has completed the current research acceptance cycle. Keep every
   # other in-scope publisher eligible for per-year 800-row validation; the
   # planner filters years whose source catalogs are unavailable or exhausted.
@@ -552,11 +553,11 @@ jobs:
         run: |
           set -euo pipefail
           active_titles="$RUNNER_TEMP/active-titles.txt"
-          # MAX_CATALOG_CONCURRENCY is one. The bootstrap source planner has
-          # already reported no task, so keep at most one supplemental
-          # capacity-recovery chain. It may run alongside baseline archive or
-          # Common Crawl chains because it only builds a compact catalog and
-          # does not download validation HTML.
+          # The bootstrap source planner has already reported no ordinary
+          # task. Keep the supplemental capacity-recovery chains within the
+          # MAX_CATALOG_CONCURRENCY budget. They may run alongside baseline
+          # archive jobs because they only build compact catalogs and do not
+          # download validation HTML.
           parser_active_count="$(grep -Ec '^parser-' "$active_titles" || true)"
           capacity_deficient_cells="${CAPACITY_DEFICIENT_CELLS:-0}"
           if [ "$parser_active_count" -ge 2 ] && \
@@ -564,9 +565,10 @@ jobs:
             echo "Both standard parser slots are occupied; skip supplemental dispatch."
             exit 0
           fi
-          if grep -Eq '^(wsj-common-crawl-|caixin-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-)' \
-              "$active_titles"; then
-            echo "A supplemental Common Crawl chain is already active; skip dispatch."
+          active_catalog_count="$(grep -Ec '^(wsj-common-crawl-|caixin-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-)' \
+              "$active_titles" || true)"
+          if [ "$active_catalog_count" -ge "$MAX_CATALOG_CONCURRENCY" ]; then
+            echo "Supplemental Common Crawl concurrency is full ($active_catalog_count/$MAX_CATALOG_CONCURRENCY); skip dispatch."
             exit 0
           fi
           queue='[
