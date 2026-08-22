@@ -4255,7 +4255,7 @@ def test_caixin_photo_desk_does_not_fill_article_validation_target(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-            ) VALUES (2010, 1, 'test', 'caixin-parser/0.1.14', 1, 'now')
+            ) VALUES (2010, 1, 'test', 'caixin-parser/0.1.15', 1, 'now')
         """
     )
     connection.execute(
@@ -4304,6 +4304,78 @@ def test_caixin_photo_desk_does_not_fill_article_validation_target(
     assert summary["years"]["2010"]["screenedNonArticles"] == 1
     assert summary["years"]["2010"]["qaPassed"] == 0
     assert summary["ready"] is False
+
+
+def test_caixin_validation_plan_skips_photo_and_video_desks(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "caixin-validation-manifest.jsonl"
+    text_url = "https://china.caixin.com/2010-01-01/100100001.html"
+    photo_url = "https://photos.caixin.com/2010-01-01/100100002.html"
+    video_url = "https://video.caixin.com/2010-01-01/100100003.html"
+    rows = []
+    for url in (text_url, photo_url, video_url):
+        rows.append(
+            {
+                "publisher": "caixin",
+                "canonical_url": url,
+                "published_at": "2010-01-01T00:00:00Z",
+                "candidates": [
+                    CaptureCandidate(
+                        provider=CaptureProvider.WAYBACK,
+                        snapshot_url=(
+                            "https://web.archive.org/web/20100102000000id_/"
+                            + url
+                        ),
+                        captured_at=datetime(
+                            2010,
+                            1,
+                            2,
+                            tzinfo=timezone.utc,
+                        ),
+                        mime_type="text/html",
+                        status_code=200,
+                    ).model_dump(
+                        mode="json",
+                        by_alias=True,
+                        exclude_none=True,
+                    )
+                ],
+            }
+        )
+    manifest.write_text(
+        "".join(json.dumps(row, default=str) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="caixin",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="caixin",
+    )
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="caixin",
+        from_year=2010,
+        to_year=2010,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    selected = [
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    ]
+    assert selected == [text_url]
 
 
 @pytest.mark.parametrize(

@@ -423,6 +423,17 @@ def plan_validation_dispatch(
         if (
             bool(values["captureStateExhausted"])
             or (
+                # A parser/QA revision change is itself the reason to create
+                # a fresh zero-overlap cohort.  Do not let the previous
+                # cohort's screened/non-retryable tail block that first run;
+                # the source-manifest availability gate above still prevents
+                # dispatch when the raw source has fewer than 800 rows.
+                not (
+                    cell[0] == "caixin"
+                    and values.get("parserVersion") is None
+                    and values.get("qaRevision") is None
+                )
+                and
                 _effective_candidate_capacity(values) is not None
                 and int(_effective_candidate_capacity(values))
                 < int(values["target"])

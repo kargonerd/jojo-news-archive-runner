@@ -949,6 +949,38 @@ def test_watchdog_uses_stale_holdout_capacity_as_conservative_upper_bound(
     assert expanded_cell["capacityDeficient"] is False
 
 
+def test_watchdog_dispatches_fresh_parser_cohort_before_old_capacity_gate(
+    tmp_path: Path,
+):
+    shard = "caixin/2010-2015/wayback-urlkey"
+    _write_summary(
+        tmp_path,
+        "holdout-v216/caixin/2010/state/summary.json",
+        publisher="caixin",
+        year=2010,
+        evaluated=75,
+        parser_version="caixin-parser/0.1.14",
+        eligible_candidates=574,
+        excluded_candidates=5665,
+        screened_nonarticles=499,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["caixin"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2010: 5996}},
+    )
+
+    assert plan["tasks"][0]["cohort"] == "holdout-v217"
+    cell = plan["cellProgress"][0]
+    assert cell["parserVersion"] is None
+    assert cell["eligibleCandidateUpperBound"] == 75
+    assert cell["capacityDeficient"] is False
+
+
 def test_watchdog_treats_screened_nonarticles_as_exhausted_capacity(
     tmp_path: Path,
 ):

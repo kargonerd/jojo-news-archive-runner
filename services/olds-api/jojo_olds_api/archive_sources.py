@@ -59,6 +59,14 @@ _CAIXIN_EDITORIAL_HOSTS = (
     "video.caixin.com",
 )
 
+# These pages are retained by the raw archive for provenance, but they are
+# image/video packages rather than text-news articles.  Sampling them into a
+# parser cohort wastes one of the fixed 800 article slots and can make a
+# source look artificially capacity-deficient after QA screens them.
+_PARSER_VALIDATION_NONARTICLE_HOSTS = {
+    "caixin": frozenset({"photos.caixin.com", "video.caixin.com"}),
+}
+
 
 ARCHIVE_SOURCE_SPECS = {
     "ap": ArchiveSourceSpec(
@@ -468,6 +476,28 @@ def normalize_article_url(
         else spec.canonical_host
     )
     return urlunsplit(("https", normalized_host, path, "", ""))
+
+
+def is_parser_validation_candidate(
+    spec: ArchiveSourceSpec,
+    value: str,
+) -> bool:
+    """Return whether a canonical source URL may occupy a text QA slot.
+
+    The raw archive deliberately keeps non-text desks.  This narrower
+    predicate is only for the parser-validation sampler, where a photo/video
+    package cannot satisfy the article-body gate and should be skipped before
+    the random 800-row draw.
+    """
+
+    normalized = normalize_article_url(spec, value)
+    if normalized is None:
+        return False
+    hostname = (urlsplit(normalized).hostname or "").casefold()
+    return hostname not in _PARSER_VALIDATION_NONARTICLE_HOSTS.get(
+        spec.publisher,
+        (),
+    )
 
 
 def article_deduplication_key(
