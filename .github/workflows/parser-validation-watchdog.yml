@@ -535,8 +535,8 @@ jobs:
             exit 0
           fi
           queue='[
-            {"publisher":"wsj","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
-            {"publisher":"wsj","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
+            {"publisher":"wsj","fromYear":"2010","toYear":"2015","collectionFromYear":"2014","collectionToYear":"2016","collectionOrder":"newest"},
+            {"publisher":"wsj","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"newest"},
             {"kind":"caixin","year":"2010"},
             {"kind":"caixin","year":"2011"},
             {"kind":"caixin","year":"2012"},
@@ -612,6 +612,7 @@ jobs:
             # Keep 50% headroom above the 800-article validation target;
             # larger catalogs create a long, low-value date-hydration tail.
             hydrations=200
+            queries=8
             case "$publisher" in
               wsj|aljazeera|axios|nyt|ap|zaobao|caixin)
                 # These sources expose a publication date in the canonical
@@ -620,6 +621,12 @@ jobs:
                 hydrations=0
                 ;;
             esac
+            if [ "$publisher" = "wsj" ]; then
+              # WSJ has sparse but useful captures in the 2014-2016
+              # collections. Scan a larger bounded slice so the catalog does
+              # not spend dozens of runs exhausting empty legacy prefixes.
+              queries=32
+            fi
             gh workflow run nikkei-common-crawl-catalog.yml \
               --ref "$DISPATCH_REF" \
               -f publisher="$publisher" \
@@ -627,9 +634,9 @@ jobs:
               -f to_year="$to_year" \
               -f collection_from_year="$(jq -r '.collectionFromYear' <<<"$task")" \
               -f collection_to_year="$(jq -r '.collectionToYear' <<<"$task")" \
-              -f collection_order=oldest \
+              -f collection_order="$(jq -r '.collectionOrder // "oldest"' <<<"$task")" \
               -f max_pages=1 \
-              -f max_queries=8 \
+              -f max_queries="$queries" \
               -f max_hydrations="$hydrations" \
               -f target_articles_per_year=1200 \
               -f auto_continue=true
