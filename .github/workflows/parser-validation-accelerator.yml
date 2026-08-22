@@ -254,6 +254,11 @@ jobs:
           elif [ "$PUBLISHER" = "aljazeera" ]; then
             source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
             supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/aljazeera/${source_window}/commoncrawl-prefix"
+            # Older years can exhaust the broad sitemap after several
+            # independent holdouts. A year-scoped URL-key catalog adds legacy
+            # paths outside that sitemap when one has been catalogued; missing
+            # auxiliary roots remain optional for other years.
+            auxiliary_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/aljazeera/${SAMPLE_YEAR}-${SAMPLE_YEAR}/wayback-urlkey"
           elif [ "$PUBLISHER" = "ap" ]; then
             source_window="$(cut -d/ -f2 <<<"$SOURCE_MANIFEST_SHARD")"
             supplemental_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/ap/${source_window}/legacy-archive"
