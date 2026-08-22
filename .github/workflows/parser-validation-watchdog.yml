@@ -611,6 +611,15 @@ jobs:
             fi
             # Keep 50% headroom above the 800-article validation target;
             # larger catalogs create a long, low-value date-hydration tail.
+            hydrations=200
+            case "$publisher" in
+              wsj|aljazeera|axios|nyt|ap|zaobao|caixin)
+                # These sources expose a publication date in the canonical
+                # URL or are catalogued through a publisher-specific source;
+                # the shared WARC date hydrator does not support them.
+                hydrations=0
+                ;;
+            esac
             gh workflow run nikkei-common-crawl-catalog.yml \
               --ref "$DISPATCH_REF" \
               -f publisher="$publisher" \
@@ -621,7 +630,7 @@ jobs:
               -f collection_order=oldest \
               -f max_pages=1 \
               -f max_queries=8 \
-              -f max_hydrations=200 \
+              -f max_hydrations="$hydrations" \
               -f target_articles_per_year=1200 \
               -f auto_continue=true
             echo "Dispatched supplemental Common Crawl catalog: $title"

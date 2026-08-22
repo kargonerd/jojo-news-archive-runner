@@ -21,7 +21,10 @@ def test_catalog_hydrates_dates_and_checkpoints_private_state() -> None:
     assert '--collection-order "$COLLECTION_ORDER"' in workflow
     assert 'default: "oldest"' in workflow
     assert '--target-articles-per-year "$TARGET_ARTICLES_PER_YEAR"' in workflow
-    assert '--max-date-hydrations "$MAX_HYDRATIONS"' in workflow
+    assert 'MAX_HYDRATIONS: ${{ inputs.max_hydrations }}' in workflow
+    assert 'effective_max_hydrations="$MAX_HYDRATIONS"' in workflow
+    assert 'wsj|aljazeera|axios|nyt|ap|zaobao|caixin)' in workflow
+    assert '--max-date-hydrations "$effective_max_hydrations"' in workflow
     assert "--data-min-request-interval 0.5" in workflow
     assert "--page-size 1000" in workflow
     assert "verify_b2_private_bucket.py" in workflow

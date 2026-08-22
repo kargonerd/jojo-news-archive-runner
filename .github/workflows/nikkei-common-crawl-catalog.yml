@@ -187,6 +187,18 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
+          # Some publishers encode the publication day in their canonical
+          # URL (for example WSJ's trailing epoch identifier, or Al
+          # Jazeera's legacy date path). They do not need a WARC-body date
+          # hydration pass, and the hydrator intentionally rejects them.
+          # Keep the shared workflow reusable while making those catalog
+          # runs discovery-only instead of failing after index collection.
+          effective_max_hydrations="$MAX_HYDRATIONS"
+          case "$PUBLISHER" in
+            wsj|aljazeera|axios|nyt|ap|zaobao|caixin)
+              effective_max_hydrations=0
+              ;;
+          esac
           python services/olds-api/tools/build_common_crawl_prefix_manifest.py \
             --publisher "$PUBLISHER" \
             --from-year "$FROM_YEAR" \
@@ -201,7 +213,7 @@ jobs:
             --max-queries "$MAX_QUERIES" \
             --max-errors 4 \
             --target-articles-per-year "$TARGET_ARTICLES_PER_YEAR" \
-            --max-date-hydrations "$MAX_HYDRATIONS" \
+            --max-date-hydrations "$effective_max_hydrations" \
             --min-request-interval 3 \
             --data-min-request-interval 0.5 \
             --timeout 45 \

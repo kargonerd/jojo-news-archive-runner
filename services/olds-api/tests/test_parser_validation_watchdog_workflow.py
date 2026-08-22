@@ -51,6 +51,9 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert '"publisher":"wsj","fromYear":"2010","toYear":"2015"' in workflow
     assert "wsj-common-crawl-|caixin-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-" in workflow
     assert "A supplemental Common Crawl chain is already active" in workflow
+    assert "hydrations=200" in workflow
+    assert 'wsj|aljazeera|axios|nyt|ap|zaobao|caixin)' in workflow
+    assert '-f max_hydrations="$hydrations"' in workflow
     assert "Both standard parser slots are occupied" in workflow
     assert 'jq -e \'.shouldContinue == false\'' in workflow
     assert "- name: Restore validation summaries\n        timeout-minutes: 25" in workflow
