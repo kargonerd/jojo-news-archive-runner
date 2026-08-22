@@ -35,10 +35,10 @@ env:
   # collide with a different publisher's resumable chain.
   MAX_CATALOG_CONCURRENCY: "2"
   # Bloomberg has completed the current research acceptance cycle. Keep every
-  # other in-scope publisher eligible for per-year 800-row validation; the
-  # planner filters years whose source catalogs are unavailable or exhausted.
+  # other currently requested publisher eligible for per-year 800-row
+  # validation; Caixin is intentionally paused and is not dispatched here.
   VALIDATION_PUBLISHERS: >-
-    ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin
+    ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp
   # Manual runs from a parser-iteration branch must dispatch jobs from that
   # same ref; scheduled runs on the default branch continue to use main.
   DISPATCH_REF: ${{ github.ref_name }}
@@ -570,9 +570,8 @@ jobs:
             echo "Both standard parser slots are occupied; skip supplemental dispatch."
             exit 0
           fi
-          active_catalog_count="$(grep -Ec '^(wsj-common-crawl-|caixin-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-)' \
+          active_catalog_count="$(grep -Ec '^(wsj-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-)' \
               "$active_titles" || true)"
-          active_caixin_count="$(grep -Ec '^caixin-common-crawl-' "$active_titles" || true)"
           if [ "$active_catalog_count" -ge "$MAX_CATALOG_CONCURRENCY" ]; then
             echo "Supplemental Common Crawl concurrency is full ($active_catalog_count/$MAX_CATALOG_CONCURRENCY); skip dispatch."
             exit 0
@@ -584,89 +583,14 @@ jobs:
           # Once these queues are exhausted, the WSJ windows resume as the
           # remaining broad source-recovery work.
           queue='[
-            {"kind":"caixin","year":"2010"},
-            {"kind":"caixin","year":"2011"},
-            {"kind":"caixin","year":"2012"},
-            {"kind":"caixin","year":"2013"},
-            {"kind":"caixin","year":"2014"},
-            {"kind":"caixin","year":"2015"},
-            {"kind":"caixin","year":"2016"},
-            {"kind":"caixin","year":"2017"},
-            {"kind":"caixin","year":"2018"},
             {"publisher":"scmp","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
             {"publisher":"aljazeera","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
             {"publisher":"scmp","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
             {"publisher":"aljazeera","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
-            {"kind":"caixin","year":"2019"},
-            {"kind":"caixin","year":"2020"},
-            {"kind":"caixin","year":"2021"},
-            {"kind":"caixin","year":"2022"},
-            {"kind":"caixin","year":"2023"},
-            {"kind":"caixin","year":"2024"},
-            {"kind":"caixin","year":"2025"},
-            {"kind":"caixin","year":"2026"},
             {"publisher":"wsj","fromYear":"2010","toYear":"2015","collectionFromYear":"2014","collectionToYear":"2016","collectionOrder":"newest"},
             {"publisher":"wsj","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"newest"}
           ]'
           while IFS= read -r task; do
-            kind="$(jq -r '.kind // "prefix"' <<<"$task")"
-            if [ "$kind" = "caixin" ]; then
-              year="$(jq -r '.year' <<<"$task")"
-              title="caixin-common-crawl-${year}"
-              # Keep one catalog slot available for another capacity-limited
-              # publisher. A Caixin chain auto-continues across many bounded
-              # runs, so allowing two simultaneous year chains would starve
-              # SCMP and Al Jazeera until all Caixin years finish.
-              if [ "$active_caixin_count" -ge 1 ]; then
-                echo "A Caixin chain already occupies its reserved slot; defer $title"
-                continue
-              fi
-              if grep -Fxq "$title" "$active_titles"; then
-                echo "Common Crawl chain already active: $title"
-                continue
-              fi
-              source_root="caixin/${year}-${year}/commoncrawl-prefix"
-              summary="$RUNNER_TEMP/common-crawl-caixin-${year}.json"
-              if rclone copyto \
-                  "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state/summary.json" \
-                  "$summary" \
-                  --timeout 20s --contimeout 10s \
-                  --retries 2 --low-level-retries 4 \
-                  >/dev/null 2>&1 \
-                && jq -e '.shouldContinue == false' "$summary" >/dev/null; then
-                echo "Common Crawl catalog already complete: $title"
-                continue
-              fi
-              # The generic publisher workflow is present on the default
-              # branch and accepts Caixin's year-scoped prefix catalog. The
-              # old caixin-only workflow exists only on this research branch,
-              # so dispatching it through the Actions API returns 404 when
-              # the branch is used as the watchdog ref.
-              collection_from_year="$year"
-              if [ "$collection_from_year" -lt 2012 ]; then
-                collection_from_year=2012
-              fi
-              gh workflow run nikkei-common-crawl-catalog.yml \
-                --ref "$DISPATCH_REF" \
-                -f publisher=caixin \
-                -f from_year="$year" \
-                -f to_year="$year" \
-                -f collection_from_year="$collection_from_year" \
-                -f collection_to_year=2026 \
-                -f collection_order=newest \
-                -f max_pages=20 \
-                -f max_queries=80 \
-                -f max_hydrations=0 \
-                -f target_articles_per_year=3000 \
-                -f auto_continue=true
-              echo "Dispatched supplemental Common Crawl catalog: $title"
-              active_caixin_count=$((active_caixin_count + 1))
-              catalog_slots=$((catalog_slots - 1))
-              if [ "$catalog_slots" -le 0 ]; then
-                break
-              fi
-              continue
-            fi
             publisher="$(jq -r '.publisher' <<<"$task")"
             from_year="$(jq -r '.fromYear' <<<"$task")"
             to_year="$(jq -r '.toYear' <<<"$task")"

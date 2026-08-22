@@ -51,23 +51,17 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert 'steps.plan.outputs.capacity_deficient_cells != \'0\'' in workflow
     assert '[ "$capacity_deficient_cells" -eq 0 ]' in workflow
     assert "nikkei-common-crawl-catalog.yml" in workflow
-    assert "publisher=caixin" in workflow
-    assert "collection_from_year=\"$collection_from_year\"" in workflow
-    assert "target_articles_per_year=3000" in workflow
-    assert '{"kind":"caixin","year":"2010"}' in workflow
     assert workflow.index('"publisher":"scmp","fromYear":"2016"') < workflow.index(
         '"publisher":"aljazeera","fromYear":"2016"'
     )
-    assert workflow.index('"publisher":"scmp","fromYear":"2016"') < workflow.index(
-        '{"kind":"caixin","year":"2019"}'
-    )
     assert '"publisher":"wsj","fromYear":"2010","toYear":"2015","collectionFromYear":"2014","collectionToYear":"2016","collectionOrder":"newest"' in workflow
     assert '"publisher":"wsj","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"newest"' in workflow
-    assert "wsj-common-crawl-|caixin-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-" in workflow
+    assert "wsj-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-" in workflow
     assert 'MAX_CATALOG_CONCURRENCY: "2"' in workflow
     assert "active_catalog_count" in workflow
-    assert "active_caixin_count" in workflow
-    assert "A Caixin chain already occupies its reserved slot" in workflow
+    assert '"kind":"caixin"' not in workflow
+    assert "publisher=caixin" not in workflow
+    assert "active_caixin_count" not in workflow
     assert "catalog_slots=$((MAX_CATALOG_CONCURRENCY - active_catalog_count))" in workflow
     assert "catalog_slots=$((catalog_slots - 1))" in workflow
     assert "Supplemental Common Crawl concurrency is full" in workflow
@@ -93,10 +87,10 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "transient 5xx" in workflow
     assert "VALIDATION_PUBLISHERS:" in workflow
     assert (
-        "ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin"
+        "ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp"
         in workflow
     )
-    assert "other in-scope publisher eligible" in workflow
+    assert "other currently requested publisher eligible" in workflow
     assert "--publishers $VALIDATION_PUBLISHERS" in workflow
     assert "cohort=\"$(jq -r '.cohort'" in workflow
     assert '-f cohort="$cohort"' in workflow
