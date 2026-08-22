@@ -12212,6 +12212,7 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
             r"(?i)^sign up for the call on .+\bhere\s*\.?$"
         ),
         re.compile(r"(?i)^subscribe to (?:the )?.+ newsletter\b.*$"),
+        re.compile(r"(?i)^sign up for our virtual events\b.*$"),
         re.compile(
             r"(?i)^subscribe to the times space and astronomy calendar\b.*$"
         ),
