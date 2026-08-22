@@ -641,7 +641,16 @@ def _eligible_candidate_upper_bound(
             continue
         eligible = _integer(row.get("eligibleCandidates"))
         excluded = _integer(row.get("excludedCandidates"))
-        observed_capacity = eligible + excluded
+        # The source sidecar counts every URL, including deterministic
+        # photo/video/utility desks that the parser-validation planner cannot
+        # sample.  Include the current checkpoint's screened URL count when
+        # measuring how much unseen source capacity remains; otherwise a
+        # finite non-article tail can keep a year above the 800 gate forever.
+        nonarticle_candidates = max(
+            0,
+            _integer(row.get("nonArticleCandidates")),
+        )
+        observed_capacity = eligible + excluded + nonarticle_candidates
         growth = max(0, current_manifest_capacity - observed_capacity)
         cohort_number = _cohort_number(cohort)
         screened_nonarticles = max(

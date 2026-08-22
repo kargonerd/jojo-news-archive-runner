@@ -28,6 +28,7 @@ def _write_summary(
     eligible_candidates: int | None = None,
     excluded_candidates: int | None = None,
     screened_nonarticles: int = 0,
+    nonarticle_candidates: int | None = None,
     captures_by_status: dict[str, int] | None = None,
 ) -> None:
     path = root / relative_path
@@ -70,6 +71,10 @@ def _write_summary(
         payload["parserValidation"]["years"][str(year)][
             "excludedCandidates"
         ] = excluded_candidates
+    if nonarticle_candidates is not None:
+        payload["parserValidation"]["years"][str(year)][
+            "nonArticleCandidates"
+        ] = nonarticle_candidates
     path.write_text(
         json.dumps(payload),
         encoding="utf-8",
@@ -1011,6 +1016,37 @@ def test_watchdog_treats_screened_nonarticles_as_exhausted_capacity(
     assert cell["eligibleCandidates"] == 27
     assert cell["screenedNonArticles"] == 27
     assert cell["eligibleCandidateUpperBound"] == 0
+    assert cell["capacityDeficient"] is True
+
+
+def test_watchdog_subtracts_unselected_nonarticle_source_tail(
+    tmp_path: Path,
+):
+    shard = "caixin/2010-2015/wayback-urlkey"
+    _write_summary(
+        tmp_path,
+        "holdout-v217/caixin/2010/state/summary.json",
+        publisher="caixin",
+        year=2010,
+        evaluated=538,
+        eligible_candidates=538,
+        excluded_candidates=5094,
+        nonarticle_candidates=954,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["caixin"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2010: 5996}},
+    )
+
+    assert plan["tasks"] == []
+    assert plan["capacityDeficientCells"] == 1
+    cell = plan["cellProgress"][0]
+    assert cell["eligibleCandidateUpperBound"] == 538
     assert cell["capacityDeficient"] is True
 
 

@@ -2114,6 +2114,7 @@ def parser_validation_summary(
                 }
                 eligible_normalized: set[str] = set()
                 excluded_year_normalized: set[str] = set()
+                nonarticle_candidates = 0
                 for (canonical_url,) in connection.execute(
                     """
                     SELECT capture.canonical_url
@@ -2152,6 +2153,7 @@ def parser_validation_summary(
                         source_spec,
                         str(canonical_url),
                     ):
+                        nonarticle_candidates += 1
                         continue
                     if normalized in excluded_normalized:
                         excluded_year_normalized.add(normalized)
@@ -2159,6 +2161,7 @@ def parser_validation_summary(
                         eligible_normalized.add(normalized)
                 capacity["eligibleCandidates"] = len(eligible_normalized)
                 capacity["excludedCandidates"] = len(excluded_year_normalized)
+                capacity["nonArticleCandidates"] = nonarticle_candidates
         issue_counts: Counter[str] = Counter()
         failure_examples: list[dict[str, object]] = []
         failure_rows = connection.execute(
