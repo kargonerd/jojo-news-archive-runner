@@ -281,6 +281,11 @@ def _state_with_years(
                     f"https://www.npr.org/{year}/01/01/"
                     f"{year}{suffix:02d}/sample-{suffix}"
                 )
+            elif publisher == "caixin":
+                canonical_url = (
+                    f"https://www.caixin.com/{year}-01-01/"
+                    f"sample-{suffix}.html"
+                )
             else:
                 raise AssertionError(f"unsupported fixture: {publisher}")
             candidate = CaptureCandidate(
@@ -1141,6 +1146,78 @@ def test_validation_capacity_excludes_terminal_capture_errors(
 
     summary = parser_validation_summary(connection)
     assert summary["years"]["2020"]["eligibleCandidates"] == 9
+
+
+def test_validation_capacity_ignores_nonarticle_desk_rows(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path, publisher="caixin")
+    manifest = tmp_path / "caixin-desks.jsonl"
+    rows = [
+        {
+            "publisher": "caixin",
+            "canonical_url": (
+                "https://photos.caixin.com/2020-01-01/"
+                "photo-only.html"
+            ),
+            "published_at": "2020-01-01T00:00:00Z",
+            "candidates": [],
+        },
+        {
+            "publisher": "caixin",
+            "canonical_url": (
+                "https://video.caixin.com/2020-01-01/"
+                "video-only.html"
+            ),
+            "published_at": "2020-01-01T00:00:00Z",
+            "candidates": [],
+        },
+    ]
+    # The helper already loaded ten text-article rows for 2020; append two
+    # non-text desks with a valid archive candidate so they are visible to
+    # capacity accounting but remain ineligible for the article cohort.
+    candidate = CaptureCandidate(
+        provider=CaptureProvider.WAYBACK,
+        snapshot_url="https://web.archive.org/web/20200101000000id_/"
+        "https://photos.caixin.com/2020-01-01/photo-only.html",
+        captured_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        mime_type="text/html",
+        status_code=200,
+    )
+    rows[0]["candidates"] = [
+        candidate.model_dump(mode="json", by_alias=True, exclude_none=True)
+    ]
+    rows[1]["candidates"] = [
+        candidate.model_copy(
+            update={
+                "snapshot_url": candidate.snapshot_url.replace(
+                    "photos.caixin.com", "video.caixin.com"
+                )
+            }
+        ).model_dump(mode="json", by_alias=True, exclude_none=True)
+    ]
+    manifest.write_text(
+        "".join(json.dumps(row, default=str) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="caixin",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="caixin",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2020"]["eligibleCandidates"] == 10
+    assert summary["years"]["2020"]["planned"] == 2
 
 
 def test_validation_only_requires_validation_prioritization(tmp_path: Path):

@@ -2140,6 +2140,19 @@ def parser_validation_summary(
                     )
                     if normalized is None:
                         continue
+                    # Capacity must describe the same recoverable article
+                    # pool that the holdout planner samples.  Publisher
+                    # manifests intentionally retain photo/video/utility
+                    # desks for provenance, but those rows are screened out
+                    # by ``is_parser_validation_candidate`` and cannot fill
+                    # an 800-article text cohort.  Counting them here makes
+                    # source-limited years look healthy and causes the
+                    # watchdog to dispatch futile replacement batches.
+                    if not is_parser_validation_candidate(
+                        source_spec,
+                        str(canonical_url),
+                    ):
+                        continue
                     if normalized in excluded_normalized:
                         excluded_year_normalized.add(normalized)
                     else:
