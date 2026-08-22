@@ -415,8 +415,7 @@ def test_accelerator_merges_aljazeera_common_crawl_manifest() -> None:
         in workflow
     )
     assert (
-        "news-archive/v1/aljazeera/${SAMPLE_YEAR}-${SAMPLE_YEAR}/"
-        "wayback-urlkey"
+        "news-archive/v1/aljazeera/${source_window}/wayback-urlkey"
         in workflow
     )
     assert '--input "$supplemental_source_manifest"' in workflow
