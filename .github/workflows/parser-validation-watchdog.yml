@@ -182,8 +182,6 @@ jobs:
             "aljazeera/2016-2026/sitemap-wayback"
             "scmp/2010-2015/wayback-urlkey"
             "scmp/2016-2026/wayback-urlkey"
-            "caixin/2010-2015/wayback-urlkey"
-            "caixin/2016-2026/wayback-urlkey"
           )
           available_source_shards="$RUNNER_TEMP/available-source-shards.txt"
           source_capacity_root="$RUNNER_TEMP/source-capacity"
@@ -224,21 +222,6 @@ jobs:
           # Supplemental catalogs are merged by the accelerator per year.
           # Restore their capacity sidecars so a thin primary Wayback shard
           # does not hide a year with at least 800 Common Crawl candidates.
-          for supplemental_year in $(seq 2010 2026); do
-            supplemental_root="caixin/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"
-            capacity_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${supplemental_root}/catalog/manifest-summary.json"
-            if capacity_listing="$(
-              rclone lsl "$capacity_remote" \
-                --timeout 30s --contimeout 10s \
-                --retries 3 --low-level-retries 6 \
-                2>/dev/null
-            )" && [ -n "$capacity_listing" ]; then
-              capacity_local="${source_capacity_root}/${supplemental_root}/manifest-summary.json"
-              mkdir -p "$(dirname "$capacity_local")"
-              rclone copyto "$capacity_remote" "$capacity_local" \
-                --retries 8 --low-level-retries 20
-            fi
-          done
           # Restore capacity sidecars for the other catalog-only supplements
           # as well. Without these, the planner treats an omitted year as
           # unknown and can dispatch cells whose merged source has no unseen
@@ -297,6 +280,9 @@ jobs:
           # a current-version holdout that passes all gates is authoritative
           # convergence evidence and must not be dispatched again. Smoke
           # cohorts remain deliberately excluded.
+          # Keep the hierarchical listing on B2.  --fast-list first
+          # materializes every superseded capture object in this prefix,
+          # which can stall the watchdog before planning starts.
           rclone copy \
             "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v2/validation-state" \
             "$RUNNER_TEMP/archive-state" \
@@ -306,7 +292,6 @@ jobs:
             --include "holdout-v*/*/*/state/rotation-audit.json" \
             --include "validation/*/*/state/content-audit.json" \
             --include "holdout-v*/*/*/state/content-audit.json" \
-            --fast-list \
             --transfers 16 --checkers 32 \
             --retries 8 --low-level-retries 20
 
@@ -650,7 +635,7 @@ jobs:
               hydrations=500
             fi
             case "$publisher" in
-              wsj|aljazeera|axios|nyt|ap|zaobao|caixin)
+              wsj|aljazeera|axios|nyt|ap|zaobao)
                 # These sources expose a publication date in the canonical
                 # URL or are catalogued through a publisher-specific source;
                 # the shared WARC date hydrator does not support them.

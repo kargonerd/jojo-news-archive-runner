@@ -25,7 +25,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "available-source-shards.txt" in workflow
     assert "--available-source-shards" in workflow
     assert "manifest-summary.json" in workflow
-    assert 'supplemental_root="caixin/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"' in workflow
+    assert 'supplemental_root="caixin/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"' not in workflow
     assert '"ap/2010-2015/legacy-archive"' in workflow
     assert '--include "*manifest-summary.json"' in workflow
     for supplemental_root in (
@@ -75,7 +75,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert '"publisher":"npr","fromYear":"2016","toYear":"2016"' in workflow
     assert 'if [ "$publisher" = "npr" ]; then' in workflow
     assert "hydrations=500" in workflow
-    assert 'wsj|aljazeera|axios|nyt|ap|zaobao|caixin)' in workflow
+    assert 'wsj|aljazeera|axios|nyt|ap|zaobao)' in workflow
     assert '-f max_hydrations="$hydrations"' in workflow
     assert "queries=8" in workflow
     assert "queries=32" in workflow
