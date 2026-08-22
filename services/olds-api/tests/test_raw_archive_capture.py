@@ -42,6 +42,7 @@ from jojo_olds_api.raw_archive_capture import (
     _capture_nyt_interactive_resources,
     _caixin_capture_parser_evidence,
     _candidate_rejection_reasons,
+    _common_crawl_first_candidate_sort_key,
     _common_crawl_discovery_urls,
     _decode_archived_html_content,
     _ft_capture_parser_evidence,
@@ -4413,6 +4414,32 @@ def test_nikkei_candidate_order_prefers_large_commoncrawl_records():
     )
 
     assert ordered == [large_commoncrawl, small_commoncrawl, wayback]
+
+
+def test_aljazeera_candidate_order_prefers_commoncrawl_before_wayback():
+    wayback = CaptureCandidate(
+        provider=CaptureProvider.WAYBACK,
+        snapshot_url="https://web.archive.org/web/20160101000000id_/"
+        "https://www.aljazeera.com/features/example",
+        captured_at=datetime(2016, 1, 1, tzinfo=timezone.utc),
+        byte_count=200_000,
+    )
+    commoncrawl = CaptureCandidate(
+        provider=CaptureProvider.COMMON_CRAWL,
+        snapshot_url="https://data.commoncrawl.org/example.warc.gz",
+        captured_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        byte_count=59_000,
+    )
+
+    ordered = sorted(
+        (wayback, commoncrawl),
+        key=lambda value: _common_crawl_first_candidate_sort_key(
+            value,
+            published_at="2016-01-01T00:00:00+00:00",
+        ),
+    )
+
+    assert ordered == [commoncrawl, wayback]
 
 
 @pytest.mark.parametrize(

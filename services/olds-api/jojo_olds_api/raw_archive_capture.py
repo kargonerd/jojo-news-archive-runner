@@ -57,6 +57,7 @@ from .news_models import (
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.4",
+    "aljazeera": "aljazeera-capture/0.2.0",
     "axios": "axios-capture/0.1.1",
     "bloomberg": "bloomberg-capture/0.10.3",
     "caixin": "caixin-capture/0.1.1",
@@ -1396,17 +1397,18 @@ def capture_item(
                 # Retry continuations revisit the full candidate set and add
                 # timemap/secondary-archive fallbacks.
                 manifest_candidates = item.candidates[:1]
-            elif item.publisher == "nikkei":
-                # The merged Nikkei manifest normally contains Wayback rows
-                # before its Common Crawl supplement.  Wayback often serves a
-                # high-scoring member excerpt, while larger Common Crawl WARC
-                # records from the same article can contain the complete body.
-                # Probe the latter first, without weakening the parser gate;
-                # failed/partial records still fall through to Wayback.
+            elif item.publisher in {"aljazeera", "nikkei"}:
+                # The merged publisher manifests normally contain Wayback
+                # rows before their Common Crawl supplements. Wayback often
+                # serves a high-scoring shell or member excerpt, while larger
+                # Common Crawl WARC records from the same article can contain
+                # the complete body. Probe the latter first, without
+                # weakening the parser gate; failed/partial records still
+                # fall through to Wayback.
                 manifest_candidates = tuple(
                     sorted(
                         item.candidates,
-                        key=lambda candidate: _nikkei_candidate_sort_key(
+                        key=lambda candidate: _common_crawl_first_candidate_sort_key(
                             candidate,
                             published_at=item.published_at,
                         ),
@@ -6128,7 +6130,7 @@ def _timemap_candidate_sort_key(
     )
 
 
-def _nikkei_candidate_sort_key(
+def _common_crawl_first_candidate_sort_key(
     candidate: CaptureCandidate,
     *,
     published_at: str | None,
@@ -6142,6 +6144,18 @@ def _nikkei_candidate_sort_key(
             candidate,
             published_at=published_at,
         ),
+    )
+
+
+def _nikkei_candidate_sort_key(
+    candidate: CaptureCandidate,
+    *,
+    published_at: str | None,
+) -> tuple[bool, bool, int, tuple[float, str]]:
+    """Backward-compatible alias for the Nikkei capture policy."""
+    return _common_crawl_first_candidate_sort_key(
+        candidate,
+        published_at=published_at,
     )
 
 
