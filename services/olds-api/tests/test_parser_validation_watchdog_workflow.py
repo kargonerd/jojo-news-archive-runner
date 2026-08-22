@@ -56,7 +56,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     )
     assert '"publisher":"wsj","fromYear":"2010","toYear":"2015","collectionFromYear":"2014","collectionToYear":"2016","collectionOrder":"newest"' in workflow
     assert '"publisher":"wsj","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"newest"' in workflow
-    assert "wsj-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-" in workflow
+    assert "wsj-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-|npr-common-crawl-" in workflow
     assert 'MAX_CATALOG_CONCURRENCY: "2"' in workflow
     assert "active_catalog_count" in workflow
     assert '"kind":"caixin"' not in workflow
@@ -68,6 +68,10 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "hydrations=200" in workflow
     assert 'if [ "$publisher" = "scmp" ]; then' in workflow
     assert "hydrations=1000" in workflow
+    assert '"publisher":"npr","fromYear":"2014","toYear":"2014"' in workflow
+    assert '"publisher":"npr","fromYear":"2016","toYear":"2016"' in workflow
+    assert 'if [ "$publisher" = "npr" ]; then' in workflow
+    assert "hydrations=500" in workflow
     assert 'wsj|aljazeera|axios|nyt|ap|zaobao|caixin)' in workflow
     assert '-f max_hydrations="$hydrations"' in workflow
     assert "queries=8" in workflow

@@ -571,7 +571,7 @@ jobs:
             echo "Both standard parser slots are occupied; skip supplemental dispatch."
             exit 0
           fi
-          active_catalog_count="$(grep -Ec '^(wsj-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-)' \
+          active_catalog_count="$(grep -Ec '^(wsj-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-|npr-common-crawl-)' \
               "$active_titles" || true)"
           if [ "$active_catalog_count" -ge "$MAX_CATALOG_CONCURRENCY" ]; then
             echo "Supplemental Common Crawl concurrency is full ($active_catalog_count/$MAX_CATALOG_CONCURRENCY); skip dispatch."
@@ -584,6 +584,8 @@ jobs:
           # Once these queues are exhausted, the WSJ windows resume as the
           # remaining broad source-recovery work.
           queue='[
+            {"publisher":"npr","fromYear":"2014","toYear":"2014","collectionFromYear":"2014","collectionToYear":"2026","collectionOrder":"oldest"},
+            {"publisher":"npr","fromYear":"2016","toYear":"2016","collectionFromYear":"2014","collectionToYear":"2026","collectionOrder":"oldest"},
             {"publisher":"scmp","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
             {"publisher":"aljazeera","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
             {"publisher":"scmp","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
@@ -623,6 +625,15 @@ jobs:
             pages=1
             if [ "$publisher" = "scmp" ]; then
               hydrations=1000
+            fi
+            if [ "$publisher" = "npr" ]; then
+              # NPR's broad 2013--2026 chain can spend several checkpoints
+              # retrying a single legacy prefix. Split sparse years into
+              # independent resumable catalogs so one Common Crawl failure
+              # cannot hide otherwise recoverable 2014/2016 capacity.
+              pages=8
+              queries=16
+              hydrations=500
             fi
             case "$publisher" in
               wsj|aljazeera|axios|nyt|ap|zaobao|caixin)
