@@ -194,11 +194,21 @@ jobs:
           # Keep the shared workflow reusable while making those catalog
           # runs discovery-only instead of failing after index collection.
           effective_max_hydrations="$MAX_HYDRATIONS"
+          effective_max_pages="$MAX_PAGES"
+          effective_max_queries="$MAX_QUERIES"
           case "$PUBLISHER" in
             wsj|aljazeera|axios|nyt|ap|zaobao|caixin)
               effective_max_hydrations=0
               ;;
           esac
+          if [ "$PUBLISHER" = "aljazeera" ] || \
+             [ "$PUBLISHER" = "scmp" ]; then
+            # These catalogs are sparse and have thousands of empty prefix
+            # advances. Keep each bounded checkpoint large enough to make
+            # progress without changing the resumable state or article cap.
+            effective_max_pages=32
+            effective_max_queries=32
+          fi
           python services/olds-api/tools/build_common_crawl_prefix_manifest.py \
             --publisher "$PUBLISHER" \
             --from-year "$FROM_YEAR" \
@@ -209,8 +219,8 @@ jobs:
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
             --summary "$LOCAL_ROOT/state/summary.json" \
-            --max-pages "$MAX_PAGES" \
-            --max-queries "$MAX_QUERIES" \
+            --max-pages "$effective_max_pages" \
+            --max-queries "$effective_max_queries" \
             --max-errors 4 \
             --target-articles-per-year "$TARGET_ARTICLES_PER_YEAR" \
             --max-date-hydrations "$effective_max_hydrations" \

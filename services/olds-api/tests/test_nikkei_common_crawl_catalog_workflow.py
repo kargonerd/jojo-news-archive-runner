@@ -24,6 +24,11 @@ def test_catalog_hydrates_dates_and_checkpoints_private_state() -> None:
     assert 'MAX_HYDRATIONS: ${{ inputs.max_hydrations }}' in workflow
     assert 'effective_max_hydrations="$MAX_HYDRATIONS"' in workflow
     assert 'wsj|aljazeera|axios|nyt|ap|zaobao|caixin)' in workflow
+    assert 'effective_max_pages="$MAX_PAGES"' in workflow
+    assert 'effective_max_queries="$MAX_QUERIES"' in workflow
+    assert 'if [ "$PUBLISHER" = "aljazeera" ]' in workflow
+    assert "effective_max_pages=32" in workflow
+    assert "effective_max_queries=32" in workflow
     assert '--max-date-hydrations "$effective_max_hydrations"' in workflow
     assert "--data-min-request-interval 0.5" in workflow
     assert "--page-size 1000" in workflow
@@ -44,6 +49,8 @@ def test_catalog_continues_after_discovery_or_hydration_progress() -> None:
     assert "steps.discovery.outputs.advances != '0'" in dispatch
     assert "steps.discovery.outputs.hydration_attempted != '0'" in dispatch
     assert '-f max_hydrations="$MAX_HYDRATIONS"' in dispatch
+    assert '-f max_pages="$MAX_PAGES"' in dispatch
+    assert '-f max_queries="$MAX_QUERIES"' in dispatch
     assert '-f publisher="$PUBLISHER"' in dispatch
     assert '-f collection_order="$COLLECTION_ORDER"' in dispatch
     assert (
