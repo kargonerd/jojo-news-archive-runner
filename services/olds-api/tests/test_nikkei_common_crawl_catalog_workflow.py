@@ -23,12 +23,14 @@ def test_catalog_hydrates_dates_and_checkpoints_private_state() -> None:
     assert '--target-articles-per-year "$TARGET_ARTICLES_PER_YEAR"' in workflow
     assert 'MAX_HYDRATIONS: ${{ inputs.max_hydrations }}' in workflow
     assert 'effective_max_hydrations="$MAX_HYDRATIONS"' in workflow
-    assert 'wsj|aljazeera|axios|nyt|ap|zaobao|caixin)' in workflow
+    assert 'wsj|aljazeera|axios|nyt|ap|zaobao)' in workflow
     assert 'effective_max_pages="$MAX_PAGES"' in workflow
     assert 'effective_max_queries="$MAX_QUERIES"' in workflow
     assert 'if [ "$PUBLISHER" = "aljazeera" ]' in workflow
     assert "effective_max_pages=32" in workflow
     assert "effective_max_queries=32" in workflow
+    assert "effective_max_errors=32" in workflow
+    assert '--max-errors "$effective_max_errors"' in workflow
     assert '--max-date-hydrations "$effective_max_hydrations"' in workflow
     assert "--data-min-request-interval 0.5" in workflow
     assert "--page-size 1000" in workflow

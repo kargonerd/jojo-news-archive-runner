@@ -196,8 +196,9 @@ jobs:
           effective_max_hydrations="$MAX_HYDRATIONS"
           effective_max_pages="$MAX_PAGES"
           effective_max_queries="$MAX_QUERIES"
+          effective_max_errors=4
           case "$PUBLISHER" in
-            wsj|aljazeera|axios|nyt|ap|zaobao|caixin)
+            wsj|aljazeera|axios|nyt|ap|zaobao)
               effective_max_hydrations=0
               ;;
           esac
@@ -208,6 +209,12 @@ jobs:
             # progress without changing the resumable state or article cap.
             effective_max_pages=32
             effective_max_queries=32
+          fi
+          if [ "$PUBLISHER" = "aljazeera" ]; then
+            # A few historical Al Jazeera prefixes intermittently fail at the
+            # Common Crawl index. Allow the same bounded run to skip a larger
+            # error batch instead of auto-continuing after only four failures.
+            effective_max_errors=32
           fi
           python services/olds-api/tools/build_common_crawl_prefix_manifest.py \
             --publisher "$PUBLISHER" \
@@ -221,7 +228,7 @@ jobs:
             --summary "$LOCAL_ROOT/state/summary.json" \
             --max-pages "$effective_max_pages" \
             --max-queries "$effective_max_queries" \
-            --max-errors 4 \
+            --max-errors "$effective_max_errors" \
             --target-articles-per-year "$TARGET_ARTICLES_PER_YEAR" \
             --max-date-hydrations "$effective_max_hydrations" \
             --min-request-interval 3 \
