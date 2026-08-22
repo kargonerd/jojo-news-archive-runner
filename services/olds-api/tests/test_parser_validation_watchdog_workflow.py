@@ -59,6 +59,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "wsj-common-crawl-|caixin-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-" in workflow
     assert 'MAX_CATALOG_CONCURRENCY: "2"' in workflow
     assert "active_catalog_count" in workflow
+    assert "active_caixin_count" in workflow
+    assert "A Caixin chain already occupies its reserved slot" in workflow
     assert "catalog_slots=$((MAX_CATALOG_CONCURRENCY - active_catalog_count))" in workflow
     assert "catalog_slots=$((catalog_slots - 1))" in workflow
     assert "Supplemental Common Crawl concurrency is full" in workflow

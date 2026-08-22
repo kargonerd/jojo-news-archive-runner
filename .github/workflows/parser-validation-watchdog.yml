@@ -567,6 +567,7 @@ jobs:
           fi
           active_catalog_count="$(grep -Ec '^(wsj-common-crawl-|caixin-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-)' \
               "$active_titles" || true)"
+          active_caixin_count="$(grep -Ec '^caixin-common-crawl-' "$active_titles" || true)"
           if [ "$active_catalog_count" -ge "$MAX_CATALOG_CONCURRENCY" ]; then
             echo "Supplemental Common Crawl concurrency is full ($active_catalog_count/$MAX_CATALOG_CONCURRENCY); skip dispatch."
             exit 0
@@ -607,6 +608,14 @@ jobs:
             if [ "$kind" = "caixin" ]; then
               year="$(jq -r '.year' <<<"$task")"
               title="caixin-common-crawl-${year}"
+              # Keep one catalog slot available for another capacity-limited
+              # publisher. A Caixin chain auto-continues across many bounded
+              # runs, so allowing two simultaneous year chains would starve
+              # SCMP and Al Jazeera until all Caixin years finish.
+              if [ "$active_caixin_count" -ge 1 ]; then
+                echo "A Caixin chain already occupies its reserved slot; defer $title"
+                continue
+              fi
               if grep -Fxq "$title" "$active_titles"; then
                 echo "Common Crawl chain already active: $title"
                 continue
@@ -646,6 +655,7 @@ jobs:
                 -f target_articles_per_year=3000 \
                 -f auto_continue=true
               echo "Dispatched supplemental Common Crawl catalog: $title"
+              active_caixin_count=$((active_caixin_count + 1))
               catalog_slots=$((catalog_slots - 1))
               if [ "$catalog_slots" -le 0 ]; then
                 break
