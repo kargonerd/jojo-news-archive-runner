@@ -103,7 +103,7 @@ def _suspicious_selected_image(value: str) -> bool:
     if (
         parsed.netloc.casefold() == "static01.nyt.com"
         and re.search(
-            r"/onpolitics-[^/]*-icon/[^/]+\.(?:jpe?g|png|webp)$",
+            r"/onpolitics-[^/]*-icon/[^/]+\.(?:gif|jpe?g|png|webp)$",
             path,
             flags=re.IGNORECASE,
         )
