@@ -75,6 +75,24 @@ def test_parser_source_manifest_shard_rejects_unsupported_cells(
             (
                 "npr/2016-2016/commoncrawl-prefix",
                 "npr/2012-2016/commoncrawl-prefix",
+                "npr/2013-2026/commoncrawl-prefix",
+            ),
+        ),
+        (
+            "npr",
+            2013,
+            (
+                "npr/2013-2013/commoncrawl-prefix",
+                "npr/2012-2016/commoncrawl-prefix",
+                "npr/2013-2026/commoncrawl-prefix",
+            ),
+        ),
+        (
+            "npr",
+            2020,
+            (
+                "npr/2020-2020/commoncrawl-prefix",
+                "npr/2013-2026/commoncrawl-prefix",
             ),
         ),
         ("nikkei", 2014, ("nikkei/2010-2015/commoncrawl-prefix",)),

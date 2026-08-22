@@ -206,6 +206,7 @@ jobs:
           fi
           supplemental_source_root=""
           auxiliary_source_root=""
+          tertiary_source_root=""
           if [ "$PUBLISHER" = "npr" ]; then
             # NPR Common Crawl discovery is checkpointed per publication
             # year.  The primary Wayback shard spans a wider source window,
@@ -216,6 +217,13 @@ jobs:
               # than the thin per-year supplements. Merge it as a second
               # independent source without replacing the year checkpoint.
               auxiliary_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/2012-2016/commoncrawl-prefix"
+            fi
+            if [ "$SAMPLE_YEAR" -ge 2013 ]; then
+              # Keep a second broad checkpoint for newer Common Crawl
+              # collections. It is merged after the original 2012--2016
+              # catalog, so either source can independently reopen a thin
+              # year without replacing the older checkpoint.
+              tertiary_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/2013-2026/commoncrawl-prefix"
             fi
           elif [ "$PUBLISHER" = "axios" ]; then
             # Keep the official monthly sitemap as the primary supplement;
@@ -258,6 +266,7 @@ jobs:
             echo "legacy_source_root=$legacy_source_root"
             echo "supplemental_source_root=$supplemental_source_root"
             echo "auxiliary_source_root=$auxiliary_source_root"
+            echo "tertiary_source_root=$tertiary_source_root"
           } >> "$GITHUB_OUTPUT"
 
       - name: Restore filtered manifest and validation checkpoint
@@ -269,6 +278,7 @@ jobs:
           LEGACY_SOURCE_ROOT: ${{ steps.paths.outputs.legacy_source_root }}
           SUPPLEMENTAL_SOURCE_ROOT: ${{ steps.paths.outputs.supplemental_source_root }}
           AUXILIARY_SOURCE_ROOT: ${{ steps.paths.outputs.auxiliary_source_root }}
+          TERTIARY_SOURCE_ROOT: ${{ steps.paths.outputs.tertiary_source_root }}
         run: |
           set -euo pipefail
           restore_if_present() {
@@ -305,6 +315,8 @@ jobs:
           supplemental_merged_source_manifest="$RUNNER_TEMP/supplemental-merged-source-manifest.jsonl.gz"
           auxiliary_source_manifest="$RUNNER_TEMP/auxiliary-source-manifest.jsonl.gz"
           auxiliary_merged_source_manifest="$RUNNER_TEMP/auxiliary-merged-source-manifest.jsonl.gz"
+          tertiary_source_manifest="$RUNNER_TEMP/tertiary-source-manifest.jsonl.gz"
+          tertiary_merged_source_manifest="$RUNNER_TEMP/tertiary-merged-source-manifest.jsonl.gz"
           ap_wayback_yahoo_manifest="$RUNNER_TEMP/ap-wayback-yahoo-manifest.jsonl.gz"
           ap_wayback_yahoo_merged_manifest="$RUNNER_TEMP/ap-wayback-yahoo-merged-manifest.jsonl.gz"
           ap_wayback_bigstory_manifest="$RUNNER_TEMP/ap-wayback-bigstory-manifest.jsonl.gz"
@@ -352,6 +364,19 @@ jobs:
                   --input "$auxiliary_source_manifest" \
                   --output "$auxiliary_merged_source_manifest"
                 effective_source_manifest="$auxiliary_merged_source_manifest"
+              fi
+            fi
+            if [ -n "$TERTIARY_SOURCE_ROOT" ]; then
+              restore_if_present \
+                "${TERTIARY_SOURCE_ROOT}/catalog/manifest.jsonl.gz" \
+                "$tertiary_source_manifest"
+              if [ -f "$tertiary_source_manifest" ]; then
+                python services/olds-api/tools/merge_archive_manifests.py \
+                  --publisher "$PUBLISHER" \
+                  --input "$effective_source_manifest" \
+                  --input "$tertiary_source_manifest" \
+                  --output "$tertiary_merged_source_manifest"
+                effective_source_manifest="$tertiary_merged_source_manifest"
               fi
             fi
             if [ "$PUBLISHER" = "ap" ] && [ -n "$SUPPLEMENTAL_SOURCE_ROOT" ]; then

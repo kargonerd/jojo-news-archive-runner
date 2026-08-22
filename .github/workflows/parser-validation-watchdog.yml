@@ -264,6 +264,7 @@ jobs:
           # accelerator for those cells alongside the per-year supplements.
           supplemental_capacity_roots+=(
             "npr/2012-2016/commoncrawl-prefix"
+            "npr/2013-2026/commoncrawl-prefix"
           )
           for supplemental_root in "${supplemental_capacity_roots[@]}"; do
             capacity_catalog="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${supplemental_root}/catalog"

@@ -77,6 +77,11 @@ def parser_supplemental_manifest_shards(
         # per-year checkpoint.
         if 2012 <= year <= 2016:
             shards.append("npr/2012-2016/commoncrawl-prefix")
+        # A second broad checkpoint scans newer Common Crawl collections. It
+        # remains separate so later collection growth can add genuinely new,
+        # zero-overlap candidates without rewriting the older checkpoint.
+        if 2013 <= year <= 2026:
+            shards.append("npr/2013-2026/commoncrawl-prefix")
         return tuple(shards)
     if publisher == "caixin":
         return (f"caixin/{year}-{year}/commoncrawl-prefix",)

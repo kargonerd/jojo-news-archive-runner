@@ -70,6 +70,18 @@ def test_accelerator_merges_axio_common_crawl_with_sitemap_catalog() -> None:
     assert 'auxiliary_merged_source_manifest' in workflow
 
 
+def test_accelerator_merges_newer_npr_common_crawl_catalog() -> None:
+    workflow = _workflow_text()
+
+    assert (
+        'tertiary_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/'
+        'news-archive/v1/npr/2013-2026/commoncrawl-prefix"'
+        in workflow
+    )
+    assert 'TERTIARY_SOURCE_ROOT:' in workflow
+    assert 'tertiary_merged_source_manifest' in workflow
+
+
 def test_accelerator_caps_future_axios_continuation_fanout() -> None:
     workflow = _workflow_text()
 
