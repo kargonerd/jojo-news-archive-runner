@@ -287,12 +287,17 @@ ARCHIVE_SOURCE_SPECS = {
         canonical_host="www.aljazeera.com",
         wayback_patterns=(
             "www.aljazeera.com/news/{year}/*",
+            "www.aljazeera.com/economy/{year}/*",
             "www.aljazeera.com/features/{year}/*",
             "www.aljazeera.com/opinions/{year}/*",
+            "www.aljazeera.com/sports/{year}/*",
+            "www.aljazeera.com/gallery/{year}/*",
         ),
-        # The official article sitemap contains many editorial desks beyond
-        # news/features/opinions (for example economy, sports and
-        # investigations). A dated one- or two-level section path plus a
+        # The official article sitemap contains several editorial desks beyond
+        # the main news/features/opinions routes. Keep the explicit prefix
+        # families above in sync with those historical sitemap sections so a
+        # URL-key/CC catalog does not silently omit economy, sports, or
+        # gallery captures. A dated one- or two-level section path plus a
         # non-empty slug is the stable canonical article shape.
         accepted_path_patterns=_patterns(
             r"^/(?:[a-z0-9-]+/){1,2}20\d{2}/"

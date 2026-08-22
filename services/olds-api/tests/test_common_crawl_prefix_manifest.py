@@ -170,8 +170,11 @@ def test_aljazeera_prefix_patterns_include_article_sections():
         to_year=2020,
     ) == (
         "www.aljazeera.com/news/2020/",
+        "www.aljazeera.com/economy/2020/",
         "www.aljazeera.com/features/2020/",
         "www.aljazeera.com/opinions/2020/",
+        "www.aljazeera.com/sports/2020/",
+        "www.aljazeera.com/gallery/2020/",
     )
 
 
