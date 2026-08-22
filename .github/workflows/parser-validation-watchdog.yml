@@ -292,7 +292,7 @@ jobs:
             --include "holdout-v*/*/*/state/rotation-audit.json" \
             --include "validation/*/*/state/content-audit.json" \
             --include "holdout-v*/*/*/state/content-audit.json" \
-            --transfers 16 --checkers 32 \
+            --transfers 32 --checkers 64 \
             --retries 8 --low-level-retries 20
 
       - name: Plan available validation slots
