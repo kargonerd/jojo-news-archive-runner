@@ -33,7 +33,10 @@ env:
   # scheduler continues to reserve standard slots for 800-sample cohorts.
   # Common Crawl workflows are keyed by publisher/window, so this does not
   # collide with a different publisher's resumable chain.
-  MAX_CATALOG_CONCURRENCY: "2"
+  # Catalog jobs persist compact URL/date checkpoints. Keep a third slot for
+  # a targeted recovery chain while the two broad SCMP windows drain their
+  # long undated tails; parser-validation concurrency remains independent.
+  MAX_CATALOG_CONCURRENCY: "3"
   # Bloomberg has completed the current research acceptance cycle. Keep every
   # other currently requested publisher eligible for per-year 800-row
   # validation; Caixin is intentionally paused and is not dispatched here.

@@ -57,7 +57,7 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert '"publisher":"wsj","fromYear":"2010","toYear":"2015","collectionFromYear":"2014","collectionToYear":"2016","collectionOrder":"newest"' in workflow
     assert '"publisher":"wsj","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"newest"' in workflow
     assert "wsj-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-|npr-common-crawl-" in workflow
-    assert 'MAX_CATALOG_CONCURRENCY: "2"' in workflow
+    assert 'MAX_CATALOG_CONCURRENCY: "3"' in workflow
     assert "active_catalog_count" in workflow
     assert '"kind":"caixin"' not in workflow
     assert "publisher=caixin" not in workflow
