@@ -49,7 +49,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "caixin-common-crawl-catalog.yml" in workflow
     assert '{"kind":"caixin","year":"2010"}' in workflow
     assert '"publisher":"wsj","fromYear":"2010","toYear":"2015"' in workflow
-    assert 'grep -Eq \'(^news-raw-|-common-crawl-)\'' in workflow
+    assert "wsj-common-crawl-|caixin-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-" in workflow
+    assert "A supplemental Common Crawl chain is already active" in workflow
     assert "Both standard parser slots are occupied" in workflow
     assert 'jq -e \'.shouldContinue == false\'' in workflow
     assert "- name: Restore validation summaries\n        timeout-minutes: 25" in workflow
