@@ -57,6 +57,9 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert workflow.index('"publisher":"scmp","fromYear":"2016"') < workflow.index(
         '"publisher":"aljazeera","fromYear":"2016"'
     )
+    assert workflow.index('"publisher":"scmp","fromYear":"2016"') < workflow.index(
+        '{"kind":"caixin","year":"2019"}'
+    )
     assert '"publisher":"wsj","fromYear":"2010","toYear":"2015","collectionFromYear":"2014","collectionToYear":"2016","collectionOrder":"newest"' in workflow
     assert '"publisher":"wsj","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"newest"' in workflow
     assert "wsj-common-crawl-|caixin-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-" in workflow

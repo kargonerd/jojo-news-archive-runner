@@ -588,6 +588,10 @@ jobs:
             {"kind":"caixin","year":"2016"},
             {"kind":"caixin","year":"2017"},
             {"kind":"caixin","year":"2018"},
+            {"publisher":"scmp","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
+            {"publisher":"aljazeera","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
+            {"publisher":"scmp","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
+            {"publisher":"aljazeera","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
             {"kind":"caixin","year":"2019"},
             {"kind":"caixin","year":"2020"},
             {"kind":"caixin","year":"2021"},
@@ -596,10 +600,6 @@ jobs:
             {"kind":"caixin","year":"2024"},
             {"kind":"caixin","year":"2025"},
             {"kind":"caixin","year":"2026"},
-            {"publisher":"scmp","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
-            {"publisher":"aljazeera","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
-            {"publisher":"scmp","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
-            {"publisher":"aljazeera","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
             {"publisher":"wsj","fromYear":"2010","toYear":"2015","collectionFromYear":"2014","collectionToYear":"2016","collectionOrder":"newest"},
             {"publisher":"wsj","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"newest"}
           ]'
