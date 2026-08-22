@@ -612,11 +612,18 @@ jobs:
               echo "Common Crawl catalog already complete: $title"
               continue
             fi
-            # Keep 50% headroom above the 800-article validation target;
-            # larger catalogs create a long, low-value date-hydration tail.
+            # Keep 50% headroom above the 800-article validation target.
+            # Common Crawl catalogs only persist compact URL/date metadata;
+            # their WARC date hydration is not a raw-article upload.  SCMP's
+            # legacy URL family has a large undated tail, so use a larger
+            # bounded hydration batch there to avoid hundreds of tiny chained
+            # runs while retaining the request limiter in the catalog tool.
             hydrations=200
             queries=8
             pages=1
+            if [ "$publisher" = "scmp" ]; then
+              hydrations=1000
+            fi
             case "$publisher" in
               wsj|aljazeera|axios|nyt|ap|zaobao|caixin)
                 # These sources expose a publication date in the canonical

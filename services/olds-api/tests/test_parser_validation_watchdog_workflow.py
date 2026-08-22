@@ -66,6 +66,8 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert "catalog_slots=$((catalog_slots - 1))" in workflow
     assert "Supplemental Common Crawl concurrency is full" in workflow
     assert "hydrations=200" in workflow
+    assert 'if [ "$publisher" = "scmp" ]; then' in workflow
+    assert "hydrations=1000" in workflow
     assert 'wsj|aljazeera|axios|nyt|ap|zaobao|caixin)' in workflow
     assert '-f max_hydrations="$hydrations"' in workflow
     assert "queries=8" in workflow
