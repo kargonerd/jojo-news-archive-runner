@@ -43,10 +43,8 @@ SOURCE_CATALOG_TARGETS = (
     SourceCatalogTarget("zaobao", 2016, 2026, "sitemap-wayback", 30),
     SourceCatalogTarget("nikkei", 2010, 2015, "wayback-urlkey", 10),
     SourceCatalogTarget("scmp", 2010, 2015, "wayback-urlkey", 10),
-    SourceCatalogTarget("caixin", 2010, 2015, "wayback-urlkey", 10),
     SourceCatalogTarget("nikkei", 2016, 2026, "wayback-urlkey", 10),
     SourceCatalogTarget("scmp", 2016, 2026, "wayback-urlkey", 10),
-    SourceCatalogTarget("caixin", 2016, 2026, "wayback-urlkey", 10),
 )
 
 

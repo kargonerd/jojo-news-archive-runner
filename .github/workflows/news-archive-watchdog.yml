@@ -117,9 +117,7 @@ jobs:
             {"publisher":"aljazeera","fromYear":"2010","toYear":"2015","mode":"sitemap-wayback","units":"30","runner":"ubuntu-latest"},
             {"publisher":"aljazeera","fromYear":"2016","toYear":"2026","mode":"sitemap-wayback","units":"30","runner":"ubuntu-latest"},
             {"publisher":"scmp","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"10","runner":"ubuntu-latest"},
-            {"publisher":"scmp","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"10","runner":"ubuntu-latest"},
-            {"publisher":"caixin","fromYear":"2010","toYear":"2015","mode":"wayback-urlkey","units":"20","runner":"ubuntu-latest"},
-            {"publisher":"caixin","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"20","runner":"ubuntu-latest"}
+            {"publisher":"scmp","fromYear":"2016","toYear":"2026","mode":"wayback-urlkey","units":"10","runner":"ubuntu-latest"}
           ]'
 
           dispatched=0

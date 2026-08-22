@@ -24,9 +24,10 @@ The generic pipeline supports these publisher adapters:
 - South China Morning Post
 - Caixin
 
-The Caixin adapter remains available for archival compatibility, but the
-current parser-validation watchdog scope intentionally pauses new Caixin
-validation runs.
+The Caixin adapter remains available for archival compatibility, but new
+Caixin catalog and parser-validation dispatches are intentionally paused.
+Existing Caixin catalogs, holdouts, and raw objects are retained; this pause
+does not delete historical data.
 
 The archive is intentionally split into two independent stages:
 
