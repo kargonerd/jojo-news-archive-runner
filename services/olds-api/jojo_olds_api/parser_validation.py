@@ -2091,6 +2091,23 @@ def parser_validation_summary(
             # overlap, while the old summary reported them as eligible.
             start = f"{int(sample_year):04d}-01-01"
             end = f"{int(sample_year) + 1:04d}-01-01"
+            # Keep the raw row count alongside the normalized capacity.  The
+            # watchdog uses this to tell whether the current validation
+            # checkpoint already loaded the complete source manifest.  A
+            # source sidecar's ``articles`` count includes aliases that
+            # collapse to one story identity, so treating the sidecar count
+            # as unseen growth after the manifest has been loaded can
+            # repeatedly dispatch an empty replacement cohort.
+            capacity["captureRows"] = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM captures
+                    WHERE published_at >= ? AND published_at < ?
+                    """,
+                    (start, end),
+                ).fetchone()[0]
+            )
             publisher_row = connection.execute(
                 "SELECT publisher FROM captures LIMIT 1"
             ).fetchone()

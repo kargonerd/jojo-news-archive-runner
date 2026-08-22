@@ -651,7 +651,18 @@ def _eligible_candidate_upper_bound(
             _integer(row.get("nonArticleCandidates")),
         )
         observed_capacity = eligible + excluded + nonarticle_candidates
-        growth = max(0, current_manifest_capacity - observed_capacity)
+        # A validation checkpoint loads every row from the filtered source
+        # manifest before sampling.  Once its raw row count reaches the
+        # largest known source-sidecar count, any remaining difference is
+        # normalized URL aliasing rather than unseen article capacity.  Do
+        # not keep dispatching replacement cohorts for those aliases; a
+        # later catalog growth (a larger sidecar than this checkpoint) still
+        # reopens the cell normally.
+        loaded_capture_rows = _integer(row.get("captureRows"))
+        if loaded_capture_rows >= current_manifest_capacity:
+            growth = 0
+        else:
+            growth = max(0, current_manifest_capacity - observed_capacity)
         cohort_number = _cohort_number(cohort)
         screened_nonarticles = max(
             0,

@@ -29,6 +29,7 @@ def _write_summary(
     excluded_candidates: int | None = None,
     screened_nonarticles: int = 0,
     nonarticle_candidates: int | None = None,
+    capture_rows: int | None = None,
     captures_by_status: dict[str, int] | None = None,
 ) -> None:
     path = root / relative_path
@@ -75,6 +76,10 @@ def _write_summary(
         payload["parserValidation"]["years"][str(year)][
             "nonArticleCandidates"
         ] = nonarticle_candidates
+    if capture_rows is not None:
+        payload["parserValidation"]["years"][str(year)][
+            "captureRows"
+        ] = capture_rows
     path.write_text(
         json.dumps(payload),
         encoding="utf-8",
@@ -952,6 +957,37 @@ def test_watchdog_uses_stale_holdout_capacity_as_conservative_upper_bound(
     expanded_cell = expanded["cellProgress"][0]
     assert expanded_cell["eligibleCandidateUpperBound"] == 800
     assert expanded_cell["capacityDeficient"] is False
+
+
+def test_watchdog_does_not_count_loaded_alias_rows_as_source_growth(
+    tmp_path: Path,
+):
+    shard = "npr/2010-2015/wayback-urlkey"
+    _write_summary(
+        tmp_path,
+        "holdout-v202/npr/2010/state/summary.json",
+        publisher="npr",
+        year=2010,
+        evaluated=6,
+        eligible_candidates=10,
+        excluded_candidates=19176,
+        capture_rows=22520,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["npr"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2010: 21438}},
+    )
+
+    assert plan["tasks"] == []
+    assert plan["capacityDeficientCells"] == 1
+    cell = plan["cellProgress"][0]
+    assert cell["eligibleCandidateUpperBound"] == 10
+    assert cell["capacityDeficient"] is True
 
 
 def test_watchdog_dispatches_fresh_parser_cohort_before_old_capacity_gate(
