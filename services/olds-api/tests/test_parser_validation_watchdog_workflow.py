@@ -17,6 +17,10 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert '--include "validation/*/*/state/summary.json"' in workflow
     assert '--include "holdout-v*/*/*/state/rotation-audit.json"' in workflow
     assert "copy_summary()" in workflow
+    assert "restore_source_root()" in workflow
+    assert "source_restore_parallelism=8" in workflow
+    assert "wait_for_source_restore_batch" in workflow
+    assert 'sort -u "$available_source_shards"' in workflow
     assert '"wsj/2016-2026/wayback"' in workflow
     assert "available-source-shards.txt" in workflow
     assert "--available-source-shards" in workflow

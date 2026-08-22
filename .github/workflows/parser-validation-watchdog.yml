@@ -80,9 +80,9 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/archive-state"
           copy_summary() {
-            remote_dir="$1"
-            destination="$2"
-            errors="$RUNNER_TEMP/summary-listing-errors.txt"
+            local remote_dir="$1"
+            local destination="$2"
+            local errors="$RUNNER_TEMP/summary-listing-errors-${BASHPID}-${RANDOM}.txt"
             # Probe the one object we need instead of enumerating every
             # object in the state directory. B2 buckets contain many
             # superseded checkpoints, and directory listings can dominate
@@ -106,6 +106,50 @@ jobs:
               mkdir -p "$destination"
               rclone copyto "$summary_remote" \
                 "$destination/summary.json" \
+                --retries 8 --low-level-retries 20
+            fi
+          }
+          restore_source_root() {
+            local source_root="$1"
+            local result_root="$2"
+            mkdir -p "$result_root"
+            copy_summary \
+              "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state" \
+              "$RUNNER_TEMP/archive-state/${source_root}/state"
+            local object_listing=""
+            if object_listing="$(
+              rclone lsl \
+                "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest.jsonl.gz" \
+                --timeout 30s --contimeout 10s \
+                --retries 3 --low-level-retries 6 \
+                2>/dev/null
+            )" && [ -n "$object_listing" ]; then
+              printf '%s\n' "$source_root" > "$result_root/available"
+              local capacity_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest-summary.json"
+              local capacity_listing=""
+              if capacity_listing="$(
+                rclone lsl "$capacity_remote" \
+                  --timeout 30s --contimeout 10s \
+                  --retries 3 --low-level-retries 6 \
+                  2>/dev/null
+              )" && [ -n "$capacity_listing" ]; then
+                local capacity_local="$source_capacity_root/${source_root}/manifest-summary.json"
+                mkdir -p "$(dirname "$capacity_local")"
+                rclone copyto "$capacity_remote" "$capacity_local" \
+                  --retries 8 --low-level-retries 20
+              fi
+            fi
+            local status_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/status.json"
+            local status_listing=""
+            if status_listing="$(
+              rclone lsl "$status_remote" \
+                --timeout 30s --contimeout 10s \
+                --retries 3 --low-level-retries 6 \
+                2>/dev/null
+            )" && [ -n "$status_listing" ]; then
+              local status_local="$source_catalog_status_root/${source_root}/catalog/status.json"
+              mkdir -p "$(dirname "$status_local")"
+              rclone copyto "$status_remote" "$status_local" \
                 --retries 8 --low-level-retries 20
             fi
           }
@@ -143,45 +187,36 @@ jobs:
           mkdir -p "$source_capacity_root"
           mkdir -p "$source_catalog_status_root"
           : > "$available_source_shards"
+          source_restore_root="$RUNNER_TEMP/source-root-restore"
+          mkdir -p "$source_restore_root"
+          source_restore_pids=()
+          source_restore_results=()
+          source_restore_parallelism=8
+          wait_for_source_restore_batch() {
+            local pid
+            for pid in "${source_restore_pids[@]}"; do
+              wait "$pid"
+            done
+            source_restore_pids=()
+          }
           for source_root in "${source_roots[@]}"; do
-            copy_summary \
-              "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state" \
-              "$RUNNER_TEMP/archive-state/${source_root}/state"
-            object_listing=""
-            if object_listing="$(
-              rclone lsl \
-                "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest.jsonl.gz" \
-                --timeout 30s --contimeout 10s \
-                --retries 3 --low-level-retries 6 \
-                2>/dev/null
-            )" && [ -n "$object_listing" ]; then
-              echo "$source_root" >> "$available_source_shards"
-              capacity_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest-summary.json"
-              if capacity_listing="$(
-                rclone lsl "$capacity_remote" \
-                  --timeout 30s --contimeout 10s \
-                  --retries 3 --low-level-retries 6 \
-                  2>/dev/null
-              )" && [ -n "$capacity_listing" ]; then
-                capacity_local="${source_capacity_root}/${source_root}/manifest-summary.json"
-                mkdir -p "$(dirname "$capacity_local")"
-                rclone copyto "$capacity_remote" "$capacity_local" \
-                  --retries 8 --low-level-retries 20
-              fi
-            fi
-            status_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/status.json"
-            if status_listing="$(
-              rclone lsl "$status_remote" \
-                --timeout 30s --contimeout 10s \
-                --retries 3 --low-level-retries 6 \
-                2>/dev/null
-            )" && [ -n "$status_listing" ]; then
-              status_local="${source_catalog_status_root}/${source_root}/catalog/status.json"
-              mkdir -p "$(dirname "$status_local")"
-              rclone copyto "$status_remote" "$status_local" \
-                --retries 8 --low-level-retries 20
+            result_root="$source_restore_root/${#source_restore_results[@]}"
+            source_restore_results+=("$result_root")
+            (
+              restore_source_root "$source_root" "$result_root"
+            ) &
+            source_restore_pids+=("$!")
+            if [ "${#source_restore_pids[@]}" -ge "$source_restore_parallelism" ]; then
+              wait_for_source_restore_batch
             fi
           done
+          wait_for_source_restore_batch
+          for result_root in "${source_restore_results[@]}"; do
+            if [ -f "$result_root/available" ]; then
+              cat "$result_root/available" >> "$available_source_shards"
+            fi
+          done
+          sort -u "$available_source_shards" -o "$available_source_shards"
           # Supplemental catalogs are merged by the accelerator per year.
           # Restore their capacity sidecars so a thin primary Wayback shard
           # does not hide a year with at least 800 Common Crawl candidates.
