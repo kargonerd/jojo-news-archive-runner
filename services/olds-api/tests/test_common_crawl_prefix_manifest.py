@@ -193,6 +193,16 @@ def test_scmp_prefix_patterns_include_modern_article_sections():
     )
 
 
+def test_wsj_prefix_patterns_include_legacy_news_article_route():
+    patterns = prefix_patterns(
+        archive_source_spec("wsj"),
+        from_year=2010,
+        to_year=2013,
+    )
+    assert "online.wsj.com/news/articles/" in patterns
+    assert "www.wsj.com/news/articles/" in patterns
+
+
 def test_reuters_prefix_patterns_include_modern_section_roots():
     patterns = prefix_patterns(
         archive_source_spec("reuters"),

@@ -114,6 +114,12 @@ ARCHIVE_SOURCE_SPECS = {
         )
         + (
             "online.wsj.com/article/*",
+            # The legacy WSJ CMS also exposed stories below the plural
+            # ``/news/articles/`` route.  This family is especially useful
+            # for 2010--2013 captures; omitting it leaves those years with
+            # an artificially small Wayback candidate pool.
+            "online.wsj.com/news/articles/*",
+            "www.wsj.com/news/articles/*",
         ),
         accepted_path_patterns=_patterns(
             r"^/articles/",
