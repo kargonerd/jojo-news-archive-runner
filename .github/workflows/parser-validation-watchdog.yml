@@ -576,11 +576,22 @@ jobs:
           fi
           active_catalog_count="$(grep -Ec '^(wsj-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-|npr-common-crawl-)' \
               "$active_titles" || true)"
-          if [ "$active_catalog_count" -ge "$MAX_CATALOG_CONCURRENCY" ]; then
-            echo "Supplemental Common Crawl concurrency is full ($active_catalog_count/$MAX_CATALOG_CONCURRENCY); skip dispatch."
+          catalog_concurrency_limit="$MAX_CATALOG_CONCURRENCY"
+          if [ "$capacity_deficient_cells" -gt 0 ]; then
+            # Broad Common Crawl chains can occupy every ordinary catalog
+            # slot while a sparse year is already proven capacity-deficient.
+            # Temporarily add one bounded recovery slot so the first NPR
+            # targeted queue entry is not starved by those long chains. This
+            # does not change the two-run parser budget and applies only while
+            # the validation planner reports a real capacity shortfall.
+            catalog_concurrency_limit=$((MAX_CATALOG_CONCURRENCY + 1))
+            echo "Capacity recovery active; reserving one supplemental catalog slot ($catalog_concurrency_limit total)."
+          fi
+          if [ "$active_catalog_count" -ge "$catalog_concurrency_limit" ]; then
+            echo "Supplemental Common Crawl concurrency is full ($active_catalog_count/$catalog_concurrency_limit); skip dispatch."
             exit 0
           fi
-          catalog_slots=$((MAX_CATALOG_CONCURRENCY - active_catalog_count))
+          catalog_slots=$((catalog_concurrency_limit - active_catalog_count))
           echo "Supplemental Common Crawl slots available: $catalog_slots"
           # Capacity-deficient publishers come first so that two parallel
           # slots cannot be consumed by WSJ's two historical windows alone.

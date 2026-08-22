@@ -62,7 +62,10 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert '"kind":"caixin"' not in workflow
     assert "publisher=caixin" not in workflow
     assert "active_caixin_count" not in workflow
-    assert "catalog_slots=$((MAX_CATALOG_CONCURRENCY - active_catalog_count))" in workflow
+    assert 'catalog_concurrency_limit="$MAX_CATALOG_CONCURRENCY"' in workflow
+    assert 'catalog_concurrency_limit=$((MAX_CATALOG_CONCURRENCY + 1))' in workflow
+    assert "Capacity recovery active; reserving one supplemental catalog slot" in workflow
+    assert "catalog_slots=$((catalog_concurrency_limit - active_catalog_count))" in workflow
     assert "catalog_slots=$((catalog_slots - 1))" in workflow
     assert "Supplemental Common Crawl concurrency is full" in workflow
     assert "hydrations=200" in workflow
