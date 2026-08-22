@@ -44,6 +44,29 @@ _NON_ARTICLE_FILE_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+_CAIXIN_EDITORIAL_HOSTS = (
+    "china.caixin.com",
+    "economy.caixin.com",
+    "finance.caixin.com",
+    "companies.caixin.com",
+    "international.caixin.com",
+    "opinion.caixin.com",
+    "culture.caixin.com",
+    # Caixin publishes first-party photo essays under a dated article URL
+    # family.  Keep the host distinct: its story ids do not alias the text
+    # desks, and gallery captures exercise a separate editorial template.
+    "photos.caixin.com",
+    "video.caixin.com",
+)
+
+# These pages are retained by the raw archive for provenance, but they are
+# image/video packages rather than text-news articles.  Sampling them into a
+# parser cohort wastes one of the fixed 800 article slots and can make a
+# source look artificially capacity-deficient after QA screens them.
+_PARSER_VALIDATION_NONARTICLE_HOSTS = {
+    "caixin": frozenset({"photos.caixin.com", "video.caixin.com"}),
+}
+
 
 ARCHIVE_SOURCE_SPECS = {
     "ap": ArchiveSourceSpec(
@@ -61,6 +84,13 @@ ARCHIVE_SOURCE_SPECS = {
             r"^/[a-f0-9]{24,}$",
             r"^/.+-[a-f0-9]{24,}$",
             r"^/dynamic/stories/[a-z0-9]/[a-z0-9_-]+$",
+            # Historical AP wire copies were distributed through Yahoo,
+            # Google Hosted News, and HuffPost.  They remain first-class AP
+            # parser inputs: the partner catalog preserves the source URL so
+            # the raw capture and provenance stay auditable.
+            r"^/s/ap(?:_[A-Za-z0-9_-]+)?/20\d{6}/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+$",
+            r"^/hostednews/ap/article/[A-Za-z0-9_-]+$",
+            r"^/huff-wires/20\d{6}/[A-Za-z0-9_-]+$",
         ),
         rejected_path_patterns=_patterns(
             r"^/(?:hub|video|videos|search|press-releases|newsletters)(?:/|$)",
@@ -69,8 +99,19 @@ ARCHIVE_SOURCE_SPECS = {
             "hosted.ap.org",
             "hosted2.ap.org",
             "bigstory.ap.org",
+            "news.yahoo.com",
+            "www.news.yahoo.com",
+            "google.com",
+            "www.google.com",
+            "huffingtonpost.com",
+            "www.huffingtonpost.com",
         ),
-        preserve_normalized_hosts=("bigstory.ap.org",),
+        preserve_normalized_hosts=(
+            "bigstory.ap.org",
+            "news.yahoo.com",
+            "www.google.com",
+            "www.huffingtonpost.com",
+        ),
     ),
     "wsj": ArchiveSourceSpec(
         publisher="wsj",
@@ -81,6 +122,12 @@ ARCHIVE_SOURCE_SPECS = {
         )
         + (
             "online.wsj.com/article/*",
+            # The legacy WSJ CMS also exposed stories below the plural
+            # ``/news/articles/`` route.  This family is especially useful
+            # for 2010--2013 captures; omitting it leaves those years with
+            # an artificially small Wayback candidate pool.
+            "online.wsj.com/news/articles/*",
+            "www.wsj.com/news/articles/*",
         ),
         accepted_path_patterns=_patterns(
             r"^/articles/",
@@ -125,9 +172,31 @@ ARCHIVE_SOURCE_SPECS = {
     "reuters": ArchiveSourceSpec(
         publisher="reuters",
         canonical_host="www.reuters.com",
+        # Reuters migrated away from the legacy ``/article/<slug>`` URL
+        # family during the 2010s.  Keep the legacy per-prefix queries (they
+        # are still the best source for early wire stories), but also index
+        # the section-root URLs used by the newer CMS.  Without these roots,
+        # the 2016-2020 shard can appear capacity-deficient even though
+        # Common Crawl/Wayback contain valid ``/world/...`` and
+        # ``/business/...`` stories.
         wayback_patterns=tuple(
             f"www.reuters.com/article/{prefix}*"
             for prefix in _SLUG_PREFIXES
+        ) + tuple(
+            f"www.reuters.com/{section}/*"
+            for section in (
+                "world",
+                "business",
+                "markets",
+                "technology",
+                "legal",
+                "sports",
+                "lifestyle",
+                "science",
+                "fact-check",
+                "breakingviews",
+                "investigates",
+            )
         ),
         accepted_path_patterns=_patterns(
             r"^/article/",
@@ -176,7 +245,10 @@ ARCHIVE_SOURCE_SPECS = {
             "www.npr.org/{year}/*",
             "npr.org/{year}/*",
         ),
-        accepted_path_patterns=_patterns(r"^/20\d{2}/"),
+        accepted_path_patterns=_patterns(
+            r"^/20\d{2}/",
+            r"^/templates/story/story\.php(?:&storyId=\d+)?$",
+        ),
         rejected_path_patterns=_patterns(
             r"^/(?:programs|podcasts?|music)(?:/|$)",
             r"/(?:election-\d{4}-.+-results|excerpt-[a-z0-9-]+|nprs?-toy-stories|makeover-photos)(?:/|$)",
@@ -215,12 +287,17 @@ ARCHIVE_SOURCE_SPECS = {
         canonical_host="www.aljazeera.com",
         wayback_patterns=(
             "www.aljazeera.com/news/{year}/*",
+            "www.aljazeera.com/economy/{year}/*",
             "www.aljazeera.com/features/{year}/*",
             "www.aljazeera.com/opinions/{year}/*",
+            "www.aljazeera.com/sports/{year}/*",
+            "www.aljazeera.com/gallery/{year}/*",
         ),
-        # The official article sitemap contains many editorial desks beyond
-        # news/features/opinions (for example economy, sports and
-        # investigations). A dated one- or two-level section path plus a
+        # The official article sitemap contains several editorial desks beyond
+        # the main news/features/opinions routes. Keep the explicit prefix
+        # families above in sync with those historical sitemap sections so a
+        # URL-key/CC catalog does not silently omit economy, sports, or
+        # gallery captures. A dated one- or two-level section path plus a
         # non-empty slug is the stable canonical article shape.
         accepted_path_patterns=_patterns(
             r"^/(?:[a-z0-9-]+/){1,2}20\d{2}/"
@@ -239,17 +316,39 @@ ARCHIVE_SOURCE_SPECS = {
     "scmp": ArchiveSourceSpec(
         publisher="scmp",
         canonical_host="www.scmp.com",
-        wayback_patterns=("www.scmp.com/article/*", "www.scmp.com/*/article/*"),
+        # Modern SCMP article URLs are nested below section paths (for
+        # example /news/china/.../article/<id>).  Keep explicit section
+        # prefixes because the Common Crawl indexer only accepts one trailing
+        # wildcard; the older two-level wildcard cannot become a prefix query.
+        wayback_patterns=(
+            "www.scmp.com/article/*",
+            "www.scmp.com/*/article/*",
+            "www.scmp.com/news/*",
+            "www.scmp.com/business/*",
+            "www.scmp.com/sport/*",
+            "www.scmp.com/lifestyle/*",
+            "www.scmp.com/tech/*",
+            "www.scmp.com/comment/*",
+            "www.scmp.com/asia/*",
+            "www.scmp.com/infographics/*",
+        ),
         accepted_path_patterns=_patterns(r"^/article/\d+", r"^/.+/article/\d+"),
         rejected_path_patterns=_patterns(r"^/(?:video|magazines)(?:/|$)"),
     ),
     "caixin": ArchiveSourceSpec(
         publisher="caixin",
         canonical_host="www.caixin.com",
-        wayback_patterns=("www.caixin.com/*", "magazine.caixin.com/{year}/*"),
+        wayback_patterns=(
+            "www.caixin.com/*",
+            "www.caixin.com/{year}-*",
+            "www.caixin.com/{year}/*",
+            "magazine.caixin.com/{year}/*",
+        )
+        + tuple(f"{host}/{{year}}-*" for host in _CAIXIN_EDITORIAL_HOSTS),
         accepted_path_patterns=_patterns(r"^/20\d{2}(?:[-/]|$)"),
-        alternate_hosts=("magazine.caixin.com",),
-        preserve_normalized_hosts=("magazine.caixin.com",),
+        alternate_hosts=("magazine.caixin.com",) + _CAIXIN_EDITORIAL_HOSTS,
+        preserve_normalized_hosts=("magazine.caixin.com",)
+        + _CAIXIN_EDITORIAL_HOSTS,
     ),
 }
 
@@ -292,6 +391,21 @@ def normalize_article_url(
         # losing the article or preserving a non-canonical duplicate.
         path = "/article/" + path.removeprefix("/article/article/")
     if spec.publisher == "npr":
+        legacy_story = re.search(
+            r"(?i)(?:[?&]|%3f|%26)storyid(?:=|%3d)(\d+)",
+            value,
+        )
+        if path.casefold().startswith("/templates/story/story.php"):
+            if legacy_story is None:
+                return None
+            # Preserve the historical public URL as provenance while
+            # canonicalizing malformed CDX aliases that put ``&storyId`` in
+            # the path. The numeric id also deduplicates this URL against the
+            # modern dated NPR canonical URL below.
+            return (
+                "https://www.npr.org/templates/story/story.php?storyId="
+                + legacy_story.group(1)
+            )
         # CDX indexes occasionally contain scraper-added line endings or a
         # trailing assignment marker. Neither can be part of NPR's article
         # slug, and leaving them in place prevents timemap fallback from
@@ -301,6 +415,36 @@ def normalize_article_url(
             "",
             path,
         ).rstrip("=")
+        # Some CDX keys append tracking parameters to the path rather than
+        # storing them as a query string. They are aliases of the same story.
+        path = re.split(
+            r"(?i)(?:&|%26)(?:sc|cc|ps)=",
+            path,
+            maxsplit=1,
+        )[0]
+        path = re.sub(r"(?i)(?:%5d|\])$", "", path)
+    if spec.publisher == "axios":
+        # Historical CDX keys include malformed aliases whose slug differs
+        # from the canonical article only by trailing hyphens or encoded
+        # whitespace/backslashes. Axios does not publish those suffixes;
+        # treating them as separate URLs can place the same story twice in
+        # an 800-item cohort.
+        path = re.sub(
+            r"(?i)(?:%(?:09|0a|0d|20|5c|7f))+$",
+            "",
+            path,
+        )
+        path = path.rstrip("-")
+    if spec.publisher == "caixin":
+        # Legacy magazine articles split long stories into numbered pages and
+        # expose an ``_all`` full-text view. They are representations of one
+        # article, not independent stories.
+        path = re.sub(
+            r"_(?:all|\d+)(\.html)$",
+            r"\1",
+            path,
+            flags=re.IGNORECASE,
+        )
     if spec.publisher == "reuters" and re.search(
         r"[|<>(){}]|%(?:28|29|3c|3e|7b|7c|7d)",
         path,
@@ -339,6 +483,53 @@ def normalize_article_url(
     return urlunsplit(("https", normalized_host, path, "", ""))
 
 
+def is_parser_validation_candidate(
+    spec: ArchiveSourceSpec,
+    value: str,
+) -> bool:
+    """Return whether a canonical source URL may occupy a text QA slot.
+
+    The raw archive deliberately keeps non-text desks.  This narrower
+    predicate is only for the parser-validation sampler, where a photo/video
+    package cannot satisfy the article-body gate and should be skipped before
+    the random 800-row draw.
+    """
+
+    normalized = normalize_article_url(spec, value)
+    if normalized is None:
+        return False
+    hostname = (urlsplit(normalized).hostname or "").casefold()
+    return hostname not in _PARSER_VALIDATION_NONARTICLE_HOSTS.get(
+        spec.publisher,
+        (),
+    )
+
+
+def article_deduplication_key(
+    spec: ArchiveSourceSpec,
+    value: str,
+) -> str | None:
+    """Return a stable story identity without changing its public URL."""
+
+    normalized = normalize_article_url(spec, value)
+    if normalized is None:
+        return None
+    if spec.publisher == "npr":
+        legacy_story = re.search(
+            r"(?i)[?&]storyid=(\d+)",
+            normalized,
+        )
+        if legacy_story is not None:
+            return f"npr:{legacy_story.group(1)}"
+        match = re.match(
+            r"^/\d{4}/\d{2}/\d{2}/(\d+)(?:/|$)",
+            urlsplit(normalized).path,
+        )
+        if match is not None:
+            return f"npr:{match.group(1)}"
+    return normalized
+
+
 def article_url_publication_year(
     spec: ArchiveSourceSpec,
     value: str,
@@ -352,7 +543,41 @@ def article_url_publication_year(
         return published.year if published is not None else None
     if spec.publisher == "ap":
         published = ap_hosted_publication_datetime(normalized)
-        return published.year if published is not None else None
+        if published is not None:
+            return published.year
+        host = (urlsplit(normalized).hostname or "").casefold()
+        if host in {"news.yahoo.com", "www.news.yahoo.com"}:
+            match = re.match(
+                r"^/s/ap(?:_[A-Za-z0-9_-]+)?/(20\d{6})/",
+                path,
+            )
+            if match is not None:
+                return int(match.group(1)[:4])
+        if host in {"huffingtonpost.com", "www.huffingtonpost.com"}:
+            match = re.match(r"^/huff-wires/(20\d{6})/", path)
+            if match is not None:
+                return int(match.group(1)[:4])
+        return None
+    if spec.publisher == "nikkei":
+        # Legacy Nikkei article IDs encode the publication year and month in
+        # segments such as R10C13A9 (2013-09) or Z20C11A4 (2011-04).
+        # Wayback may replay a later generic/member page whose visible date is
+        # the capture year, so use this stable identifier to reject misplaced
+        # validation rows. Newer opaque IDs intentionally return no year.
+        match = re.search(
+            r"[A-Z]\d{2}C(\d{2})A(?:1[0-2]|[1-9])",
+            path,
+            flags=re.IGNORECASE,
+        )
+        return 2000 + int(match.group(1)) if match is not None else None
+    if spec.publisher == "nyt":
+        # NYT interactives encode their publication year after the
+        # ``/interactive`` namespace rather than at the path root.
+        match = re.match(
+            r"^/(?:interactive/)?((?:19|20)\d{2})(?:/|$)",
+            path,
+        )
+        return int(match.group(1)) if match is not None else None
     if spec.publisher != "reuters":
         return None
     if not path.startswith("/article/"):

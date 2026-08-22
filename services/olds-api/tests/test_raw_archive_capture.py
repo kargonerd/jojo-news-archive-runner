@@ -38,11 +38,15 @@ from jojo_olds_api.raw_archive_capture import (
     WSJ_SYNDICATION_MINIMUM_BODY_CHARACTERS,
     _ap_syndication_search_urls,
     _ap_capture_parser_evidence,
+    _axios_capture_parser_evidence,
     _capture_nyt_interactive_resources,
+    _caixin_capture_parser_evidence,
     _candidate_rejection_reasons,
+    _common_crawl_first_candidate_sort_key,
     _common_crawl_discovery_urls,
     _decode_archived_html_content,
     _ft_capture_parser_evidence,
+    _fetch_usable_candidate,
     _nikkei_capture_parser_evidence,
     _wsj_capture_parser_evidence,
     archive_fallback_policy,
@@ -59,7 +63,6 @@ from jojo_olds_api.raw_archive_capture import (
     discover_ft_syndication_candidates,
     discover_reuters_syndication_candidates,
     discover_wayback_timemap_candidates,
-    defer_expensive_archive_fallbacks,
     ft_google_news_headline_search_url,
     ft_google_news_partner_search_url,
     ftchinese_title_search_url,
@@ -225,6 +228,83 @@ def test_nikkei_capture_parser_evidence_rejects_modern_paywall_excerpt():
     assert evidence["nikkeiCaptureExtractionStatus"] == "partial"
 
 
+def test_caixin_capture_parser_evidence_rejects_metadata_only_shell():
+    usable, evidence = _caixin_capture_parser_evidence(
+        """
+        <html><head>
+          <meta property="og:title" content="戴姆勒在华行贿案调查">
+          <meta property="og:description" content="事涉行贿，在华涉案总额超过400万欧元">
+          <meta property="article:published_time"
+                content="2010-03-28T08:00:00+08:00">
+        </head><body><div class="content">
+          <div id="Main_Content_Val"><p>1</p></div>
+          <p>打印 意见反馈 推荐新闻 排行榜</p>
+        </div></body></html>
+        """.encode() + (b" " * 2_048),
+        canonical_url=(
+            "https://magazine.caixin.com/2010-03-28/100129838.html"
+        ),
+    )
+
+    assert usable is False
+    assert evidence["caixinCaptureParserUsable"] is False
+    assert evidence["caixinCaptureExtractionStatus"] == "partial"
+    assert evidence["caixinCaptureBodyCharacters"] < 100
+
+
+def test_caixin_capture_parser_evidence_accepts_complete_single_page_gallery():
+    usable, evidence = _caixin_capture_parser_evidence(
+        """
+        <html><body>
+          <h1>外资投行正在逐渐进入经纪业务领域</h1>
+          <div class="focusBody">
+            <ul id="pic_content"><li><table><tr><td>
+              <div class="imgBox"><table>
+                <tr><td><img src="http://img.caixin.com/photo.jpg"></td></tr>
+                <tr><td style="font-size:12px">完整单页图片报道的图注。</td></tr>
+              </table></div>
+            </td></tr></table></li></ul>
+            <div class="infobox">发表时间：2010年03月21日 20:23</div>
+            <div class="op">发表时间：2010年03月21日 20:23　1 /1</div>
+          </div>
+        </body></html>
+        """.encode(),
+        canonical_url="https://photos.caixin.com/2010-03-21/100128464.html",
+    )
+
+    assert usable is True
+    assert evidence["caixinCaptureParserUsable"] is True
+    assert evidence["caixinCaptureExtractionStatus"] == "complete"
+    assert evidence["caixinCaptureContentType"] == "gallery"
+
+
+def test_caixin_capture_parser_evidence_rejects_incomplete_multipage_gallery():
+    usable, evidence = _caixin_capture_parser_evidence(
+        """
+        <html><body>
+          <h1>多页图片报道</h1>
+          <div class="focusBody">
+            <ul id="pic_content"><li><table><tr><td>
+              <div class="imgBox"><table>
+                <tr><td><img src="http://img.caixin.com/photo.jpg"></td></tr>
+                <tr><td style="font-size:12px">这里只保存了第一张图片。</td></tr>
+              </table></div>
+            </td></tr></table></li></ul>
+            <div class="infobox">发表时间：2010年04月01日 08:05</div>
+            <div class="op">发表时间：2010年04月01日 08:05</div>
+            1 /3
+          </div>
+        </body></html>
+        """.encode(),
+        canonical_url="https://photos.caixin.com/2010-04-01/100130000.html",
+    )
+
+    assert usable is False
+    assert evidence["caixinCaptureParserUsable"] is False
+    assert evidence["caixinCaptureExtractionStatus"] == "partial"
+    assert evidence["caixinCaptureContentType"] == "gallery"
+
+
 def test_wsj_archive_capture_supports_secondary_archive_fallbacks():
     assert "wsj" in COMMON_CRAWL_FALLBACK_PUBLISHERS
     assert "wsj" in ARQUIVO_PT_FALLBACK_PUBLISHERS
@@ -374,6 +454,9 @@ class StubArchiveClient:
     def __init__(self, responses: dict[str, tuple[int, dict[str, str], bytes, str]]):
         self.responses = responses
         self.requests: list[str] = []
+        self.limited_calls: list[tuple[str, int, float]] = []
+        self.attempts = 2
+        self.timeout = 30.0
 
     def fetch(self, url: str, *, maximum_bytes: int):
         self.requests.append(url)
@@ -381,6 +464,97 @@ class StubArchiveClient:
         if len(response[2]) > maximum_bytes:
             raise ValueError("too large")
         return response
+
+    def fetch_limited(
+        self,
+        url: str,
+        *,
+        maximum_bytes: int,
+        attempts: int,
+        timeout: float,
+    ):
+        self.limited_calls.append((url, attempts, timeout))
+        return self.fetch(url, maximum_bytes=maximum_bytes)
+
+
+def test_caixin_capture_skips_shell_and_uses_complete_later_candidate(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://magazine.caixin.com/2010-03-28/100129838.html"
+    )
+    shell_url = (
+        "https://web.archive.org/web/20150514000000id_/" + canonical_url
+    )
+    complete_url = (
+        "https://web.archive.org/web/20160416000000id_/" + canonical_url
+    )
+    shell = """
+      <html><head>
+        <meta property="og:title" content="戴姆勒在华行贿案调查">
+        <meta property="article:published_time"
+              content="2010-03-28T08:00:00+08:00">
+      </head><body><div class="content">
+        <div id="Main_Content_Val"><p>1</p></div>
+        <p>打印 意见反馈 推荐新闻 排行榜</p>
+      </div></body></html>
+    """.encode() + (b" " * 2_048)
+    complete = """
+      <html><head>
+        <meta property="og:title" content="戴姆勒在华行贿案调查">
+        <meta property="article:published_time"
+              content="2010-03-28T08:00:00+08:00">
+      </head><body><div class="content">
+        <div id="Main_Content_Val">
+          <p>监管机构披露了案件调查的主要事实，并说明相关交易、
+          涉案金额以及企业作出的正式回应。</p>
+          <p>调查材料记录了付款时间、业务背景和内部审批过程，
+          为判断事件范围提供了完整依据。</p>
+          <p>公司表示将配合后续调查并改进合规制度，相关部门也将
+          继续核查责任主体和资金流向。</p>
+        </div>
+      </div></body></html>
+    """.encode() + (b" " * 2_048)
+    client = StubArchiveClient(
+        {
+            shell_url: (
+                200,
+                {"content-type": "text/html"},
+                shell,
+                shell_url,
+            ),
+            complete_url: (
+                200,
+                {"content-type": "text/html"},
+                complete,
+                complete_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="caixin",
+        canonical_url=canonical_url,
+        published_at="2010-03-28T00:00:00Z",
+        section=None,
+        candidates=(
+            candidate(shell_url, "20150514000000"),
+            candidate(complete_url, "20160416000000"),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert result["capture"].selected_candidate.snapshot_url == complete_url
+    assert result["capture"].quality_signals[
+        "caixinCaptureParserUsable"
+    ] is True
+    assert client.requests == [shell_url, complete_url]
 
 
 def test_archives_wayback_nyt_adventure_script_as_dependent_resource(
@@ -730,7 +904,7 @@ def test_ft_manifest_partner_copy_requires_strict_validation(
     assert not any("datasets-server.huggingface.co" in url for url in client.requests)
 
 
-def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
+def test_ft_direct_infini_origin_falls_back_after_validation_failure(
     tmp_path: Path,
 ):
     headline = "Financial Times tests a complete direct-origin article"
@@ -862,9 +1036,47 @@ def test_ft_direct_infini_origin_is_validated_before_slow_fallbacks(
         maximum_html_bytes=1_000_000,
     )
 
-    assert mismatched_result["status"] == "error"
-    assert "publication-date-mismatch" in mismatched_result["error"]
-    assert mismatched_client.requests == [row_url]
+    # A bad Infini row must not suppress a usable Wayback capture for the
+    # same canonical article.  Older code returned immediately here and
+    # never reached the AMP/Wayback fallback candidates.
+    assert mismatched_result["status"] == "complete"
+    assert (
+        mismatched_result["capture"].selected_candidate.snapshot_url
+        == wayback_url
+    )
+    assert mismatched_client.requests[0] == row_url
+    assert mismatched_client.requests[-1] == wayback_url
+
+
+def test_ft_infini_subscription_shell_is_skipped_without_network():
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    candidate = CaptureCandidate(
+        provider=CaptureProvider.INFINI_NEWS,
+        snapshot_url=(
+            "https://datasets-server.huggingface.co/rows?"
+            "dataset=ruggsea%2Finfini-news-corpus&config=year_2018&"
+            "split=train&offset=12345&length=1"
+        ),
+        source_url=canonical_url,
+        expected_headline="Purchase a Digital Trial subscription for",
+        warc_filename="CC-NEWS-20180328120000-00001.warc.gz",
+    )
+    client = StubArchiveClient({})
+
+    response, failure = _fetch_usable_candidate(
+        candidate,
+        archive_client=client,
+        maximum_html_bytes=1_000_000,
+        canonical_url=canonical_url,
+        publisher="ft",
+    )
+
+    assert response is None
+    assert failure is None
+    assert client.requests == []
 
 
 def test_ft_jina_reader_html_is_validated_as_derived_origin(
@@ -1650,6 +1862,104 @@ def test_legacy_manifest_loads_into_generic_capture_state(tmp_path: Path):
         selected[0].candidates[0].captured_at
         == datetime(2020, 1, 2, 12, 55, 27, tzinfo=timezone.utc)
     )
+
+
+def test_axios_manifest_collapses_encoded_trailing_aliases(tmp_path: Path):
+    canonical_url = "https://www.axios.com/2025/01/20/example-story"
+    manifest = tmp_path / "manifest.jsonl"
+    rows = []
+    for suffix in ("", "%5C", "%0A", "%20"):
+        source_url = canonical_url + suffix
+        rows.append(
+            {
+                "publisher": "axios",
+                "canonicalUrl": source_url,
+                "publishedAt": "2025-01-20T00:00:00Z",
+                "candidates": [
+                    {
+                        "provider": "wayback",
+                        "snapshotUrl": (
+                            "https://web.archive.org/web/20250121000000id_/"
+                            + source_url
+                        ),
+                    }
+                ],
+            }
+        )
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="axios",
+        authorization_reference="authorization:test",
+    )
+
+    result = load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="axios",
+    )
+
+    assert result == {"manifestRows": 4, "inserted": 1}
+    assert connection.execute(
+        "SELECT canonical_url FROM captures"
+    ).fetchall() == [(canonical_url,)]
+    candidate_rows = json.loads(
+        connection.execute(
+            "SELECT candidates_json FROM captures WHERE canonical_url=?",
+            (canonical_url,),
+        ).fetchone()[0]
+    )
+    assert len(candidate_rows) == 4
+
+
+def test_npr_manifest_normalizes_tracking_suffix_in_path(tmp_path: Path):
+    canonical_url = (
+        "https://www.npr.org/2012/01/14/145168801/"
+        "alsop-sprach-zarathustra-the-conductor-decodes-strauss-iconic-tone-poem"
+    )
+    alias_url = canonical_url + "&sc=nl&cc=sod-20120120"
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "publisher": "npr",
+                "canonicalUrl": alias_url,
+                "publishedAt": "2012-01-14T00:00:00Z",
+                "candidates": [
+                    {
+                        "provider": "wayback",
+                        "snapshotUrl": (
+                            "https://web.archive.org/web/20120115000000id_/"
+                            + alias_url
+                        ),
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="npr",
+        authorization_reference="authorization:test",
+    )
+
+    result = load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="npr",
+    )
+
+    assert result == {"manifestRows": 1, "inserted": 1}
+    assert connection.execute(
+        "SELECT canonical_url FROM captures"
+    ).fetchall() == [(canonical_url,)]
 
 
 def test_interrupted_capture_does_not_consume_an_attempt():
@@ -3323,6 +3633,84 @@ def test_ft_capture_checks_later_exact_wayback_versions_before_common_crawl(
     assert result["capture"].quality_score == 100
 
 
+def test_ft_capture_falls_back_to_amp_timemap_when_canonical_is_empty(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.ft.com/content/example"
+    amp_url = "https://amp.ft.com/content/example"
+    timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Fwww.ft.com%2Fcontent%2Fexample"
+    )
+    amp_timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Famp.ft.com%2Fcontent%2Fexample"
+    )
+    replay_url = (
+        "https://web.archive.org/web/20190926012847id_/" + amp_url
+    )
+    timemap_header = [
+        "urlkey",
+        "timestamp",
+        "original",
+        "mimetype",
+        "statuscode",
+        "digest",
+    ]
+    amp_timemap = json.dumps(
+        [
+            timemap_header,
+            [
+                "com,ft)/content/example",
+                "20190926012847",
+                amp_url,
+                "text/html",
+                "200",
+                "AMP-EXACT",
+            ],
+        ]
+    ).encode()
+    client = StubArchiveClient(
+        {
+            timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                json.dumps([]).encode(),
+                timemap_url,
+            ),
+            amp_timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                amp_timemap,
+                amp_timemap_url,
+            ),
+            replay_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                replay_url,
+            ),
+        }
+    )
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2018-09-01T00:00:00Z",
+        section=None,
+        candidates=(),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [timemap_url, amp_timemap_url, replay_url]
+    assert result["capture"].selected_candidate.snapshot_url == replay_url
+    assert result["capture"].selected_candidate.provider == CaptureProvider.WAYBACK
+
+
 def test_bloomberg_capture_falls_back_to_exact_timemap_snapshot(
     tmp_path: Path,
 ):
@@ -3782,27 +4170,138 @@ def test_wsj_retry_prefers_validated_arquivo_pt_before_common_crawl(
     assert capture.quality_signals["arquivoPtReplayValidated"] is True
 
 
-def test_wsj_validation_defers_expensive_fallbacks_until_retry():
-    assert defer_expensive_archive_fallbacks(
+def test_wsj_validation_defers_timemap_until_retry():
+    first = archive_fallback_policy(
         publisher="wsj",
         parser_validation_enabled=True,
         prior_attempts=0,
     )
-    assert not defer_expensive_archive_fallbacks(
+    retry = archive_fallback_policy(
         publisher="wsj",
         parser_validation_enabled=True,
         prior_attempts=1,
     )
-    assert not defer_expensive_archive_fallbacks(
-        publisher="wsj",
-        parser_validation_enabled=False,
-        prior_attempts=0,
+    assert (first.wayback_timemap, first.common_crawl, first.arquivo_pt) == (
+        False,
+        False,
+        False,
     )
-    assert not defer_expensive_archive_fallbacks(
-        publisher="npr",
+    assert (retry.wayback_timemap, retry.common_crawl, retry.arquivo_pt) == (
+        True,
+        True,
+        True,
+    )
+
+
+def test_ft_validation_defers_timemap_until_retry():
+    first = archive_fallback_policy(
+        publisher="ft",
         parser_validation_enabled=True,
         prior_attempts=0,
     )
+    retry = archive_fallback_policy(
+        publisher="ft",
+        parser_validation_enabled=True,
+        prior_attempts=1,
+    )
+
+    assert (
+        first.wayback_timemap,
+        first.common_crawl,
+        first.arquivo_pt,
+    ) == (False, True, True)
+    assert (
+        retry.wayback_timemap,
+        retry.common_crawl,
+        retry.arquivo_pt,
+    ) == (True, True, True)
+
+
+def test_ft_first_pass_still_uses_manifest_candidates_without_timemap(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.ft.com/content/example"
+    snapshot_url = (
+        "https://web.archive.org/web/20200101120000id_/" + canonical_url
+    )
+    client = StubArchiveClient(
+        {
+            snapshot_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                snapshot_url,
+            )
+        }
+    )
+    client.attempts = 1
+    client.timeout = 12.0
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2020-01-01T00:00:00Z",
+        section=None,
+        candidates=(candidate(snapshot_url, "20200101120000"),),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        enable_wayback_timemap_fallback=False,
+    )
+
+    assert result["status"] == "complete"
+    assert client.requests == [snapshot_url]
+    assert client.limited_calls == [(snapshot_url, 1, 12.0)]
+
+
+def test_ft_first_pass_bounds_duplicate_manifest_snapshots(tmp_path: Path):
+    canonical_url = "https://www.ft.com/content/example-duplicates"
+    first_url = (
+        "https://web.archive.org/web/20200101120000id_/" + canonical_url
+    )
+    second_url = (
+        "https://web.archive.org/web/20200102120000id_/" + canonical_url
+    )
+    client = StubArchiveClient(
+        {
+            first_url: (503, {"content-type": "text/html"}, b"", first_url),
+            second_url: (
+                200,
+                {"content-type": "text/html"},
+                ARTICLE,
+                second_url,
+            ),
+        }
+    )
+    client.attempts = 1
+    client.timeout = 12.0
+    item = ManifestItem(
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at="2020-01-01T00:00:00Z",
+        section=None,
+        candidates=(
+            candidate(first_url, "20200101120000"),
+            candidate(second_url, "20200102120000"),
+        ),
+    )
+
+    result = capture_item(
+        item,
+        archive_client=client,
+        output_dir=tmp_path,
+        maximum_html_bytes=1_000_000,
+        enable_wayback_timemap_fallback=False,
+        enable_common_crawl_fallback=False,
+        enable_arquivo_pt_fallback=False,
+    )
+
+    assert result["status"] == "error"
+    assert client.requests[0] == first_url
+    assert second_url not in client.requests
 
 
 def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
@@ -3836,7 +4335,7 @@ def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
         second.wayback_timemap,
         second.common_crawl,
         second.arquivo_pt,
-    ) == (True, False, True)
+    ) == (True, True, True)
     assert (
         third.wayback_timemap,
         third.common_crawl,
@@ -3849,13 +4348,121 @@ def test_wsj_validation_stages_secondary_archives_by_cost_and_yield():
     ) == (True, True, True)
 
 
-def test_wsj_timemap_mixes_largest_digests_with_nearest_captures():
-    canonical_url = (
-        "https://www.wsj.com/articles/"
-        "example-timemap-selection-11577836800"
+def test_nikkei_validation_keeps_timemap_and_stages_slow_fallbacks():
+    first = archive_fallback_policy(
+        publisher="nikkei",
+        parser_validation_enabled=True,
+        prior_attempts=0,
     )
+    second = archive_fallback_policy(
+        publisher="nikkei",
+        parser_validation_enabled=True,
+        prior_attempts=1,
+    )
+    third = archive_fallback_policy(
+        publisher="nikkei",
+        parser_validation_enabled=True,
+        prior_attempts=2,
+    )
+
+    assert (
+        first.wayback_timemap,
+        first.common_crawl,
+        first.arquivo_pt,
+    ) == (True, False, False)
+    assert (
+        second.wayback_timemap,
+        second.common_crawl,
+        second.arquivo_pt,
+    ) == (True, True, False)
+    assert (
+        third.wayback_timemap,
+        third.common_crawl,
+        third.arquivo_pt,
+    ) == (True, True, True)
+
+
+def test_nikkei_candidate_order_prefers_large_commoncrawl_records():
+    from jojo_olds_api.raw_archive_capture import _nikkei_candidate_sort_key
+
+    wayback = CaptureCandidate(
+        provider=CaptureProvider.WAYBACK,
+        snapshot_url="https://web.archive.org/web/20150101000000id_/"
+        "https://www.nikkei.com/article/example",
+        captured_at=datetime(2015, 1, 1, tzinfo=timezone.utc),
+        byte_count=200_000,
+    )
+    small_commoncrawl = CaptureCandidate(
+        provider=CaptureProvider.COMMON_CRAWL,
+        snapshot_url="https://data.commoncrawl.org/small.warc.gz",
+        captured_at=datetime(2018, 1, 1, tzinfo=timezone.utc),
+        byte_count=16_000,
+    )
+    large_commoncrawl = CaptureCandidate(
+        provider=CaptureProvider.COMMON_CRAWL,
+        snapshot_url="https://data.commoncrawl.org/large.warc.gz",
+        captured_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        byte_count=33_000,
+    )
+
+    ordered = sorted(
+        (wayback, small_commoncrawl, large_commoncrawl),
+        key=lambda value: _nikkei_candidate_sort_key(
+            value,
+            published_at="2014-01-01T00:00:00+00:00",
+        ),
+    )
+
+    assert ordered == [large_commoncrawl, small_commoncrawl, wayback]
+
+
+def test_aljazeera_candidate_order_prefers_commoncrawl_before_wayback():
+    wayback = CaptureCandidate(
+        provider=CaptureProvider.WAYBACK,
+        snapshot_url="https://web.archive.org/web/20160101000000id_/"
+        "https://www.aljazeera.com/features/example",
+        captured_at=datetime(2016, 1, 1, tzinfo=timezone.utc),
+        byte_count=200_000,
+    )
+    commoncrawl = CaptureCandidate(
+        provider=CaptureProvider.COMMON_CRAWL,
+        snapshot_url="https://data.commoncrawl.org/example.warc.gz",
+        captured_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        byte_count=59_000,
+    )
+
+    ordered = sorted(
+        (wayback, commoncrawl),
+        key=lambda value: _common_crawl_first_candidate_sort_key(
+            value,
+            published_at="2016-01-01T00:00:00+00:00",
+        ),
+    )
+
+    assert ordered == [commoncrawl, wayback]
+
+
+@pytest.mark.parametrize(
+    ("publisher", "canonical_url"),
+    [
+        (
+            "wsj",
+            "https://www.wsj.com/articles/"
+            "example-timemap-selection-11577836800",
+        ),
+        (
+            "nikkei",
+            "https://www.nikkei.com/article/"
+            "DGXNASGG1701V_X10C12A7EA2000",
+        ),
+    ],
+)
+def test_metered_publishers_timemap_mixes_largest_and_nearest_captures(
+    publisher: str,
+    canonical_url: str,
+):
     item = ManifestItem(
-        publisher="wsj",
+        publisher=publisher,
         canonical_url=canonical_url,
         published_at="2020-01-01T12:00:00Z",
         section=None,
@@ -4817,6 +5424,10 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
         "https%3A%2F%2Fwww.ft.com%2Fcontent%2F"
         "d8f6d8af-8235-43ae-a946-6d51da973ca4"
     )
+    amp_timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?url=" + (
+        "https%3A%2F%2Famp.ft.com%2Fcontent%2F"
+        "d8f6d8af-8235-43ae-a946-6d51da973ca4"
+    )
     ghost_search_url = ghostarchive_search_url(canonical_url)
     canonical_search_url = ft_syndication_search_url(item)
     google_headline_search_url = ft_google_news_headline_search_url(item)
@@ -4899,6 +5510,12 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
                 ).encode(),
                 timemap_url,
             ),
+            amp_timemap_url: (
+                200,
+                {"content-type": "application/json"},
+                json.dumps([]).encode(),
+                amp_timemap_url,
+            ),
             snapshot_url: (
                 200,
                 {"content-type": "text/html; charset=utf-8"},
@@ -4933,6 +5550,7 @@ def test_ft_capture_uses_paywall_metadata_to_find_validated_partner(
         google_headline_search_url,
         ghost_search_url,
         timemap_url,
+        amp_timemap_url,
         snapshot_url,
         ftchinese_search_url,
         title_search_url,
@@ -7057,6 +7675,147 @@ def test_wsj_capture_rejects_long_description_slideshow_shell():
     assert signals["wsjCaptureImagesSelected"] < 3
 
 
+def test_axios_capture_parser_evidence_rejects_visual_redirect_stub(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "jojo_olds_api.news_parser.parse_article",
+        lambda *args, **kwargs: SimpleNamespace(
+            content_type=ContentType.ARTICLE,
+            quality=SimpleNamespace(
+                status=ArticleStatus.PARTIAL,
+                body_characters=96,
+                images_selected=1,
+            ),
+            plain_text=(
+                "See Axios Visuals' best data visualizations, illustrations, "
+                "comics and collaborations from 2024."
+            ),
+        ),
+    )
+
+    usable, signals = _axios_capture_parser_evidence(
+        b"<html><article>archived redirect</article></html>",
+        canonical_url="https://www.axios.com/2025/01/02/2024-best-visuals-axios",
+    )
+
+    assert usable is False
+    assert signals["axiosCaptureVisualRedirectStub"] is True
+
+
+def test_axios_capture_parser_evidence_rejects_empty_article_shell(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "jojo_olds_api.news_parser.parse_article",
+        lambda *args, **kwargs: SimpleNamespace(
+            content_type=ContentType.ARTICLE,
+            quality=SimpleNamespace(
+                status=ArticleStatus.PARTIAL,
+                body_characters=0,
+                images_selected=0,
+            ),
+            plain_text="",
+        ),
+    )
+
+    usable, signals = _axios_capture_parser_evidence(
+        b"<html><article>metadata-only shell</article></html>",
+        canonical_url=(
+            "https://www.axios.com/2017/12/16/"
+            "trump-at-the-cia-1513388116"
+        ),
+    )
+
+    assert usable is False
+    assert signals["axiosCaptureVisualRedirectStub"] is False
+    assert signals["axiosCaptureEmptyArticleShell"] is True
+
+
+@pytest.mark.parametrize(
+    ("status", "content_type", "body_characters", "images_selected"),
+    [
+        (ArticleStatus.COMPLETE, ContentType.ARTICLE, 96, 1),
+        (ArticleStatus.PARTIAL, ContentType.INTERACTIVE, 96, 1),
+        (ArticleStatus.PARTIAL, ContentType.ARTICLE, 96, 3),
+    ],
+)
+def test_axios_capture_parser_evidence_keeps_non_stub_formats(
+    monkeypatch: pytest.MonkeyPatch,
+    status: ArticleStatus,
+    content_type: ContentType,
+    body_characters: int,
+    images_selected: int,
+):
+    monkeypatch.setattr(
+        "jojo_olds_api.news_parser.parse_article",
+        lambda *args, **kwargs: SimpleNamespace(
+            content_type=content_type,
+            quality=SimpleNamespace(
+                status=status,
+                body_characters=body_characters,
+                images_selected=images_selected,
+            ),
+            plain_text=(
+                "See Axios Visuals' best data visualizations, illustrations, "
+                "comics and collaborations from 2024."
+            ),
+        ),
+    )
+
+    usable, signals = _axios_capture_parser_evidence(
+        b"<html><article>archived story</article></html>",
+        canonical_url="https://www.axios.com/2025/01/02/example",
+    )
+
+    assert usable is True
+    assert signals["axiosCaptureVisualRedirectStub"] is False
+
+
+def test_stored_axios_visual_redirect_stub_is_requeued(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    canonical_url = "https://www.axios.com/2025/01/02/2024-best-visuals-axios"
+    shell = b"<html><body><article>archived redirect</article></body></html>" + (
+        b" " * 2_048
+    )
+    blob = store_raw_html(tmp_path, shell)
+    capture = RawCapture(
+        article_id="axios:" + ("a" * 64),
+        publisher="axios",
+        canonical_url=canonical_url,
+        published_at=datetime(2025, 1, 2, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20250502000000id_/" + canonical_url
+            ),
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+    monkeypatch.setattr(
+        "jojo_olds_api.raw_archive_capture._axios_capture_parser_evidence",
+        lambda *args, **kwargs: (
+            False,
+            {"axiosCaptureVisualRedirectStub": True},
+        ),
+    )
+
+    reason = completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    )
+
+    assert reason == "axios-capture-parser-incomplete"
+
+
 def test_ap_capture_parser_evidence_rejects_unhydrated_score_table():
     usable, signals = _ap_capture_parser_evidence(
         b"""
@@ -7119,6 +7878,27 @@ def test_raw_quality_rejects_wsj_structured_snippet_view():
 
     assert score < 85
     assert signals["hasStrongBodyMarker"] is True
+    assert signals["subscriptionShell"] is True
+
+
+def test_raw_quality_rejects_wsj_legacy_snippet_template():
+    score, signals = score_raw_capture(
+        b"""
+        <html><head>
+          <meta name="article.template" content="snippet">
+          <meta property="og:title" content="A metered WSJ report">
+        </head><body><article>
+          <div class="wsj-snippet-body">
+            <p>Only the opening paragraph of this report is visible.</p>
+          </div>
+          <div class="snippet-promotion">Subscribe to continue reading.</div>
+        </article></body></html>
+        """ + (b" " * 2_048),
+        http_status=200,
+        content_type="text/html",
+    )
+
+    assert score < 85
     assert signals["subscriptionShell"] is True
 
 
@@ -7235,6 +8015,59 @@ def test_stored_wsj_subscription_shell_still_rejects_short_preview(
     assert reason == "subscription-shell"
 
 
+def test_stored_wsj_video_with_auth_marker_is_not_requeued(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.wsj.com/article/legacy-video-123"
+    html = b"""
+    <html><head>
+      <title>Legacy WSJ Video</title>
+      <meta name="description" content="WSJ reporters examine the
+      recovery and its strategic options in this video report.">
+    </head><body>
+      <div class="account-navigation">Sign in to continue</div>
+      <script>var AT_VARS={articleType:"Video - WSJ",
+        publicationDate:"2011-12-15"};</script>
+      <div id="masterVideoCenter"><div id="videoPlayer"></div></div>
+    </body></html>
+    """ + (b" " * 2_048)
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="wsj:" + ("v" * 64),
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at=datetime(2011, 12, 15, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20111215163504id_/"
+                + canonical_url
+            ),
+        ),
+        candidates_considered=[],
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=25,
+        raw_html=blob,
+    )
+
+    _, signals = score_raw_capture(
+        html,
+        http_status=200,
+        content_type="text/html",
+        final_url=canonical_url,
+    )
+    reason = completed_capture_rejection_reason(
+        capture,
+        archive_root=tmp_path,
+    )
+
+    assert signals["authenticationShell"] is True
+    assert reason is None
+
+
 @pytest.mark.parametrize(
     ("publisher", "canonical_url", "expected_reason"),
     [
@@ -7257,6 +8090,11 @@ def test_stored_wsj_subscription_shell_still_rejects_short_preview(
             "wsj",
             "https://www.wsj.com/articles/incomplete-example-123",
             "wsj-capture-parser-incomplete",
+        ),
+        (
+            "caixin",
+            "https://magazine.caixin.com/2020-01-01/incomplete.html",
+            "caixin-capture-parser-incomplete",
         ),
     ],
 )

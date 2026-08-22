@@ -21,6 +21,8 @@ def test_ap_wayback_bigstory_workflow_publishes_catalog_only() -> None:
     assert '--limit "$LIMIT_PER_PREFIX"' in workflow
     assert "wayback-bigstory-manifest.jsonl.gz" in workflow
     assert "wayback-bigstory-summary.json" in workflow
+    assert "summarize_archive_manifest.py" in workflow
+    assert "wayback-bigstory-manifest-summary.json" in workflow
     assert "news-archive/v1/ap/2010-2015/legacy-archive" in workflow
     assert "raw/objects" not in workflow
     assert "raw/records" not in workflow

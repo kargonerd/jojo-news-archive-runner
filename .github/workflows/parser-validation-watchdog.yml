@@ -25,28 +25,50 @@ env:
   # and storage cost have been reviewed.
   MAX_STANDARD_CONCURRENCY: "2"
   MAX_DISPATCH_PER_RUN: "2"
-  # Keep one slot available for parser iteration while long catalog chains
-  # fill the other slot. This avoids blocking all 800-sample work behind the
-  # slowest historical CDX prefix.
-  MAX_CATALOG_CONCURRENCY: "1"
-  # Bloomberg has completed the current research acceptance cycle. Reuters is
-  # outside the active convergence objective; both remain supported by the
-  # generic planner and can be re-enabled by editing this explicit queue.
+  # Reserve at most one refresh dispatch when superseded parser cohorts are
+  # still draining. This prevents a parser fix from waiting behind a stale
+  # long-running capture chain without broadly increasing concurrency.
+  MAX_SUPERSEDED_REFRESH_DISPATCH: "1"
+  # Keep two independent catalog chains moving while the parser-validation
+  # scheduler continues to reserve standard slots for 800-sample cohorts.
+  # Common Crawl workflows are keyed by publisher/window, so this does not
+  # collide with a different publisher's resumable chain.
+  # Catalog jobs persist compact URL/date checkpoints. Keep a third slot for
+  # a targeted recovery chain while the two broad SCMP windows drain their
+  # long undated tails; parser-validation concurrency remains independent.
+  MAX_CATALOG_CONCURRENCY: "3"
+  # Bloomberg has completed the current research acceptance cycle. Keep every
+  # other currently requested publisher eligible for per-year 800-row
+  # validation; Caixin is intentionally paused and is not dispatched here.
   VALIDATION_PUBLISHERS: >-
-    ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp caixin
-  DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    ft wsj nyt ap axios npr nikkei zaobao aljazeera scmp
+  # Manual runs from a parser-iteration branch must dispatch jobs from that
+  # same ref; scheduled runs on the default branch continue to use main.
+  DISPATCH_REF: ${{ github.ref_name }}
 
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
 
       - name: Install rclone
         run: |
-          sudo apt-get update
-          sudo apt-get install -y rclone
+          # Hosted-runner apt mirrors occasionally stall. Keep the watchdog
+          # recoverable and fall back to the upstream static binary instead
+          # of spending its whole timeout waiting on package metadata.
+          if ! timeout 120 sudo apt-get update || \
+             ! timeout 120 sudo apt-get install -y rclone; then
+            rclone_tmp="$(mktemp -d)"
+            curl -fsSL --retry 4 --retry-delay 2 \
+              -o "$rclone_tmp/rclone.zip" \
+              https://downloads.rclone.org/rclone-current-linux-amd64.zip
+            unzip -q "$rclone_tmp/rclone.zip" -d "$rclone_tmp"
+            rclone_binary="$(find "$rclone_tmp" -type f -name rclone -print -quit)"
+            test -n "$rclone_binary"
+            sudo install -m 0755 "$rclone_binary" /usr/local/bin/rclone
+          fi
 
       - name: Validate private B2 storage
         run: |
@@ -57,26 +79,81 @@ jobs:
             --non-interactive
 
       - name: Restore validation summaries
+        timeout-minutes: 25
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/archive-state"
           copy_summary() {
-            remote_dir="$1"
-            destination="$2"
-            listing="$RUNNER_TEMP/summary-listing.txt"
-            errors="$RUNNER_TEMP/summary-listing-errors.txt"
-            if ! rclone lsf "$remote_dir" --files-only \
-                >"$listing" 2>"$errors"; then
+            local remote_dir="$1"
+            local destination="$2"
+            local errors="$RUNNER_TEMP/summary-listing-errors-${BASHPID}-${RANDOM}.txt"
+            # Probe the one object we need instead of enumerating every
+            # object in the state directory. B2 buckets contain many
+            # superseded checkpoints, and directory listings can dominate
+            # this watchdog's 15-minute budget. Retries also absorb a
+            # transient 5xx while the object metadata is being read.
+            summary_remote="$remote_dir/summary.json"
+            object_listing=""
+            if ! object_listing="$(
+              rclone lsl "$summary_remote" \
+                --timeout 30s --contimeout 10s \
+                --retries 3 --low-level-retries 6 \
+                2>"$errors"
+            )"; then
               if grep -qiE "directory not found|object not found" "$errors"; then
                 return 0
               fi
               cat "$errors" >&2
               return 1
             fi
-            if grep -Fxq "summary.json" "$listing"; then
+            if [ -n "$object_listing" ]; then
               mkdir -p "$destination"
-              rclone copyto "$remote_dir/summary.json" \
+              rclone copyto "$summary_remote" \
                 "$destination/summary.json" \
+                --retries 8 --low-level-retries 20
+            fi
+          }
+          restore_source_root() {
+            local source_root="$1"
+            local result_root="$2"
+            mkdir -p "$result_root"
+            copy_summary \
+              "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state" \
+              "$RUNNER_TEMP/archive-state/${source_root}/state"
+            local object_listing=""
+            if object_listing="$(
+              rclone lsl \
+                "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest.jsonl.gz" \
+                --timeout 30s --contimeout 10s \
+                --retries 3 --low-level-retries 6 \
+                2>/dev/null
+            )" && [ -n "$object_listing" ]; then
+              printf '%s\n' "$source_root" > "$result_root/available"
+              local capacity_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest-summary.json"
+              local capacity_listing=""
+              if capacity_listing="$(
+                rclone lsl "$capacity_remote" \
+                  --timeout 30s --contimeout 10s \
+                  --retries 3 --low-level-retries 6 \
+                  2>/dev/null
+              )" && [ -n "$capacity_listing" ]; then
+                local capacity_local="$source_capacity_root/${source_root}/manifest-summary.json"
+                mkdir -p "$(dirname "$capacity_local")"
+                rclone copyto "$capacity_remote" "$capacity_local" \
+                  --retries 8 --low-level-retries 20
+              fi
+            fi
+            local status_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/status.json"
+            local status_listing=""
+            if status_listing="$(
+              rclone lsl "$status_remote" \
+                --timeout 30s --contimeout 10s \
+                --retries 3 --low-level-retries 6 \
+                2>/dev/null
+            )" && [ -n "$status_listing" ]; then
+              local status_local="$source_catalog_status_root/${source_root}/catalog/status.json"
+              mkdir -p "$(dirname "$status_local")"
+              rclone copyto "$status_remote" "$status_local" \
                 --retries 8 --low-level-retries 20
             fi
           }
@@ -105,8 +182,6 @@ jobs:
             "aljazeera/2016-2026/sitemap-wayback"
             "scmp/2010-2015/wayback-urlkey"
             "scmp/2016-2026/wayback-urlkey"
-            "caixin/2010-2015/wayback-urlkey"
-            "caixin/2016-2026/wayback-urlkey"
           )
           available_source_shards="$RUNNER_TEMP/available-source-shards.txt"
           source_capacity_root="$RUNNER_TEMP/source-capacity"
@@ -114,44 +189,90 @@ jobs:
           mkdir -p "$source_capacity_root"
           mkdir -p "$source_catalog_status_root"
           : > "$available_source_shards"
+          source_restore_root="$RUNNER_TEMP/source-root-restore"
+          mkdir -p "$source_restore_root"
+          source_restore_pids=()
+          source_restore_results=()
+          source_restore_parallelism=8
+          wait_for_source_restore_batch() {
+            local pid
+            for pid in "${source_restore_pids[@]}"; do
+              wait "$pid"
+            done
+            source_restore_pids=()
+          }
           for source_root in "${source_roots[@]}"; do
-            copy_summary \
-              "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state" \
-              "$RUNNER_TEMP/archive-state/${source_root}/state"
-            object_listing=""
-            if object_listing="$(
-              rclone lsl \
-                "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest.jsonl.gz" \
-                --timeout 30s --contimeout 10s \
-                --retries 1 --low-level-retries 1 \
-                2>/dev/null
-            )" && [ -n "$object_listing" ]; then
-              echo "$source_root" >> "$available_source_shards"
-              capacity_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/manifest-summary.json"
-              if capacity_listing="$(
-                rclone lsl "$capacity_remote" \
-                  --timeout 30s --contimeout 10s \
-                  --retries 1 --low-level-retries 1 \
-                  2>/dev/null
-              )" && [ -n "$capacity_listing" ]; then
-                capacity_local="${source_capacity_root}/${source_root}/manifest-summary.json"
-                mkdir -p "$(dirname "$capacity_local")"
-                rclone copyto "$capacity_remote" "$capacity_local" \
-                  --retries 8 --low-level-retries 20
-              fi
+            result_root="$source_restore_root/${#source_restore_results[@]}"
+            source_restore_results+=("$result_root")
+            (
+              restore_source_root "$source_root" "$result_root"
+            ) &
+            source_restore_pids+=("$!")
+            if [ "${#source_restore_pids[@]}" -ge "$source_restore_parallelism" ]; then
+              wait_for_source_restore_batch
             fi
-            status_remote="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/catalog/status.json"
-            if status_listing="$(
-              rclone lsl "$status_remote" \
+          done
+          wait_for_source_restore_batch
+          for result_root in "${source_restore_results[@]}"; do
+            if [ -f "$result_root/available" ]; then
+              cat "$result_root/available" >> "$available_source_shards"
+            fi
+          done
+          sort -u "$available_source_shards" -o "$available_source_shards"
+          # Supplemental catalogs are merged by the accelerator per year.
+          # Restore their capacity sidecars so a thin primary Wayback shard
+          # does not hide a year with at least 800 Common Crawl candidates.
+          # Restore capacity sidecars for the other catalog-only supplements
+          # as well. Without these, the planner treats an omitted year as
+          # unknown and can dispatch cells whose merged source has no unseen
+          # candidates (or no rows at all), producing avoidable validation
+          # failures instead of recording a capacity-deficient cell.
+          supplemental_capacity_roots=(
+            "ap/2010-2015/legacy-archive"
+            "reuters/2010-2015/commoncrawl-prefix"
+            "reuters/2016-2020/commoncrawl-prefix"
+            "reuters/2021-2026/commoncrawl-prefix"
+            "aljazeera/2010-2015/commoncrawl-prefix"
+            "aljazeera/2016-2026/commoncrawl-prefix"
+            "nikkei/2010-2015/commoncrawl-prefix"
+            "nikkei/2016-2026/commoncrawl-prefix"
+            "wsj/2010-2015/commoncrawl-prefix"
+            "wsj/2016-2026/commoncrawl-prefix"
+            "scmp/2010-2015/commoncrawl-prefix"
+            "scmp/2016-2026/commoncrawl-prefix"
+          )
+          for supplemental_year in $(seq 2010 2026); do
+            supplemental_capacity_roots+=(
+              "npr/${supplemental_year}-${supplemental_year}/commoncrawl-prefix"
+            )
+          done
+          # The broad NPR catalog covers 2012--2016 and is merged by the
+          # accelerator for those cells alongside the per-year supplements.
+          supplemental_capacity_roots+=(
+            "npr/2012-2016/commoncrawl-prefix"
+            "npr/2013-2026/commoncrawl-prefix"
+          )
+          for supplemental_root in "${supplemental_capacity_roots[@]}"; do
+            capacity_catalog="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${supplemental_root}/catalog"
+            # AP publishes one sidecar per supplemental manifest (the legacy,
+            # Yahoo, and Big Story catalogs coexist under one source root).
+            # Restore every matching sidecar; the Python planner merges them
+            # conservatively by taking the per-year maximum.
+            capacity_listing="$(
+              rclone lsf "$capacity_catalog" --files-only \
+                --include "*manifest-summary.json" \
                 --timeout 30s --contimeout 10s \
-                --retries 1 --low-level-retries 1 \
-                2>/dev/null
-            )" && [ -n "$status_listing" ]; then
-              status_local="${source_catalog_status_root}/${source_root}/catalog/status.json"
-              mkdir -p "$(dirname "$status_local")"
-              rclone copyto "$status_remote" "$status_local" \
+                --retries 3 --low-level-retries 6 \
+                2>/dev/null || true
+            )"
+            while IFS= read -r capacity_name; do
+              [ -n "$capacity_name" ] || continue
+              capacity_remote="${capacity_catalog}/${capacity_name}"
+              capacity_local="${source_capacity_root}/${supplemental_root}/${capacity_name}"
+              mkdir -p "$(dirname "$capacity_local")"
+              rclone copyto "$capacity_remote" "$capacity_local" \
                 --retries 8 --low-level-retries 20
-            fi
+            done <<< "$capacity_listing"
           done
           # Formal parser-validation summaries are execution state under v2,
           # not part of a publisher's v1 canonical raw source tree. Restore
@@ -159,6 +280,9 @@ jobs:
           # a current-version holdout that passes all gates is authoritative
           # convergence evidence and must not be dispatched again. Smoke
           # cohorts remain deliberately excluded.
+          # Keep the hierarchical listing on B2.  --fast-list first
+          # materializes every superseded capture object in this prefix,
+          # which can stall the watchdog before planning starts.
           rclone copy \
             "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v2/validation-state" \
             "$RUNNER_TEMP/archive-state" \
@@ -166,7 +290,9 @@ jobs:
             --include "holdout-v*/*/*/state/summary.json" \
             --include "validation/*/*/state/rotation-audit.json" \
             --include "holdout-v*/*/*/state/rotation-audit.json" \
-            --transfers 16 --checkers 32 \
+            --include "validation/*/*/state/content-audit.json" \
+            --include "holdout-v*/*/*/state/content-audit.json" \
+            --transfers 32 --checkers 64 \
             --retries 8 --low-level-retries 20
 
       - name: Plan available validation slots
@@ -176,41 +302,114 @@ jobs:
         run: |
           set -euo pipefail
           runs="$RUNNER_TEMP/runs.json"
+          parser_runs="$RUNNER_TEMP/parser-runs.json"
           active="$RUNNER_TEMP/active-titles.txt"
-          gh run list --limit 100 \
-            --json status,displayTitle > "$runs"
-          jq -r '
+          now_epoch="$(date +%s)"
+          # Catalog workflows are intentionally frequent and can occupy the
+          # first 100 repository-wide results. Keep the duplicate-avoidance
+          # title list on this dispatch ref, but query parser runs separately
+          # so the standard-concurrency count cannot miss an older holdout.
+          gh run list --branch "$DISPATCH_REF" --limit 1000 \
+            --json status,displayTitle,createdAt > "$runs"
+          gh run list \
+            --workflow parser-validation-accelerator.yml \
+            --branch "$DISPATCH_REF" --limit 1000 \
+            --json status,displayTitle,createdAt > "$parser_runs"
+          # GitHub occasionally leaves a queued/waiting run stranded for many
+          # hours (and the cancel API may return 500). Do not let such stale
+          # scheduler entries consume validation capacity; in-progress runs
+          # are always retained in the active set.
+          jq -r --argjson now "$now_epoch" '
             .[]
             | select(
                 .status == "in_progress"
-                or .status == "queued"
-                or .status == "waiting"
-                or .status == "pending"
-                or .status == "requested"
+                or (
+                  (.status == "queued"
+                    or .status == "waiting"
+                    or .status == "pending"
+                    or .status == "requested")
+                  and ((try (.createdAt | fromdateiso8601) catch 0)
+                    >= ($now - 18000))
+                )
               )
             | .displayTitle
           ' "$runs" > "$active"
+          # Catalog jobs have their own MAX_CATALOG_CONCURRENCY budget and
+          # must not consume the two standard parser-validation slots. The
+          # active-title file above still includes every workflow so the
+          # planners avoid duplicate catalog or parser dispatches; only the
+          # parser run names are counted for standard concurrency here.
           active_count="$(
-            jq '[
+            jq --argjson now "$now_epoch" '[
               .[]
               | select(
-                .status == "in_progress"
-                or .status == "queued"
-                or .status == "waiting"
-                or .status == "pending"
-                or .status == "requested"
+                  (
+                    .status == "in_progress"
+                    or (
+                      (.status == "queued"
+                        or .status == "waiting"
+                        or .status == "pending"
+                        or .status == "requested")
+                      and ((try (.createdAt | fromdateiso8601) catch 0)
+                        >= ($now - 18000))
+                    )
+                  )
+                  and (.displayTitle
+                    | test("^parser-(validation|holdout-v[0-9]+|smoke-v[0-9]+)-"))
               )
-            ] | length' "$runs"
+            ] | length' "$parser_runs"
           )"
+          # Classify active parser runs against the current required cohort.
+          # A superseded holdout may still be downloading a large old batch,
+          # but it must not starve the fresh parser cohort that replaced it.
+          # The probe reuses the restored B2 state and emits only a compact
+          # JSON plan; its normal task list is disabled with max-dispatch=0.
+          validation_probe="$RUNNER_TEMP/validation-capacity-probe.json"
+          python \
+            services/olds-api/tools/plan_parser_validation_watchdog.py \
+            --state-root "$RUNNER_TEMP/archive-state" \
+            --active-titles "$active" \
+            --available-source-shards \
+              "$RUNNER_TEMP/available-source-shards.txt" \
+            --source-capacity-root "$RUNNER_TEMP/source-capacity" \
+            --max-dispatch 0 \
+            --publishers $VALIDATION_PUBLISHERS \
+            --output "$validation_probe" \
+            > "$RUNNER_TEMP/validation-capacity-probe.log"
+          superseded_active_count="$(
+            jq -r '.activeSupersededRunCount // 0' "$validation_probe"
+          )"
+          effective_active_count=$((active_count - superseded_active_count))
+          if [ "$effective_active_count" -lt 0 ]; then
+            effective_active_count=0
+          fi
+          echo "Active parser runs total=$active_count; superseded parser runs exempt=$superseded_active_count; effective=$effective_active_count."
           # This watchdog itself occupies one runner while planning. Its slot
           # becomes available as soon as dispatch completes.
-          available=$((MAX_STANDARD_CONCURRENCY - active_count + 1))
+          available=$((MAX_STANDARD_CONCURRENCY - effective_active_count + 1))
           if [ "$available" -lt 0 ]; then
             available=0
+          fi
+          if [ "$available" -lt 1 ] && [ "$superseded_active_count" -gt 0 ]; then
+            available="$MAX_SUPERSEDED_REFRESH_DISPATCH"
+            echo "Reserved one parser refresh slot while superseded cohorts drain."
           fi
           dispatches="$available"
           if [ "$dispatches" -gt "$MAX_DISPATCH_PER_RUN" ]; then
             dispatches="$MAX_DISPATCH_PER_RUN"
+          fi
+          catalog_dispatch_limit="$dispatches"
+          if [ "$catalog_dispatch_limit" -gt 0 ]; then
+            # Keep one dispatch for a parser-validation cohort whenever any
+            # standard slot is available. Catalog chains may continue through
+            # later watchdog ticks, while parser iteration must not starve.
+            catalog_dispatch_limit=$((catalog_dispatch_limit - 1))
+            echo "Keeping one dispatch slot reserved for parser validation."
+          fi
+          if [ "$superseded_active_count" -gt 0 ] \
+            && [ "$catalog_dispatch_limit" -gt 0 ]; then
+            catalog_dispatch_limit=$((catalog_dispatch_limit - 1))
+            echo "Keeping one dispatch slot reserved for a fresh parser cohort."
           fi
           python \
             services/olds-api/tools/plan_source_catalog_watchdog.py \
@@ -218,7 +417,7 @@ jobs:
             --active-titles "$active" \
             --available-source-shards \
               "$RUNNER_TEMP/available-source-shards.txt" \
-            --max-dispatch "$dispatches" \
+            --max-dispatch "$catalog_dispatch_limit" \
             --max-active-catalogs "$MAX_CATALOG_CONCURRENCY" \
             --output "$RUNNER_TEMP/source-catalog-plan.json"
           catalog_dispatches="$(
@@ -242,6 +441,8 @@ jobs:
             "$RUNNER_TEMP/source-catalog-plan.json")" >> "$GITHUB_OUTPUT"
           echo "validation_tasks=$(jq -c '.tasks' \
             "$RUNNER_TEMP/validation-plan.json")" >> "$GITHUB_OUTPUT"
+          echo "capacity_deficient_cells=$(jq -r '.capacityDeficientCells // 0' \
+            "$RUNNER_TEMP/validation-plan.json")" >> "$GITHUB_OUTPUT"
           {
             echo "### Parser validation watchdog"
             echo
@@ -257,6 +458,32 @@ jobs:
                   activeCells: $validations[0].activeCells,
                   pendingCells: $validations[0].pendingCells,
                   summariesRead: $validations[0].summariesRead,
+                  ready: [
+                    $validations[0].cellProgress[]
+                    | select(.ready == true)
+                    | {
+                        publisher,
+                        year,
+                        evaluated,
+                        completeRate,
+                        qaPassRate,
+                        parserVersion,
+                        selectedCohort
+                      }
+                  ],
+                  capacityDeficient: [
+                    $validations[0].cellProgress[]
+                    | select(.capacityDeficient == true)
+                    | {
+                        publisher,
+                        year,
+                        eligibleCandidates,
+                        eligibleCandidateUpperBound,
+                        replayableEvaluated,
+                        captureStateExhausted,
+                        selectedCohort
+                      }
+                  ],
                   unresolved: [
                     $validations[0].cellProgress[]
                     | select(.ready == false)
@@ -282,7 +509,7 @@ jobs:
             pages="$(jq -r '.maxDiscoveryPages' <<<"$task")"
             runner="$(jq -r '.runnerOs' <<<"$task")"
             gh workflow run news-raw-archive.yml \
-              --ref "$DEFAULT_BRANCH" \
+              --ref "$DISPATCH_REF" \
               -f publisher="$publisher" \
               -f from_year="$from_year" \
               -f to_year="$to_year" \
@@ -297,6 +524,151 @@ jobs:
             echo "Dispatched source catalog $publisher/$from_year-$to_year/$mode."
           done < <(jq -c '.[]' <<<"$TASKS")
 
+      # The ordinary source-catalog planner only knows about workflows that
+      # publish catalog/status.json. Common Crawl prefix catalogs are a
+      # separate resumable workflow and publish state/summary.json instead.
+      # Advance one of the capacity-recovery chains when the parser planner
+      # has no ordinary validation/source task to dispatch. This keeps the
+      # branch self-contained; it does not depend on the disabled legacy
+      # news-archive watchdog on the default branch.
+      - name: Dispatch supplemental Common Crawl catalog
+        if: >-
+           ${{
+             steps.plan.outputs.catalog_tasks == '[]' &&
+             (
+               steps.plan.outputs.validation_tasks == '[]' ||
+               steps.plan.outputs.capacity_deficient_cells != '0'
+             )
+           }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          B2_REMOTE: jojo-b2
+          CAPACITY_DEFICIENT_CELLS: ${{ steps.plan.outputs.capacity_deficient_cells }}
+        run: |
+          set -euo pipefail
+          active_titles="$RUNNER_TEMP/active-titles.txt"
+          # The bootstrap source planner has already reported no ordinary
+          # task. Keep the supplemental capacity-recovery chains within the
+          # MAX_CATALOG_CONCURRENCY budget. They may run alongside baseline
+          # archive jobs because they only build compact catalogs and do not
+          # download validation HTML.
+          parser_active_count="$(grep -Ec '^parser-' "$active_titles" || true)"
+          capacity_deficient_cells="${CAPACITY_DEFICIENT_CELLS:-0}"
+          if [ "$parser_active_count" -ge 2 ] && \
+             [ "$capacity_deficient_cells" -eq 0 ]; then
+            echo "Both standard parser slots are occupied; skip supplemental dispatch."
+            exit 0
+          fi
+          active_catalog_count="$(grep -Ec '^(wsj-common-crawl-|aljazeera-common-crawl-|scmp-common-crawl-|npr-common-crawl-)' \
+              "$active_titles" || true)"
+          catalog_concurrency_limit="$MAX_CATALOG_CONCURRENCY"
+          if [ "$capacity_deficient_cells" -gt 0 ]; then
+            # Broad Common Crawl chains can occupy every ordinary catalog
+            # slot while a sparse year is already proven capacity-deficient.
+            # Temporarily add one bounded recovery slot so the first NPR
+            # targeted queue entry is not starved by those long chains. This
+            # does not change the two-run parser budget and applies only while
+            # the validation planner reports a real capacity shortfall.
+            catalog_concurrency_limit=$((MAX_CATALOG_CONCURRENCY + 1))
+            echo "Capacity recovery active; reserving one supplemental catalog slot ($catalog_concurrency_limit total)."
+          fi
+          if [ "$active_catalog_count" -ge "$catalog_concurrency_limit" ]; then
+            echo "Supplemental Common Crawl concurrency is full ($active_catalog_count/$catalog_concurrency_limit); skip dispatch."
+            exit 0
+          fi
+          catalog_slots=$((catalog_concurrency_limit - active_catalog_count))
+          echo "Supplemental Common Crawl slots available: $catalog_slots"
+          # Capacity-deficient publishers come first so that two parallel
+          # slots cannot be consumed by WSJ's two historical windows alone.
+          # Once these queues are exhausted, the WSJ windows resume as the
+          # remaining broad source-recovery work.
+          queue='[
+            {"publisher":"npr","fromYear":"2014","toYear":"2014","collectionFromYear":"2014","collectionToYear":"2026","collectionOrder":"oldest"},
+            {"publisher":"npr","fromYear":"2016","toYear":"2016","collectionFromYear":"2014","collectionToYear":"2026","collectionOrder":"oldest"},
+            {"publisher":"scmp","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
+            {"publisher":"aljazeera","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026"},
+            {"publisher":"scmp","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
+            {"publisher":"aljazeera","fromYear":"2010","toYear":"2015","collectionFromYear":"2013","collectionToYear":"2016"},
+            {"publisher":"wsj","fromYear":"2010","toYear":"2015","collectionFromYear":"2014","collectionToYear":"2016","collectionOrder":"newest"},
+            {"publisher":"wsj","fromYear":"2016","toYear":"2026","collectionFromYear":"2017","collectionToYear":"2026","collectionOrder":"newest"}
+          ]'
+          while IFS= read -r task; do
+            publisher="$(jq -r '.publisher' <<<"$task")"
+            from_year="$(jq -r '.fromYear' <<<"$task")"
+            to_year="$(jq -r '.toYear' <<<"$task")"
+            title="${publisher}-common-crawl-${from_year}-${to_year}"
+            if grep -Fxq "$title" "$active_titles"; then
+              echo "Common Crawl chain already active: $title"
+              continue
+            fi
+            source_root="${publisher}/${from_year}-${to_year}/commoncrawl-prefix"
+            summary="$RUNNER_TEMP/common-crawl-${publisher}-${from_year}-${to_year}.json"
+            if rclone copyto \
+                "${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${source_root}/state/summary.json" \
+                "$summary" \
+                --timeout 20s --contimeout 10s \
+                --retries 2 --low-level-retries 4 \
+                >/dev/null 2>&1 \
+              && jq -e '.shouldContinue == false' "$summary" >/dev/null; then
+              echo "Common Crawl catalog already complete: $title"
+              continue
+            fi
+            # Keep 50% headroom above the 800-article validation target.
+            # Common Crawl catalogs only persist compact URL/date metadata;
+            # their WARC date hydration is not a raw-article upload.  SCMP's
+            # legacy URL family has a large undated tail, so use a larger
+            # bounded hydration batch there to avoid hundreds of tiny chained
+            # runs while retaining the request limiter in the catalog tool.
+            hydrations=200
+            queries=8
+            pages=1
+            if [ "$publisher" = "scmp" ]; then
+              hydrations=1000
+            fi
+            if [ "$publisher" = "npr" ]; then
+              # NPR's broad 2013--2026 chain can spend several checkpoints
+              # retrying a single legacy prefix. Split sparse years into
+              # independent resumable catalogs so one Common Crawl failure
+              # cannot hide otherwise recoverable 2014/2016 capacity.
+              pages=8
+              queries=16
+              hydrations=500
+            fi
+            case "$publisher" in
+              wsj|aljazeera|axios|nyt|ap|zaobao)
+                # These sources expose a publication date in the canonical
+                # URL or are catalogued through a publisher-specific source;
+                # the shared WARC date hydrator does not support them.
+                hydrations=0
+                ;;
+            esac
+            if [ "$publisher" = "wsj" ]; then
+              # WSJ has sparse but useful captures in the 2014-2016
+              # collections. Scan a larger bounded slice so the catalog does
+              # not spend dozens of runs exhausting empty legacy prefixes.
+              queries=32
+              pages=32
+            fi
+            gh workflow run nikkei-common-crawl-catalog.yml \
+              --ref "$DISPATCH_REF" \
+              -f publisher="$publisher" \
+              -f from_year="$from_year" \
+              -f to_year="$to_year" \
+              -f collection_from_year="$(jq -r '.collectionFromYear' <<<"$task")" \
+              -f collection_to_year="$(jq -r '.collectionToYear' <<<"$task")" \
+              -f collection_order="$(jq -r '.collectionOrder // "oldest"' <<<"$task")" \
+              -f max_pages="$pages" \
+              -f max_queries="$queries" \
+              -f max_hydrations="$hydrations" \
+              -f target_articles_per_year=1200 \
+              -f auto_continue=true
+            echo "Dispatched supplemental Common Crawl catalog: $title"
+            catalog_slots=$((catalog_slots - 1))
+            if [ "$catalog_slots" -le 0 ]; then
+              break
+            fi
+          done < <(jq -c '.[]' <<<"$queue")
+
       - name: Dispatch missing publisher years
         if: ${{ steps.plan.outputs.validation_tasks != '[]' }}
         env:
@@ -310,20 +682,42 @@ jobs:
             cohort="$(jq -r '.cohort' <<<"$task")"
             shard="$(jq -r '.sourceManifestShard' <<<"$task")"
             runner="$(jq -r '.runnerOs' <<<"$task")"
+            workers=2
+            if [ "$publisher" = "ft" ] || [ "$publisher" = "wsj" ]; then
+              # These publishers have slow archive responses. The capture
+              # client still enforces one global request every 0.5 seconds;
+              # four workers only hide response latency behind that limiter.
+              workers=4
+            fi
+            current_evaluated="$(jq -r '.currentEvaluated // 0' <<<"$task")"
+            # Do not run the full public Infini-News Parquet metadata scan
+            # inside every fresh FT parser cohort.  A new zero-overlap cohort
+            # has no local direct-discovery checkpoint, so enabling it here
+            # re-reads thousands of HF files before the first archive capture
+            # and can spend the whole hosted-runner window on rate-limited
+            # metadata.  The validation batch uses the existing manifest,
+            # Wayback/Common Crawl and FT syndication candidates; direct
+            # discovery is maintained separately as a reusable catalog.
             enable_ft_infini_direct_discovery=false
-            if [ "$publisher" = "ft" ]; then
+            if [ "$publisher" = "ft" ] && [ "$year" -ge 2016 ] && \
+               [ "$current_evaluated" -lt 200 ]; then
+              # Sparse FT years are otherwise dominated by Wayback transport
+              # failures. Pay the direct-catalog cost once for a fresh cohort
+              # while it is still far from the 800-sample gate; subsequent
+              # continuations reuse the durable catalog/checkpoint.
               enable_ft_infini_direct_discovery=true
+              echo "Enabling bounded FT Infini-News discovery for $year at $current_evaluated evaluated samples."
             fi
           # Each dispatched validation run starts with an 800-article budget,
           # matching the project's independent-sample acceptance gate.
           gh workflow run parser-validation-accelerator.yml \
-              --ref "$DEFAULT_BRANCH" \
+              --ref "$DISPATCH_REF" \
               -f publisher="$publisher" \
               -f cohort="$cohort" \
               -f year="$year" \
               -f source_manifest_shard="$shard" \
               -f max_captures=800 \
-              -f workers=2 \
+              -f workers="$workers" \
               -f max_runtime_minutes=300 \
               -f auto_continue=true \
               -f enable_ft_infini_direct_discovery="$enable_ft_infini_direct_discovery" \

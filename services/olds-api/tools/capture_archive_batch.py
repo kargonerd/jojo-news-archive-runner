@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import sys
 import time
+from typing import Any
 
 import httpx
 
@@ -70,6 +71,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-captures", type=int)
     parser.add_argument("--max-runtime-minutes", type=float)
     parser.add_argument("--max-record-attempts", type=int, default=3)
+    parser.add_argument(
+        "--stop-after-errors",
+        type=int,
+        default=0,
+        help=(
+            "Stop submitting new captures after this many errors in the "
+            "current batch; in-flight work is still checkpointed."
+        ),
+    )
     parser.add_argument("--retry-errors", action="store_true")
     parser.add_argument(
         "--enable-common-crawl-fallback",
@@ -155,11 +165,37 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _record_validation_if_selected(
+    connection: sqlite3.Connection,
+    *,
+    validation_plan: dict[str, object] | None,
+    capture: Any | None,
+    canonical_url: str,
+    validation_target_reached: bool,
+    archive_root: Path,
+) -> dict[str, object] | None:
+    if (
+        validation_plan is None
+        or capture is None
+        or validation_target_reached
+    ):
+        return None
+    if not is_parser_validation_sample(connection, canonical_url):
+        return None
+    return record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=archive_root,
+    )
+
+
 def main() -> int:
     args = parse_args()
     publisher_spec(args.publisher)
     if args.workers < 1:
         raise SystemExit("--workers must be positive")
+    if args.stop_after_errors < 0:
+        raise SystemExit("--stop-after-errors must not be negative")
     if args.max_record_attempts < 1:
         raise SystemExit("--max-record-attempts must be positive")
     if not args.manifest.exists():
@@ -293,9 +329,17 @@ def main() -> int:
         args.stop_when_validation_ready
         and parser_validation_summary(connection)["ready"]
     )
+    infini_metadata_pending = bool(
+        isinstance(infini_direct_result, dict)
+        and not infini_direct_result.get("metadataReady", True)
+    )
     items = (
         []
-        if validation_ready or validation_target_reached
+        if (
+            validation_ready
+            or validation_target_reached
+            or infini_metadata_pending
+        )
         else pending_captures(
             connection,
             retry_errors=args.retry_errors,
@@ -353,6 +397,7 @@ def main() -> int:
     )
     completed = 0
     failures = 0
+    stopped_for_error_limit = False
     runtime_limit_reached = False
     maximum_html_bytes = args.max_html_mb * 1024 * 1024
     iterator = iter(items)
@@ -360,7 +405,11 @@ def main() -> int:
 
     def submit_one(executor: ThreadPoolExecutor) -> bool:
         nonlocal runtime_limit_reached
-        if validation_ready or validation_target_reached:
+        if (
+            validation_ready
+            or validation_target_reached
+            or stopped_for_error_limit
+        ):
             return False
         if deadline is not None and time.monotonic() >= deadline:
             runtime_limit_reached = True
@@ -435,23 +484,24 @@ def main() -> int:
                             "error": f"{type(exc).__name__}: {exc}",
                         }
                     record_capture_result(connection, result)
-                    validation_result = None
                     capture = result.get("capture")
-                    if (
-                        capture is not None
-                        and is_parser_validation_sample(
-                            connection,
-                            item.canonical_url,
-                        )
-                        and not validation_target_reached
-                    ):
-                        validation_result = record_parser_validation(
-                            connection,
-                            capture=capture,
-                            archive_root=args.output_dir,
-                        )
+                    validation_result = _record_validation_if_selected(
+                        connection,
+                        validation_plan=validation_plan,
+                        capture=capture,
+                        canonical_url=item.canonical_url,
+                        validation_target_reached=(
+                            validation_target_reached
+                        ),
+                        archive_root=args.output_dir,
+                    )
                     completed += 1
                     failures += result["status"] == "error"
+                    if (
+                        args.stop_after_errors > 0
+                        and failures >= args.stop_after_errors
+                    ):
+                        stopped_for_error_limit = True
                     if args.stop_when_validation_ready:
                         validation_ready = bool(
                             parser_validation_summary(connection)["ready"]
@@ -506,6 +556,7 @@ def main() -> int:
             "completedThisRun": completed,
             "errorsThisRun": failures,
             "stoppedForRuntimeLimit": runtime_limit_reached,
+            "stoppedForErrorLimit": stopped_for_error_limit,
             "stoppedForValidationReady": validation_ready,
             "stoppedForValidationTarget": validation_target_reached,
             "finishedAt": datetime.now(timezone.utc).isoformat(),

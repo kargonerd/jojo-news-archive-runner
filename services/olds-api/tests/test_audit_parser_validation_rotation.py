@@ -218,3 +218,50 @@ def test_audit_rotation_accepts_explicit_holdout_source_cohort(tmp_path: Path):
     assert result["passed"] is True
     assert result["expectedPreviousSourceCohort"] == "holdout-v2"
     assert result["years"]["2018"]["wrongExclusionCohortLabels"] == 0
+
+
+def test_audit_rotation_accepts_legacy_previous_state_without_exclusions(
+    tmp_path: Path,
+):
+    previous_path = tmp_path / "legacy.sqlite3"
+    current_path = tmp_path / "current.sqlite3"
+    previous = _state(previous_path)
+    current = _state(current_path)
+    old_url = "https://www.npr.org/2014/01/01/1/legacy"
+    new_url = "https://www.npr.org/2014/01/02/2/current"
+    try:
+        _seed_config(previous, year=2014, parser_version="npr-parser/0.1.14")
+        _seed_sample(
+            previous,
+            url=old_url,
+            year=2014,
+            parser_version="npr-parser/0.1.14",
+        )
+        previous.execute("DROP TABLE parser_validation_exclusions")
+        _seed_config(current, year=2014, parser_version="npr-parser/0.1.15")
+        _seed_sample(current, url=new_url, year=2014)
+        current.execute(
+            """
+            INSERT INTO parser_validation_exclusions(
+                canonical_url, source_cohort, excluded_at
+            ) VALUES (?, 'npr:2014:npr-parser/0.1.14',
+                      '2026-08-09T00:00:00Z')
+            """,
+            (old_url,),
+        )
+        previous.commit()
+        current.commit()
+    finally:
+        previous.close()
+        current.close()
+
+    result = audit_rotation(
+        previous_state=previous_path,
+        current_state=current_path,
+        publisher="npr",
+        expected_parser_version="npr-parser/0.1.15",
+        from_year=2014,
+        to_year=2014,
+    )
+
+    assert result["passed"] is True

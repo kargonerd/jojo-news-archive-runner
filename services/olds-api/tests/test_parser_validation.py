@@ -18,6 +18,7 @@ from jojo_olds_api.parser_validation import (
     ensure_parser_validation_plan,
     failed_completed_parser_validation_files,
     initialize_parser_validation_schema,
+    is_axios_internal_test_entry,
     parser_validation_target_reached,
     parser_validation_summary,
     pending_completed_parser_validation_files,
@@ -33,6 +34,17 @@ def test_generic_interface_noise_requires_standalone_trending_stories():
             "many local newsrooms use social networks to monitor "
             "trending stories on social media."
         ]
+    )
+    assert _has_generic_interface_noise(["read more:"])
+    assert not _has_generic_interface_noise(
+        ["read more:"], allow_editorial_read_more=True
+    )
+
+
+def test_generic_interface_noise_does_not_match_editorial_share_sentence():
+    assert _has_generic_interface_noise(["share this article"])
+    assert not _has_generic_interface_noise(
+        ["by the way, share this article. please."]
     )
 from jojo_olds_api.raw_archive_capture import (
     completed_raw_capture,
@@ -72,6 +84,35 @@ def test_publisher_interface_noise_detects_wsj_promo_sequences():
     assert not _has_publisher_interface_noise(
         "wsj",
         ["the article discussed free resources and live updates."],
+    )
+    assert not _has_publisher_interface_noise(
+        "wsj",
+        [
+            "substantive reporting about the deal. (sign up for our "
+            "markets newsletter, a premarkets primer packed with news, "
+            "trends and ideas.)"
+        ],
+    )
+
+
+def test_axios_internal_fixture_detection_requires_known_slug_and_headline():
+    assert is_axios_internal_test_entry(
+        "https://www.axios.com/2017/12/16/axios-generate-test-1513388154",
+        "Axios Generate test",
+    )
+    assert is_axios_internal_test_entry(
+        "https://www.axios.com/2017/12/16/"
+        "test-this-is-second-persons-post-1513388144",
+        "TEST: This is second person's post",
+    )
+    assert not is_axios_internal_test_entry(
+        "https://www.axios.com/2017/12/15/"
+        "trump-crams-for-100-days-test-1513301779",
+        "Trump crams for 100 Days test",
+    )
+    assert not is_axios_internal_test_entry(
+        "https://www.axios.com/2017/12/16/axios-generate-test-1513388154",
+        "Axios reports on a power generation test",
     )
 
 
@@ -160,6 +201,14 @@ def test_publisher_interface_noise_detects_reuters_legal_suffixes():
         "reuters",
         ["the court reserved all rights while considering the appeal."],
     )
+    long_press_release = "substantive reporting. " * 100
+    assert not _has_publisher_interface_noise(
+        "reuters",
+        [
+            long_press_release
+            + "copyright protection exists. all rights reserved."
+        ],
+    )
 
 
 def test_publisher_interface_noise_detects_ft_newsletter_promos():
@@ -226,6 +275,16 @@ def _state_with_years(
                 canonical_url = (
                     "https://www.wsj.com/articles/"
                     f"sample-{suffix}-{timestamp + suffix}"
+                )
+            elif publisher == "npr":
+                canonical_url = (
+                    f"https://www.npr.org/{year}/01/01/"
+                    f"{year}{suffix:02d}/sample-{suffix}"
+                )
+            elif publisher == "caixin":
+                canonical_url = (
+                    f"https://www.caixin.com/{year}-01-01/"
+                    f"sample-{suffix}.html"
                 )
             else:
                 raise AssertionError(f"unsupported fixture: {publisher}")
@@ -388,6 +447,225 @@ def test_holdout_plan_excludes_every_prior_cohort_url(tmp_path: Path):
     assert first_urls.isdisjoint(holdout_urls)
 
 
+def test_holdout_plan_excludes_normalized_legacy_url_variants(tmp_path: Path):
+    connection = _state_with_years(tmp_path, publisher="npr")
+    initialize_parser_validation_schema(connection)
+    canonical = str(
+        connection.execute(
+            "SELECT canonical_url FROM captures "
+            "WHERE published_at >= '2020-01-01' "
+            "ORDER BY canonical_url LIMIT 1"
+        ).fetchone()[0]
+    )
+    path = canonical.removeprefix("https://www.npr.org")
+    legacy_variant = f"http://npr.org{path}/?output=1"
+    connection.execute(
+        "UPDATE captures SET canonical_url=? WHERE canonical_url=?",
+        (legacy_variant, canonical),
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        ) VALUES (?, 'validation-v2', '2026-08-12T00:00:00Z')
+        """,
+        (canonical,),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="npr",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=9,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+        seed="holdout-v1",
+    )
+
+    selected = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    }
+    assert legacy_variant not in selected
+    assert len(selected) == 9
+
+
+def test_axios_plan_deduplicates_trailing_hyphen_aliases(tmp_path: Path):
+    manifest = tmp_path / "axios-manifest.jsonl"
+    base = "https://www.axios.com/2019/01/11/example-story"
+    rows = []
+    for index, url in enumerate((base, base + "-", base + "--")):
+        rows.append(
+            {
+                "publisher": "axios",
+                "canonicalUrl": url,
+                "publishedAt": "2019-01-11T12:00:00Z",
+                "candidates": [
+                    {
+                        "provider": "wayback",
+                        "snapshotUrl": (
+                            "https://web.archive.org/web/"
+                            f"2019011200000{index}id_/" + url
+                        ),
+                    }
+                ],
+            }
+        )
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="axios",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="axios",
+    )
+
+    plan = ensure_parser_validation_plan(
+        connection,
+        publisher="axios",
+        from_year=2019,
+        to_year=2019,
+        target_per_year=3,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    selected = connection.execute(
+        "SELECT canonical_url FROM parser_validation_samples"
+    ).fetchall()
+    # Manifest ingestion now collapses malformed aliases before planning, so
+    # both the available pool and selected cohort count one article identity.
+    assert plan["years"]["2019"]["available"] == 1
+    assert len(selected) == 1
+
+
+def test_axios_plan_skips_malformed_aliases_already_in_legacy_state():
+    canonical = "https://www.axios.com/2025/01/20/example-story"
+    malformed = canonical + "%5C"
+    replacement = "https://www.axios.com/2025/01/20/replacement-story"
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="axios",
+        authorization_reference="authorization:test",
+    )
+    for index, url in enumerate((canonical, malformed, replacement)):
+        connection.execute(
+            """
+            INSERT INTO captures(
+                canonical_url, article_id, publisher, published_at,
+                candidates_json, updated_at
+            ) VALUES (?, ?, 'axios', '2025-01-20T12:00:00Z', '[]', 'now')
+            """,
+            (url, f"axios:legacy:{index}"),
+        )
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2025, 2, 'old', 'axios-parser/0.1.17', 3, 'now')
+        """
+    )
+    connection.executemany(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2025, ?, 'now')
+        """,
+        [(canonical, "1"), (malformed, "2")],
+    )
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="axios",
+        from_year=2025,
+        to_year=2025,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    selected = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    }
+    assert malformed not in selected
+    assert selected == {canonical, replacement}
+
+
+def test_npr_plan_deduplicates_story_id_across_date_and_tracking_aliases(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "npr-manifest.jsonl"
+    urls = (
+        "https://www.npr.org/2010/11/16/131356105/original-slug",
+        "https://www.npr.org/2010/12/02/131356105/updated-slug",
+        "https://www.npr.org/2010/11/16/131356105/original-slug&sc=fb&cc=fp",
+    )
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "publisher": "npr",
+                    "canonicalUrl": url,
+                    "publishedAt": "2010-11-16T12:00:00Z",
+                    "candidates": [
+                        {
+                            "provider": "wayback",
+                            "snapshotUrl": (
+                                "https://web.archive.org/web/20101117000000id_/"
+                                + url
+                            ),
+                        }
+                    ],
+                }
+            )
+            + "\n"
+            for url in urls
+        ),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="npr",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(connection, manifest_path=manifest, publisher="npr")
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="npr",
+        from_year=2010,
+        to_year=2010,
+        target_per_year=3,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    assert connection.execute(
+        "SELECT COUNT(*) FROM parser_validation_samples"
+    ).fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT canonical_url FROM parser_validation_samples"
+    ).fetchall() == [(urls[0],)]
+
+
 def test_plan_prunes_reuters_non_article_endpoints(tmp_path: Path):
     manifest = tmp_path / "reuters-manifest.jsonl"
     invalid_url = (
@@ -477,6 +755,47 @@ def test_plan_prunes_reuters_non_article_endpoints(tmp_path: Path):
         """,
         (invalid_url,),
     ).fetchone()[0] == 0
+
+
+def test_nikkei_plan_prunes_capture_year_misclassified_article_ids():
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="nikkei",
+        authorization_reference="authorization:test",
+    )
+    initialize_parser_validation_schema(connection)
+    misplaced_url = (
+        "https://www.nikkei.com/article/"
+        "DGKDZO27658310Z20C11A4ML0000"
+    )
+    correct_url = (
+        "https://www.nikkei.com/article/"
+        "DGKKZO84200000Z20C15A4MM8000"
+    )
+    connection.executemany(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2015, '0000', '2026-08-11T00:00:00Z')
+        """,
+        ((misplaced_url,), (correct_url,)),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="nikkei",
+        from_year=2015,
+        to_year=2015,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    assert connection.execute(
+        "SELECT canonical_url FROM parser_validation_samples"
+    ).fetchall() == [(correct_url,)]
 
 
 def test_ft_infini_samples_are_added_even_when_random_plan_is_full(
@@ -768,6 +1087,137 @@ def test_validation_only_does_not_fill_batch_from_excluded_old_cohort(
     summary = parser_validation_summary(connection)
     assert summary["years"]["2020"]["eligibleCandidates"] == 9
     assert summary["years"]["2020"]["excludedCandidates"] == 1
+
+
+def test_validation_capacity_deduplicates_exclusion_url_aliases(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_exclusions(
+            canonical_url, source_cohort, excluded_at
+        ) VALUES (?, 'validation-v2', '2026-08-10T00:00:00Z')
+        """,
+        ("http://www.apnews.com/article/2020-0/?utm_source=archive",),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2020"]["eligibleCandidates"] == 9
+    assert summary["years"]["2020"]["excludedCandidates"] == 1
+
+
+def test_validation_capacity_excludes_terminal_capture_errors(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path)
+    terminal_url = "https://apnews.com/article/2020-0"
+    connection.execute(
+        """
+        UPDATE captures
+        SET status='error', attempts=3, last_error='reject-parser-unusable'
+        WHERE canonical_url=?
+        """,
+        (terminal_url,),
+    )
+    connection.commit()
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ap",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2020"]["eligibleCandidates"] == 9
+
+
+def test_validation_capacity_ignores_nonarticle_desk_rows(
+    tmp_path: Path,
+):
+    connection = _state_with_years(tmp_path, publisher="caixin")
+    manifest = tmp_path / "caixin-desks.jsonl"
+    rows = [
+        {
+            "publisher": "caixin",
+            "canonical_url": (
+                "https://photos.caixin.com/2020-01-01/"
+                "photo-only.html"
+            ),
+            "published_at": "2020-01-01T00:00:00Z",
+            "candidates": [],
+        },
+        {
+            "publisher": "caixin",
+            "canonical_url": (
+                "https://video.caixin.com/2020-01-01/"
+                "video-only.html"
+            ),
+            "published_at": "2020-01-01T00:00:00Z",
+            "candidates": [],
+        },
+    ]
+    # The helper already loaded ten text-article rows for 2020; append two
+    # non-text desks with a valid archive candidate so they are visible to
+    # capacity accounting but remain ineligible for the article cohort.
+    candidate = CaptureCandidate(
+        provider=CaptureProvider.WAYBACK,
+        snapshot_url="https://web.archive.org/web/20200101000000id_/"
+        "https://photos.caixin.com/2020-01-01/photo-only.html",
+        captured_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        mime_type="text/html",
+        status_code=200,
+    )
+    rows[0]["candidates"] = [
+        candidate.model_dump(mode="json", by_alias=True, exclude_none=True)
+    ]
+    rows[1]["candidates"] = [
+        candidate.model_copy(
+            update={
+                "snapshot_url": candidate.snapshot_url.replace(
+                    "photos.caixin.com", "video.caixin.com"
+                )
+            }
+        ).model_dump(mode="json", by_alias=True, exclude_none=True)
+    ]
+    manifest.write_text(
+        "".join(json.dumps(row, default=str) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="caixin",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="caixin",
+        from_year=2020,
+        to_year=2020,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2020"]["eligibleCandidates"] == 10
+    assert summary["years"]["2020"]["planned"] == 2
 
 
 def test_validation_only_requires_validation_prioritization(tmp_path: Path):
@@ -1116,7 +1566,7 @@ def test_qa_revision_change_replays_without_replacing_cohort(
             issues_json,
             parsed_at
         )
-        VALUES (?, 'wsj', 2020, 'wsj-parser/0.8.49', 0,
+        VALUES (?, 'wsj', 2020, 'wsj-parser/0.8.51', 0,
                 'complete', 1, '[]', '[]', ?)
         """,
         (previously_evaluated, datetime.now(timezone.utc).isoformat()),
@@ -1152,8 +1602,8 @@ def test_qa_revision_change_replays_without_replacing_cohort(
         )
     )
 
-    assert refreshed["parserVersion"] == "wsj-parser/0.8.49"
-    assert refreshed["qaRevision"] == 1
+    assert refreshed["parserVersion"] == "wsj-parser/0.8.61"
+    assert refreshed["qaRevision"] == 4
     assert refreshed["years"]["2020"]["evaluated"] == 0
     assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 0
     assert current == original
@@ -1262,6 +1712,192 @@ def test_validation_plan_tries_fresh_samples_before_retrying_errors(
     )
 
     assert selected == [pending_url]
+
+
+def test_nikkei_validation_replays_common_crawl_before_wayback(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "nikkei-manifest.jsonl"
+    wayback_url = (
+        "https://www.nikkei.com/article/"
+        "DGKDASDG2003E_Q2A620C1CR8000"
+    )
+    common_crawl_url = (
+        "https://www.nikkei.com/article/"
+        "DGXNASDD020EN_S2A800C1TJ2000"
+    )
+    rows = [
+        {
+            "publisher": "nikkei",
+            "canonicalUrl": wayback_url,
+            "publishedAt": "2012-06-20T00:00:00+09:00",
+            "candidates": [
+                {
+                    "provider": "wayback",
+                    "snapshotUrl": (
+                        "https://web.archive.org/web/20120625230643id_/"
+                        f"{wayback_url}"
+                    ),
+                    "capturedAt": "2012-06-25T23:06:43Z",
+                    "digest": "WAYBACK-DIGEST",
+                }
+            ],
+        },
+        {
+            "publisher": "nikkei",
+            "canonicalUrl": common_crawl_url,
+            "publishedAt": "2012-08-02T00:00:00+09:00",
+            "candidates": [
+                {
+                    "provider": "commoncrawl",
+                    "snapshotUrl": (
+                        "https://data.commoncrawl.org/crawl-data/"
+                        "CC-MAIN-2013-20/sample.warc.gz"
+                    ),
+                    "capturedAt": "2013-05-24T12:05:35Z",
+                    "warcFilename": (
+                        "crawl-data/CC-MAIN-2013-20/sample.warc.gz"
+                    ),
+                    "warcOffset": 100,
+                    "warcLength": 200,
+                }
+            ],
+        },
+    ]
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="nikkei",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="nikkei",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="nikkei",
+        from_year=2012,
+        to_year=2012,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+        seed="nikkei-source-priority",
+    )
+    connection.execute(
+        """
+        UPDATE parser_validation_samples
+        SET sample_priority=CASE canonical_url
+            WHEN ? THEN '0000'
+            ELSE 'ffff'
+        END
+        """,
+        (wayback_url,),
+    )
+    connection.commit()
+
+    selected = pending_parser_validation_urls(
+        connection,
+        maximum=1,
+        maximum_record_attempts=3,
+    )
+
+    assert selected == [common_crawl_url]
+
+
+def test_npr_validation_replays_common_crawl_before_wayback(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "npr-manifest.jsonl"
+    wayback_url = "https://www.npr.org/2013/01/01/123456789/wayback"
+    common_crawl_url = "https://www.npr.org/2013/01/02/123456790/common-crawl"
+    rows = [
+        {
+            "publisher": "npr",
+            "canonicalUrl": wayback_url,
+            "publishedAt": "2013-01-01T00:00:00Z",
+            "candidates": [
+                {
+                    "provider": "wayback",
+                    "snapshotUrl": (
+                        "https://web.archive.org/web/20130102000000id_/"
+                        f"{wayback_url}"
+                    ),
+                    "capturedAt": "2013-01-02T00:00:00Z",
+                    "digest": "NPR-WAYBACK-DIGEST",
+                }
+            ],
+        },
+        {
+            "publisher": "npr",
+            "canonicalUrl": common_crawl_url,
+            "publishedAt": "2013-01-02T00:00:00Z",
+            "candidates": [
+                {
+                    "provider": "commoncrawl",
+                    "snapshotUrl": (
+                        "https://data.commoncrawl.org/crawl-data/"
+                        "CC-MAIN-2013-20/npr.warc.gz"
+                    ),
+                    "capturedAt": "2013-05-24T12:05:35Z",
+                    "warcFilename": (
+                        "crawl-data/CC-MAIN-2013-20/npr.warc.gz"
+                    ),
+                    "warcOffset": 100,
+                    "warcLength": 200,
+                }
+            ],
+        },
+    ]
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="npr",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="npr",
+    )
+    ensure_parser_validation_plan(
+        connection,
+        publisher="npr",
+        from_year=2013,
+        to_year=2013,
+        target_per_year=2,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+        seed="npr-source-priority",
+    )
+    connection.execute(
+        """
+        UPDATE parser_validation_samples
+        SET sample_priority=CASE canonical_url
+            WHEN ? THEN '0000'
+            ELSE 'ffff'
+        END
+        """,
+        (wayback_url,),
+    )
+    connection.commit()
+
+    selected = pending_parser_validation_urls(
+        connection,
+        maximum=1,
+        maximum_record_attempts=3,
+    )
+
+    assert selected == [common_crawl_url]
 
 
 def test_validation_plan_retries_server_placeholder_before_fresh_sample(
@@ -1525,6 +2161,79 @@ def test_validation_plan_prioritizes_indexed_wsj_full_text_sources(
         urls["other"],
         urls["wayback"],
     ]
+
+
+def test_ft_direct_plan_skips_infini_access_shell_titles(tmp_path: Path):
+    manifest = tmp_path / "ft-infini-shells.jsonl"
+    shell_url = "https://www.ft.com/content/00000000-0000-4000-8000-000000000001"
+    article_url = "https://www.ft.com/content/00000000-0000-4000-8000-000000000002"
+
+    def infini(url: str, offset: int, headline: str) -> dict[str, object]:
+        return {
+            "provider": "infini-news",
+            "snapshotUrl": (
+                "https://datasets-server.huggingface.co/rows?"
+                "dataset=ruggsea%2Finfini-news-corpus&config=year_2017&"
+                f"split=train&offset={offset}&length=1"
+            ),
+            "sourceUrl": url,
+            "expectedHeadline": headline,
+            "warcFilename": "CC-NEWS-20170101000000-00001.warc.gz",
+        }
+
+    manifest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "publisher": "ft",
+                    "canonical_url": url,
+                    "published_at": "2017-01-01T00:00:00Z",
+                    "candidates": [candidate],
+                }
+            )
+            + "\n"
+            for url, candidate in (
+                (
+                    shell_url,
+                    infini(
+                        shell_url,
+                        1,
+                        "All the benefits of Premium Digital, plus:",
+                    ),
+                ),
+                (
+                    article_url,
+                    infini(article_url, 2, "A real FT article headline"),
+                ),
+            )
+        ),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="ft",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="ft",
+    )
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="ft",
+        from_year=2017,
+        to_year=2017,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    assert connection.execute(
+        "SELECT canonical_url FROM parser_validation_samples"
+    ).fetchone()[0] == article_url
 
 
 def test_validation_plan_prioritizes_large_modern_wsj_snapshots(
@@ -2187,9 +2896,10 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
     connection.execute(
         """
         INSERT INTO parser_validation_config(
-            sample_year, target_size, seed, parser_version, updated_at
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
         )
-            VALUES (2020, 1, 'test', 'nyt-parser/0.8.55', 'now')
+                VALUES (2020, 1, 'test', 'nyt-parser/0.8.81', 6, 'now')
         """
     )
     connection.execute(
@@ -2245,6 +2955,1663 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
     assert summary["years"]["2020"]["nonTextContent"] == 1
     assert summary["years"]["2020"]["qaPassed"] == 1
     assert summary["years"]["2020"]["unsupported"] == 1
+
+
+def test_wsj_legacy_preview_roadblock_is_screened_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.wsj.com/articles/legacy-preview-1413317966"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2014, 1, 'test', 'wsj-parser/0.8.61', 4, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2014, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html>
+      <head>
+        <title>Legacy Preview - WSJ</title>
+        <meta property="og:title" content="Legacy Preview">
+        <meta property="article:published_time"
+              content="2014-10-14T16:19:00Z">
+      </head>
+      <body>
+        <article>
+          <p>Companies are getting particular about where their data is stored.</p>
+          <p>The partners said they would deliver software over the Internet.</p>
+          <p>Get The Full Story</p>
+          <p>Subscribe or Log In</p>
+        </article>
+        <p>Copyright &copy;2014 Dow Jones &amp; Company, Inc.</p>
+      </body>
+    </html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="wsj:" + ("w" * 64),
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at=datetime(2014, 10, 14, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20141230152138id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2014"]["evaluated"] == 0
+    assert summary["years"]["2014"]["screenedNonArticles"] == 1
+
+
+@pytest.mark.parametrize(
+    "canonical_url,html,sample_year",
+    [
+        (
+            "https://www.nytimes.com/2014/06/15/opinion/editorial-cartoon.html",
+            b"""
+            <html><head>
+              <title>Opinion | Editorial Cartoon - The New York Times</title>
+              <meta property="og:title" content="Opinion | Editorial Cartoon">
+              <meta property="article:published_time" content="2014-06-15T20:40:04Z">
+              <meta property="og:image" content="https://static01.nyt.com/cartoon.jpg">
+            </head><body><article><p>Promises of universal suffrage for Hong Kong.</p>
+              <img src="https://static01.nyt.com/cartoon.jpg"></article></body></html>
+            """,
+            2014,
+        ),
+        (
+            "https://www.nytimes.com/2020/11/20/us/politics/biden-transgender-day-of-remembrance.html",
+            b"""
+            <html><head>
+              <meta property="og:title" content="On Transgender Day of Remembrance">
+              <meta property="article:published_time" content="2020-11-20T17:47:29Z">
+              <script type="application/ld+json">
+                {"@type":"LiveBlogPosting","headline":"On Transgender Day of Remembrance"}
+              </script>
+            </head><body><article><h1>On Transgender Day of Remembrance</h1></article></body></html>
+            """,
+            2020,
+        ),
+        (
+            "https://www.nytimes.com/2022/07/26/arts/television/tony-dow-dead.html",
+            b"""
+            <html><head>
+              <title>Editors' Note - The New York Times</title>
+              <meta property="og:title" content="Editors' Note">
+              <meta property="og:description" content="An obituary was published in error.">
+              <meta property="article:published_time" content="2022-07-26T17:20:43Z">
+            </head><body><article><h1>Editors' Note</h1></article></body></html>
+            """,
+            2022,
+        ),
+    ],
+)
+def test_nyt_short_nonarticle_packages_are_screened(
+    tmp_path: Path,
+    canonical_url: str,
+    html: bytes,
+    sample_year: int,
+):
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (?, 1, 'test', 'nyt-parser/0.8.81', 6, 'now')
+        """,
+        (sample_year,),
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, ?, 'priority', 'now')
+        """,
+        (canonical_url, sample_year),
+    )
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="nyt:" + ("n" * 64),
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at=datetime(sample_year, 1, 2, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20240101000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"][str(sample_year)]["evaluated"] == 0
+    assert summary["years"][str(sample_year)]["screenedNonArticles"] == 1
+
+
+def test_nyt_empty_story_shell_is_screened_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.nytimes.com/2022/08/26/opinion/sweat-benefits.html"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2022, 1, 'test', 'nyt-parser/0.8.81', 6, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2022, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Opinion | In Praise of Sweat">
+      <meta property="article:published_time"
+            content="2022-08-26T23:00:06.000Z">
+    </head><body>
+      <article id="story"></article>
+      <p class="author-bio">Mona Chalabi is an illustrator and data journalist.</p>
+    </body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="nyt:" + ("s" * 64),
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at=datetime(2022, 8, 26, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20220902000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] in {"unsupported", "partial"}
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2022"]["evaluated"] == 0
+    assert summary["years"]["2022"]["screenedNonArticles"] == 1
+
+
+def test_short_aljazeera_liveblog_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.aljazeera.com/news/liveblog/2022/11/29/example"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2022, 1, 'test', 'aljazeera-parser/0.1.14', 4, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2022, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = (
+        "<html><head>"
+        "<script type='application/ld+json'>"
+        + json.dumps(
+            {
+                "@type": "LiveBlogPosting",
+                "headline": "World Cup live",
+                "datePublished": "2022-11-29T00:00:00Z",
+            }
+        )
+        + "</script></head><body><main><article>"
+        "<h1>World Cup live</h1><p>This blog is now closed.</p>"
+        "</article></main></body></html>"
+    ).encode()
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="aljazeera:" + ("a" * 64),
+        publisher="aljazeera",
+        canonical_url=canonical_url,
+        published_at=datetime(2022, 11, 29, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20221130000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "partial"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2022"]["evaluated"] == 0
+    assert summary["years"]["2022"]["screenedNonArticles"] == 1
+    connection.execute(
+        """
+        INSERT INTO parser_validation_results(
+            canonical_url, publisher, sample_year, parser_version,
+            qa_revision, extraction_status, content_type, qa_pass,
+            body_characters, block_count, warnings_json, issues_json,
+            parsed_at
+        ) VALUES (?, 'aljazeera', 2022, 'aljazeera-parser/0.1.14', 4,
+                  'complete', 'article', 1, 1200, 3, '[]', '[]', 'now')
+        """,
+        ("https://www.aljazeera.com/news/2022/11/29/regular-article",),
+    )
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2022"]["evaluated"] == 1
+    assert summary["years"]["2022"]["qaPassed"] == 1
+    assert summary["years"]["2022"]["screenedNonArticles"] == 1
+
+
+def test_short_aljazeera_interactive_handoff_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.aljazeera.com/news/2011/1/11/"
+        "algeria-a-timeline-of-discontent"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2011, 1, 'test', 'aljazeera-parser/0.1.14', 4, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2011, 'priority', 'now')
+        """
+        ,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Algeria: A timeline of discontent">
+      <meta property="article:published_time" content="2011-01-11T00:00:00Z">
+    </head><body><main><article>
+      <h1>Algeria: A timeline of discontent</h1>
+      <p>View the historical context for the latest uprising in Algeria.</p>
+    </article></main></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="aljazeera:" + ("b" * 64),
+        publisher="aljazeera",
+        canonical_url=canonical_url,
+        published_at=datetime(2011, 1, 11, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20250317223512id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "partial"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2011"]["evaluated"] == 0
+    assert summary["years"]["2011"]["screenedNonArticles"] == 1
+
+
+def test_short_aljazeera_legacy_teaser_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.aljazeera.com/news/2010/8/1/"
+        "washingtons-gift-to-pakistan"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2010, 1, 'test', 'aljazeera-parser/0.1.14', 4, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2010, 'priority', 'now')
+        """
+        ,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Washington's gift to Pakistan">
+      <meta property="article:published_time" content="2010-08-01T00:00:00Z">
+    </head><body><main><article>
+      <h1>Washington's gift to Pakistan</h1>
+      <p>The views expressed do not necessarily reflect Al Jazeera's editorial policy.</p>
+    </article></main></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="aljazeera:" + ("c" * 64),
+        publisher="aljazeera",
+        canonical_url=canonical_url,
+        published_at=datetime(2010, 8, 1, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20100802000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "partial"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2010"]["evaluated"] == 0
+    assert summary["years"]["2010"]["screenedNonArticles"] == 1
+
+
+def test_ft_subscribe_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.ft.com/content/0872c199-8078-4742-8d53-093911c1fc0d"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2022, 1, 'test', 'ft-parser/0.8.54', 3, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2022, 'priority', 'now')
+        """
+        ,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head><title>Subscribe to read | Financial Times</title>
+      <meta property="og:title" content="Subscribe to read">
+      <meta property="article:published_time" content="2022-01-01T00:00:00Z">
+    </head><body><main>
+      <p>Become an FT subscriber to read this article.</p>
+      <nav>Financial Times Subscribe Sign In Search the FT</nav>
+    </main></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="ft:" + ("c" * 64),
+        publisher="ft",
+        canonical_url=canonical_url,
+        published_at=datetime(2022, 1, 1, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20220730084044id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["issues"] == ["nonarticle-desk"]
+    assert result["qaPass"] is False
+    assert summary["years"]["2022"]["evaluated"] == 0
+    assert summary["years"]["2022"]["screenedNonArticles"] == 1
+
+
+@pytest.mark.parametrize(
+    ("canonical_url", "final_url", "html"),
+    [
+        (
+            "https://www.zaobao.com.sg/news/singapore/"
+            "story20260810-9494116",
+            "https://web.archive.org/web/20260811015845id_/"
+            "https://interactive.zaobao.com.sg/2026/sg61-national-day-parade-2026-moments/",
+            b"<html><head><title>Interactive package</title>"
+            b"<meta property='og:title' content='Interactive package'>"
+            b"<meta property='article:published_time' content='2026-08-10T00:00:00Z'>"
+            b"</head>"
+            b"<body><main>Interactive package</main></body></html>",
+        ),
+        (
+            "https://www.zaobao.com.sg/horse-racing/race-results/"
+            "story20260526-9105820",
+            "https://www.zaobao.com.sg/horse-racing/race-results/"
+            "story20260526-9105820",
+            b"<html><head><title>Race results</title>"
+            b"<meta property='og:title' content='Race results'>"
+            b"<meta property='article:published_time' content='2026-05-26T00:00:00Z'>"
+            b"</head>"
+            b"<body><article><p>Race results.</p></article></body></html>",
+        ),
+        (
+            "https://www.zaobao.com.sg/forum/paradigm/"
+            "story20160107-568087",
+            "https://www.zaobao.com.sg/forum/paradigm/"
+            "story20160107-568087",
+            b"<html><head><meta property='article:published_time' "
+            b"content='2016-01-07T00:00:00Z'></head>"
+            b"<body><div id='navigation-shell'>Forum</div></body></html>",
+        ),
+        (
+            "https://www.zaobao.com.sg/forum/views/opinion/"
+            "story20160206-579360",
+            "https://www.zaobao.com.sg/forum/views/opinion/"
+            "story20160206-579360",
+            b"<html><head><meta property='article:published_time' "
+            b"content='2016-02-06T00:00:00Z'></head>"
+            b"<body><article><p>A short forum teaser survives this replay."
+            b"</p></article></body></html>",
+        ),
+        (
+            "https://www.zaobao.com.sg/news/singapore/"
+            "story20221017-1323482",
+            "https://www.zaobao.com.sg/news/singapore/"
+            "story20221017-1323482",
+            b"<html><head><meta property='og:title' content='A shell'>"
+            b"</head><body><h1>A shell</h1></body></html>",
+        ),
+        (
+            "https://www.zaobao.com.sg/entertainment/story20220107-1230493",
+            "https://www.zaobao.com.sg/entertainment/story20220107-1230493",
+            "<html><head><meta property='og:title' content='A video teaser'>"
+            "</head><body><article><p>快点击视频观看！</p></article>"
+            "</body></html>".encode("utf-8"),
+        ),
+        (
+            "https://www.zaobao.com.sg/shorts/story20250321-6045580",
+            "https://www.zaobao.com.sg/shorts/story20250321-6045580",
+            "<html><head><meta property='og:title' content='A video short'>"
+            "</head><body><article><h1>A video short</h1>"
+            "<div class='articleBody'><div>延伸阅读</div>"
+            "<img src='https://cassette.sphdigital.com.sg/image/zaobao/poster'>"
+            "</div><video controls></video></article></body></html>"
+            .encode("utf-8"),
+        ),
+    ],
+)
+def test_zaobao_non_article_desks_are_screened_from_parser_cohort(
+    tmp_path: Path,
+    canonical_url: str,
+    final_url: str,
+    html: bytes,
+):
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2026, 1, 'test', 'zaobao-parser/0.1.12', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2026, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="zaobao:" + ("a" * 64),
+        publisher="zaobao",
+        canonical_url=canonical_url,
+        published_at=datetime(2026, 5, 26, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20260626000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=final_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    expected_issues = ["nonarticle-desk"]
+    if "/forum/" in canonical_url:
+        expected_issues.append("missing-headline")
+    assert result["issues"] == expected_issues
+    assert summary["years"]["2026"]["evaluated"] == 0
+    assert summary["years"]["2026"]["screenedNonArticles"] == 1
+
+
+def test_zaobao_short_forum_shell_with_headline_is_screened(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.zaobao.com.sg/forum/views/opinion/"
+        "story20201213-1108366"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2020, 1, 'test', 'zaobao-parser/0.1.12', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2020, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = """
+    <html><head>
+      <meta property="og:title" content="论坛观点导读">
+      <meta property="article:published_time" content="2020-12-13T00:00:00Z">
+    </head><body><article><p>这是一段很短的论坛导读。</p></article></body></html>
+    """.encode("utf-8")
+    capture = RawCapture(
+        article_id="zaobao:" + ("f" * 64),
+        publisher="zaobao",
+        canonical_url=canonical_url,
+        published_at=datetime(2020, 12, 13, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20210413044609id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=store_raw_html(tmp_path, html),
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2020"]["evaluated"] == 0
+    assert summary["years"]["2020"]["screenedNonArticles"] == 1
+
+
+def test_scmp_access_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.scmp.com/business/article/2126031/"
+        "could-co-living-be-the-future"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2018, 1, 'test', 'scmp-parser/0.1.11', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2018, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Could co-living be the future?">
+      <meta property="article:published_time" content="2018-01-02T00:00:00Z">
+    </head><body><article>
+      <h1>Could co-living be the future?</h1>
+      <p>READ FULL ARTICLE</p>
+    </article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="scmp:" + ("s" * 64),
+        publisher="scmp",
+        canonical_url=canonical_url,
+        published_at=datetime(2018, 1, 2, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20180103000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "partial"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2018"]["evaluated"] == 0
+    assert summary["years"]["2018"]["screenedNonArticles"] == 1
+
+
+def test_scmp_short_live_package_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.scmp.com/sport/article/3041121/"
+        "follow-pandaland-crossfit-sanctional-day-two-live"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2019, 1, 'test', 'scmp-parser/0.1.11', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2019, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <title>Follow Pandaland CrossFit Challenge day two as it happened | SCMP</title>
+      <meta property="og:title" content="Follow Pandaland CrossFit Challenge day two as it happened">
+      <meta name="cse_articletype" content="Live">
+      <meta property="article:published_time" content="2019-12-08T09:37:58+08:00">
+    </head><body><article class="live-article__body">
+      <p>Day two of Pandaland in Chengdu is underway and a spot at the CrossFit Games is up for grabs</p>
+    </article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="scmp:" + ("l" * 64),
+        publisher="scmp",
+        canonical_url=canonical_url,
+        published_at=datetime(2019, 12, 8, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.COMMON_CRAWL,
+            snapshot_url="https://data.commoncrawl.org/example.warc.gz",
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "partial"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2019"]["evaluated"] == 0
+    assert summary["years"]["2019"]["screenedNonArticles"] == 1
+
+
+def test_scmp_infographic_and_gallery_pages_are_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    urls = (
+        "https://www.scmp.com/infographics/article/1916541/infographic-sharing-pie",
+        "https://www.scmp.com/sport/article/1995065/rio-olympics-2016-gallery",
+        "https://www.scmp.com/sport/article/1995063/rio-olympics-2016-stars",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2016, 3, 'test', 'scmp-parser/0.1.11', 5, 'now')
+        """
+    )
+    for url in urls:
+        connection.execute(
+            """
+            INSERT INTO parser_validation_samples(
+                canonical_url, sample_year, sample_priority, selected_at
+            ) VALUES (?, 2016, 'priority', 'now')
+            """,
+            (url,),
+        )
+        blob = store_raw_html(
+            tmp_path,
+            b"<html><head><meta property='og:title' content='SCMP visual'>"
+            b"</head><body><article><h1>SCMP visual</h1>"
+            b"<p>Loading the visual package.</p></article>"
+            b"<script>window.__SCMP={\"carousel_slideshow_items\":\"12\"};</script>"
+            b"</body></html>",
+        )
+        capture = RawCapture(
+            article_id="scmp:" + ("g" * 64),
+            publisher="scmp",
+            canonical_url=url,
+            published_at=datetime(2016, 1, 2, tzinfo=timezone.utc),
+            selected_candidate=CaptureCandidate(
+                provider=CaptureProvider.WAYBACK,
+                snapshot_url="https://web.archive.org/web/20160103000000id_/"
+                + url,
+            ),
+            retrieved_at=datetime.now(timezone.utc),
+            final_url=url,
+            http_status=200,
+            content_type="text/html",
+            quality_score=100,
+            raw_html=blob,
+        )
+        result = record_parser_validation(
+            connection,
+            capture=capture,
+            archive_root=tmp_path,
+        )
+        assert result["issues"] == ["nonarticle-desk"]
+
+    summary = parser_validation_summary(connection)
+    assert summary["years"]["2016"]["evaluated"] == 0
+    assert summary["years"]["2016"]["screenedNonArticles"] == 3
+
+
+def test_scmp_apollo_image_only_slideshow_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.scmp.com/news/article/3116952/"
+        "why-chinas-gen-z-are-touching-fish-elderly-influencers-and-more"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2021, 1, 'test', 'scmp-parser/0.1.11', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2021, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Why China's Gen Z are touching fish">
+      <meta property="article:published_time" content="2021-01-08T00:00:00Z">
+      <script>window.__APOLLO_STATE__={"displaySlideShow":true};</script>
+    </head><body><article><h1>Why China's Gen Z are touching fish</h1>
+      <p><img src="https://cdn.i-scmp.com/cover.jpg"></p>
+    </article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="scmp:" + ("m" * 64),
+        publisher="scmp",
+        canonical_url=canonical_url,
+        published_at=datetime(2021, 1, 8, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20210109000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2021"]["evaluated"] == 0
+    assert summary["years"]["2021"]["screenedNonArticles"] == 1
+
+
+def test_npr_short_audio_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.npr.org/2014/11/28/366815412/short-audio-segment"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+            ) VALUES (2014, 1, 'test', 'npr-parser/0.1.54', 1, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2014, 'priority', 'now')
+        """
+        ,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="NPR audio story">
+      <meta property="article:published_time" content="2014-11-28T00:00:00Z">
+    </head><body class="is-DACS-only no-transcript">
+      <div id="storytext"><p>A short audio introduction.</p></div>
+    </body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="npr:" + ("n" * 64),
+        publisher="npr",
+        canonical_url=canonical_url,
+        published_at=datetime(2014, 11, 28, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20141129000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "partial"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2014"]["evaluated"] == 0
+    assert summary["years"]["2014"]["screenedNonArticles"] == 1
+
+
+def test_wsj_media_unsupported_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.wsj.com/articles/media-shell-1515668290"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2018, 1, 'test', 'wsj-parser/0.8.61', 4, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2018, 'priority', 'now')
+        """
+        ,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head><meta property="og:title" content="Media package"></head>
+    <body><article><p>Article Not Supported</p>
+      <p>To Read the Full Story Subscribe Sign In</p>
+    </article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="wsj:" + ("w" * 64),
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at=datetime(2018, 1, 11, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.INFINI_NEWS,
+            snapshot_url="https://datasets-server.huggingface.co/rows?offset=1",
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2018"]["evaluated"] == 0
+    assert summary["years"]["2018"]["screenedNonArticles"] == 1
+
+
+def test_wsj_short_video_shell_is_excluded_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.wsj.com/articles/legacy-video-1469663359"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2016, 1, 'test', 'wsj-parser/0.8.61', 4, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2016, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A Legacy WSJ Video">
+      <meta property="article:published_time" content="2016-07-27T00:00:00Z">
+    </head><body><article>
+      <div id="masterVideoCenter"></div>
+      <div id="videoPlayerDescription"><p>Watch the video.</p></div>
+    </article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="wsj:" + ("v" * 64),
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at=datetime(2016, 7, 27, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20160728000000id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["status"] == "complete"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2016"]["evaluated"] == 0
+    assert summary["years"]["2016"]["screenedNonArticles"] == 1
+
+
+def test_empty_axios_video_does_not_fill_article_validation_target(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.axios.com/2019/06/11/example-video"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2019, 1, 'test', 'axios-parser/0.1.13', 2, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2019, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Axios on HBO interview">
+      <meta property="article:published_time" content="2019-06-11T00:00:00Z">
+      <meta property="og:type" content="video.other">
+      <meta property="og:image" content="https://images.axios.com/poster.jpg">
+    </head><body><main></main></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="axios:" + ("b" * 64),
+        publisher="axios",
+        canonical_url=canonical_url,
+        published_at=datetime(2019, 6, 11, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20190612000000id_/" + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+
+    assert connection.execute(
+        "SELECT content_type FROM parser_validation_results WHERE canonical_url=?",
+        (canonical_url,),
+    ).fetchone()[0] == "video"
+    assert result["qaPass"] is False
+    assert result["issues"] == ["empty-nontext-content"]
+
+
+def test_axios_special_report_landing_page_is_screened_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.axios.com/2021/06/14/"
+        "hospitals-predatory-medical-billing"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2021, 1, 'test', 'axios-parser/0.1.27', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2021, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title"
+            content="How America's top hospitals send patient costs soaring">
+      <meta property="article:published_time"
+            content="2021-06-14T00:00:00Z">
+    </head><body><main>
+      <p>Special report: How America's top hospitals send patient costs soaring</p>
+      <a href="https://www.axios.com/special-report">Read the story</a>
+    </main></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="axios:" + ("a" * 64),
+        publisher="axios",
+        canonical_url=canonical_url,
+        published_at=datetime(2021, 6, 14, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.COMMON_CRAWL,
+            snapshot_url="https://data.commoncrawl.org/example.warc",
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2021"]["evaluated"] == 0
+    assert summary["years"]["2021"]["screenedNonArticles"] == 1
+
+
+def test_axios_internal_fixture_does_not_fill_article_validation_target(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.axios.com/2017/12/16/"
+        "axios-generate-test-1513388154"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2017, 1, 'test', 'axios-parser/0.1.27', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2017, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Axios Generate test">
+      <meta property="article:published_time" content="2017-04-28T19:34:20Z">
+    </head><body><article><p>test test test</p><p>fin</p></article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="axios:" + ("e" * 64),
+        publisher="axios",
+        canonical_url=canonical_url,
+        published_at=datetime(2017, 4, 28, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20170429000000id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert "nonarticle-desk" in result["issues"]
+    assert summary["years"]["2017"]["evaluated"] == 0
+    assert summary["years"]["2017"]["screenedNonArticles"] == 1
+    assert summary["ready"] is False
+
+
+def test_malformed_axios_url_alias_does_not_fill_validation_target(
+    tmp_path: Path,
+):
+    canonical_url = "https://www.axios.com/2025/01/20/example-story%5C"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2025, 1, 'test', 'axios-parser/0.1.27', 5, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2025, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A complete Axios report">
+      <meta property="article:published_time" content="2025-01-20T12:00:00Z">
+    </head><body><article>
+      <p>The report contains substantial original reporting about a policy
+      decision and its consequences for readers across the country.</p>
+      <p>A second paragraph records the response from officials and experts.</p>
+    </article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="axios:" + ("f" * 64),
+        publisher="axios",
+        canonical_url=canonical_url,
+        published_at=datetime(2025, 1, 20, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20250121000000id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert "nonarticle-desk" in result["issues"]
+    assert summary["years"]["2025"]["evaluated"] == 0
+    assert summary["years"]["2025"]["screenedNonArticles"] == 1
+
+
+def test_caixin_photo_desk_does_not_fill_article_validation_target(
+    tmp_path: Path,
+):
+    canonical_url = "https://photos.caixin.com/2010-10-27/100192874.html"
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+            ) VALUES (2010, 1, 'test', 'caixin-parser/0.1.15', 1, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2010, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Caixin photo">
+      <meta property="article:published_time" content="2010-10-27T00:00:00Z">
+      <meta property="og:image" content="http://img.caixin.com/photo.jpg">
+    </head><body><div class="photoShow"><img src="http://img.caixin.com/photo.jpg"></div></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="caixin:" + ("c" * 64),
+        publisher="caixin",
+        canonical_url=canonical_url,
+        published_at=datetime(2010, 10, 27, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20101028000000id_/" + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert "nonarticle-desk" in result["issues"]
+    assert summary["years"]["2010"]["evaluated"] == 0
+    assert summary["years"]["2010"]["screenedNonArticles"] == 1
+    assert summary["years"]["2010"]["qaPassed"] == 0
+    assert summary["ready"] is False
+
+
+def test_caixin_validation_plan_skips_photo_and_video_desks(
+    tmp_path: Path,
+):
+    manifest = tmp_path / "caixin-validation-manifest.jsonl"
+    text_url = "https://china.caixin.com/2010-01-01/100100001.html"
+    photo_url = "https://photos.caixin.com/2010-01-01/100100002.html"
+    video_url = "https://video.caixin.com/2010-01-01/100100003.html"
+    rows = []
+    for url in (text_url, photo_url, video_url):
+        rows.append(
+            {
+                "publisher": "caixin",
+                "canonical_url": url,
+                "published_at": "2010-01-01T00:00:00Z",
+                "candidates": [
+                    CaptureCandidate(
+                        provider=CaptureProvider.WAYBACK,
+                        snapshot_url=(
+                            "https://web.archive.org/web/20100102000000id_/"
+                            + url
+                        ),
+                        captured_at=datetime(
+                            2010,
+                            1,
+                            2,
+                            tzinfo=timezone.utc,
+                        ),
+                        mime_type="text/html",
+                        status_code=200,
+                    ).model_dump(
+                        mode="json",
+                        by_alias=True,
+                        exclude_none=True,
+                    )
+                ],
+            }
+        )
+    manifest.write_text(
+        "".join(json.dumps(row, default=str) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_capture_schema(
+        connection,
+        publisher="caixin",
+        authorization_reference="authorization:test",
+    )
+    load_capture_manifest(
+        connection,
+        manifest_path=manifest,
+        publisher="caixin",
+    )
+
+    ensure_parser_validation_plan(
+        connection,
+        publisher="caixin",
+        from_year=2010,
+        to_year=2010,
+        target_per_year=1,
+        reserve_per_year=0,
+        maximum_record_attempts=3,
+    )
+
+    selected = [
+        str(row[0])
+        for row in connection.execute(
+            "SELECT canonical_url FROM parser_validation_samples"
+        )
+    ]
+    assert selected == [text_url]
+
+
+@pytest.mark.parametrize(
+    "canonical_url,sample_year",
+    [
+        (
+            "https://www.nytimes.com/2019/09/01/pageoneplus/"
+            "corrections-september-2-2019.html",
+            2019,
+        ),
+        (
+            "https://www.nytimes.com/2019/08/04/todayspaper/"
+            "quotation-of-the-day-a-short-card.html",
+            2019,
+        ),
+        (
+            "https://www.nytimes.com/2018/03/03/admin/"
+            "our-10-most-popular-recipes-right-now.html",
+            2018,
+        ),
+    ],
+)
+def test_nyt_print_utility_entry_is_screened_from_article_cohort(
+    tmp_path: Path,
+    canonical_url: str,
+    sample_year: int,
+):
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+                ) VALUES (?, 1, 'test', 'nyt-parser/0.8.81', 6, 'now')
+        """,
+        (sample_year,),
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, ?, 'priority', 'now')
+        """,
+        (canonical_url, sample_year),
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Print utility card">
+      <meta property="article:published_time" content="2019-09-01T00:00:00Z">
+    </head><body><article><p>A short notice.</p></article></body></html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="nyt:" + ("d" * 64),
+        publisher="nyt",
+        canonical_url=canonical_url,
+        published_at=datetime(sample_year, 9, 1, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url="https://web.archive.org/web/20190902000000id_/"
+            + canonical_url,
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert "nonarticle-desk" in result["issues"]
+    assert summary["years"][str(sample_year)]["evaluated"] == 0
+    assert summary["years"][str(sample_year)]["screenedNonArticles"] == 1
 
 
 def test_validation_rejects_interface_noise_inside_complete_body(
@@ -2375,12 +4742,12 @@ def test_validation_accepts_wsj_business_wire_source_attribution(
     assert result["qaPass"] is True
     assert result["issues"] == []
     assert summary["formatVersion"] == "jojo-parser-validation/2"
-    assert summary["years"]["2020"]["qaRevision"] == 1
+    assert summary["years"]["2020"]["qaRevision"] == 4
     assert summary["years"]["2020"]["qaPassed"] == 1
     assert summary["years"]["2020"]["issueCounts"] == {}
 
 
-def test_validation_uses_parsed_publication_year_not_capture_year(
+def test_validation_keeps_catalog_year_when_parsed_publication_year_differs(
     tmp_path: Path,
 ):
     connection = _state_with_years(tmp_path)
@@ -2446,8 +4813,8 @@ def test_validation_uses_parsed_publication_year_not_capture_year(
     ).fetchone()[0]
 
     assert result["plannedYear"] == 2020
-    assert result["year"] == 2021
-    assert stored_year == 2021
+    assert result["year"] == 2020
+    assert stored_year == 2020
 
 
 def test_completed_sample_can_be_replayed_from_capture_state(tmp_path: Path):

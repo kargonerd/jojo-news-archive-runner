@@ -68,6 +68,18 @@ SITEMAP_SOURCES = {
         index_url="https://www.ft.com/sitemaps/index.xml",
         child_pattern=re.compile(r"archive-(20\d{2})-(\d{1,2})\.xml$"),
     ),
+    "axios": SitemapSource(
+        publisher="axios",
+        index_url="https://www.axios.com/sitemap.xml",
+        # The index also contains hundreds of local-edition sitemaps. Those
+        # use /sitemaps/<city>/<month>-<year>.xml and are intentionally kept
+        # out of the national Axios corpus. Match only the root-level monthly
+        # archive files.
+        child_pattern=re.compile(
+            r"^/sitemaps/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)-(20\d{2})\.xml$",
+            re.IGNORECASE,
+        ),
+    ),
     "aljazeera": SitemapSource(
         publisher="aljazeera",
         index_url=(
@@ -168,8 +180,21 @@ def parse_sitemap_index(
         url = node.text.strip()
         match = source.child_pattern.search(urlsplit(url).path)
         if match:
-            year = int(match.group(1))
-            month = int(match.group(2))
+            if source.publisher == "axios":
+                month = {
+                    name: index
+                    for index, name in enumerate(
+                        (
+                            "jan", "feb", "mar", "apr", "may", "jun",
+                            "jul", "aug", "sep", "oct", "nov", "dec",
+                        ),
+                        start=1,
+                    )
+                }[match.group(1).casefold()]
+                year = int(match.group(2))
+            else:
+                year = int(match.group(1))
+                month = int(match.group(2))
         elif source.daily_child_pattern is not None:
             daily_match = source.daily_child_pattern.search(
                 urlsplit(url).path

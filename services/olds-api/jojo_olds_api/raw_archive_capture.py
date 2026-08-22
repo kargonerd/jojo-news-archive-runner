@@ -27,6 +27,7 @@ from xml.etree import ElementTree
 from bs4 import BeautifulSoup
 import brotli
 from .bloomberg_archive_download import ArchiveClient
+from .archive_sources import archive_source_spec, normalize_article_url
 from .common_crawl import (
     discover_common_crawl_candidates,
     fetch_common_crawl_candidate,
@@ -34,6 +35,7 @@ from .common_crawl import (
 from .infini_news import (
     INFINI_DATASET,
     INFINI_DATASET_ROWS_ENDPOINT,
+    is_ft_subscription_headline,
 )
 from .ghostarchive import (
     discover_ghostarchive_candidates,
@@ -55,13 +57,16 @@ from .news_models import (
 SCHEMA_VERSION = "jojo-raw-capture-state/1"
 CAPTURE_POLICY_VERSIONS = {
     "ap": "ap-capture/0.6.4",
+    "aljazeera": "aljazeera-capture/0.2.0",
+    "axios": "axios-capture/0.1.1",
     "bloomberg": "bloomberg-capture/0.10.3",
+    "caixin": "caixin-capture/0.1.1",
     "ft": "ft-capture/0.20.2",
     "nikkei": "nikkei-capture/0.1.0",
     "nyt": "nyt-capture/0.9.0",
     "npr": "npr-capture/1.2",
     "reuters": "reuters-capture/0.7.2",
-    "wsj": "wsj-capture/0.8.8",
+    "wsj": "wsj-capture/0.8.9",
 }
 ACCEPTED_HTTP_STATUSES = {200, 206}
 WAYBACK_TIMEMAP_ENDPOINT = "https://web.archive.org/web/timemap/json"
@@ -461,6 +466,16 @@ def manifest_item_from_row(row: dict, *, publisher: str) -> ManifestItem:
     ).strip()
     if not canonical_url.startswith(("http://", "https://")):
         raise ValueError(f"manifest row has invalid canonical URL: {canonical_url!r}")
+    if publisher in {"axios", "npr"}:
+        normalized_url = normalize_article_url(
+            archive_source_spec(publisher),
+            canonical_url,
+        )
+        if normalized_url is None:
+            raise ValueError(
+                f"manifest row has invalid {publisher} article URL: {canonical_url!r}"
+            )
+        canonical_url = normalized_url
 
     raw_candidates = row.get("candidates")
     candidates: list[CaptureCandidate] = []
@@ -671,7 +686,6 @@ def capture_item(
     ] | None = None
     ft_raw_partner_validated = False
     ft_infini_origin_validated = False
-    ft_infini_origin_validation_failed = False
     ft_title_index_attempted = False
     ft_dynamic_syndication_attempted = False
     ft_ghostarchive_attempted = False
@@ -710,7 +724,6 @@ def capture_item(
         nonlocal best_response
         nonlocal ft_raw_partner_validated
         nonlocal ft_infini_origin_validated
-        nonlocal ft_infini_origin_validation_failed
         for candidate in candidates:
             if (
                 candidate.provider == CaptureProvider.INFINI_NEWS
@@ -894,8 +907,6 @@ def capture_item(
                         )
                     )
                 if not validated:
-                    if direct_infini_origin:
-                        ft_infini_origin_validation_failed = True
                     failures.append(
                         (
                             "ft-archive-origin"
@@ -1188,19 +1199,6 @@ def capture_item(
         )
     )
     consider_candidates(direct_infini_candidates)
-    if (
-        ft_infini_origin_validation_failed
-        and not ft_infini_origin_validated
-        and best_response is None
-    ):
-        return {
-            "canonicalUrl": item.canonical_url,
-            "status": "error",
-            "capture": None,
-            "recordPath": None,
-            "error": "; ".join(failures[-8:])
-            or "FT Infini-News origin validation failed",
-        }
     expected_publication_date = _parse_iso_datetime(item.published_at)
     if (
         item.publisher == "ft"
@@ -1214,7 +1212,7 @@ def capture_item(
         consider_ft_dynamic_syndication()
     consider_ft_ghostarchive()
 
-    if item.publisher == "ft":
+    if item.publisher == "ft" and enable_wayback_timemap_fallback:
         # Exact Wayback captures have historically produced far more usable FT
         # articles than Common Crawl WARC records. Try the nearest exact
         # snapshots first and avoid three index plus Range lookups when one is
@@ -1253,6 +1251,57 @@ def capture_item(
         consider_ft_title_index()
         consider_ft_dynamic_syndication()
 
+        if (
+            not ft_infini_origin_validated
+            and enable_common_crawl_fallback
+            and (best_response is None or best_response[5] < 100)
+        ):
+            try:
+                common_crawl_candidates = discover_common_crawl_candidates(
+                    item.canonical_url,
+                    published_at=item.published_at,
+                    archive_client=archive_client,
+                )
+            except Exception as exc:
+                failures.append(f"commoncrawl-index:{type(exc).__name__}")
+                common_crawl_candidates = ()
+            existing_urls = {
+                (
+                    candidate.snapshot_url,
+                    candidate.warc_offset,
+                    candidate.warc_length,
+                )
+                for candidate in candidates_considered
+            }
+            common_crawl_candidates = tuple(
+                candidate
+                for candidate in common_crawl_candidates
+                if (
+                    candidate.snapshot_url,
+                    candidate.warc_offset,
+                    candidate.warc_length,
+                )
+                not in existing_urls
+            )
+            candidates_considered.extend(common_crawl_candidates)
+            consider_candidates(common_crawl_candidates)
+    elif item.publisher == "ft":
+        # The first FT validation pass deliberately skips the expensive
+        # Wayback timemap lookup.  That must not also skip the exact Wayback
+        # candidates already present in the manifest; those are the cheapest
+        # and highest-yield captures and are the reason for deferring the
+        # timemap rather than disabling Wayback entirely.  A manifest row can
+        # contain several duplicate snapshots, though; probing all of them on
+        # the first pass makes one dead Wayback host hold a worker for minutes.
+        # Keep the first pass bounded to the first snapshot and let a retry
+        # (which enables the timemap policy) exhaust the complete set.
+        if (
+            not ft_infini_origin_validated
+            and (best_response is None or best_response[5] < 100)
+        ):
+            consider_candidates(item.candidates[:1])
+        consider_ft_title_index()
+        consider_ft_dynamic_syndication()
         if (
             not ft_infini_origin_validated
             and enable_common_crawl_fallback
@@ -1337,7 +1386,35 @@ def capture_item(
                 candidates_considered.extend(legacy_candidates)
                 consider_candidates(legacy_candidates)
         if best_response is None:
-            consider_candidates(item.candidates)
+            manifest_candidates = item.candidates
+            if (
+                item.publisher == "wsj"
+                and not enable_wayback_timemap_fallback
+            ):
+                # The first WSJ pass is deliberately a cheap, checkpointable
+                # probe. Wayback currently returns intermittent 503s; trying
+                # every duplicate snapshot here can hold one URL for minutes.
+                # Retry continuations revisit the full candidate set and add
+                # timemap/secondary-archive fallbacks.
+                manifest_candidates = item.candidates[:1]
+            elif item.publisher in {"aljazeera", "nikkei"}:
+                # The merged publisher manifests normally contain Wayback
+                # rows before their Common Crawl supplements. Wayback often
+                # serves a high-scoring shell or member excerpt, while larger
+                # Common Crawl WARC records from the same article can contain
+                # the complete body. Probe the latter first, without
+                # weakening the parser gate; failed/partial records still
+                # fall through to Wayback.
+                manifest_candidates = tuple(
+                    sorted(
+                        item.candidates,
+                        key=lambda candidate: _common_crawl_first_candidate_sort_key(
+                            candidate,
+                            published_at=item.published_at,
+                        ),
+                    )
+                )
+            consider_candidates(manifest_candidates)
 
     # In the independent WSJ retry cohort, every observed secondary-archive
     # success came from Arquivo.pt while Common Crawl contributed none.  Try
@@ -1827,11 +1904,38 @@ def archive_fallback_policy(
 ) -> ArchiveFallbackPolicy:
     if prior_attempts < 0:
         raise ValueError("prior_attempts must not be negative")
-    if publisher == "wsj" and parser_validation_enabled:
+    if publisher == "ft" and parser_validation_enabled:
+        # FT timemap discovery is expensive and often returns retryable
+        # archive errors. Let the first pass use existing exact candidates
+        # plus the secondary archives; a retry can pay for timemap selection.
         return ArchiveFallbackPolicy(
             wayback_timemap=prior_attempts >= 1,
-            common_crawl=prior_attempts >= 2,
+            common_crawl=True,
+            arquivo_pt=True,
+        )
+    if publisher == "wsj" and parser_validation_enabled:
+        # Publication-near WSJ captures are frequently metered previews, but
+        # later/larger digests for the same URL can contain the full article.
+        # The first pass must nevertheless stay bounded: when Wayback is
+        # returning 503s, probing a timemap after every three manifest
+        # snapshots can hold a worker for minutes without producing a
+        # checkpoint.  Retry continuations enable the bounded timemap and
+        # secondary archives after the cheap manifest candidates are spent.
+        return ArchiveFallbackPolicy(
+            wayback_timemap=prior_attempts >= 1,
+            common_crawl=prior_attempts >= 1,
             arquivo_pt=prior_attempts >= 1,
+        )
+    if publisher == "nikkei" and parser_validation_enabled:
+        # Indexed Common Crawl candidates are still attempted on every pass.
+        # Nikkei's Wayback Timemap adds complete legacy captures cheaply, while
+        # per-URL Common Crawl and Arquivo discovery produced no additional
+        # successes in the independent 2012-2015 preflight and more than
+        # doubled batch runtime. Stage those dynamic lookups on retries.
+        return ArchiveFallbackPolicy(
+            wayback_timemap=True,
+            common_crawl=prior_attempts >= 1,
+            arquivo_pt=prior_attempts >= 2,
         )
     return ArchiveFallbackPolicy(
         wayback_timemap=True,
@@ -2026,6 +2130,15 @@ def _fetch_usable_candidate(
 ]:
     transport_signals: dict[str, object] = {}
     try:
+        if (
+            publisher == "ft"
+            and candidate.provider == CaptureProvider.INFINI_NEWS
+            and is_ft_subscription_headline(candidate.expected_headline)
+        ):
+            # These catalog rows are recurring access shells, not article
+            # records.  Skip them without a network request or an error so
+            # the remaining archive candidates can be tried immediately.
+            return None, None
         if candidate.provider == CaptureProvider.COMMON_CRAWL:
             status_code, headers, content, final_url = (
                 fetch_common_crawl_candidate(
@@ -2069,12 +2182,21 @@ def _fetch_usable_candidate(
                 "ft.com"
             )
         ):
+            # Respect the batch-level retry/timeout budget.  FT historically
+            # used a hard-coded two-attempt, 30-second limited fetch here,
+            # which silently defeated the validation workflow's one-attempt
+            # first pass and could occupy a worker for minutes on a dead
+            # Wayback snapshot.
+            configured_attempts = int(getattr(archive_client, "attempts", 2))
+            configured_timeout = float(
+                getattr(archive_client, "timeout", 30.0)
+            )
             status_code, headers, content, final_url = _fetch_limited_archive(
                 archive_client,
                 candidate.snapshot_url,
                 maximum_bytes=maximum_html_bytes,
-                attempts=2,
-                timeout=30.0,
+                attempts=max(1, min(2, configured_attempts)),
+                timeout=max(1.0, min(30.0, configured_timeout)),
             )
         else:
             status_code, headers, content, final_url = archive_client.fetch(
@@ -2170,6 +2292,22 @@ def _fetch_usable_candidate(
             )
         )
         signals = signals | nikkei_evidence
+    caixin_parser_usable = True
+    if publisher == "caixin" and signals["looksLikeHtml"]:
+        caixin_parser_usable, caixin_evidence = (
+            _caixin_capture_parser_evidence(
+                content,
+                canonical_url=canonical_url,
+            )
+        )
+        signals = signals | caixin_evidence
+    axios_parser_usable = True
+    if publisher == "axios" and signals["looksLikeHtml"]:
+        axios_parser_usable, axios_evidence = _axios_capture_parser_evidence(
+            content,
+            canonical_url=canonical_url,
+        )
+        signals = signals | axios_evidence
     ft_parser_usable = True
     if publisher == "ft" and signals["looksLikeHtml"]:
         ft_parser_usable, ft_evidence = _ft_capture_parser_evidence(
@@ -2203,8 +2341,10 @@ def _fetch_usable_candidate(
         wsj_parser_usable=wsj_parser_usable,
         reuters_parser_usable=reuters_parser_usable,
         npr_parser_usable=npr_parser_usable,
+        axios_parser_usable=axios_parser_usable,
         ft_parser_usable=ft_parser_usable,
         nikkei_parser_usable=nikkei_parser_usable,
+        caixin_parser_usable=caixin_parser_usable,
     )
     if rejection_reasons:
         return (
@@ -2264,7 +2404,9 @@ def _candidate_rejection_reasons(
     reuters_parser_usable: bool,
     npr_parser_usable: bool,
     ft_parser_usable: bool,
+    axios_parser_usable: bool = True,
     nikkei_parser_usable: bool = True,
+    caixin_parser_usable: bool = True,
 ) -> tuple[str, ...]:
     """Return stable diagnostics for every candidate rejection predicate."""
 
@@ -2303,10 +2445,14 @@ def _candidate_rejection_reasons(
         reasons.append("reuters-parser-unusable")
     if not npr_parser_usable:
         reasons.append("npr-parser-unusable")
+    if not axios_parser_usable:
+        reasons.append("axios-parser-unusable")
     if not ft_parser_usable:
         reasons.append("ft-parser-unusable")
     if not nikkei_parser_usable:
         reasons.append("nikkei-parser-unusable")
+    if not caixin_parser_usable:
+        reasons.append("caixin-parser-unusable")
     return tuple(reasons)
 
 
@@ -2571,9 +2717,47 @@ def discover_wayback_timemap_candidates(
     *,
     archive_client: ArchiveClient,
     maximum_candidates: int = WAYBACK_TIMEMAP_MAXIMUM_CANDIDATES,
+    _include_ft_amp: bool = True,
 ) -> tuple[CaptureCandidate, ...]:
     if maximum_candidates < 1:
         raise ValueError("maximum_candidates must be positive")
+    amp_candidates: tuple[CaptureCandidate, ...] | None = None
+    parsed_canonical = urlsplit(item.canonical_url)
+    amp_item: ManifestItem | None = None
+    if (
+        _include_ft_amp
+        and item.publisher == "ft"
+        and parsed_canonical.hostname in {"ft.com", "www.ft.com"}
+        and parsed_canonical.path.startswith("/content/")
+    ):
+        amp_item = ManifestItem(
+            publisher=item.publisher,
+            canonical_url=f"https://amp.ft.com{parsed_canonical.path}",
+            published_at=item.published_at,
+            section=item.section,
+            candidates=(),
+        )
+
+    def fallback_amp_candidates() -> tuple[CaptureCandidate, ...]:
+        nonlocal amp_candidates
+        if amp_candidates is not None:
+            return amp_candidates
+        if amp_item is None:
+            amp_candidates = ()
+            return amp_candidates
+        try:
+            amp_candidates = discover_wayback_timemap_candidates(
+                amp_item,
+                archive_client=archive_client,
+                maximum_candidates=maximum_candidates,
+                _include_ft_amp=False,
+            )
+        except Exception:
+            # The canonical timemap remains authoritative when the AMP
+            # timemap circuit is unavailable; do not turn an AMP probe into
+            # a hard capture failure.
+            amp_candidates = ()
+        return amp_candidates
     timemap_url = WAYBACK_TIMEMAP_ENDPOINT + "?" + urlencode(
         {"url": item.canonical_url}
     )
@@ -2586,18 +2770,33 @@ def discover_wayback_timemap_candidates(
     )
     content_type = headers.get("content-type", "").casefold()
     if status_code != 200 or not content:
+        amp = fallback_amp_candidates()
+        if amp:
+            return amp[:maximum_candidates]
         raise ValueError(f"Wayback timemap returned HTTP {status_code}")
     if "json" not in content_type and not content.lstrip().startswith(b"["):
+        amp = fallback_amp_candidates()
+        if amp:
+            return amp[:maximum_candidates]
         raise ValueError("Wayback timemap did not return JSON")
     payload = json.loads(content)
     if not isinstance(payload, list) or not payload:
+        amp = fallback_amp_candidates()
+        if amp:
+            return amp[:maximum_candidates]
         return ()
     header = payload[0]
     if not isinstance(header, list):
+        amp = fallback_amp_candidates()
+        if amp:
+            return amp[:maximum_candidates]
         raise ValueError("Wayback timemap header is invalid")
     columns = {str(value).casefold(): index for index, value in enumerate(header)}
     required = {"timestamp", "original", "mimetype", "statuscode"}
     if not required.issubset(columns):
+        amp = fallback_amp_candidates()
+        if amp:
+            return amp[:maximum_candidates]
         raise ValueError("Wayback timemap is missing required columns")
 
     candidates: list[CaptureCandidate] = []
@@ -2640,20 +2839,27 @@ def discover_wayback_timemap_candidates(
             )
         )
 
+    amp = fallback_amp_candidates() if not candidates else ()
+    seen_urls = {candidate.snapshot_url for candidate in candidates}
+    for candidate in amp:
+        if candidate.snapshot_url not in seen_urls:
+            candidates.append(candidate)
+            seen_urls.add(candidate.snapshot_url)
+
     candidates.sort(
         key=lambda candidate: _timemap_candidate_sort_key(
             candidate,
             published_at=item.published_at,
         )
     )
-    if item.publisher != "wsj":
+    if item.publisher not in {"nikkei", "wsj"}:
         return tuple(candidates[:maximum_candidates])
 
-    # WSJ's captures closest to publication are commonly metered previews,
-    # while later, larger digests can contain the complete article. Preserve
-    # temporal proximity for half of the bounded candidate set, but try the
-    # largest distinct captures first. This keeps the fallback bounded while
-    # avoiding eight near-identical five-paragraph preview responses.
+    # WSJ and Nikkei captures closest to publication are commonly metered
+    # previews, while later, larger digests can contain the complete article.
+    # Preserve temporal proximity for half of the bounded candidate set, but
+    # try the largest distinct captures first. This keeps the fallback bounded
+    # while avoiding a batch of near-identical membership excerpts.
     largest = sorted(
         candidates,
         key=lambda candidate: (
@@ -5924,6 +6130,35 @@ def _timemap_candidate_sort_key(
     )
 
 
+def _common_crawl_first_candidate_sort_key(
+    candidate: CaptureCandidate,
+    *,
+    published_at: str | None,
+) -> tuple[bool, bool, int, tuple[float, str]]:
+    """Prefer larger Common Crawl records before metered Wayback shells."""
+    return (
+        candidate.provider != CaptureProvider.COMMON_CRAWL,
+        candidate.byte_count is None,
+        -(candidate.byte_count or 0),
+        _timemap_candidate_sort_key(
+            candidate,
+            published_at=published_at,
+        ),
+    )
+
+
+def _nikkei_candidate_sort_key(
+    candidate: CaptureCandidate,
+    *,
+    published_at: str | None,
+) -> tuple[bool, bool, int, tuple[float, str]]:
+    """Backward-compatible alias for the Nikkei capture policy."""
+    return _common_crawl_first_candidate_sort_key(
+        candidate,
+        published_at=published_at,
+    )
+
+
 def _parse_iso_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -6300,6 +6535,98 @@ def _nikkei_capture_parser_evidence(
     }
 
 
+def _caixin_capture_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    """Reject archived Caixin shells that contain metadata but no full body."""
+
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="caixin",
+            canonical_url=canonical_url,
+            allow_generic_syndication=False,
+        )
+    except Exception as exc:
+        return False, {
+            "caixinCaptureParserUsable": False,
+            "caixinCaptureParserError": type(exc).__name__,
+        }
+    # Non-text formats still have to be complete. Archived Caixin photo
+    # stories frequently preserve only the first page of a multi-page gallery,
+    # while legacy video pages can be empty player shells. Content type alone
+    # therefore cannot admit a capture to a parser-validation cohort.
+    usable = article.quality.status == ArticleStatus.COMPLETE
+    return usable, {
+        "caixinCaptureParserUsable": usable,
+        "caixinCaptureExtractionStatus": article.quality.status.value,
+        "caixinCaptureContentType": article.content_type.value,
+        "caixinCaptureBodyCharacters": article.quality.body_characters,
+    }
+
+
+def _axios_capture_parser_evidence(
+    content: bytes,
+    *,
+    canonical_url: str,
+) -> tuple[bool, dict[str, object]]:
+    """Reject Axios captures that cannot supply the archived editorial item.
+
+    Some archived Axios URLs hydrate a valid ``__NEXT_DATA__`` story object,
+    but that object is merely a one-sentence hand-off to a separately hosted
+    visual.  It is not the archived visual project and must not occupy one of
+    the 800 article-validation slots.  Keep this deliberately narrower than a
+    generic short-article rule because Axios also publishes legitimate briefs
+    and image-led stories.
+    """
+
+    from .news_parser import parse_article
+
+    try:
+        article = parse_article(
+            content,
+            publisher="axios",
+            canonical_url=canonical_url,
+            allow_generic_syndication=False,
+        )
+    except Exception as exc:
+        return True, {
+            "axiosCaptureVisualRedirectStub": False,
+            "axiosCaptureParserError": type(exc).__name__,
+        }
+    plain_text = " ".join(article.plain_text.split())
+    visual_redirect_stub = bool(
+        article.content_type == ContentType.ARTICLE
+        and article.quality.status == ArticleStatus.PARTIAL
+        and article.quality.body_characters <= 250
+        and article.quality.images_selected <= 1
+        and re.match(
+            r"^See Axios Visuals(?:'|\N{RIGHT SINGLE QUOTATION MARK}) best ",
+            plain_text,
+            flags=re.IGNORECASE,
+        )
+    )
+    empty_article_shell = bool(
+        article.content_type == ContentType.ARTICLE
+        and article.quality.status == ArticleStatus.PARTIAL
+        and article.quality.body_characters == 0
+        and article.quality.images_selected == 0
+    )
+    usable = not (visual_redirect_stub or empty_article_shell)
+    return usable, {
+        "axiosCaptureVisualRedirectStub": visual_redirect_stub,
+        "axiosCaptureEmptyArticleShell": empty_article_shell,
+        "axiosCaptureExtractionStatus": article.quality.status.value,
+        "axiosCaptureContentType": article.content_type.value,
+        "axiosCaptureBodyCharacters": article.quality.body_characters,
+        "axiosCaptureImagesSelected": article.quality.images_selected,
+    }
+
+
 def score_raw_capture(
     content: bytes,
     *,
@@ -6391,7 +6718,17 @@ def score_raw_capture(
             )
         )
     )
-    wsj_snippet_shell = b'"issnippetview":true' in prefix
+    wsj_snippet_shell = bool(
+        b'"issnippetview":true' in prefix
+        or (
+            re.search(
+                br'<meta[^>]+name=["\']article\.template["\']'
+                br'[^>]+content=["\']snippet["\']',
+                prefix,
+            )
+            and b"wsj-snippet-body" in prefix
+        )
+    )
     wsj_empty_article_shell = bool(
         re.search(br'"headline"\s*:\s*""', prefix)
         and re.search(br'"datepublished"\s*:\s*""', prefix)
@@ -6871,6 +7208,18 @@ def completed_capture_rejection_reason(
         content_type=capture.content_type,
         final_url=capture.final_url,
     )
+    # Keep the stored-capture gate aligned with the candidate gate above.
+    # Legacy WSJ video pages commonly include the site's registration/login
+    # module even though the archived video package itself is complete.  The
+    # live candidate path already admits those pages when the WSJ parser can
+    # recover a usable video; the reproducibility pass must not requeue them
+    # merely because the generic shell detector sees the navigation marker.
+    wsj_parser_usable: bool | None = None
+    if capture.publisher == "wsj":
+        wsj_parser_usable, _ = _wsj_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
     structured_subscription_article = bool(
         signals["subscriptionShell"]
         and _structured_subscription_article_usable(
@@ -6888,7 +7237,16 @@ def completed_capture_rejection_reason(
             "server-placeholder-shell",
             bool(signals["serverPlaceholderShell"]),
         ),
-        ("authentication-shell", bool(signals["authenticationShell"])),
+        (
+            "authentication-shell",
+            bool(
+                signals["authenticationShell"]
+                and not (
+                    capture.publisher == "wsj"
+                    and wsj_parser_usable is True
+                )
+            ),
+        ),
         ("access-challenge-shell", bool(signals["accessChallengeShell"])),
         (
             "subscription-shell",
@@ -6915,9 +7273,10 @@ def completed_capture_rejection_reason(
         if not usable:
             return "bloomberg-origin-parser-incomplete"
     if capture.publisher == "wsj":
-        usable, _ = _wsj_capture_parser_evidence(
-            content,
-            canonical_url=capture.canonical_url,
+        usable = (
+            wsj_parser_usable
+            if wsj_parser_usable is not None
+            else False
         )
         if not usable:
             return "wsj-capture-parser-incomplete"
@@ -6942,6 +7301,13 @@ def completed_capture_rejection_reason(
         )
         if not usable:
             return "npr-capture-parser-incomplete"
+    if capture.publisher == "axios":
+        usable, _ = _axios_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "axios-capture-parser-incomplete"
     if capture.publisher == "ft":
         usable, _ = _ft_capture_parser_evidence(
             content,
@@ -6956,6 +7322,13 @@ def completed_capture_rejection_reason(
         )
         if not usable:
             return "nikkei-capture-parser-incomplete"
+    if capture.publisher == "caixin":
+        usable, _ = _caixin_capture_parser_evidence(
+            content,
+            canonical_url=capture.canonical_url,
+        )
+        if not usable:
+            return "caixin-capture-parser-incomplete"
     if (
         capture.publisher == "bloomberg"
         and capture.selected_candidate.provider == CaptureProvider.OTHER
@@ -7080,6 +7453,45 @@ def _insert_manifest_batch(
     connection: sqlite3.Connection,
     rows: list[tuple[object, ...]],
 ) -> int:
+    # Normalization can collapse several malformed source aliases onto one
+    # canonical article inside the same input batch. Merge their candidate
+    # snapshots before the upsert; otherwise the last alias silently replaces
+    # the valid canonical candidate.
+    collapsed: dict[str, tuple[object, ...]] = {}
+    for row in rows:
+        canonical_url = str(row[0])
+        previous = collapsed.get(canonical_url)
+        if previous is None:
+            collapsed[canonical_url] = row
+            continue
+        candidates: list[dict] = []
+        seen_candidates: set[str] = set()
+        for candidate in [
+            *json.loads(str(previous[5])),
+            *json.loads(str(row[5])),
+        ]:
+            identity = json.dumps(
+                candidate,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            if identity in seen_candidates:
+                continue
+            seen_candidates.add(identity)
+            candidates.append(candidate)
+        collapsed[canonical_url] = (
+            *previous[:3],
+            row[3] or previous[3],
+            row[4] or previous[4],
+            json.dumps(
+                candidates,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            row[6],
+        )
+    rows = list(collapsed.values())
     canonical_urls = [str(row[0]) for row in rows]
     placeholders = ",".join("?" for _ in canonical_urls)
     persisted_candidates = {

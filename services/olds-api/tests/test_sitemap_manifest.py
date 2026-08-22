@@ -773,6 +773,26 @@ def test_zaobao_monthly_sitemap_index_is_supported():
     ]
 
 
+def test_axios_monthly_sitemap_excludes_local_editions():
+    content = b"""<?xml version="1.0"?>
+    <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <sitemap><loc>https://www.axios.com/sitemaps/jan-2025.xml</loc></sitemap>
+      <sitemap><loc>https://www.axios.com/sitemaps/aug-2026.xml</loc></sitemap>
+      <sitemap><loc>https://www.axios.com/sitemaps/austin/aug-2026.xml</loc></sitemap>
+      <sitemap><loc>https://www.axios.com/sitemaps/news.xml</loc></sitemap>
+    </sitemapindex>
+    """
+    assert parse_sitemap_index(
+        content,
+        source=sitemap_source("axios"),
+        from_year=2025,
+        to_year=2026,
+    ) == [
+        ("https://www.axios.com/sitemaps/jan-2025.xml", 2025, 1),
+        ("https://www.axios.com/sitemaps/aug-2026.xml", 2026, 8),
+    ]
+
+
 def test_repairs_known_historical_sitemap_xml_defects():
     content = b"""<?xml version="1.0" encoding="UTF-8"?>
     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

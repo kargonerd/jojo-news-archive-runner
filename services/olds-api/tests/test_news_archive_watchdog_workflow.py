@@ -17,10 +17,12 @@ def test_archive_watchdog_has_one_global_two_slot_dispatcher() -> None:
     assert "strategy:" not in workflow
     assert "matrix:" not in workflow
     assert 'startswith("news-raw-")' in workflow
-    assert 'startswith("nikkei-common-crawl-")' in workflow
+    assert 'contains("-common-crawl-")' in workflow
     assert 'startswith("parser-")' in workflow
     assert "available=$((MAX_STANDARD_CONCURRENCY - active_count))" in workflow
     assert 'if [ "$dispatched" -ge "$available" ]' in workflow
+    assert 'gh run list --repo "$GITHUB_REPOSITORY"' in workflow
+    assert '--branch "$DISPATCH_REF" --limit 1000' in workflow
 
 
 def test_archive_watchdog_is_catalog_only_and_skips_complete_shards() -> None:
@@ -35,23 +37,25 @@ def test_archive_watchdog_is_catalog_only_and_skips_complete_shards() -> None:
     assert "jq -e '.complete == true'" in workflow
 
 
-def test_archive_watchdog_prioritizes_required_legacy_catalogs() -> None:
+def test_archive_watchdog_limits_dispatch_to_active_convergence_set() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    current_wsj = workflow.index(
-        '{"publisher":"wsj","fromYear":"2016","toYear":"2026",'
-        '"mode":"wayback-urlkey"'
-    )
-    legacy_wsj = workflow.index(
-        '{"publisher":"wsj","fromYear":"2010","toYear":"2015"'
-    )
-    nikkei = workflow.index(
-        '{"publisher":"nikkei","fromYear":"2010","toYear":"2015"'
-    )
-    scmp = workflow.index(
-        '{"publisher":"scmp","fromYear":"2010","toYear":"2015"'
-    )
-    assert current_wsj < legacy_wsj < nikkei < scmp
-    assert '"publisher":"zaobao"' in workflow
-    assert '"publisher":"aljazeera"' in workflow
-    assert '"publisher":"caixin"' in workflow
+    for publisher in (
+        "ft",
+        "axios",
+        "wsj",
+        "nyt",
+        "ap",
+        "npr",
+        "nikkei",
+        "zaobao",
+        "aljazeera",
+        "scmp",
+    ):
+        assert f'"publisher":"{publisher}"' in workflow
+    assert '"publisher":"caixin"' not in workflow
+    assert "Keep every in-scope publisher eligible" in workflow
+    assert "parser-validation watchdog independently decides" in workflow
+    assert "nikkei-common-crawl-catalog.yml" in workflow
+    assert '"kind":"common-crawl"' in workflow
+    assert "collection_from_year" in workflow

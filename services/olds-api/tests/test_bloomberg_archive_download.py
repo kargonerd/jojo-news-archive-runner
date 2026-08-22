@@ -1,6 +1,7 @@
 from pathlib import Path
 import gzip
 import sqlite3
+import time
 
 import httpx
 
@@ -103,6 +104,37 @@ def test_archive_client_retries_wayback_over_http_after_tls_failure():
     assert status == 200
     assert final_url.startswith("http://web.archive.org/")
     assert [url.split(":", 1)[0] for url in requests] == ["http"]
+
+
+def test_archive_client_bounds_total_stream_response_time():
+    class SlowStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b"first"
+            time.sleep(1.05)
+            yield b"second"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            stream=SlowStream(),
+            request=request,
+        )
+
+    client = ArchiveClient(
+        attempts=1,
+        timeout=1.0,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    try:
+        try:
+            client.fetch("https://example.test/slow", maximum_bytes=10_000)
+        except TimeoutError as exc:
+            assert "wall-clock timeout" in str(exc)
+        else:
+            raise AssertionError("slow stream should be bounded")
+    finally:
+        client._provided_client.close()
 
 
 def test_extract_article_body_metadata_and_image_family():

@@ -57,10 +57,88 @@ def test_accelerator_uses_all_original_validation_states_as_exclusions() -> None
     assert '--sample-year "$SAMPLE_YEAR"' in import_section
 
 
+def test_accelerator_merges_axio_common_crawl_with_sitemap_catalog() -> None:
+    workflow = _workflow_text()
+
+    assert (
+        'auxiliary_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/'
+        'news-archive/v1/axios/2017-2026/commoncrawl-prefix"'
+        in workflow
+    )
+    assert 'AUXILIARY_SOURCE_ROOT:' in workflow
+    assert '"${AUXILIARY_SOURCE_ROOT}/catalog/manifest.jsonl.gz"' in workflow
+    assert 'auxiliary_merged_source_manifest' in workflow
+
+
+def test_accelerator_merges_newer_npr_common_crawl_catalog() -> None:
+    workflow = _workflow_text()
+
+    assert (
+        'tertiary_source_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/'
+        'news-archive/v1/npr/2013-2026/commoncrawl-prefix"'
+        in workflow
+    )
+    assert 'TERTIARY_SOURCE_ROOT:' in workflow
+    assert 'tertiary_merged_source_manifest' in workflow
+
+
+def test_accelerator_caps_future_axios_continuation_fanout() -> None:
+    workflow = _workflow_text()
+
+    assert 'if [ "$PUBLISHER" = "axios" ] && [ "$next_workers" -gt 8 ]' in workflow
+    assert '-f workers="$next_workers"' in workflow
+
+
 def test_accelerator_does_not_silently_relax_exclusions() -> None:
     workflow = _workflow_text()
 
     assert "relax_parser_validation_exclusions" not in workflow
+
+
+def test_accelerator_initializes_validation_schema_before_exclusions() -> None:
+    workflow = _workflow_text()
+
+    assert "Initialize validation state schema" in workflow
+    assert "initialize_parser_validation_schema" in workflow
+    assert "initialize_capture_schema" in workflow
+    assert workflow.index("Initialize validation state schema") < workflow.index(
+        "Import original-cohort exclusions"
+    )
+
+
+def test_accelerator_rechecks_schema_before_holdout_audit() -> None:
+    workflow = _workflow_text()
+
+    assert "Ensure holdout audit schema" in workflow
+    assert workflow.index("Verify saved parser results are reproducible") < workflow.index(
+        "Ensure holdout audit schema"
+    )
+    assert workflow.index("Ensure holdout audit schema") < workflow.index(
+        "Audit completed holdout rotation"
+    )
+
+
+def test_accelerator_reuses_only_post_exclusion_prior_captures() -> None:
+    workflow = _workflow_text()
+
+    exclusion_position = workflow.index("Import original-cohort exclusions")
+    seed_position = workflow.index("Seed validation from source archive")
+    reuse_position = workflow.index(
+        'reusable_states=("$RUNNER_TEMP"/exclusion-*.sqlite3)'
+    )
+    plan_position = workflow.index("Plan parser replay")
+
+    assert exclusion_position < seed_position < reuse_position < plan_position
+    reuse_section = workflow[reuse_position:plan_position]
+    seed_section = workflow[seed_position:plan_position]
+    assert "import_source \\" in reuse_section
+    assert '"$reusable_state"' in reuse_section
+    assert "target_plan_ready=0" in workflow[seed_position:reuse_position]
+    assert "reuse_plan_args+=(--reuse-target-plan)" in seed_section
+    assert "target_plan_ready=1" in seed_section
+    assert 'reusable_root="$SOURCE_ROOT"' in reuse_section
+    assert "exclusion-validation-legacy.sqlite3" in reuse_section
+    assert 'reusable_root="$LEGACY_SOURCE_ROOT"' in reuse_section
 
 
 def test_completed_holdout_requires_union_rotation_audit_before_publish() -> None:
@@ -76,6 +154,7 @@ def test_completed_holdout_requires_union_rotation_audit_before_publish() -> Non
     assert "--require-complete" in audit
     assert '--target-per-year "$VALIDATION_TARGET"' in audit
     assert 'outputs.validation_ready == \'true\'' in audit
+    assert 'outputs.validation_target_reached == \'true\'' in audit
     assert "rotation-audit.json" in audit
     assert 'PYTHONPATH: ${{ github.workspace }}/services/olds-api' in workflow
 
@@ -88,7 +167,14 @@ def test_rotation_audit_failure_blocks_checkpoint_publish_and_chaining() -> None
     ) == 4
     assert workflow.count(
         "steps.rotation_audit.outcome == 'success'"
-    ) == 4
+    ) == 5
+    dispatch = workflow[
+        workflow.index("Dispatch next validation batch") :
+    ]
+    assert (
+        "steps.rotation_readiness.outputs.validation_target_reached != 'true'"
+        in dispatch
+    )
     publish = workflow[
         workflow.index("Publish validation objects and checkpoint")
         : workflow.index("Report validation state")
@@ -96,12 +182,68 @@ def test_rotation_audit_failure_blocks_checkpoint_publish_and_chaining() -> None
     assert '"${REMOTE_ROOT}/state/rotation-audit.json"' in publish
 
 
-def test_accelerator_enables_archive_fallbacks_for_wsj() -> None:
+def test_auto_continuation_resolves_source_shard_for_current_year() -> None:
+    workflow = _workflow_text()
+    dispatch = workflow[
+        workflow.index("Dispatch next validation batch") :
+    ]
+
+    assert "resolve_parser_source_shard.py" in dispatch
+    assert '--publisher "$PUBLISHER"' in dispatch
+    assert '--year "$SAMPLE_YEAR"' in dispatch
+    assert "next_source_manifest_shard=" in dispatch
+    assert '-f source_manifest_shard="$next_source_manifest_shard"' in dispatch
+
+
+def test_content_audit_failure_is_persisted_but_blocks_chaining() -> None:
     workflow = _workflow_text()
 
-    assert 'if [ "$PUBLISHER" = "ft" ] || [ "$PUBLISHER" = "wsj" ]; then' in workflow
+    checkpoint = workflow[
+        workflow.index("Checkpoint validation state")
+        : workflow.index("Report validation state")
+    ]
+    dispatch = workflow[
+        workflow.index("Dispatch next validation batch") :
+    ]
+    assert "steps.content_audit.outcome != 'failure'" not in checkpoint
+    assert '"${REMOTE_ROOT}/state/content-audit.json"' in checkpoint
+    assert "steps.content_audit.outcome != 'failure'" in dispatch
+
+
+def test_superseded_holdout_cannot_auto_continue_while_newer_cohort_runs() -> None:
+    workflow = _workflow_text()
+
+    assert "Guard superseded holdout continuation" in workflow
+    assert "gh run list" in workflow
+    assert "newer active cohort" in workflow
+    dispatch = workflow[
+        workflow.index("Dispatch next validation batch") :
+    ]
+    assert "steps.cohort_freshness.outputs.current == 'true'" in dispatch
+
+
+def test_accelerator_enables_archive_fallbacks_for_ft_wsj_and_nikkei() -> None:
+    workflow = _workflow_text()
+
+    fallback_section = workflow[
+        workflow.index('if [ "$PUBLISHER" = "ft" ] ||') :
+        workflow.index("set +e", workflow.index('if [ "$PUBLISHER" = "ft" ] ||'))
+    ]
+    assert '[ "$PUBLISHER" = "wsj" ] ||' in fallback_section
+    assert '[ "$PUBLISHER" = "nikkei" ]; then' in fallback_section
     assert "--enable-arquivo-pt-fallback" in workflow
     assert "--enable-common-crawl-fallback" in workflow
+
+
+def test_slow_ft_wsj_continuations_overlap_limited_archive_responses() -> None:
+    workflow = _workflow_text()
+    dispatch = workflow[
+        workflow.index("Dispatch next validation batch") :
+    ]
+
+    assert 'if [ "$PUBLISHER" = "ft" ] || [ "$PUBLISHER" = "wsj" ]; then' in dispatch
+    assert "next_workers=4" in dispatch
+    assert "0.5-second request limiter" in dispatch
 
 
 def test_accelerator_preindexes_bounded_wsj_arquivo_catalog_nonfatally() -> None:
@@ -154,11 +296,35 @@ def test_accelerator_reads_wsj_legacy_raw_without_copying_it() -> None:
     ) == 2
 
 
+def test_accelerator_excludes_only_objects_that_were_actually_restored() -> None:
+    workflow = _workflow_text()
+
+    plan = workflow[
+        workflow.index("Plan parser replay") :
+        workflow.index("Restore previous parser sample HTML")
+    ]
+    freeze = workflow[
+        workflow.index("Freeze restored object exclusions") :
+        workflow.index("Replay current parser")
+    ]
+    assert ': > "$RUNNER_TEMP/restored-object-excludes.txt"' in plan
+    assert "parser-validation-all-files.txt" not in plan.split(
+        ': > "$RUNNER_TEMP/restored-object-excludes.txt"', 1
+    )[1]
+    assert 'cd "$LOCAL_ROOT/raw/objects"' in freeze
+    assert "find . -type f ! -name '*.tmp' -print" in freeze
+    assert "sed 's#^\\./##'" in freeze
+
+
 def test_accelerator_merges_npr_common_crawl_supplemental_manifest() -> None:
     workflow = _workflow_text()
 
     assert 'if [ "$PUBLISHER" = "npr" ]; then' in workflow
-    assert "commoncrawl-prefix" in workflow
+    assert (
+        "news-archive/v1/npr/${SAMPLE_YEAR}-${SAMPLE_YEAR}/"
+        "commoncrawl-prefix"
+        in workflow
+    )
     assert (
         'SUPPLEMENTAL_SOURCE_ROOT: '
         '${{ steps.paths.outputs.supplemental_source_root }}'
@@ -175,7 +341,7 @@ def test_accelerator_merges_axios_common_crawl_supplemental_manifest() -> None:
 
     assert 'elif [ "$PUBLISHER" = "axios" ]; then' in workflow
     assert (
-        "news-archive/v1/axios/${source_window}/commoncrawl-prefix"
+        "news-archive/v1/axios/2017-2026/sitemap-wayback"
         in workflow
     )
 
@@ -196,6 +362,63 @@ def test_accelerator_merges_nikkei_common_crawl_supplemental_manifest() -> None:
         '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz"'
         in workflow
     )
+
+
+def test_accelerator_merges_wsj_common_crawl_supplemental_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "wsj" ]; then' in workflow
+    assert (
+        "news-archive/v1/wsj/${source_window}/commoncrawl-prefix"
+        in workflow
+    )
+    assert (
+        'SUPPLEMENTAL_SOURCE_ROOT: '
+        '${{ steps.paths.outputs.supplemental_source_root }}'
+    ) in workflow
+    assert '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz"' in workflow
+    assert '--input "$supplemental_source_manifest"' in workflow
+
+
+def test_accelerator_merges_caixin_single_year_common_crawl_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "caixin" ]; then' in workflow
+    assert (
+        "news-archive/v1/caixin/${SAMPLE_YEAR}-${SAMPLE_YEAR}/"
+        "commoncrawl-prefix"
+        in workflow
+    )
+    assert (
+        '"${SUPPLEMENTAL_SOURCE_ROOT}/catalog/manifest.jsonl.gz"'
+        in workflow
+    )
+
+
+def test_accelerator_merges_reuters_common_crawl_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "reuters" ]; then' in workflow
+    assert (
+        "news-archive/v1/reuters/${source_window}/commoncrawl-prefix"
+        in workflow
+    )
+    assert '--input "$supplemental_source_manifest"' in workflow
+
+
+def test_accelerator_merges_aljazeera_common_crawl_manifest() -> None:
+    workflow = _workflow_text()
+
+    assert 'elif [ "$PUBLISHER" = "aljazeera" ]; then' in workflow
+    assert (
+        "news-archive/v1/aljazeera/${source_window}/commoncrawl-prefix"
+        in workflow
+    )
+    assert (
+        "news-archive/v1/aljazeera/${source_window}/wayback-urlkey"
+        in workflow
+    )
+    assert '--input "$supplemental_source_manifest"' in workflow
 
 
 def test_accelerator_merges_ap_legacy_supplemental_manifest() -> None:

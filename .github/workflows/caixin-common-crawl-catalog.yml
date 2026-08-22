@@ -1,40 +1,24 @@
-name: NPR Common Crawl catalog
+name: Caixin Common Crawl catalog
 
-run-name: >-
-  npr-common-crawl-${{ inputs.from_year }}-${{ inputs.to_year }}
+run-name: caixin-common-crawl-${{ inputs.year }}
 
 on:
   workflow_dispatch:
     inputs:
-      from_year:
-        description: "First NPR publication year to discover."
-        required: true
-        default: "2010"
-        type: string
-      to_year:
-        description: "Last NPR publication year to discover."
+      year:
+        description: "Caixin publication year to discover."
         required: true
         default: "2010"
         type: string
       max_pages:
         description: "Maximum Common Crawl index pages in this bounded run."
         required: true
-        default: "10"
+        default: "20"
         type: string
       max_queries:
         description: "Maximum prefix-query advances, including empty indexes."
         required: true
-        default: "50"
-        type: string
-      max_hydrations:
-        description: "Maximum archived pages inspected for publication dates."
-        required: true
-        default: "50"
-        type: string
-      target_articles_per_year:
-        description: "Stop discovery after this many URLs per publication year."
-        required: true
-        default: "1200"
+        default: "80"
         type: string
       auto_continue:
         description: "Dispatch the next bounded run after checkpointing."
@@ -47,8 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: >-
-    npr-common-crawl-${{ inputs.from_year }}-${{ inputs.to_year }}
+  group: caixin-common-crawl-${{ inputs.year }}
   cancel-in-progress: false
 
 env:
@@ -57,12 +40,9 @@ env:
   B2_ARCHIVE_APPLICATION_KEY: ${{ secrets.B2_ARCHIVE_APPLICATION_KEY }}
   B2_ARCHIVE_BUCKET: ${{ secrets.B2_ARCHIVE_BUCKET }}
   B2_REMOTE: jojo-b2
-  FROM_YEAR: ${{ inputs.from_year }}
-  TO_YEAR: ${{ inputs.to_year }}
+  SAMPLE_YEAR: ${{ inputs.year }}
   MAX_PAGES: ${{ inputs.max_pages }}
   MAX_QUERIES: ${{ inputs.max_queries }}
-  MAX_HYDRATIONS: ${{ inputs.max_hydrations }}
-  TARGET_ARTICLES_PER_YEAR: ${{ inputs.target_articles_per_year }}
   AUTO_CONTINUE: ${{ inputs.auto_continue }}
 
 jobs:
@@ -97,30 +77,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! [[ "$FROM_YEAR" =~ ^20[0-9]{2}$ ]] ||
-             ! [[ "$TO_YEAR" =~ ^20[0-9]{2}$ ]] ||
-             [ "$FROM_YEAR" -gt "$TO_YEAR" ]; then
-            echo "Invalid NPR publication window." >&2
+          if ! [[ "$SAMPLE_YEAR" =~ ^20[0-9]{2}$ ]] ||
+             [ "$SAMPLE_YEAR" -lt 2010 ] ||
+             [ "$SAMPLE_YEAR" -gt 2026 ]; then
+            echo "Invalid Caixin publication year." >&2
             exit 2
           fi
-          if ! [[ "$MAX_PAGES" =~ ^[1-9][0-9]*$ ]]; then
-            echo "max_pages must be positive." >&2
-            exit 2
-          fi
-          if ! [[ "$MAX_QUERIES" =~ ^[1-9][0-9]*$ ]]; then
-            echo "max_queries must be positive." >&2
-            exit 2
-          fi
-          if ! [[ "$MAX_HYDRATIONS" =~ ^[0-9]+$ ]]; then
-            echo "max_hydrations must be non-negative." >&2
-            exit 2
-          fi
-          if ! [[ "$TARGET_ARTICLES_PER_YEAR" =~ ^[1-9][0-9]*$ ]]; then
-            echo "target_articles_per_year must be positive." >&2
-            exit 2
-          fi
-          local_root="$RUNNER_TEMP/npr-common-crawl-${FROM_YEAR}-${TO_YEAR}"
-          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/npr/${FROM_YEAR}-${TO_YEAR}/commoncrawl-prefix"
+          for value in "$MAX_PAGES" "$MAX_QUERIES"; do
+            if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
+              echo "Batch limits must be positive." >&2
+              exit 2
+            fi
+          done
+          local_root="$RUNNER_TEMP/caixin-common-crawl-${SAMPLE_YEAR}"
+          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/caixin/${SAMPLE_YEAR}-${SAMPLE_YEAR}/commoncrawl-prefix"
           mkdir -p "$local_root/catalog" "$local_root/state"
           {
             echo "local_root=$local_root"
@@ -150,21 +120,27 @@ jobs:
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
+          collection_from_year="$SAMPLE_YEAR"
+          if [ "$collection_from_year" -lt 2012 ]; then
+            collection_from_year=2012
+          fi
+          # Recent indexes retain materially more of Caixin's dated legacy
+          # URLs than the earliest 2012--2014 indexes. Completed queries in
+          # the checkpoint stay complete, so this only prioritizes the
+          # remaining high-yield collections and does not duplicate work.
           python services/olds-api/tools/build_common_crawl_prefix_manifest.py \
-            --publisher npr \
-            --from-year "$FROM_YEAR" \
-            --to-year "$TO_YEAR" \
-            --collection-from-year 2014 \
-            --collection-order oldest \
+            --publisher caixin \
+            --from-year "$SAMPLE_YEAR" \
+            --to-year "$SAMPLE_YEAR" \
+            --collection-from-year "$collection_from_year" \
+            --collection-order newest \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
             --summary "$LOCAL_ROOT/state/summary.json" \
             --max-pages "$MAX_PAGES" \
             --max-queries "$MAX_QUERIES" \
-            --max-errors 3 \
-            --max-date-hydrations "$MAX_HYDRATIONS" \
-            --target-articles-per-year "$TARGET_ARTICLES_PER_YEAR" \
-            --data-min-request-interval 0.5 \
+            --max-errors 12 \
+            --target-articles-per-year 3000 \
             --min-request-interval 3 \
             --timeout 45 \
             --attempts 4 \
@@ -178,13 +154,9 @@ jobs:
           REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
         run: |
           set -euo pipefail
-          # The watchdog uses the capacity sidecar to distinguish an
-          # exhausted NPR year from a catalog that has not been inspected.
-          # Keep it alongside the checkpoint so newly discovered Common
-          # Crawl candidates participate in formal validation planning.
           python services/olds-api/tools/summarize_archive_manifest.py \
             --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
-            --publisher npr \
+            --publisher caixin \
             --output "$LOCAL_ROOT/catalog/manifest-summary.json"
           python services/olds-api/tools/checkpoint_capture_state.py \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
@@ -211,7 +183,7 @@ jobs:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
           {
-            echo "### NPR Common Crawl prefix catalog"
+            echo "### Caixin ${SAMPLE_YEAR} Common Crawl prefix catalog"
             echo
             echo '```json'
             cat "$LOCAL_ROOT/state/summary.json"
@@ -223,20 +195,16 @@ jobs:
           ${{
             inputs.auto_continue &&
             steps.discovery.outputs.should_continue == 'true' &&
-            (steps.discovery.outputs.advances != '0' ||
-             steps.discovery.outputs.hydration_attempted != '0')
+            steps.discovery.outputs.advances != '0'
           }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run npr-common-crawl-catalog.yml \
+          gh workflow run caixin-common-crawl-catalog.yml \
             --ref "$GITHUB_REF_NAME" \
-            -f from_year="$FROM_YEAR" \
-            -f to_year="$TO_YEAR" \
+            -f year="$SAMPLE_YEAR" \
             -f max_pages="$MAX_PAGES" \
             -f max_queries="$MAX_QUERIES" \
-            -f max_hydrations="$MAX_HYDRATIONS" \
-            -f target_articles_per_year="$TARGET_ARTICLES_PER_YEAR" \
             -f auto_continue=true
 
       - name: Wake parser validation watchdog

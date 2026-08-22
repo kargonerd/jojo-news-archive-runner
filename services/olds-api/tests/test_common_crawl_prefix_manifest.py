@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 import gzip
 import json
@@ -23,6 +24,7 @@ from jojo_olds_api.common_crawl_prefix_manifest import (
     record_prefix_page_count,
     reconcile_prefix_year_targets,
 )
+from jojo_olds_api.common_crawl_prefix_manifest import _npr_story_id
 from jojo_olds_api.news_models import CaptureProvider
 from jojo_olds_api.raw_archive_capture import manifest_item_from_row
 from tools.build_common_crawl_prefix_manifest import (
@@ -147,7 +149,18 @@ def test_npr_prefix_patterns_include_www_and_bare_hosts():
     ) == (
         "www.npr.org/2010/",
         "npr.org/2010/",
+        "www.npr.org/templates/story/story.php",
+        "npr.org/templates/story/story.php",
     )
+
+
+def test_npr_story_id_matches_dated_and_legacy_urls():
+    assert _npr_story_id(
+        "https://www.npr.org/2010/12/02/131356105/example"
+    ) == 131356105
+    assert _npr_story_id(
+        "https://www.npr.org/templates/story/story.php?storyId=131356105"
+    ) == 131356105
 
 
 def test_aljazeera_prefix_patterns_include_article_sections():
@@ -157,8 +170,65 @@ def test_aljazeera_prefix_patterns_include_article_sections():
         to_year=2020,
     ) == (
         "www.aljazeera.com/news/2020/",
+        "www.aljazeera.com/economy/2020/",
         "www.aljazeera.com/features/2020/",
         "www.aljazeera.com/opinions/2020/",
+        "www.aljazeera.com/sports/2020/",
+        "www.aljazeera.com/gallery/2020/",
+    )
+
+
+def test_scmp_prefix_patterns_include_modern_article_sections():
+    assert prefix_patterns(
+        archive_source_spec("scmp"),
+        from_year=2017,
+        to_year=2017,
+    ) == (
+        "www.scmp.com/article/",
+        "www.scmp.com/news/",
+        "www.scmp.com/business/",
+        "www.scmp.com/sport/",
+        "www.scmp.com/lifestyle/",
+        "www.scmp.com/tech/",
+        "www.scmp.com/comment/",
+        "www.scmp.com/asia/",
+        "www.scmp.com/infographics/",
+    )
+
+
+def test_wsj_prefix_patterns_include_legacy_news_article_route():
+    patterns = prefix_patterns(
+        archive_source_spec("wsj"),
+        from_year=2010,
+        to_year=2013,
+    )
+    assert "online.wsj.com/news/articles/" in patterns
+    assert "www.wsj.com/news/articles/" in patterns
+
+
+def test_reuters_prefix_patterns_include_modern_section_roots():
+    patterns = prefix_patterns(
+        archive_source_spec("reuters"),
+        from_year=2016,
+        to_year=2020,
+    )
+    assert patterns[:3] == (
+        "www.reuters.com/article/a",
+        "www.reuters.com/article/b",
+        "www.reuters.com/article/c",
+    )
+    assert patterns[-11:] == (
+        "www.reuters.com/world/",
+        "www.reuters.com/business/",
+        "www.reuters.com/markets/",
+        "www.reuters.com/technology/",
+        "www.reuters.com/legal/",
+        "www.reuters.com/sports/",
+        "www.reuters.com/lifestyle/",
+        "www.reuters.com/science/",
+        "www.reuters.com/fact-check/",
+        "www.reuters.com/breakingviews/",
+        "www.reuters.com/investigates/",
     )
 
 
@@ -191,7 +261,7 @@ def test_prefix_schema_adds_new_collections_without_resetting_progress():
 
     assert connection.execute(
         "SELECT COUNT(*) FROM prefix_queries"
-    ).fetchone()[0] == 4
+    ).fetchone()[0] == 8
     assert connection.execute(
         """
         SELECT status FROM prefix_queries
@@ -199,6 +269,87 @@ def test_prefix_schema_adds_new_collections_without_resetting_progress():
         """,
         (collection_id, pattern),
     ).fetchone()[0] == "complete"
+
+
+def test_prefix_schema_reopens_no_date_rows_after_parser_upgrade():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("npr")
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(_collection(),),
+    )
+    connection.execute(
+        "INSERT INTO prefix_date_hydration("
+        "canonical_url,publisher,status,attempts,updated_at"
+        ") VALUES (?,?,?,?,?)",
+        (
+            "https://www.npr.org/templates/story/story.php?storyId=1",
+            "npr",
+            "no-date",
+            1,
+            "old",
+        ),
+    )
+    connection.execute(
+        "UPDATE prefix_metadata SET value='npr-parser/old' "
+        "WHERE key='hydration_parser_version'"
+    )
+
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(_collection(),),
+    )
+
+    assert connection.execute(
+        "SELECT status, attempts FROM prefix_date_hydration"
+    ).fetchone() == ("pending", 0)
+
+
+def test_prefix_schema_allows_additive_publisher_patterns():
+    connection = sqlite3.connect(":memory:")
+    current = archive_source_spec("caixin")
+    original = replace(
+        current,
+        wayback_patterns=(
+            "www.caixin.com/*",
+            "www.caixin.com/{year}-*",
+            "www.caixin.com/{year}/*",
+            "magazine.caixin.com/{year}/*",
+        ),
+    )
+    collection = _collection()
+    initialize_prefix_schema(
+        connection,
+        spec=original,
+        from_year=2010,
+        to_year=2010,
+        collections=(collection,),
+    )
+    old_count = connection.execute(
+        "SELECT COUNT(*) FROM prefix_queries"
+    ).fetchone()[0]
+
+    initialize_prefix_schema(
+        connection,
+        spec=current,
+        from_year=2010,
+        to_year=2010,
+        collections=(collection,),
+    )
+
+    new_count = connection.execute(
+        "SELECT COUNT(*) FROM prefix_queries"
+    ).fetchone()[0]
+    assert new_count > old_count
+    assert connection.execute(
+        "SELECT COUNT(*) FROM prefix_queries WHERE status='pending'"
+    ).fetchone()[0] == new_count
 
 
 def test_prefix_queries_prioritize_recent_collections():
@@ -218,6 +369,68 @@ def test_prefix_queries_prioritize_recent_collections():
     collection_id, _, _, _, _ = next_prefix_query(connection)
 
     assert collection_id == "CC-MAIN-2026-30"
+
+
+def test_reuters_prefix_queries_prioritize_modern_section_roots():
+    connection = sqlite3.connect(":memory:")
+    initialize_prefix_schema(
+        connection,
+        spec=archive_source_spec("reuters"),
+        from_year=2016,
+        to_year=2020,
+        collections=(_collection("CC-MAIN-2026-30"),),
+    )
+
+    _, _, pattern, _, _ = next_prefix_query(connection)
+
+    assert pattern in {
+        "www.reuters.com/world/",
+        "www.reuters.com/business/",
+        "www.reuters.com/markets/",
+        "www.reuters.com/technology/",
+        "www.reuters.com/legal/",
+        "www.reuters.com/sports/",
+        "www.reuters.com/lifestyle/",
+        "www.reuters.com/science/",
+        "www.reuters.com/fact-check/",
+        "www.reuters.com/breakingviews/",
+        "www.reuters.com/investigates/",
+    }
+
+
+def test_npr_prefix_queries_probe_legacy_story_ids_first():
+    connection = sqlite3.connect(":memory:")
+    initialize_prefix_schema(
+        connection,
+        spec=archive_source_spec("npr"),
+        from_year=2010,
+        to_year=2010,
+        collections=(_collection("CC-MAIN-2026-30"),),
+    )
+
+    _, _, pattern, _, _ = next_prefix_query(connection)
+
+    assert pattern.endswith("/templates/story/story.php")
+
+
+def test_npr_legacy_story_ids_prefer_known_usable_2018_indexes():
+    connection = sqlite3.connect(":memory:")
+    initialize_prefix_schema(
+        connection,
+        spec=archive_source_spec("npr"),
+        from_year=2010,
+        to_year=2010,
+        collections=(
+            _collection("CC-MAIN-2014-10"),
+            _collection("CC-MAIN-2018-05"),
+            _collection("CC-MAIN-2026-30"),
+        ),
+    )
+
+    collection_id, _, pattern, _, _ = next_prefix_query(connection)
+
+    assert collection_id == "CC-MAIN-2018-05"
+    assert pattern.endswith("/templates/story/story.php")
 
 
 def test_prefix_queries_can_prioritize_oldest_collections():
@@ -240,6 +453,26 @@ def test_prefix_queries_can_prioritize_oldest_collections():
     )
 
     assert collection_id == "CC-MAIN-2013-48"
+
+
+def test_prefix_queries_prioritize_dated_prefixes_over_broad_fallbacks():
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("caixin")
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(_collection("CC-MAIN-2013-48"),),
+    )
+
+    _, _, pattern, _, _ = next_prefix_query(
+        connection,
+        collection_order="oldest",
+    )
+
+    assert "/2010" in pattern
+    assert pattern != "www.caixin.com/"
 
 
 def test_prefix_year_target_skips_and_can_reopen_pending_queries():
@@ -276,10 +509,10 @@ def test_prefix_year_target_skips_and_can_reopen_pending_queries():
         target_articles_per_year=1,
     )
 
-    assert completed == 3
+    assert completed == 7
     assert prefix_summary(connection)["queryStatus"] == {
         "complete": 1,
-        "target-complete": 3,
+        "target-complete": 7,
     }
     assert next_prefix_query(connection) is None
 
@@ -289,7 +522,7 @@ def test_prefix_year_target_skips_and_can_reopen_pending_queries():
     )
 
     assert next_prefix_query(connection) is not None
-    assert prefix_summary(connection)["queriesRemaining"] == 3
+    assert prefix_summary(connection)["queriesRemaining"] == 7
 
 
 def test_collection_refresh_timeout_reuses_checkpoint_queries():
@@ -318,12 +551,12 @@ def test_collection_refresh_timeout_reuses_checkpoint_queries():
 
     assert result == {
         "source": "checkpoint",
-        "queryCount": 2,
+        "queryCount": 4,
         "refreshError": "RuntimeError",
     }
     assert connection.execute(
         "SELECT COUNT(*) FROM prefix_queries"
-    ).fetchone()[0] == 2
+    ).fetchone()[0] == 4
 
 
 def test_collection_refresh_timeout_rejects_empty_checkpoint():
@@ -409,6 +642,16 @@ def test_records_caps_and_exports_common_crawl_candidates(tmp_path: Path):
         pattern="npr.org/2010/",
         total_pages=0,
     )
+    for legacy_pattern in (
+        "www.npr.org/templates/story/story.php",
+        "npr.org/templates/story/story.php",
+    ):
+        record_prefix_page_count(
+            connection,
+            collection_id=collection.identifier,
+            pattern=legacy_pattern,
+            total_pages=0,
+        )
     assert prefix_summary(connection)["shouldContinue"] is False
 
     destination = tmp_path / "manifest.jsonl.gz"
@@ -521,6 +764,147 @@ def test_hydrates_nikkei_publication_date_from_common_crawl_warc(
     assert exported["canonicalUrl"] == NIKKEI_URL
     assert exported["publishedAt"] == "2013-05-26T08:00:00+09:00"
     assert exported["candidates"][0]["provider"] == "commoncrawl"
+
+
+def test_hydration_stops_when_year_targets_are_already_satisfied():
+    body = "日経の検証用記事本文です。" * 40
+    html = f"""
+        <html><head><meta property="article:published_time"
+          content="2013-05-26T08:00:00+09:00"></head>
+        <body><article><h1>検証用記事</h1><p>{body}</p></article></body></html>
+    """.encode()
+    first_compressed = _warc_record(NIKKEI_URL, html)
+    second_url = (
+        "https://www.nikkei.com/article/"
+        "AAAAAAFE22044_X10C13A5TY5001"
+    )
+    second_compressed = _warc_record(second_url, html)
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("nikkei")
+    collection = _collection()
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2013,
+        to_year=2013,
+        collections=(collection,),
+    )
+    pattern = "www.nikkei.com/article/"
+    record_prefix_page_count(
+        connection,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        total_pages=1,
+    )
+    second_row = _nikkei_index_row(
+        "20200830021036",
+        length=len(second_compressed),
+    )
+    second_row.update(
+        url=second_url,
+        digest="nikkei-digest-second",
+        offset="501",
+    )
+    record_prefix_page(
+        connection,
+        spec=spec,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        page_number=0,
+        total_pages=1,
+        page=PrefixIndexPage(
+            rows=(
+                _nikkei_index_row(
+                    "20140830021036",
+                    length=len(first_compressed),
+                ),
+                second_row,
+            )
+        ),
+    )
+    reconcile_prefix_year_targets(
+        connection,
+        target_articles_per_year=1,
+    )
+
+    hydration = process_prefix_date_hydration(
+        connection,
+        spec=spec,
+        archive_client=_MappedRangeClient(
+            {500: first_compressed, 501: second_compressed}
+        ),
+        maximum=2,
+        target_articles_per_year=1,
+    )
+
+    assert hydration["attempted"] == 1
+    assert hydration["found"] == 1
+    assert hydration["remaining"] == 1
+    assert prefix_summary(connection)["targetComplete"] is True
+    assert prefix_summary(connection)["shouldContinue"] is False
+
+
+def test_hydrates_npr_legacy_story_id_into_requested_year(tmp_path: Path):
+    legacy_url = (
+        "https://www.npr.org/templates/story/story.php?storyId=131356105"
+    )
+    body = "This archived NPR report contains complete editorial prose. " * 30
+    html = f"""
+        <html><head><script type="application/ld+json">
+        {{"@type":"NewsArticle","headline":"Legacy NPR report",
+          "datePublished":"2010-12-02T08:00:00-05:00"}}
+        </script></head><body><article><h1>Legacy NPR report</h1>
+        <p>{body}</p></article></body></html>
+    """.encode()
+    compressed = _warc_record(legacy_url, html)
+    connection = sqlite3.connect(":memory:")
+    spec = archive_source_spec("npr")
+    collection = _collection()
+    initialize_prefix_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2010,
+        collections=(collection,),
+    )
+    pattern = "www.npr.org/templates/story/story.php"
+    record_prefix_page_count(
+        connection,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        total_pages=1,
+    )
+    row = {
+        **_index_row("20180122150511", offset=1),
+        "url": legacy_url,
+        "length": str(len(compressed)),
+        "offset": "500",
+    }
+    result = record_prefix_page(
+        connection,
+        spec=spec,
+        collection_id=collection.identifier,
+        pattern=pattern,
+        page_number=0,
+        total_pages=1,
+        page=PrefixIndexPage(rows=(row,)),
+    )
+    assert result["undatedAccepted"] == 1
+
+    hydration = process_prefix_date_hydration(
+        connection,
+        spec=spec,
+        archive_client=_RangeClient(compressed),
+        maximum=1,
+    )
+
+    assert hydration["found"] == 1
+    destination = tmp_path / "npr-legacy.jsonl.gz"
+    export_prefix_manifest(connection, spec=spec, destination=destination)
+    with gzip.open(destination, "rt", encoding="utf-8") as handle:
+        exported = json.loads(handle.readline())
+    assert exported["canonicalUrl"] == legacy_url
+    assert exported["publishedAt"].startswith("2010-12-02T08:00:00")
 
 
 def test_new_nikkei_candidate_reopens_a_prior_no_date_result():
@@ -673,6 +1057,68 @@ def test_prefix_client_uses_page_count_then_ndjson_page():
     assert query.get("collapse") == "urlkey"
     assert query.get("pageSize") == "1"
     assert query.get_list("filter") == ["status:200", "mime:text/html"]
+    http_client.close()
+
+
+def test_prefix_client_retries_malformed_json_page_count():
+    page_count_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal page_count_requests
+        if request.url.params.get("showNumPages") == "true":
+            page_count_requests += 1
+            if page_count_requests == 1:
+                return httpx.Response(
+                    200,
+                    text="<html>busy</html>",
+                    request=request,
+                )
+            return httpx.Response(200, json={"pages": 1}, request=request)
+        raise AssertionError("page request was not expected")
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = CommonCrawlPrefixClient(
+        minimum_interval=0,
+        attempts=2,
+        client=http_client,
+    )
+
+    assert (
+        client.page_count(index_url=INDEX_URL, pattern="www.npr.org/2010/")
+        == 1
+    )
+    assert page_count_requests == 2
+    http_client.close()
+
+
+def test_prefix_client_retries_malformed_ndjson_page():
+    page_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal page_requests
+        page_requests += 1
+        if page_requests == 1:
+            return httpx.Response(200, text='{"url":\n', request=request)
+        return httpx.Response(
+            200,
+            text=json.dumps(_index_row("20140307033634", offset=1)) + "\n",
+            request=request,
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = CommonCrawlPrefixClient(
+        minimum_interval=0,
+        attempts=2,
+        client=http_client,
+    )
+
+    page = client.page(
+        index_url=INDEX_URL,
+        pattern="www.npr.org/2010/",
+        page=0,
+    )
+    assert len(page.rows) == 1
+    assert page_requests == 2
     http_client.close()
 
 

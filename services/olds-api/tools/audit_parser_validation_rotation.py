@@ -60,7 +60,11 @@ def _materialize_state(
     return output
 
 
-def _connect_read_only(path: Path) -> sqlite3.Connection:
+def _connect_read_only(
+    path: Path,
+    *,
+    require_exclusions: bool = True,
+) -> sqlite3.Connection:
     connection = sqlite3.connect(
         f"file:{path.resolve().as_posix()}?mode=ro",
         uri=True,
@@ -70,8 +74,9 @@ def _connect_read_only(path: Path) -> sqlite3.Connection:
         "parser_validation_config",
         "parser_validation_samples",
         "parser_validation_results",
-        "parser_validation_exclusions",
     }
+    if require_exclusions:
+        required.add("parser_validation_exclusions")
     actual = {
         str(row[0])
         for row in connection.execute(
@@ -107,7 +112,9 @@ def audit_rotation(
     with ExitStack() as stack:
         previous_path = _materialize_state(previous_state, stack=stack)
         current_path = _materialize_state(current_state, stack=stack)
-        previous = stack.enter_context(_closing_connection(previous_path))
+        previous = stack.enter_context(
+            _closing_connection(previous_path, require_exclusions=False)
+        )
         current = stack.enter_context(_closing_connection(current_path))
 
         all_exclusions = {
@@ -234,12 +241,16 @@ def audit_rotation(
 
 
 class _closing_connection:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, require_exclusions: bool = True):
         self.path = path
+        self.require_exclusions = require_exclusions
         self.connection: sqlite3.Connection | None = None
 
     def __enter__(self) -> sqlite3.Connection:
-        self.connection = _connect_read_only(self.path)
+        self.connection = _connect_read_only(
+            self.path,
+            require_exclusions=self.require_exclusions,
+        )
         return self.connection
 
     def __exit__(self, *args: object) -> None:

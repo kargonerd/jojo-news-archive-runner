@@ -94,6 +94,14 @@ def parse_args() -> argparse.Namespace:
             "can drain already actionable URLs first."
         ),
     )
+    parser.add_argument(
+        "--priority-year",
+        type=int,
+        help=(
+            "Prefer unfinished URL patterns for this publication year while "
+            "preserving the normal round-robin order within that year."
+        ),
+    )
     parser.add_argument("--github-output", type=Path)
     return parser.parse_args()
 
@@ -537,7 +545,10 @@ def main() -> int:
                 or bluesky_pages_this_run + pages_this_run < args.max_pages
             )
         ):
-            query = next_discovery_query(connection)
+            query = next_discovery_query(
+                connection,
+                preferred_year=args.priority_year,
+            )
             if query is None:
                 break
             pattern, resume_key = query

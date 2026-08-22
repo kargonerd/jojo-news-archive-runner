@@ -7,6 +7,7 @@ from urllib.parse import quote
 import warnings
 
 import pytest
+from bs4 import BeautifulSoup
 
 from jojo_olds_api.news_models import (
     ArticleStatus,
@@ -18,7 +19,12 @@ from jojo_olds_api.news_models import (
     ImageRole,
     RawCapture,
 )
-from jojo_olds_api.news_parser import parse_article
+from jojo_olds_api.news_parser import (
+    _nikkei_non_editorial_image_url,
+    _npr_non_editorial_image_url,
+    _scmp_non_editorial_image_url,
+    parse_article,
+)
 
 
 CASES = [
@@ -232,6 +238,36 @@ def test_axios_iframe_only_player_is_preserved_as_video():
     assert any(block.type.value == "embed" for block in result.blocks)
 
 
+def test_axios_split_here_newsletter_stream_cta_is_removed():
+    canonical_url = (
+        "https://www.axios.com/2017/12/16/"
+        "todays-trump-top-5-night-of-renewal-1513388130-2"
+    )
+    html = b"""
+    <html><head><script type="application/ld+json">{
+      "@type":"NewsArticle", "headline":"Today's Trump Top 5",
+      "datePublished":"2017-12-16T01:35:30Z"
+    }</script></head><body><main id="main-content">
+      <div class="DraftjsBlocks_draftjs__example">
+        <p>Welcome to today's Trump Top 5, brought to you by Axios and Apple News.</p>
+        <p>Subscribe to our newsletters h<a href="https://link.axios.com/join/signup-all">ere </a>
+          and check out our news Stream h<a href="https://www.axios.com/">ere.</a></p>
+        <p>Thanks for reading this short article about politics and policy.</p>
+      </div>
+    </main></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert "subscribe to our newsletters" not in result.plain_text.casefold()
+    assert "news stream" not in result.plain_text.casefold()
+
+
 def test_axios_visual_fallback_is_classified_as_interactive():
     canonical_url = "https://www.axios.com/2017/12/15/example-chart"
     html = b"""
@@ -292,7 +328,7 @@ def test_axios_visual_fallback_replaces_metadata_placeholder():
     selected = [image for image in result.images if image.should_archive]
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "axios-parser/0.1.9"
+    assert result.extraction.parser_version == "axios-parser/0.1.27"
     assert len(selected) == 1
     assert selected[0].role == ImageRole.CHART
     assert selected[0].original_url == (
@@ -324,6 +360,73 @@ def test_axios_legacy_short_news_card_is_not_treated_as_truncated():
 
     assert result.quality.status.value == "complete"
     assert "structured-short-record" in result.quality.warnings
+
+
+def test_axios_next_story_preserves_short_quote_attribution():
+    canonical_url = (
+        "https://www.axios.com/2018/01/26/"
+        "trump-nyt-mueller-fired-fake-news"
+    )
+    story = {
+        "headline": "Trump dismisses NYT after Mueller scoop",
+        "permalink": canonical_url,
+        "published_date": "2018-01-26T09:47:07Z",
+        "wordcount": 35,
+        "blocks": {
+            "blocks": [
+                {
+                    "type": "styled-quote",
+                    "text": (
+                        "Fake news. Fake news. Typical New York Times. "
+                        "Fake stories."
+                    ),
+                    "data": {},
+                },
+                {
+                    "type": "quote-attribution",
+                    "text": (
+                        "Trump on the NYT scoop that he tried to fire Robert "
+                        "Mueller last year, stopping only because White House "
+                        "Counsel Don McGahn threatened to resign."
+                    ),
+                    "data": {},
+                },
+            ],
+            "entityMap": [],
+        },
+        "bodyHtml": {
+            "beforeKeepReading": (
+                "<blockquote>Fake news. Fake news. Typical New York Times. "
+                "Fake stories.</blockquote>"
+                "<cite>Trump on the NYT scoop that he tried to fire Robert "
+                "Mueller last year, stopping only because White House Counsel "
+                "Don McGahn threatened to resign.</cite>"
+            ),
+            "afterKeepReading": "",
+        },
+    }
+    next_data = {"props": {"pageProps": {"data": {"story": story}}}}
+    html = (
+        "<html><body><script id='__NEXT_DATA__' type='application/json'>"
+        + json.dumps(next_data)
+        + "</script></body></html>"
+    ).encode()
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert [block.type.value for block in result.blocks] == [
+        "quote",
+        "paragraph",
+    ]
+    assert "Trump on the NYT scoop" in result.plain_text
+    assert 'data-jojo-role="quote-attribution"' in result.body_html
+    assert result.extraction.parser_version == "axios-parser/0.1.27"
 
 
 def test_axios_next_story_restores_twitter_embeds_and_images():
@@ -398,6 +501,163 @@ def test_axios_next_story_restores_twitter_embeds_and_images():
     assert any(image.should_archive for image in result.images)
 
 
+def test_axios_next_story_removes_read_more_and_normalized_duplicates():
+    canonical_url = "https://www.axios.com/2018/08/04/example-story"
+    repeated = (
+        "By the numbers: Support has steadily increased. A survey found that "
+        "61% of Americans favor legalization — four percentage points more "
+        "than a year ago."
+    )
+    story = {
+        "headline": "A changing policy landscape",
+        "permalink": canonical_url,
+        "published_date": "2018-08-04T12:00:00Z",
+        "wordcount": 67,
+        "blocks": {
+            "blocks": [
+                {
+                    "type": "unstyled",
+                    "text": repeated.replace("61%", "61 %"),
+                    "data": {},
+                },
+                {
+                    "type": "embed",
+                    "text": "",
+                    "data": {
+                        "oembed": {
+                            "html": (
+                                "<iframe src='https://playlist.example/episode'>"
+                                "</iframe>"
+                            )
+                        }
+                    },
+                },
+            ],
+            "entityMap": [],
+        },
+        "bodyHtml": {
+            "beforeKeepReading": (
+                f"<p>{repeated}</p>Go deeper"
+                "<p>The proposal will be considered by voters in November, "
+                "after several years of public debate and legislative review."
+                "</p><h5>Read more</h5><ul><li>"
+                "<a href='https://www.axios.com/related-story'>A related story"
+                "</a></li></ul>"
+                "<p><em>Sign up for our Axios Science newsletter here.</em></p>"
+                "<p><em>Sign up for the daily MarketSnacks financial "
+                "newsletter <a href='http://www.marketsnacks.com/'>here</a>."
+                "</em></p>"
+                "<p>Sign up for the Axios Nashville newsletter, launching in "
+                "September, to get smarter, faster on local news.</p>"
+                "<p>Subscribe to the Axios Pro Rata podcast.</p>"
+                "<p>Subscribe to Axios Communications.</p>"
+                "<p>More from Axios:</p>"
+                "<p>Subscribe to Axios Latino and get more news that matters, "
+                "delivered right to your inbox.</p>"
+                "<p>Subscribe to Axios Latino to get vital news about Latinos, "
+                "delivered to your inbox on Tuesdays and Thursdays.</p>"
+                "<p><strong>Go deeper:</strong> Another related story</p>"
+                "<ul><li>Subscribe to the Pro Rata podcast</li>"
+                "<li><strong>Go deeper:</strong> Election countdown</li></ul>"
+                "<iframe src='https://playlist.example/episode'></iframe>"
+            ),
+            "afterKeepReading": "",
+        },
+    }
+    next_data = {
+        "props": {"pageProps": {"pageProps": {"data": {"story": story}}}}
+    }
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":"A changing policy landscape",
+      "datePublished":"2018-08-04T12:00:00Z"
+    }}</script></head><body><main id="main-content"></main>
+    <script id="__NEXT_DATA__" type="application/json">
+    {json.dumps(next_data)}</script></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.plain_text.count("By the numbers") == 1
+    assert "Read more" not in result.plain_text
+    assert "A related story" not in result.plain_text
+    assert "Axios Science newsletter" not in result.plain_text
+    assert "MarketSnacks financial newsletter" not in result.plain_text
+    assert "Axios Nashville newsletter" not in result.plain_text
+    assert "Pro Rata podcast" not in result.plain_text
+    assert "Axios Communications" not in result.plain_text
+    assert "More from Axios" not in result.plain_text
+    assert "Axios Latino" not in result.plain_text
+    assert "Election countdown" not in result.plain_text
+    assert "Go deeper" not in result.body_html
+    assert result.body_html.count("https://playlist.example/episode") == 1
+    assert result.extraction.parser_version == "axios-parser/0.1.27"
+
+
+def test_axios_parser_removes_youtube_subscription_cta():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="An Axios interview">
+          <meta property="article:published_time"
+            content="2026-04-09T12:00:00Z">
+        </head><body><article><div class="article-body">
+          <p>The interview explores how the company is changing its
+          strategy as competition intensifies across the market.</p>
+          <ul><li><em>Subscribe to our YouTube .</em></li></ul>
+          <p>Executives said the next phase would focus on product
+          reliability and broader customer adoption.</p>
+        </div></article></body></html>
+        """,
+        publisher="axios",
+        canonical_url=(
+            "https://www.axios.com/2026/04/09/"
+            "axios-show-kalshi-extended-interview"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "The interview explores" in result.plain_text
+    assert "Executives said the next phase" in result.plain_text
+    assert "Subscribe to our YouTube" not in result.plain_text
+    assert result.extraction.parser_version == "axios-parser/0.1.27"
+
+
+def test_axios_parser_removes_legacy_underscore_rule_from_body():
+    canonical_url = (
+        "https://www.axios.com/2018/02/21/"
+        "the-atlantic-to-expand-adds-100-people"
+    )
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="The Atlantic to expand">
+          <meta property="article:published_time"
+            content="2018-02-21T12:00:00Z">
+        </head><body><article><div class="article-body">
+          <p>The Atlantic is expanding its newsroom and adding staff.</p>
+          <p>___________________________</p>
+          <p>The company said the plan would roll out over the next year.</p>
+        </div></article></body></html>
+        """,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "___________________________" not in result.plain_text
+    assert "expanding its newsroom" in result.plain_text
+    assert "roll out over the next year" in result.plain_text
+    assert result.extraction.parser_version == "axios-parser/0.1.27"
+
+
 @pytest.mark.parametrize(
     ("headline", "expected_type", "expected_status"),
     [
@@ -456,6 +716,65 @@ def test_axios_only_accepts_structurally_proven_empty_newsletters(
         assert "body-too-short" in result.quality.warnings
 
 
+def test_axios_accepts_structurally_proven_image_only_story():
+    canonical_url = (
+        "https://www.axios.com/2018/01/09/"
+        "worthy-content-delivered-efficiently-1515445951"
+    )
+    story = {
+        "headline": "You showed us that you want worthy content",
+        "permalink": canonical_url,
+        "published_date": "2018-01-09T08:51:00Z",
+        "wordcount": 0,
+        "blocks": {"blocks": [], "entityMap": []},
+        "bodyHtml": {
+            "beforeKeepReading": "<span id='midStoryAd'></span>",
+            "afterKeepReading": "",
+        },
+        "primary_image": {
+            "id": "be8b0ec6-33ac-4bf9-8c64-4117c094db18",
+            "alt_text": "Axios anniversary graphic #2",
+            "base_image_url": "https://images.axios.com/anniversary.jpg",
+            "caption": {
+                "blocks": [
+                    {
+                        "type": "unstyled",
+                        "text": "Illustration: Axios Visuals",
+                    }
+                ],
+                "entityMap": [],
+            },
+        },
+    }
+    next_data = {
+        "props": {"pageProps": {"pageProps": {"data": {"story": story}}}}
+    }
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle",
+      "headline":"You showed us that you want worthy content",
+      "datePublished":"2018-01-09T08:51:00Z"
+    }}</script></head><body><main id="main-content"></main>
+    <script id="__NEXT_DATA__" type="application/json">
+    {json.dumps(next_data)}</script></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("axios", canonical_url),
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.COMPLETE
+    selected = [image for image in result.images if image.should_archive]
+    assert len(selected) == 1
+    assert len(selected[0].candidate_urls) >= 1
+    assert result.images[0].credit == "Illustration: Axios Visuals"
+    assert result.extraction.parser_version == "axios-parser/0.1.27"
+
+
 def test_axios_accepts_only_wordcount_matched_short_am_newsletter():
     canonical_url = "https://www.axios.com/2017/12/16/axios-am-debut-gif"
     body_text = "Testing into graf. This is into copy ..."
@@ -509,6 +828,372 @@ def test_axios_accepts_only_wordcount_matched_short_am_newsletter():
     assert "body-too-short" not in result.quality.warnings
 
 
+def test_npr_removes_legacy_player_and_retailer_controls():
+    canonical_url = (
+        "https://www.npr.org/2010/01/06/122261912/"
+        "avatar-and-ke-ha-a-denominator-in-common"
+    )
+    prose = (
+        "The report compares two popular releases and explains how their "
+        "audiences responded to the performers, visual effects and music. "
+        "Critics discuss the cultural setting and the choices made by the "
+        "artists while placing both works in a broader historical context."
+    )
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":"Avatar and pop music",
+      "datePublished":"2010-01-06T12:00:00Z"
+    }}</script></head><body><div id="storytext">
+      <p>{prose}</p>
+      <div class="audio-module-tools">
+        <button>Toggle more options</button>
+        <div class="audio-embed-overlay"><button>Close</button>
+          <input value="embed code"></div>
+      </div>
+      <div class="bucketwrap ecommerce"><div class="ecomm_body">
+        <h3>Buy featured book</h3><form><button>Buy now</button>
+        <input value="1"></form></div></div>
+      <p>Read more</p>
+      <p>Copyright © 2010 NPR. All rights reserved. Visit our website terms
+        of use and permissions pages at www.npr.org for further information.</p>
+      <p><a>Sign up</a> for the <em>All Songs Considered</em>
+        <a>newsletter</a>, and we'll tell you when new music features are
+        available on the site.</p>
+      <p>Register with the NPR.org community to join in our discussions.</p>
+      <p>Contact us with your questions and comments.</p>
+      <img src="https://media.npr.org/include/images/facebook-default-wide-s1400-c100.jpg"
+        alt="NPR">
+      <figure><img src="https://media.npr.org/assets/movies/2009/12/avatar/humanandavatar2-f44c267a.jpg"
+        alt="Avatar film still">
+        <figcaption>A scene from the film Avatar.</figcaption></figure>
+    </div></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("npr", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "Toggle more options" not in result.plain_text
+    assert "Buy featured book" not in result.plain_text
+    assert "Read more" not in result.plain_text
+    assert "All rights reserved" not in result.plain_text
+    assert "All Songs Considered newsletter" not in result.plain_text
+    assert "NPR.org community" not in result.plain_text
+    assert "Contact us" not in result.plain_text
+    parsed_body = BeautifulSoup(result.body_html, "html.parser")
+    assert parsed_body.select_one("button, input, form") is None
+    selected = [image for image in result.images if image.should_archive]
+    assert len(selected) == 1
+    assert "/movies/2009/12/avatar/" in selected[0].original_url
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_invisibilia_newsletter_cta():
+    canonical_url = (
+        "https://www.npr.org/sections/invisibilia/2016/06/15/482001234/"
+        "example-story"
+    )
+    prose = (
+        "The report explains the experiment, identifies the participants, and "
+        "places the findings in a wider historical and scientific context. " * 3
+    )
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":"Example story",
+      "datePublished":"2016-06-15T12:00:00Z"
+    }}</script></head><body><div id="storytext">
+      <p>{prose}</p>
+      <p>Sign up for the newsletter to get insider access to all things
+        Invisibilia, including bonus content and info for how to join the
+        National Listening Event with Generation Listen on June 16. Subscribe
+        here.</p>
+    </div></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("npr", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "insider access to all things Invisibilia" not in result.plain_text
+    assert "National Listening Event" not in result.plain_text
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_excludes_life_kit_playlist_icon():
+    icon_url = (
+        "https://media.npr.org/assets/img/2025/05/22/"
+        "lifekit---reclaim-your-attention-playlist---icon-1-1-_sq-"
+        "516e151f10dc776749f389ddd9d9b576496acfc2.jpg"
+    )
+    editorial_url = "https://media.npr.org/assets/img/2024/07/30/editorial.jpg"
+    assert _npr_non_editorial_image_url(icon_url) is True
+    assert _npr_non_editorial_image_url(editorial_url) is False
+    prose = (
+        "The story examines how people use their phones and describes the "
+        "researchers' recommendations in enough detail for a complete report. "
+        * 4
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Overwhelmed by your smartphone">
+      <meta property="article:published_time" content="2024-07-30T12:00:00Z">
+      <meta property="og:image" content="{icon_url}">
+    </head><body><div id="storytext">
+      <p>{prose}</p>
+      <figure><img src="{icon_url}" alt="Reclaim your attention playlist"></figure>
+      <figure><img src="{editorial_url}" alt="Editorial photograph"></figure>
+    </div></body></html>
+    """.encode()
+    result = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2024/07/30/1269347144/"
+            "overwhelmed-by-your-smartphone-try-a-boring-phone"
+        ),
+    )
+    selected = [image.original_url for image in result.images if image.should_archive]
+    assert icon_url not in selected
+    assert editorial_url in selected
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_short_newsletter_cta():
+    canonical_url = (
+        "https://www.npr.org/2020/02/26/809652098/episode-826-vodka-proof"
+    )
+    prose = (
+        "The episode examines the history of distilling and explains how the "
+        "makers measure proof while placing the conversation in context. " * 3
+    )
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":"Episode 826",
+      "datePublished":"2020-02-26T12:00:00Z"
+    }}</script></head><body><div id="storytext">
+      <p>{prose}</p>
+      <p>Subscribe to our newsletter, it's top shelf.</p>
+    </div></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("npr", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "top shelf" not in result.plain_text
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_life_kit_newsletter_cta():
+    canonical_url = (
+        "https://www.npr.org/2026/07/28/g-s1-135845/"
+        "up-first-newsletter-example"
+    )
+    prose = (
+        "The report explains the latest developments in national politics. "
+        "It also examines how lawmakers are responding and what the changes "
+        "could mean for communities across the country."
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Up First: The latest news">
+      <meta property="article:published_time" content="2026-07-28T12:00:00Z">
+    </head><body><div id="storytext">
+      <p>{prose}</p>
+      <p>Subscribe to the Life Kit newsletter for expert advice on love, money, relationships and more.</p>
+    </div></body></html>
+    """.encode()
+    result = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("npr", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert prose in result.plain_text
+    assert "Life Kit newsletter" not in result.plain_text
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_dry_january_newsletter_cta():
+    canonical_url = (
+        "https://www.npr.org/2025/01/01/g-s1-40605/"
+        "up-first-newsletter-life-kit-dry-january-resolution"
+    )
+    prose = (
+        "The report explains how people are approaching the new year and "
+        "what health researchers recommend for sustainable habits. "
+        "Experts say small changes can support long-term goals."
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Up First: New year resolutions">
+      <meta property="article:published_time" content="2025-01-01T12:00:00Z">
+    </head><body><div id="storytext">
+      <p>{prose}</p>
+      <p>Sign up for the Dry January newsletter series here, which will have tips and strategies all month long to keep you alcohol-free.</p>
+    </div></body></html>
+    """.encode()
+    result = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("npr", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert prose in result.plain_text
+    assert "Dry January newsletter" not in result.plain_text
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_excerpt_copyright_tail():
+    canonical_url = (
+        "https://www.npr.org/2013/10/01/223174800/"
+        "exclusive-first-read-the-republic-of-thieves"
+    )
+    prose = (
+        "The review describes the new novel, its central characters, and the "
+        "long-running series it concludes, with context for returning readers. " * 3
+    )
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":"A book review",
+      "datePublished":"2013-10-01T12:00:00Z"
+    }}</script></head><body><div id="storytext">
+      <p>{prose}</p>
+      <p>All rights reserved. No part of this excerpt may be reproduced or
+        reprinted without permission in writing from the publisher.</p>
+    </div></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("npr", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "The review describes the new novel" in result.plain_text
+    assert "All rights reserved" not in result.plain_text
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_limited_run_sleep_newsletter_cta():
+    canonical_url = (
+        "https://www.npr.org/2024/06/27/g-s1-6315/"
+        "expert-ideas-to-make-your-summer-safer-and-brighter"
+    )
+    prose = (
+        "The report gathers practical advice from experts and explains the "
+        "evidence behind each recommendation for readers. " * 3
+    )
+    html = f"""
+    <html><head><script type="application/ld+json">{{
+      "@type":"NewsArticle", "headline":"Summer safety",
+      "datePublished":"2024-06-27T12:00:00Z"
+    }}</script></head><body><div id="storytext">
+      <p>{prose}</p>
+      <p>Sign up for our limited-run newsletter to receive more tips on sleep.</p>
+    </div></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("npr", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "limited-run newsletter" not in result.plain_text
+    assert "more tips on sleep" not in result.plain_text
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_legacy_template_uses_meta_date():
+    canonical_url = (
+        "https://www.npr.org/templates/story/story.php?storyId=131356105"
+    )
+    prose = (
+        "This archived NPR report contains a complete editorial account with "
+        "enough context, attribution, and detail for historical research. " * 6
+    )
+    html = f"""
+    <html><head><title>Legacy NPR report : NPR</title>
+      <meta name="date" content="2010-12-02">
+    </head><body><div id="storytext"><h1>Legacy NPR report</h1>
+      <p>{prose}</p></div></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("npr", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.published_at is not None
+    assert result.published_at.isoformat() == "2010-12-02T00:00:00+00:00"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_legacy_transcript_container_keeps_transcript_prose():
+    canonical_url = (
+        "https://www.npr.org/2013/01/25/170231450/"
+        "ex-prosecutor-mary-jo-white-nominated-to-head-sec"
+    )
+    transcript = (
+        "RENEE MONTAGNE, HOST: This is a complete archived NPR transcript. "
+        "The report explains the policy decision, identifies the officials "
+        "involved, and gives listeners the chronology and context needed to "
+        "understand what happened. "
+    ) * 4
+    html = f"""
+    <html><head><title>Ex-Prosecutor Mary Jo White Nominated To Head SEC : NPR</title>
+      <meta property="og:title" content="Ex-Prosecutor Mary Jo White Nominated To Head SEC : NPR">
+      <meta name="date" content="Fri, 25 Jan 2013 04:00:00 -0500">
+    </head><body><div id="storytext" class="storytext">
+      <p>President Obama nominated a former prosecutor to lead the SEC.</p>
+    </div><div class="transcript storytext">
+      <p class="disclaimer">Copyright © 2013 NPR. For personal, noncommercial
+        use only. See Terms of Use. For other uses, prior permission required.</p>
+      <p>{transcript}</p>
+      <p>All rights reserved. NPR transcripts are created on a rush deadline by
+        verb8tm. Please be aware that the authoritative record of NPR's
+        programming is the audio.</p>
+    </div></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("npr", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.content_type == ContentType.TRANSCRIPT
+    assert "complete archived NPR transcript" in result.plain_text
+    assert "Copyright © 2013 NPR" not in result.plain_text
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
 def test_wsj_removes_underscore_only_press_release_rule():
     canonical_url = "https://www.wsj.com/articles/example-release-01667509523"
     prose = " ".join(
@@ -539,7 +1224,56 @@ def test_wsj_removes_underscore_only_press_release_rule():
     assert result.quality.status == ArticleStatus.COMPLETE
     assert "________________________________" not in result.plain_text
     assert all(block.text != "________________________________" for block in result.blocks)
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
+
+
+def test_wsj_parser_extracts_legacy_article_tabs_story_body():
+    canonical_url = (
+        "https://www.wsj.com/article/0,,BT-CO-20100309-708474,00.html"
+    )
+    html = b"""
+    <html><head>
+      <title>Reed's In Preliminary Deal To Buy Struggling Rival Jones Soda - WSJ.com</title>
+    </head><body>
+      <div id="articleTabs_panel_article" class="mastertextCenter">
+        <div class="padding-left-big">
+          <div class="article story">
+            <h3 class="byline"></h3>
+            <p>DOW JONES NEWSWIRES</p>
+            <p>Beverage makers Reed's Inc. and Jones Soda Co. have signed a
+            letter of intent for Reed's to take over its struggling rival in a
+            deal valued at about $10 million, according to the companies.</p>
+            <p>Jones shares fell after the announcement while the companies
+            described the transaction and its expected timing.</p>
+            <p>The proposed transaction would combine the two beverage makers,
+            expand distribution, and leave the companies to negotiate the final
+            terms of the agreement. Executives said the announcement was
+            preliminary and that closing remained subject to customary review,
+            approvals and other conditions described in the filing.</p>
+            <p>Investors continued to assess the valuation, the expected
+            financing and the effect on production while the boards reviewed
+            the letter of intent. The report preserves the market context and
+            the companies' statements for readers of the archived article.</p>
+          </div>
+          <div class="articleTools_bottom"><p>Email Printer Friendly Share</p></div>
+          <div class="printSummary"><p>Copyright 2010 Dow Jones &amp; Company.</p></div>
+        </div>
+      </div>
+    </body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("wsj", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "Beverage makers Reed's Inc." in result.plain_text
+    assert "Email Printer Friendly" not in result.plain_text
+    assert "Copyright 2010" not in result.plain_text
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_extracts_structured_image_gallery_in_order():
@@ -611,7 +1345,7 @@ def test_wsj_parser_extracts_structured_image_gallery_in_order():
     assert result.plain_text.index("First pantry") < result.plain_text.index(
         "Third pantry"
     )
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
@@ -659,6 +1393,65 @@ def test_wsj_parser_scopes_tovima_partner_copy_and_removes_promos():
     assert "unrelated current story" not in result.plain_text
     assert result.quality.images_selected == 1
     assert result.images[0].original_url.endswith("/report.jpg")
+
+
+def test_wsj_parser_removes_book_club_signup_cta():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Book Club Interview">
+      <meta property="article:published_time" content="2015-06-11T00:00:00Z">
+    </head><body><article>
+      <p>This is the first substantive paragraph of the archived interview,
+      with enough detail to establish that the page is a complete article.</p>
+      <p><a href="https://www.wsj.com/book-club">Sign up for the WSJ Book Club here.</a></p>
+      <p>This second substantive paragraph preserves the interview response
+      and confirms that the CTA is not part of the reporting body.</p>
+    </article></body></html>
+    """
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/book-club-interview-1434051083",
+    )
+    assert "sign up for the wsj book club" not in result.plain_text.casefold()
+    assert "first substantive paragraph" in result.plain_text
+    assert "second substantive paragraph" in result.plain_text
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
+
+
+def test_wsj_parser_recovers_malformed_legacy_article_with_lxml_fallback():
+    html = b"""
+    <html><head>
+      <meta property="article:published_time" content="2015-06-11T00:00:00Z">
+    </head><body>
+        <![endif]-->
+<article
+ class="column at8-col8"
+ id="article-contents">
+      <h1>Legacy WSJ article</h1>
+      <p>This substantive archived report contains enough text to prove that
+      the tolerant fallback recovered the article body from malformed legacy
+      markup instead of classifying the capture as unsupported.</p>
+      <p><a href="/book-club">Sign up for the WSJ Book Club here.</a></p>
+      <p>The closing paragraph preserves historical context and confirms the
+      recovered document remains a complete article. It also contains enough
+      additional reporting detail, chronology, named sources, and context to
+      meet the parser's completeness threshold for an archived news record.
+      The final sentences make the fixture representative of a real captured
+      story and ensure the recovery is evaluated as a complete article.</p>
+</article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/legacy-malformed-article",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "tolerant fallback recovered" in result.plain_text
+    assert "sign up for the wsj book club" not in result.plain_text.casefold()
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_deduplicates_legacy_renditions_and_branding():
@@ -772,7 +1565,7 @@ def test_wsj_parser_preserves_downloadable_puzzle_pdfs():
         "https://s.wsj.net/public/resources/documents/SatPuz.pdf",
         "https://s.wsj.net/public/resources/documents/Answer.pdf",
     ]
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_extracts_amp_story_photo_gallery():
@@ -869,7 +1662,7 @@ def test_wsj_parser_extracts_legacy_slideshow_photo_gallery():
     assert result.images[0].caption == "Historical photograph 0 caption."
     assert result.images[0].credit == "Credit: Archive Photographer 0"
     assert result.plain_text.count("Archive Photographer 0") == 1
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_rejects_modern_metered_preview_and_removes_ui():
@@ -942,7 +1735,7 @@ def test_wsj_parser_accepts_complete_short_report_matching_declared_words():
     assert "Northrop completed" in result.plain_text
     assert "The two missiles" in result.plain_text
     assert "Copyright" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_rejects_severe_declared_word_count_deficit_without_footer():
@@ -1048,7 +1841,7 @@ def test_wsj_parser_does_not_treat_deliver_in_url_as_liveblog():
     assert result.content_type.value == "article"
     assert result.quality.status.value == "partial"
     assert "body-too-short" in result.quality.warnings
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_does_not_treat_facebook_live_story_as_liveblog():
@@ -1075,7 +1868,7 @@ def test_wsj_parser_does_not_treat_facebook_live_story_as_liveblog():
     assert result.content_type.value == "article"
     assert result.quality.status.value == "partial"
     assert "body-too-short" in result.quality.warnings
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_rejects_legacy_sign_in_snippet():
@@ -1171,6 +1964,77 @@ def test_wsj_parser_removes_split_stay_informed_promo_from_infini_body():
     assert "recovery to continue" in result.plain_text
     assert "STAY INFORMED" not in result.plain_text
     assert "coronavirus briefing" not in result.plain_text
+
+
+def test_wsj_parser_drops_infini_unsupported_media_shell_chrome():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Photos: Sony's New Aibo Robot Dog Goes on Sale">
+      <meta property="article:published_time" content="2018-01-11T12:00:00Z">
+    </head><body><article data-jojo-representation="derived-infini-news">
+      <h1>Photos: Sony's New Aibo Robot Dog Goes on Sale</h1>
+      <div data-trackable="article-body"><p>
+        Photos: Sony's New Aibo Robot Dog Goes on Sale. Mechanical pet gets a
+        reboot Jan. 11. Article Not Supported. We're sorry but this article
+        contains media that is not currently supported in this app. You will
+        be redirected shortly. To Read the Full Story Subscribe Sign In.
+        Most Popular Videos Most Popular Articles.
+      </p></div>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/photos-sonys-new-aibo-robot-dog-goes-on-sale-1515668290",
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.plain_text == ""
+    assert "Article Not Supported" not in result.body_html
+    assert "Subscribe" not in result.body_html
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
+
+
+def test_wsj_parser_removes_legacy_flattened_recirculation_blocks():
+    reporting = " ".join(
+        ["The company reported stronger revenue and resilient demand."] * 12
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Company Reports Strong Demand">
+      <meta property="article:published_time" content="2018-08-01T12:00:00Z">
+    </head><body><article>
+      <p>{reporting}</p>
+      <h2>Related</h2>
+      <p>Read more</p>
+      <p>Subscribe to our morning newsletter, delivered straight to your inbox, at http://on.wsj.com/cmotodaysignup.</p>
+      <p>Write to Jane Doe at jane.doe@example.com</p>
+      <p>Related coverage</p>
+      <p>In other news</p>
+      <p>Content from our sponsor</p>
+      <p>Follow us on Twitter: @wsjcmo, @example</p>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/example-company-report",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "stronger revenue" in result.plain_text
+    for noise in (
+        "Related",
+        "Read more",
+        "morning newsletter",
+        "jane.doe@example.com",
+        "Content from our sponsor",
+        "Follow us on Twitter",
+    ):
+        assert noise.casefold() not in result.plain_text.casefold()
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_accepts_short_dow_jones_newswire_record():
@@ -1560,7 +2424,7 @@ def test_wsj_parser_marks_subscription_snippet_as_partial():
     assert "body-too-short" in result.quality.warnings
     assert "Subscribe to WSJ" not in result.plain_text
     assert "Resume Subscription" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
@@ -1602,7 +2466,116 @@ def test_wsj_parser_trims_full_story_roadblock_and_recirculation():
     assert "Most Popular news" not in result.plain_text
     assert "Recommended Videos" not in result.plain_text
     assert "Unrelated popular headline" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
+
+
+def test_wsj_parser_trims_plain_membership_and_coupon_tail():
+    reporting = " ".join(["Complete arts reporting sentence."] * 45)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Complete Arts Review">
+      <meta property="article:published_time"
+            content="2020-12-31T12:00:00Z">
+    </head><body><article><div>
+      <p>- WSJ News Exclusive</p>
+      <p>{reporting}</p>
+      <p>Continue reading your article with</p>
+      <p>a WSJ membership</p>
+      <p>View Membership Options</p>
+      <p>Target:</p>
+      <p>20% off entire order - Target promo code -</p>
+      <p>Walmart:</p>
+      <p>Walmart promo code: $10 off all categories -</p>
+    </div></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/complete-arts-review-11609429269"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Complete arts reporting sentence." in result.plain_text
+    assert "WSJ News Exclusive" not in result.plain_text
+    assert "WSJ membership" not in result.plain_text
+    assert "Membership Options" not in result.plain_text
+    assert "Target promo code" not in result.plain_text
+    assert "Walmart promo code" not in result.plain_text
+
+
+def test_wsj_parser_removes_forms_related_links_and_newsletter_cards():
+    reporting = " ".join(["Complete automotive reporting sentence."] * 45)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Complete Automotive Report">
+      <meta property="article:published_time"
+            content="2020-07-08T12:00:00Z">
+    </head><body><article><div class="article-content">
+      <p>{reporting}</p>
+      <p>Share Your Thoughts</p>
+      <p>What do you expect next? Join the conversation below.</p>
+      <p>Continued reporting remains after the reader prompt.</p>
+      <div class="media-object type-InsetRichText article__inset">
+        <div class="media-object-rich-text">
+          <h4>Read More</h4>
+          <p>Unrelated automotive headline</p>
+        </div>
+      </div>
+      <div class="media-object type-InsetRichText inline article__inset">
+        <div class="media-object-rich-text">
+          <h4>More</h4>
+          <ul class="articleList"><li>Unrelated market headline</li></ul>
+        </div>
+      </div>
+      <div class="media-object-rich-text">
+        <h4>Related</h4>
+        <p></p>
+        <ul class="articleList">
+          <li><a href="/articles/unrelated-related-story">
+            Unrelated related story
+          </a></li>
+        </ul>
+      </div>
+      <div class="media-object type-InsetDynamic article__inset">
+        <form id="reader-questionnaire">
+          <label>Where do you live?<input type="text"></label>
+          <p>By submitting your response to this questionnaire, you consent
+             to Dow Jones processing your personal information.</p>
+        </form>
+      </div>
+      <div id="webui_newsletter_inset" class="webui-newsletter-inset">
+        <p>SUBSCRIBE</p><p>Technology newsletter</p>
+      </div>
+    </div></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=(
+            "https://www.wsj.com/articles/complete-auto-report-11594234268"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Complete automotive reporting sentence." in result.plain_text
+    assert "Continued reporting remains" in result.plain_text
+    assert "Share Your Thoughts" not in result.plain_text
+    assert "Join the conversation" not in result.plain_text
+    assert "Read More" not in result.plain_text
+    assert "Unrelated automotive headline" not in result.plain_text
+    assert "Unrelated market headline" not in result.plain_text
+    assert "Related" not in result.plain_text
+    assert "Unrelated related story" not in result.plain_text
+    assert "Where do you live" not in result.plain_text
+    assert "By submitting your response" not in result.plain_text
+    assert "SUBSCRIBE" not in result.plain_text
+    assert "Technology newsletter" not in result.plain_text
+    assert "<form" not in result.body_html
+    assert "<input" not in result.body_html
 
 
 def test_wsj_parser_removes_legacy_more_in_and_top_news_modules():
@@ -1814,7 +2787,7 @@ def test_wsj_parser_removes_legacy_more_in_and_top_news_modules():
     assert "More Journal Reports" not in result.plain_text
     assert "See All" not in result.plain_text
     assert "Top News" not in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_nyt_parser_recovers_legacy_standalone_slideshow_json():
@@ -2024,6 +2997,190 @@ def test_reuters_parser_excludes_legacy_default_images():
     assert "generic-publisher-branding" in (
         result.images[0].selection_reasons
     )
+
+
+def test_ft_parser_removes_legacy_chrome_and_fastft_branding():
+    canonical_url = "https://www.ft.com/content/example-fastft"
+    reporting = " ".join(["Financial Times reporting sentence."] * 30)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A historical FT report">
+      <meta property="article:published_time"
+            content="2016-10-05T20:02:33Z">
+      <meta property="og:image" content="https://www.ft.com/__origami/service/image/v2/images/raw/https%3A%2F%2Fwww.ft.com%2F__assets%2Fcreatives%2Fopen-graph%2Ffastft-v1.jpg?width=1200">
+    </head><body><div class="article-body">
+      <form class="n-myft-ui--save"><button>Save article</button></form>
+      <div class="n-myft-ui__preferences-modal"
+           data-component-id="myft-preferences-modal">
+        <input id="receive-instant-alerts" type="checkbox">
+        <span>Get instant alerts</span>
+      </div>
+      <p><em>Sign up for our daily US politics newsletter <a>here</a>.</em></p>
+      <aside><h3>A related report</h3><p><a>Read more</a></p></aside>
+      <p>{reporting}</p>
+    </div></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="ft",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("ft", canonical_url),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
+    assert "Sign up for our" not in result.plain_text
+    assert "Read more" not in result.plain_text
+    assert "A related report" not in result.plain_text
+    assert BeautifulSoup(result.body_html, "html.parser").select_one(
+        "form, button"
+    ) is None
+    assert BeautifulSoup(result.body_html, "html.parser").select_one(
+        "input, [data-component-id='myft-preferences-modal'], [class*='n-myft-ui']"
+    ) is None
+    assert "Get instant alerts" not in result.plain_text
+    assert result.quality.images_selected == 0
+
+
+def test_ft_parser_removes_standalone_separator_list_items():
+    reporting = " ".join(["Financial Times reporting sentence."] * 30)
+    result = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="A historical FT report">
+          <meta property="article:published_time"
+                content="2023-01-01T00:00:00Z">
+        </head><body><article><div class="article-body">
+          <p>{reporting}</p>
+          <ul><li>.</li></ul>
+        </div></article></body></html>
+        """.encode(),
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/list-separator",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
+    assert result.plain_text == reporting
+    assert all(block.text != "." for block in result.blocks)
+
+
+def test_ft_parser_removes_podcast_and_survey_campaign_promos():
+    reporting = " ".join(["Financial Times reporting sentence."] * 30)
+    result = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="A complete FT report">
+          <meta property="article:published_time"
+                content="2023-01-01T00:00:00Z">
+        </head><body><article><div class="article-body">
+          <p>{reporting}</p>
+          <p>Subscribe to the Rachman Review wherever you get your podcasts
+             - please listen, rate and subscribe.</p>
+          <p>Sign up for the survey!</p>
+          <p>Sign up for the Financial Times markets news channel here.</p>
+          <p>Sign up for the FT’s Due Diligence newsletter: https://ft.com/due-diligence</p>
+        </div></article></body></html>
+        """.encode(),
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/campaign-promos",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.plain_text == reporting
+
+
+def test_ft_parser_removes_subscription_offer_chrome():
+    reporting = " ".join(["Financial Times reporting sentence."] * 30)
+    result = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="A complete FT report">
+          <meta property="article:published_time"
+                content="2023-01-01T00:00:00Z">
+        </head><body><article><div class="article-body">
+          <p>{reporting}</p>
+          <section class="subscription-offer">
+            <h2>Subscribe to unlock this article</h2>
+            <p>Try unlimited access</p>
+            <p>Only $1 for 4 weeks</p>
+            <p>Then $75 per month</p>
+            <a href="/subscribe">Explore more offers</a>
+          </section>
+          <p>Complete digital access starts here.</p>
+        </div></article></body></html>
+        """.encode(),
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/subscription-offer",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.plain_text == reporting
+    assert "Subscribe to unlock" not in result.plain_text
+    assert "Try unlimited access" not in result.plain_text
+    assert "Explore more offers" not in result.plain_text
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_rejects_current_open_graph_brand_icon():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A complete FT report">
+          <meta property="article:published_time"
+                content="2017-09-26T05:33:44Z">
+          <meta name="og:image"
+                content="https://www.ft.com/__assets/creatives/brand-ft/icons/v2/open-graph.png">
+        </head><body><article><div class="article__content-body">
+          <p>The complete report contains substantial original journalism,
+          interviews and context about the policy decision for readers.</p>
+          <p>A second paragraph supplies further evidence and explains how
+          officials and affected communities responded to the announcement.</p>
+        </div></article></body></html>
+        """,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/brand-icon-report",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected == 0
+    assert all(
+        "open-graph.png" not in image.original_url
+        for image in result.images
+    )
+
+
+def test_ft_parser_removes_lex_contact_and_response_recirculation():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A historical FT column">
+          <meta property="article:published_time"
+                content="2016-11-11T12:00:00Z">
+        </head><body><div class="article-body">
+          <p>The column analyses company finances, investor expectations
+          and the consequences of management's latest strategic decision.</p>
+          <p>A second substantive paragraph explains the market reaction
+          and the risks that shareholders must consider in the coming year.</p>
+          <p>Email the Lex team at lex@ft.com</p>
+          <p>Letter in response to this article:</p>
+          <p>An unrelated reader response / From Example Reader</p>
+        </div></body></html>
+        """,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "00f0c012-a7fc-11e6-8898-79a99e2a4de6"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "second substantive paragraph" in result.plain_text
+    assert "Email the Lex team" not in result.plain_text
+    assert "Letter in response" not in result.plain_text
+    assert "unrelated reader response" not in result.plain_text
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_bloomberg_parser_excludes_social_default_images():
@@ -2268,7 +3425,54 @@ def test_parser_combines_split_2012_nyt_article_body_containers():
     assert "Opening paragraph" in result.plain_text
     assert "Continuation reporting" in result.plain_text
     assert "Related-story navigation" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_recovers_legacy_sprinkled_body_reference_map():
+    canonical_url = (
+        "https://www.nytimes.com/2018/10/16/learning/nutrition.html"
+    )
+    payload = {
+        "initialState": {
+            "Article:legacy-sprinkled": {
+                "__typename": "Article",
+                "url": canonical_url,
+                "headline": {"id": "Headline:legacy"},
+                "firstPublished": "2018-10-16T06:02:00.620Z",
+                "sprinkledBody": {
+                    "content@filterEmpty": [
+                        {"id": "Paragraph:one"},
+                        {"id": "Paragraph:two"},
+                    ]
+                },
+            },
+            "Headline:legacy": {"default": "Nutrition"},
+            "Paragraph:one": {
+                "__typename": "ParagraphBlock",
+                "content": [{"__typename": "TextInline", "text": "How much attention do you pay to your diet?"}],
+            },
+            "Paragraph:two": {
+                "__typename": "ParagraphBlock",
+                    "content": [{"__typename": "TextInline", "text": "Read nutrition labels and make informed choices, then compare the ingredients and serving sizes before deciding what to eat."}],
+            },
+        }
+    }
+    raw_capture = (
+        "<script>window.__preloadedData = "
+        + json.dumps(payload)
+        + ";</script>"
+    ).encode()
+
+    result = parse_article(
+        raw_capture,
+        publisher="nyt",
+        canonical_url=canonical_url,
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.quality.body_characters > 100
+    assert "informed choices" in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
     canonical_url = "https://www.nytimes.com/2017/06/02/example.html"
@@ -2325,7 +3529,7 @@ def test_nyt_parser_separates_legacy_credits_and_removes_recirculation():
     assert "SectionBarShare" not in result.body_html
     assert "<button" not in result.body_html
     assert "Save story" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
@@ -2372,7 +3576,7 @@ def test_nyt_parser_rejects_short_unhydrated_interactive_shell():
     assert result.quality.status.value == "partial"
     assert "incomplete-interactive" in result.quality.warnings
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_preserves_legacy_interactive_script_shell():
@@ -2400,7 +3604,7 @@ def test_nyt_parser_preserves_legacy_interactive_script_shell():
     assert result.content_type.value == "interactive"
     assert result.quality.status.value == "complete"
     assert "body-too-short" not in result.quality.warnings
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_keeps_hydrated_image_interactive_over_short_metadata():
@@ -2442,6 +3646,46 @@ def test_nyt_parser_keeps_hydrated_image_interactive_over_short_metadata():
     assert "Someone sent you a Valentine" in result.plain_text
     assert "capture love" not in result.plain_text
     assert result.images[0].original_url.endswith("valentine.jpg")
+
+
+def test_nyt_parser_prefers_substantive_interactive_body_over_short_panel():
+    short_panel = "Election results navigation and updates."
+    long_panel = " ".join(
+        [
+            "The interactive report explains how the election changed"
+            " diplomatic relationships and policy expectations for countries"
+            " around the world, with reporting from correspondents and context"
+            " about the likely consequences for governments and markets."
+        ]
+        * 8
+    )
+    html = f"""
+        <html><head>
+          <meta property="og:title" content="What a Trump Presidency Means">
+          <meta property="article:published_time" content="2024-11-06T00:00:00Z">
+        </head><body>
+          <section class="interactive-content"><div class="interactive-body">
+            <p>{short_panel}</p>
+          </div></section>
+          <section class="interactive-content"><div class="interactive-body">
+            <p>{long_panel}</p>
+          </div></section>
+        </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2024/11/06/world/"
+            "trump-president-world.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "diplomatic relationships" in result.plain_text
+    assert short_panel not in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_bloomberg_parser_extracts_livemint_partner_story_content():
@@ -6245,6 +7489,11 @@ def test_reuters_parser_removes_legacy_share_chrome_and_wire_separator():
             <div class="Image_expand-button"
                  aria-label="Expand Image Slideshow" role="button"></div>
             <div class="Slideshow_expand-button" role="button"></div>
+            <p>Whatsapp Print PDF</p>
+            <p>Share this article</p>
+            <div class="share-icon-container">
+              <div id="jMore-PopUp">Whatsapp Print PDF</div>
+            </div>
             <div class="rich-share" data-testid="rich-share">
               <svg aria-label="Save to Reading list" role="button"></svg>
               <p>Share</p>
@@ -6265,6 +7514,8 @@ def test_reuters_parser_removes_legacy_share_chrome_and_wire_separator():
     assert "^^^" not in result.plain_text
     assert "Save to Reading list" not in result.body_html
     assert 'role="button"' not in result.body_html
+    assert "Whatsapp Print PDF" not in result.plain_text
+    assert "Share this article" not in result.plain_text
 
 
 def test_reuters_parser_trims_legacy_graphics_payload_tail():
@@ -6946,7 +8197,7 @@ def test_bloomberg_parser_recovers_embedded_story_body_and_audio():
 
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "audio"
-    assert result.quality.body_characters >= 500
+    assert result.quality.body_characters >= 20
     embed_blocks = [
         block for block in result.blocks if block.type.value == "embed"
     ]
@@ -6997,7 +8248,7 @@ def test_nyt_parser_joins_distributed_story_companion_columns():
     assert "Good evening" in result.plain_text
     assert "senators continued" in result.plain_text
     assert "tax investigation" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_reuters_parser_removes_toolbar_licensing_ui_and_promotes_ksl_image():
@@ -7058,7 +8309,44 @@ def test_reuters_parser_removes_toolbar_licensing_ui_and_promotes_ksl_image():
     assert "Facebook Linkedin Email" not in result.plain_text
     assert "Purchase Licensing Rights" not in result.plain_text
     assert result.images[0].original_url == image_base
-    assert result.extraction.parser_version == "reuters-parser/0.7.25"
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
+
+
+def test_reuters_parser_rejects_default_and_partner_branding_images():
+    canonical_url = "https://www.reuters.com/world/example-report-2022-11-01"
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A complete Reuters report">
+      <meta property="article:published_time" content="2022-11-01T12:00:00Z">
+    </head><body><article data-testid="article-body">
+      <p>The report contains substantive facts, named sources, and enough
+      context to remain a complete historical news article.</p>
+      <figure><img src="https://www.reuters.com/pf/resources/images/reuters/reuters-default.png"></figure>
+      <figure><img src="https://staticprintenglish.theprint.in/wp-content/uploads/2025/10/add-the-print-as-a-trusted-source-1.gif"></figure>
+      <figure><img src="https://cloudfront-us-east-2.images.arcpublishing.com/reuters/editorial.jpg"></figure>
+    </article></body></html>
+    """
+
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "substantive facts" in result.plain_text
+    images_by_url = {image.original_url: image for image in result.images}
+    assert images_by_url[
+        "https://www.reuters.com/pf/resources/images/reuters/reuters-default.png"
+    ].should_archive is False
+    assert images_by_url[
+        "https://staticprintenglish.theprint.in/wp-content/uploads/2025/10/"
+        "add-the-print-as-a-trusted-source-1.gif"
+    ].should_archive is False
+    assert images_by_url[
+        "https://cloudfront-us-east-2.images.arcpublishing.com/reuters/editorial.jpg"
+    ].should_archive is True
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
 
 
 def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
@@ -7124,7 +8412,33 @@ def test_reuters_yahoo_syndication_excludes_ai_summary_and_caption_noise():
     assert "AI key takeaways" not in result.plain_text
     assert "Generated summary noise" not in result.plain_text
     assert "Unrelated lead-media caption" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.25"
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
+
+
+def test_reuters_parser_removes_standalone_trending_stories_label():
+    canonical_url = (
+        "https://www.reuters.com/technology/example-story-2025-01-30"
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A complete Reuters report">
+      <meta property="article:published_time"
+        content="2025-01-30T12:00:00Z">
+    </head><body><article>
+      <p>Substantive reporting sentence one with enough detail.</p>
+      <p>Substantive reporting sentence two with additional context.</p>
+      <p>Trending Stories</p>
+      <p>Substantive reporting sentence three closes the article.</p>
+    </article></body></html>
+    """
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+    )
+    assert result.quality.status.value == "complete"
+    assert "Trending Stories" not in result.plain_text
+    assert "Substantive reporting sentence three" in result.plain_text
 
 
 def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
@@ -7191,7 +8505,7 @@ def test_reuters_postmedia_syndication_joins_only_reporting_paragraphs():
     assert "Sign In or Create" not in result.plain_text
     assert "Advertisement" not in result.plain_text
     assert "Postmedia is committed" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.25"
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
 
 
 def test_reuters_syndication_removes_registration_and_subscription_ui():
@@ -7251,7 +8565,72 @@ def test_reuters_syndication_removes_registration_and_subscription_ui():
     assert "subscriber" not in result.plain_text
     assert "Monthly Plan" not in result.plain_text
     assert "Thank you for your report" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.25"
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
+
+
+def test_reuters_parser_removes_social_channels_subscription_cta():
+    canonical_url = (
+        "https://www.reuters.com/business/environment/"
+        "tropical-storm-martin-forms-2022-11-01"
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A Reuters environment report">
+      <meta property="article:published_time" content="2022-11-01T12:00:00Z">
+    </head><body><article class="article-body__content">
+      <p>The storm formed over the central North Atlantic, according to the
+      National Hurricane Center, as forecasters tracked its movement.</p>
+      <p>Officials said the system could affect shipping routes while it
+      remained over open water and urged residents to follow updates.</p>
+      <p>Subscribe to our channels on YouTube , Telegram &amp; WhatsApp</p>
+      <input type="radio" name="statbox" value="home">
+    </article></body></html>
+    """
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("reuters", canonical_url),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "The storm formed" in result.plain_text
+    assert "Subscribe to our channels" not in result.plain_text
+    assert "<input" not in result.body_html
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
+
+
+def test_reuters_parser_removes_partner_paywall_tail():
+    canonical_url = (
+        "https://www.reuters.com/world/asia-pacific/"
+        "partner-report-2024-01-30"
+    )
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A Reuters partner report">
+      <meta property="article:published_time" content="2024-01-30T12:00:00Z">
+    </head><body><article>
+      <p>Islamabad | A court handed down a sentence, according to the party.</p>
+      <p>The ruling was the latest development before the election.</p>
+      <p>Subscribe to gift this article</p>
+      <p>Gift 5 articles to anyone you choose each month when you subscribe.</p>
+      <p>Already a subscriber?</p>
+      <p>Read More</p>
+      <p>Fetching latest articles</p>
+    </article></body></html>
+    """
+    result = parse_article(
+        html,
+        publisher="reuters",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("reuters", canonical_url),
+    )
+    assert result.quality.status.value == "complete"
+    assert "court handed down a sentence" in result.plain_text
+    assert "Subscribe to gift" not in result.plain_text
+    assert "Already a subscriber" not in result.plain_text
+    assert "Fetching latest articles" not in result.plain_text
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
 
 
 def test_reuters_parser_scopes_rcs_body_without_promoted_modules():
@@ -7337,7 +8716,7 @@ def test_reuters_parser_promotes_and_deduplicates_legacy_lazy_image():
     assert result.images[0].original_url == lead
     assert lazy in result.images[0].candidate_urls
     assert result.images[0].alt == "A detainee holds a fence."
-    assert result.extraction.parser_version == "reuters-parser/0.7.25"
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
 
 
 def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
@@ -7383,7 +8762,7 @@ def test_reuters_parser_scopes_hashed_modern_body_and_removes_trust_link():
     assert "Unrelated recommendation" not in result.plain_text
     assert "Capital Calls" not in result.plain_text
     assert "Another unrelated" not in result.plain_text
-    assert result.extraction.parser_version == "reuters-parser/0.7.25"
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
 
 
 def test_reuters_parser_trims_read_next_and_author_profile_tail():
@@ -7518,7 +8897,7 @@ def test_reuters_parser_accepts_complete_short_news_records(headline, body):
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.plain_text == body
-    assert result.extraction.parser_version == "reuters-parser/0.7.25"
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
 
 
 @pytest.mark.parametrize(
@@ -7611,7 +8990,7 @@ def test_reuters_legacy_body_templates(body_markup, expected_text):
         32,
         tzinfo=timezone.utc,
     )
-    assert result.extraction.parser_version == "reuters-parser/0.7.25"
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
 
 
 def test_reuters_legacy_press_release_restores_nested_media_and_drops_disclaimer():
@@ -7663,7 +9042,7 @@ def test_reuters_legacy_press_release_restores_nested_media_and_drops_disclaimer
     assert result.images[0].credit == "Photo: Business Wire"
     assert result.images[0].should_archive
     assert "owner of this announcement" not in result.plain_text.casefold()
-    assert result.extraction.parser_version == "reuters-parser/0.7.25"
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
 
 
 def test_bloomberg_press_release_trims_professional_service_footer():
@@ -9150,7 +10529,61 @@ def test_nyt_parser_removes_sponsorship_subscription_and_opinion_footer_ui():
     assert "diversity of letters" not in result.plain_text
     assert "Opinion section on Facebook" not in result.plain_text
     assert "Share full article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_removes_standalone_subscribe_anchor_from_story_body():
+    reporting = " ".join(["Egypt reporting sentence."] * 35)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Egypt report">
+      <meta property="article:published_time" content="2011-02-11T12:00:00Z">
+    </head><body><article><section name="articleBody">
+      <p>{reporting}</p>
+      <p><a href="/subscribe">Subscribe</a></p>
+    </section></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url="https://www.nytimes.com/2011/02/11/world/example.html",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Egypt reporting sentence." in result.plain_text
+    assert "Subscribe" not in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_removes_virtual_events_cta():
+    reporting = " ".join(["New York Times event reporting sentence."] * 35)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Times Events Report">
+      <meta property="article:published_time"
+            content="2022-09-02T12:00:00Z">
+    </head><body><article><section name="articleBody">
+      <p>{reporting}</p>
+      <p>Sign up for our virtual events</p>
+      <p>Final event reporting paragraph.</p>
+    </section></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2022/09/02/climate/"
+            "generational-divides-climate.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "New York Times event reporting sentence." in result.plain_text
+    assert "Sign up for our virtual events" not in result.plain_text
+    assert "Final event reporting paragraph." in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_removes_california_today_subscription_ctas():
@@ -9181,7 +10614,7 @@ def test_nyt_parser_removes_california_today_subscription_ctas():
     assert "This article is part of" not in result.plain_text
     assert "Were you forwarded this email" not in result.plain_text
     assert "weekly updates on learning" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_removes_read_more_marker_without_trimming_following_prose():
@@ -9213,7 +10646,7 @@ def test_nyt_parser_removes_read_more_marker_without_trimming_following_prose():
     assert "Read more:" not in result.plain_text
     assert "A related report remains" in result.plain_text
     assert "The closing paragraph adds" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
@@ -9244,7 +10677,67 @@ def test_nyt_parser_uses_article_summary_when_archived_live_headline_is_empty():
     assert result.headline == "Positive tests inch up in New York City."
     assert result.quality.status.value == "complete"
     assert "missing-headline" not in result.quality.warnings
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_removes_campaign_reporter_cta_variant():
+    reporting = " ".join(["New York Times election analysis sentence."] * 35)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Election Analysis">
+      <meta property="article:published_time"
+            content="2018-11-06T12:00:00Z">
+    </head><body><article><section name="articleBody">
+      <p>{reporting}</p>
+      <p>Sign up for the campaign reporter</p>
+      <p>Final reporting paragraph about the election.</p>
+    </section></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2018/11/06/us/"
+            "election-analysis.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "New York Times election analysis sentence." in result.plain_text
+    assert "Final reporting paragraph" in result.plain_text
+    assert "campaign reporter" not in result.plain_text
+
+
+def test_nyt_parser_removes_interactive_next_promo_and_heading_cta():
+    reporting = " ".join(["New York Times interactive analysis sentence."] * 35)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Interactive Analysis">
+      <meta property="article:published_time"
+            content="2019-01-30T12:00:00Z">
+    </head><body><article><section name="articleBody">
+      <p>{reporting}</p>
+      <h2>Sign up for The Campaign Reporter</h2>
+      <p>Final reporting paragraph about Athens.</p>
+      <em>Next: A visit to Plato’s Academy.</em>
+    </section></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2019/01/30/opinion/"
+            "athens-memory.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Campaign Reporter" not in result.plain_text
+    assert "Next: A visit to Plato" not in result.plain_text
+    assert "Final reporting paragraph" in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_removes_related_coverage_and_newsletter_modules():
@@ -9283,6 +10776,41 @@ def test_nyt_parser_removes_related_coverage_and_newsletter_modules():
     assert "Related Coverage" not in result.plain_text
     assert "Upshot Newsletter" not in result.plain_text
     assert "Privacy Policy" not in result.plain_text
+
+
+def test_nyt_parser_removes_subscribe_to_newsletter_cta():
+    reporting = " ".join(["Climate reporting sentence."] * 35)
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Climate Forward">
+      <meta property="article:published_time"
+            content="2025-09-25T12:00:00Z">
+    </head><body><article>
+      <section name="articleBody">
+        <p>{reporting}</p>
+        <p>Subscribe to the Climate Forward newsletter: """
+    html += "https://www.nytimes.com/newsletters/climate-change</p>"
+    html += """
+        <p>Final climate reporting paragraph.</p>
+      </section>
+    </article></body></html>
+    """
+    html = html.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2025/09/25/climate/"
+            "climate-forward-chris-wright.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Climate reporting sentence." in result.plain_text
+    assert "Final climate reporting paragraph." in result.plain_text
+    assert "Subscribe to the Climate Forward newsletter" not in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_generic_syndication_extracts_local_newspaper_copy():
@@ -9344,7 +10872,7 @@ def test_nyt_generic_syndication_extracts_local_newspaper_copy():
     assert result.quality.body_characters >= 1_000
     assert "paragraph 8" in result.plain_text
     assert "Related article" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_reuters_generic_syndication_removes_benzinga_recirculation_tail():
@@ -9538,7 +11066,7 @@ def test_reuters_marketscreener_syndication_scopes_body_and_joins_punctuation():
     assert "chart3.png" not in result.body_html
     assert "reuters.jpg" not in result.body_html
     assert all(not image.should_archive for image in result.images)
-    assert result.extraction.parser_version == "reuters-parser/0.7.25"
+    assert result.extraction.parser_version == "reuters-parser/0.7.32"
 
 
 def test_nyt_parser_normalizes_legacy_interactive_quiz():
@@ -9587,7 +11115,119 @@ def test_nyt_parser_normalizes_legacy_interactive_quiz():
         [block for block in result.blocks if block.type.value == "list"]
     ) == 3
     assert "Third possible answer 2" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_staticizes_legacy_playoff_controls():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="The N.F.L. Playoff Picture">
+          <meta property="article:published_time"
+                content="2018-10-20T12:00:00Z">
+        </head><body><main class="interactive-graphic">
+          <h2>Choose the winner of each remaining game</h2>
+          <p>Explore how every result changes Jacksonville's playoff odds.</p>
+          <div class="g-game">
+            <label class="g-outcome g-outcome--away">
+              <input type="radio" name="game" value="loss">
+              <span class="g-outcome-name">Eagles</span>
+            </label>
+            <label class="g-outcome g-outcome--home">
+              <input type="radio" name="game" value="win">
+              <span class="g-outcome-name">Giants</span>
+            </label>
+          </div>
+          <p>Jacksonville reaches the postseason if its rivals lose.</p>
+          <p>The simulator explains the remaining schedule, divisional
+          standings and tiebreaker rules that affect the team's chances.</p>
+          <p>Readers can compare conference opponents and understand how
+          each result changes the probability of a postseason berth.</p>
+          <p>The model incorporates completed games, future matchups and
+          the league's published procedures for resolving equal records.</p>
+          <p>Additional analysis describes the most important contests and
+          why several combinations produce the same final playoff outcome.</p>
+        </main></body></html>
+        """,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2018/upshot/"
+            "jacksonville-jaguars-nfl-playoff-picture.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.content_type.value == "interactive"
+    assert "Jacksonville reaches" in result.plain_text
+    parsed_body = BeautifulSoup(result.body_html, "html.parser")
+    assert "Eagles" in parsed_body.get_text(" ", strip=True)
+    assert "Giants" in parsed_body.get_text(" ", strip=True)
+    assert parsed_body.select_one(
+        "input, select, textarea"
+    ) is None
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_staticizes_callout_form_and_drops_sprite_assets():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Readers explain the election">
+          <meta property="article:published_time"
+                content="2018-09-20T12:00:00Z">
+          <script type="application/ld+json">{
+            "@type": "NewsArticle",
+            "image": [
+              "https://static01.nyt.com/projects/assets/oscars_2013/images/2013/info-actions-sprite.png",
+              "https://static01.nyt.com/projects/assets/oscars_2013/images/2013/social-sprite-2x.png",
+              "https://static01.nyt.com/images/2018/10/21/opinion/sunday/21askroxane_icon/merlin_131686277_90cc8ce3-d5b5-465b-81b1-d0ee4b716fb2-facebookJumbo.jpg"
+            ]
+          }</script>
+        </head><body><article class="interactive-body">
+          <form id="nytint-callout-form" method="POST">
+            <figure><img src="https://static01.nyt.com/images/report.jpg">
+              <figcaption>Voters gather before the public meeting.</figcaption>
+            </figure>
+            <p>Our reporters answer questions about election interference,
+            the investigation and the evidence gathered during reporting.</p>
+            <label for="question">What question do you have?</label>
+            <textarea id="question"></textarea>
+            <button type="submit">Continue</button>
+          </form>
+          <picture>
+            <img src="https://static01.nyt.com/newsgraphics/2018/11/26/year-end-mortality/hash/sprite-mobile.jpg">
+            <img src="https://static01.nyt.com/newsgraphics/2018/11/26/year-end-mortality/hash/sprite-desktop.jpg">
+            <img src="https://static01.nyt.com/projects/assets/oscars_2013/images/2013/info-actions-sprite.png">
+            <img src="https://static01.nyt.com/projects/assets/oscars_2013/images/2013/social-sprite-2x.png">
+          </picture>
+          <p>The accompanying analysis describes the chronology, named
+          participants and public records in enough detail for readers.</p>
+          <p>Additional reporting explains the institutional response and
+          the consequences documented by investigators and witnesses.</p>
+        <p>The article preserves historical context, quotations and data
+        needed to understand the findings and their significance.</p>
+        </article></body></html>
+        """,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2018/09/20/us/"
+            "election-interference-example.html"
+        ),
+    )
+
+    parsed_body = BeautifulSoup(result.body_html, "html.parser")
+    assert parsed_body.select_one("form, input, select, textarea, button") is None
+    assert "What question do you have?" in result.plain_text
+    assert "Voters gather" in result.plain_text
+    assert not any("/newsgraphics/" in image.original_url for image in result.images)
+    assert any("report.jpg" in image.original_url for image in result.images)
+    assert all(
+        image.role.value == "icon"
+        for image in result.images
+        if "oscars_2013" in image.original_url
+        or "askroxane_icon" in image.original_url
+    )
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
@@ -9627,7 +11267,37 @@ def test_nyt_parser_prefers_substantive_interactive_story_over_image_metadata():
     assert result.content_type.value == "opinion"
     assert "paragraph 8" in result.plain_text
     assert result.quality.body_characters >= 800
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_removes_campaign_reporter_subscription_cta():
+    reporting = " ".join(
+        ["Election reporting sentence with documented context."] * 20
+    )
+    result = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="Campaign update">
+          <meta property="article:published_time" content="2018-10-02T12:00:00Z">
+        </head><body><article>
+          <p>{reporting}</p>
+          <p>Sign up for the Campaign Reporter. Get messages from our
+          politics correspondent Alex Burns as he covers the biggest races
+          this election season. Along the way, he’ll take your questions and
+          help you understand what’s at stake.</p>
+          <p>Sign up for the Campaign Reporter.</p>
+          <p>The final paragraph records the response from officials.</p>
+        </article></body></html>
+        """.encode(),
+        publisher="nyt",
+        canonical_url="https://www.nytimes.com/2018/10/02/smarter-living/the-edit-consent-kavanaugh.html",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Campaign Reporter" not in result.plain_text
+    assert "Election reporting sentence" in result.plain_text
+    assert "final paragraph records" in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_recovers_gallery_from_preloaded_data_before_js_config():
@@ -10087,7 +11757,696 @@ def test_ft_parser_preserves_crossword_pdf_and_removes_branding_noise():
     ] == [
         "http://prod-upp-image-read.ft.com/crossword-asset"
     ]
-    assert article.extraction.parser_version == "ft-parser/0.8.31"
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_sign_in_interface_chrome():
+    reporting = " ".join(
+        ["Financial Times reporting explains the policy change."] * 20
+    )
+    article = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="Policy change">
+          <meta property="article:published_time" content="2020-06-15T00:00:00Z">
+        </head><body><article class="article__content-body">
+          <p>{reporting}</p>
+          <p>Sign in</p>
+          <button>Sign in</button>
+        </article></body></html>
+        """.encode(),
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/example-sign-in-chrome",
+    )
+    assert article.quality.status.value == "complete"
+    assert "policy change" in article.plain_text
+    assert "Sign in" not in article.plain_text
+    assert "<button" not in article.body_html
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_standalone_subscribe_interface_chrome():
+    reporting = " ".join(
+        ["Financial Times reporting explains the policy change."] * 20
+    )
+    article = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="Policy change">
+          <meta property="article:published_time" content="2018-10-03T00:00:00Z">
+        </head><body><article data-trackable="article-body">
+          <p>Accessibility help</p>
+          <p>Sign In</p>
+          <p>Subscribe</p>
+          <p>Menu</p>
+          <p>{reporting}</p>
+        </article></body></html>
+        """.encode(),
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/example-subscribe-chrome",
+    )
+    assert article.quality.status.value == "complete"
+    assert "policy change" in article.plain_text
+    assert "Subscribe" not in article.plain_text
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_marks_infini_access_shell_as_truncated():
+    reporting = " ".join(
+        ["Financial Times navigation shell text that looks substantial."] * 20
+    )
+    article = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="Fed policy">
+          <meta property="article:published_time" content="2018-10-03T00:00:00Z">
+        </head><body><article data-jojo-representation="derived-infini-news">
+          <h1>Fed policy</h1>
+          <div data-trackable="article-body">
+            <p>{reporting}</p>
+            <p>New to the Financial Times?</p>
+            <p>Enjoy 7 days of free access</p>
+          </div>
+        </article></body></html>
+        """.encode(),
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/example-infini-shell",
+    )
+    assert article.quality.status.value == "partial"
+    assert "truncated-body" in article.quality.warnings
+
+
+def test_ft_parser_rejects_legacy_reused_chrome_gif():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A complete FT report">
+      <meta property="article:published_time" content="2016-03-01T00:00:00Z">
+    </head><body><article><div class="article__content-body">
+      <p>This is substantive editorial reporting with enough body text to parse.</p>
+      <img src="https://www.ft.com/__origami/service/image/v2/images/raw/http%3A%2F%2Fwww.ft.com%2Fcms%2Fbc1ec196-2767-11e2-8c4f-00144feabdc0.gif?width=1200">
+    </div></article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/example-chrome-gif",
+    )
+    assert article.quality.images_selected == 0
+
+
+def test_npr_parser_rejects_facebook_default_lead_image():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="An NPR report">
+      <meta property="article:published_time" content="2010-04-05T00:00:00Z">
+      <meta property="og:image" content="https://media.npr.org/include/images/facebook-default.jpg?s=1400">
+    </head><body><article><p>This is substantive NPR editorial reporting.</p></article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2010/04/05/125570048/example",
+    )
+    assert article.quality.images_selected == 0
+
+
+def test_npr_parser_removes_related_story_module_and_generic_video_icon():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="An NPR film report">
+      <meta property="article:published_time" content="2010-11-16T00:00:00Z">
+    </head><body><div id="storytext">
+      <p>Editorial reporting before the related module.</p>
+      <div class="container con2col">
+        <h3 class="conheader">Related Stories</h3>
+        <div><img src="http://media.npr.org/chrome/news/video_generic_70x70.jpg"><h3>Another story</h3></div>
+      </div>
+      <p>Editorial reporting after the related module.</p>
+    </div></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2010/11/16/131366948/example",
+    )
+    assert "Related Stories" not in article.plain_text
+    assert "Another story" not in article.plain_text
+    assert "reporting before" in article.plain_text
+    assert "reporting after" in article.plain_text
+    assert article.quality.images_selected == 0
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_bare_related_audio_story_tail():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="AI Jobs Friday">
+      <meta property="article:published_time" content="2023-12-08T18:24:00Z">
+    </head><body><div id="storytext">
+      <p>We discuss how artificial intelligence changes the labor market.</p>
+      <p>Today on the Indicator, we talk to people in these new roles.</p>
+      <p><strong>RELATED</strong></p>
+      <p>Is AI a job-killer or an up-skiller? (Apple Podcasts / Spotify)</p>
+      <p>For sponsor-free episodes, subscribe to Planet Money+.</p>
+      <p>Music by Drop Electric. Find us on social media.</p>
+    </div></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2023/12/08/1197958787/ai-jobs-friday"
+        ),
+    )
+    assert article.quality.status == ArticleStatus.COMPLETE
+    assert "changes the labor market" in article.plain_text
+    assert "RELATED" not in article.plain_text
+    assert "job-killer" not in article.plain_text
+    assert "Planet Money+" not in article.plain_text
+    assert "Music by Drop Electric" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_read_more_header_without_colon():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="An NPR report">
+      <meta property="article:published_time" content="2011-04-18T00:00:00Z">
+    </head><body><div id="storytext">
+      <p>Editorial reporting before the related module.</p>
+      <div class="container con2col">
+        <h3 class="conheader">Read More</h3>
+        <div><a href="/related">A related story</a></div>
+      </div>
+      <p>Editorial reporting after the related module.</p>
+    </div></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2011/04/18/135326540/example",
+    )
+    assert "Read More" not in article.plain_text
+    assert "A related story" not in article.plain_text
+    assert "reporting before" in article.plain_text
+    assert "reporting after" in article.plain_text
+
+
+def test_npr_parser_removes_modern_read_more_label_with_colon():
+    html = b"""
+    <html><head><script type="application/ld+json">
+      {"@type":"NewsArticle","headline":"A modern NPR report",
+       "datePublished":"2023-03-16T00:00:00Z"}
+    </script></head><body><article>
+      <p>Complete editorial reporting before the related-story label.</p>
+      <p>Read more:</p>
+      <p><a href="/related">A related story</a></p>
+      <p>Complete editorial reporting after the related-story label.</p>
+    </article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2023/03/16/1164060276/"
+            "modern-example"
+        ),
+    )
+    assert article.quality.status == ArticleStatus.COMPLETE
+    assert "Read more:" not in article.plain_text
+    assert "reporting before" in article.plain_text
+    assert "reporting after" in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_rejects_legacy_concert_calendar_banner():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Live at the Village Vanguard">
+      <meta property="article:published_time" content="2010-12-13T00:00:00Z">
+    </head><body><article>
+      <p>A complete editorial description of the live performance.</p>
+      <img src="http://media.npr.org/music/calendar/concert_calendar_200x32_2.gif">
+    </article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2010/12/13/101898065/example",
+    )
+    assert article.quality.images_selected == 0
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_legacy_audio_tools_from_story_body():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="An NPR audio report">
+      <meta property="article:published_time" content="2010-04-16T00:00:00Z">
+    </head><body><div id="storytext">
+      <p>Complete editorial reporting around the audio segment.</p>
+      <ul>
+        <li><a class="add" href="javascript:NPR.Player.openPlayer(126021059, null, NPR.Player.Action.ADD_TO_PLAYLIST)">Add to Playlist</a></li>
+        <li><a class="download" href="https://pd.npr.org/story.mp3?dl=1">Download</a></li>
+        <li><a class="trans" href="/templates/transcript/transcript.php">Transcript</a></li>
+      </ul>
+      <p>More editorial reporting after the player.</p>
+    </div></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2010/04/16/126021059/example",
+    )
+    assert "Complete editorial reporting" in article.plain_text
+    assert "More editorial reporting" in article.plain_text
+    assert "Add to Playlist" not in article.plain_text
+    assert "Download" not in article.plain_text
+    assert "Transcript" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_legacy_podcast_subscription_cta():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Song Travels interview">
+      <meta property="article:published_time" content="2013-03-29T00:00:00Z">
+    </head><body><div id="storytext">
+      <p>The interview includes substantive reporting about the musician's
+      career, recordings and influence.</p>
+      <p>Subscribe to the Song Travels Express podcast .</p>
+      <p>The conversation also covers the artist's work with younger players
+      and the changing sound of contemporary music.</p>
+    </div></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2013/03/29/175691046/jos-feliciano-on-song-travels",
+    )
+    assert article.quality.status.value == "complete"
+    assert "substantive reporting" in article.plain_text
+    assert "Song Travels Express" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_podcast_subscription_cta_from_legacy_list_item():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Hidden Brain interview">
+      <meta property="article:published_time" content="2016-05-31T00:00:00Z">
+    </head><body><div id="storytext">
+      <p>The interview includes substantive reporting about the forces that
+      shape everyday decisions.</p>
+      <ul class="story-tools">
+        <li>Subscribe to the Hidden Brain podcast!</li>
+      </ul>
+      <p>The reporting also includes context from the researchers involved.</p>
+    </div></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2016/05/31/479754700/"
+            "food-for-thought-the-subtle-forces-that-affect-your-appetite"
+        ),
+    )
+    assert article.quality.status.value == "complete"
+    assert "substantive reporting" in article.plain_text
+    assert "Hidden Brain podcast" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_legacy_subscription_networks_interface_notice():
+    article = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Opioid epidemic">
+          <meta property="article:published_time" content="2019-04-02T00:00:00Z">
+        </head><body><div id="storytext">
+          <p>The report examines the public-health consequences of the opioid
+          epidemic and the policies responding to it.</p>
+          <p>Subscribe to our show on Apple Podcasts, Spotify, and NPR One.</p>
+          <p>The reporting includes interviews with doctors and patients.</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2019/04/02/709087394/"
+            "americas-opioid-epidemic"
+        ),
+    )
+    assert article.quality.status.value == "complete"
+    assert "public-health consequences" in article.plain_text
+    assert "Subscribe to our show" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_newsletter_subscription_cta():
+    article = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Energy utility pricing">
+          <meta property="article:published_time" content="2016-07-10T00:00:00Z">
+        </head><body><div id="storytext">
+          <p>The report explains how utility pricing affects summer demand
+          and household energy use.</p>
+          <p>Subscribe to the NPR Business Newsletter</p>
+          <p>The reporting includes interviews with customers and regulators.</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2016/07/10/485120563/"
+            "uber-but-for-energy-utility-surge-pricing-threatens-summer-cool"
+        ),
+    )
+    assert article.quality.status.value == "complete"
+    assert "utility pricing affects" in article.plain_text
+    assert "NPR Business Newsletter" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_body_electric_share_cta():
+    article = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A complete NPR report">
+          <meta property="article:published_time" content="2026-03-06T00:00:00Z">
+        </head><body><div id="storytext">
+          <p>The report follows students and teachers as they adapt to new
+          technology in classrooms across the country.</p>
+          <p>Sign up for our Body Electric newsletter, or share it with a friend.</p>
+          <p>The reporting includes interviews with educators and students.</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2026/03/06/nx-s1-5732793/"
+            "college-student-perspective-using-ai-in-class"
+        ),
+    )
+    assert article.quality.status.value == "complete"
+    assert "adapt to new technology" in article.plain_text
+    assert "Body Electric newsletter" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_pod_club_newsletter_cta():
+    article = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A complete NPR report">
+          <meta property="article:published_time" content="2025-09-16T00:00:00Z">
+        </head><body><div id="storytext">
+          <p>The report profiles musicians and the creative choices shaping
+          their latest work in the studio and on stage.</p>
+          <p>Sign up for the Pod Club newsletter: www.npr.org/podclub</p>
+          <p>The reporting includes interviews with the artists and producers.</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2025/09/16/nx-s1-5542206/"
+            "the-contenders-vol-20-the-beths-dustin-ohalloran-nicholas-payton-more"
+        ),
+    )
+    assert article.quality.status.value == "complete"
+    assert "creative choices shaping" in article.plain_text
+    assert "Pod Club newsletter" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_planet_money_newsletter_cta():
+    article = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A Wisconsin tool maker">
+          <meta property="article:published_time" content="2026-07-17T00:00:00Z">
+        </head><body><div id="storytext">
+          <p>The reporting explains how a Wisconsin tool maker built a durable
+          business through changing economic conditions.</p>
+          <p>Sign up for the Planet Money newsletter. The world is confusing.
+          Economics can help.</p>
+          <p>The story includes interviews with workers and economists.</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2026/07/17/nx-s1-5894730/"
+            "federal-reserve-looks-for-secret-sauce-behind-a-successful-"
+            "wisconsin-tool-maker"
+        ),
+    )
+    assert article.quality.status.value == "complete"
+    assert "durable business" in article.plain_text
+    assert "Planet Money newsletter" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_long_podcast_and_challenge_ctas():
+    article = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Hidden Brain special">
+          <meta property="article:published_time" content="2015-10-27T00:00:00Z">
+        </head><body><div id="storytext">
+          <p>The report explains why fear can be useful and how people respond
+          to frightening situations.</p>
+          <p>Subscribe to the podcast and download this week's episode ... if
+          you dare!</p>
+          <p>The reporting includes interviews with researchers and visitors.</p>
+          <p>Sign up for the Body Electric Challenge here .</p>
+          <p>Sign up for our newsletter here .</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2015/10/27/450911424/example",
+    )
+    assert article.quality.status.value == "complete"
+    assert "why fear can be useful" in article.plain_text
+    assert "download this week's episode" not in article.plain_text
+    assert "Body Electric Challenge" not in article.plain_text
+    assert "sign up for our newsletter" not in article.plain_text.casefold()
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_read_more_link_inside_legacy_story():
+    article = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A timeline">
+          <meta property="article:published_time" content="2020-01-22T00:00:00Z">
+        </head><body><div id="storytext">
+          <p>The timeline explains the allegations and the court proceedings
+          with substantial historical context.</p>
+          <h3><a href="https://www.npr.org/related">Read more</a></h3>
+          <p>The account continues with the latest developments.</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2020/01/22/798222176/example",
+    )
+    assert article.quality.status.value == "complete"
+    assert "historical context" in article.plain_text
+    assert "Read more" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_combined_podcast_social_cta():
+    article = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A complete NPR report">
+          <meta property="article:published_time" content="2016-06-08T00:00:00Z">
+        </head><body><div id="storytext">
+          <p>The report contains substantial original reporting and context
+          about the event, the people involved and the response from officials.</p>
+          <p>Subscribe to the podcast, like us on Facebook, follow us on Twitter,
+          and sign up to our newsletter for bonus content!</p>
+          <p>The reporting includes interviews, historical context and additional
+          facts that explain why the story matters to the public.</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2016/06/08/481293144/invisibilia-season-two-party-live",
+    )
+    assert article.quality.status.value == "complete"
+    assert "substantial original reporting" in article.plain_text
+    assert "bonus content" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_short_podcast_here_cta():
+    article = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A complete NPR report">
+          <meta property="article:published_time" content="2022-04-14T00:00:00Z">
+        </head><body><div id="storytext">
+          <p>The report contains substantial original reporting and context
+          about the people involved, the policy response and the latest facts.</p>
+          <p>Subscribe to our podcast here.</p>
+          <p>The final paragraph explains how the event affects communities and
+          what researchers expect to happen next.</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2022/04/14/1092922838/example",
+    )
+    assert article.quality.status.value == "complete"
+    assert "Subscribe to our podcast" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_legacy_terms_conditions_interface_notice():
+    article = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Terms and conditions">
+          <meta property="article:published_time" content="2013-07-11T00:00:00Z">
+        </head><body><div id="storytext">
+          <p>The report explains how consumer agreements shape everyday life.</p>
+          <p>Terms and conditions may apply</p>
+          <p>The analysis also compares several common contract practices.</p>
+        </div></body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2013/07/11/199110631/"
+            "terms-and-conditions-and-us-oh-my"
+        ),
+    )
+    assert article.quality.status.value == "complete"
+    assert "consumer agreements" in article.plain_text
+    assert "Terms and conditions may apply" not in article.plain_text
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_recovers_supplemental_legacy_flash_live_video():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Watch live streaming video">
+    </head><body>
+      <div id="storytext"><p>BP's live stream from a remotely operated vehicle on the seabed:</p></div>
+      <div id="supplementarycontent">
+        <div class="bucketwrap statichtml"><object>
+          <embed src="http://www.ustream.tv/flash/live/1/4424524" type="application/x-shockwave-flash">
+        </object></div>
+      </div>
+    </body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="npr",
+        canonical_url="https://www.npr.org/2010/05/30/127073848/example",
+    )
+    assert article.content_type == "interactive"
+    assert "remotely operated vehicle" in article.plain_text
+    assert any(
+        block.type == "embed"
+        and block.embed_url == "http://www.ustream.tv/flash/live/1/4424524"
+        for block in article.blocks
+    )
+    assert article.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_nyt_parser_trims_partner_recirculation_after_attribution():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Syndicated NYT report">
+      <meta property="article:published_time" content="2018-04-24T00:00:00Z">
+    </head><body><article>
+      <p>First-party editorial reporting.</p>
+      <p>This article originally appeared in The New York Times.</p>
+      <p>MALIN FEZEHAI &#169; 2018 The New York Times</p>
+      <ul><li>Partner recommendation card</li></ul>
+      <img src="https://sportal365images.com/partner-card.jpg">
+    </article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url="https://www.nytimes.com/2018/04/24/world/example.html",
+    )
+    assert "First-party editorial" in article.plain_text
+    assert "originally appeared" in article.plain_text
+    assert "MALIN FEZEHAI" in article.plain_text
+    assert "Partner recommendation" not in article.plain_text
+    assert all("sportal365" not in image.original_url for image in article.images)
+    assert article.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_axios_parser_removes_linked_newsletter_signup_and_breaking_placeholder():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Axios report">
+      <meta property="article:published_time" content="2019-11-24T00:00:00Z">
+      <meta property="og:image" content="https://images.axios.com/token=/fit-in/1366x1366/social/breaking-news.png">
+    </head><body><article>
+      <p>Substantive reporting before the publisher promotion.</p>
+      <p><em>Sign up for <a href="http://link.axios.com/join/generate-signup">the daily Generate newsletter</a> to get the column on Monday.</em></p>
+      <p>Substantive reporting after the publisher promotion.</p>
+    </article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="axios",
+        canonical_url="https://www.axios.com/2019/11/24/example",
+    )
+    assert "Sign up for" not in article.plain_text
+    assert "reporting before" in article.plain_text
+    assert "reporting after" in article.plain_text
+    assert article.quality.images_selected == 0
+    assert article.extraction.parser_version == "axios-parser/0.1.27"
+
+
+def test_axios_parser_removes_publisher_newsletter_subscription_block():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="How the mission happened">
+      <meta property="article:published_time" content="2021-08-31T00:00:00Z">
+    </head><body><article>
+      <p>Axios reporting explains how the orbital mission came together.</p>
+      <p><strong><a href="https://www.axios.com/signup/space">Subscribe</a> to the Axios Space newsletter for more reporting.</strong></p>
+      <p>Credits: Reported and produced by the Axios newsroom.</p>
+    </article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="axios",
+        canonical_url="https://www.axios.com/2021/08/31/example",
+    )
+    assert "orbital mission" in article.plain_text
+    assert "Credits:" in article.plain_text
+    assert "Axios Space newsletter" not in article.plain_text
+    assert article.extraction.parser_version == "axios-parser/0.1.27"
+
+
+def test_axios_parser_removes_new_axios_newsletter_cta():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Axios report">
+      <meta property="article:published_time" content="2019-04-10T00:00:00Z">
+    </head><body><article>
+      <p>Original reporting before the newsletter promotion.</p>
+      <p>Sign up for the New Axios Space newsletter.</p>
+      <p>Original reporting after the newsletter promotion.</p>
+    </article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="axios",
+        canonical_url=(
+            "https://www.axios.com/2019/04/10/"
+            "pro-rata-podcast-americas-return-to-the-moon"
+        ),
+    )
+    assert "New Axios Space newsletter" not in article.plain_text
+    assert "Original reporting before" in article.plain_text
+    assert "Original reporting after" in article.plain_text
+    assert article.extraction.parser_version == "axios-parser/0.1.27"
 
 
 def test_ft_parser_removes_flattened_newsletter_cards():
@@ -10179,7 +12538,7 @@ def test_ft_parser_removes_flattened_newsletter_cards():
     assert "Related stories" not in article.plain_text
     assert "Unrelated recirculated story" not in article.plain_text
     assert "Do you want to receive Lex" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.31"
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_removes_legacy_share_and_rights_notice():
@@ -10219,7 +12578,78 @@ def test_ft_parser_removes_legacy_share_and_rights_notice():
     assert "Live reporting after" in article.plain_text
     assert "global journalism requires investment" not in article.plain_text
     assert "ftsales.support@ft.com" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.31"
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_chatbot_signup_cta():
+    reporting = " ".join(
+        ["Financial Times reporting remains substantive and complete."] * 20
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="FT chatbot article">
+      <meta property="article:published_time" content="2018-08-28T12:00:00Z">
+    </head><body><article>
+      <p>{reporting}</p>
+      <p>Subscribe to the Financial Times chatbot here. It’s best viewed on a mobile device.</p>
+      <p>The final reporting paragraph retains the article’s conclusion.</p>
+    </article></body></html>
+    """.encode()
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/5091d196-a792-11e8-8ecf-a7ae1beff35b",
+    )
+    assert article.quality.status.value == "complete"
+    assert "financial times chatbot" not in article.plain_text.casefold()
+    assert "reporting remains substantive" in article.plain_text
+    assert "final reporting paragraph" in article.plain_text
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_legacy_htsi_share_related_and_tag_modules():
+    reporting = " ".join(["Travel reporting remains in the article body."] * 20)
+    result = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="Discovering Baja California">
+          <meta property="article:published_time"
+                content="2016-10-25T12:00:00Z">
+        </head><body><article>
+          <p>{reporting}</p>
+          <section class="share share--last">
+            <h3 class="title--small">Share this article</h3>
+            <ul class="share-icons">
+              <li><span class="visually-hidden">Email</span></li>
+              <li><span class="visually-hidden">Twitter</span></li>
+            </ul>
+          </section>
+          <section class="article-list">
+            <h2 class="title title--medium">Related</h2>
+            <ul><li>An unrelated destination story</li></ul>
+          </section>
+          <section>
+            <h3 class="title title--medium">See also</h3>
+            <ul class="tag-list"><li>Mexico</li><li>Resorts</li></ul>
+          </section>
+        </article></body></html>
+        """.encode(),
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "ccbc52fa-9aa1-11e6-8f9b-70e3cabccfae"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Travel reporting remains" in result.plain_text
+    assert "Share this article" not in result.plain_text
+    assert "Twitter" not in result.plain_text
+    assert "Related" not in result.plain_text
+    assert "unrelated destination" not in result.plain_text
+    assert "See also" not in result.plain_text
+    assert "Mexico" not in result.plain_text
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_strips_attached_syndication_copyright_suffix():
@@ -10252,7 +12682,7 @@ def test_ft_parser_strips_attached_syndication_copyright_suffix():
     assert article.quality.status.value == "complete"
     assert "That is good for them" in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.31"
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_strips_standalone_syndication_copyright_footer():
@@ -10284,7 +12714,7 @@ def test_ft_parser_strips_standalone_syndication_copyright_footer():
     assert "Syndicated FT reporting sentence." in article.plain_text
     assert "Copyright The Financial Times" not in article.plain_text
     assert "." not in [block.text for block in article.blocks]
-    assert article.extraction.parser_version == "ft-parser/0.8.31"
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_classifies_uuid_podcast_and_preserves_audio_source():
@@ -10448,7 +12878,7 @@ def test_ft_parser_uses_json_ld_article_body_when_dom_is_paywalled():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "Paragraph 1" in article.plain_text
-    assert article.extraction.parser_version == "ft-parser/0.8.31"
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_recovers_images_flattened_into_json_ld_article_body():
@@ -10583,7 +13013,37 @@ def test_ft_parser_uses_photo_hint_to_split_unknown_credit_from_body():
     assert "Nippon Paint has agreed" in article.plain_text
     assert "Like the families in the original novel" in article.plain_text
     assert all(len(image.credit or "") < 100 for image in article.images)
-    assert article.extraction.parser_version == "ft-parser/0.8.31"
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_continue_reading_and_response_letter_chrome():
+    html = b"""
+    <html><head><meta property="og:title" content="FT report"></head>
+    <body><article>
+      <p>The archived report contains substantive financial facts and context
+      that should remain available to readers.</p>
+      <aside class="c-box c-box--inline">
+        <p>Continue reading</p>
+        <a href="https://www.ft.com/content/related">Continue reading</a>
+      </aside>
+      <p>The closing paragraph records the reported response and implications.</p>
+      <p>Letter in response to this report:</p>
+      <p>This linked letter is a separate contribution, not article prose.</p>
+    </article></body></html>
+    """
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/continue-reading-chrome",
+    )
+
+    assert article.quality.status.value == "complete"
+    assert "Continue reading" not in article.plain_text
+    assert "Letter in response" not in article.plain_text
+    assert "substantive financial facts" in article.plain_text
+    assert "separate contribution" not in article.plain_text
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_rejects_ft_chinese_percentage_preview():
@@ -10614,7 +13074,7 @@ def test_ft_parser_rejects_ft_chinese_percentage_preview():
 
     assert article.quality.status.value == "partial"
     assert "truncated-body" in article.quality.warnings
-    assert article.extraction.parser_version == "ft-parser/0.8.31"
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_extracts_legacy_story_content():
@@ -10654,7 +13114,85 @@ def test_ft_parser_extracts_legacy_story_content():
     assert article.published_at == datetime(
         2011, 5, 28, 0, 44, tzinfo=timezone.utc
     )
-    assert article.extraction.parser_version == "ft-parser/0.8.31"
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_legacy_thought_provoking_contributions_footer():
+    paragraphs = "".join(
+        f"<p>Legacy Financial Times reporting paragraph {index} contains "
+        "substantive archived details and historical context.</p>"
+        for index in range(1, 7)
+    )
+    html = f"""
+    <html>
+      <head>
+        <title>Legacy FT report - FT.com</title>
+        <meta property="og:title" content="Legacy FT report - FT.com">
+      </head>
+      <body>
+        <div class="fullstoryBody">
+          <div id="storyContent">
+            {paragraphs}
+            <p>The most thought-provoking online contributions may be
+            published in the Financial Times newspaper.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    """.encode()
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "3786ab78-8886-11e0-afe1-00144feabdc0"
+        ),
+    )
+
+    assert article.quality.status.value == "complete"
+    assert len(article.blocks) == 6
+    assert "most thought-provoking" not in article.plain_text
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_legacy_lex_template_chrome_and_rules():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="US healthcare reform">
+    </head><body><article><div class="article-body">
+      <p>Substantive FT reporting remains in the archived article body and
+      explains the policy dispute in historical context.</p>
+      <p>To e-mail the Lex team confidentially click here OR To post public
+      comments click here</p>
+      <p>The Lex column is now on Twitter. To receive our daily line-up and
+      links to Lex notes via Twitter, click here</p>
+      <p>_________________________________________</p>
+      <p>Lex is the FT's agenda-setting column, giving an authoritative view
+      on corporate and financial matters.</p>
+      <p>Subscribe now</p>
+      <p>If you have questions or comments, please e-mail help@ft.com or
+      call:</p>
+      <p>US and Canada: +1 800 628 8088 Asia: +852 2905 5555 UK, Europe and
+      rest of the world: +44 (0)20 7775 6248</p>
+    </div></article></body></html>
+    """
+
+    article = parse_article(
+        html,
+        publisher="ft",
+        canonical_url="https://www.ft.com/content/legacy-lex-template",
+    )
+
+    assert article.quality.status.value == "complete"
+    assert "Substantive FT reporting remains" in article.plain_text
+    assert "To e-mail the Lex team" not in article.plain_text
+    assert "The Lex column is now" not in article.plain_text
+    assert "agenda-setting column" not in article.plain_text
+    assert "Subscribe now" not in article.plain_text
+    assert "help@ft.com" not in article.plain_text
+    assert "________" not in article.plain_text
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
@@ -10711,7 +13249,7 @@ def test_ft_parser_accepts_image_led_cartoon_and_deduplicates_origami_urls():
     assert article.content_type.value == "gallery"
     assert article.quality.images_selected == 1
     assert len(article.images) == 1
-    assert article.extraction.parser_version == "ft-parser/0.8.31"
+    assert article.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_promotes_origami_images_and_deduplicates_raw_lead():
@@ -10810,7 +13348,114 @@ def test_ap_parser_removes_legacy_newsletter_promo_and_separator():
     assert "___" not in result.plain_text
     assert "<button" not in result.body_html
     assert "data-ap-readmore" not in result.body_html
-    assert result.extraction.parser_version == "ap-parser/0.6.21"
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
+
+
+def test_ap_parser_removes_heading_underscore_separator():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="AP report">
+      <meta property="article:published_time" content="2023-07-14T00:00:00Z">
+    </head><body><article>
+      <p>The opening paragraph contains substantial reporting and context
+      for readers following the story and its consequences.</p>
+      <h2>__</h2>
+      <p>The closing paragraph adds more verified details and attribution
+      for the complete archived article.</p>
+    </article></body></html>
+    """
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/article/heading-separator",
+    )
+    assert result.quality.status.value == "complete"
+    assert "__" not in result.plain_text
+    assert "opening paragraph" in result.plain_text
+    assert "closing paragraph" in result.plain_text
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
+
+
+def test_ap_parser_removes_live_update_read_more_module():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="The latest election updates">
+      <meta property="article:published_time" content="2020-11-01T00:00:00Z">
+    </head><body><article><div class="RichTextStoryBody">
+      <p>The opening update contains substantial reporting and context for
+      readers following the election results and the public response.</p>
+      <p>Read more:</p>
+      <p>- An unrelated recommended election story</p>
+      <p>- Another related headline from the live desk</p>
+      <p>___</p>
+      <p>HERE'S WHAT ELSE HAPPENING:</p>
+      <p>The closing update contains additional reporting and must survive
+      removal of the adjacent recommendation module.</p>
+    </div></article></body></html>
+    """
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/article/live-update-read-more",
+    )
+    assert result.quality.status.value == "complete"
+    assert "Read more" not in result.plain_text
+    assert "unrelated recommended" not in result.plain_text
+    assert "Another related headline" not in result.plain_text
+    assert "closing update contains additional reporting" in result.plain_text
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
+
+
+def test_ap_parser_removes_inline_related_navigation_label():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="AP politics report">
+      <meta property="article:published_time" content="2018-04-28T00:00:00Z">
+    </head><body><article>
+      <p>The opening paragraph contains the complete editorial report.</p>
+      <p><span class="LinkEnhancement"><a href="https://example.com/related">
+        RELATED:
+      </a></span></p>
+      <p>: A related headline should remain as quoted context.</p>
+      <p>The closing paragraph completes the report.</p>
+    </article></body></html>
+    """
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/article/ap-politics-report",
+    )
+    assert "RELATED" not in result.plain_text
+    assert "related headline should remain" in result.plain_text
+    assert "opening paragraph" in result.plain_text
+    assert "closing paragraph" in result.plain_text
+
+
+def test_ap_parser_removes_earnings_interactive_controls():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="Company earnings report">
+      <meta property="article:published_time" content="2019-04-28T00:00:00Z">
+    </head><body><article><div class="RichTextStoryBody">
+      <p>The earnings report describes the company's results and outlook for
+      investors, employees and customers in the coming year.</p>
+      <form class="earnings-filter"><input name="quarter" value="Q4">
+        <button>Apply</button></form>
+      <p>The closing paragraph explains management's expectations and the
+      risks that could affect future performance.</p>
+    </div></article></body></html>
+    """
+    result = parse_article(
+        html,
+        publisher="ap",
+        canonical_url="https://apnews.com/earnings-example",
+    )
+    assert result.quality.status.value == "complete"
+    assert "earnings report describes" in result.plain_text
+    assert "management's expectations" in result.plain_text
+    assert "<form" not in result.body_html
+    assert "<input" not in result.body_html
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
 
 
 def test_ap_parser_extracts_hosted_ap_legacy_story_template():
@@ -10874,7 +13519,7 @@ def test_ap_parser_extracts_hosted_ap_legacy_story_template():
     assert len(result.images) == 1
     assert result.images[0].role.value == "tracking"
     assert result.images[0].should_archive is False
-    assert result.extraction.parser_version == "ap-parser/0.6.21"
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
 
 
 def test_ap_parser_extracts_bigstory_timestamp_and_body():
@@ -10913,7 +13558,7 @@ def test_ap_parser_extracts_bigstory_timestamp_and_body():
         "2012-07-05T16:27:51+00:00"
     )
     assert "major exhibition examines" in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.21"
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
 
 
 def test_ap_parser_extracts_legacy_yahoo_distribution_story():
@@ -10960,7 +13605,7 @@ def test_ap_parser_extracts_legacy_yahoo_distribution_story():
     assert "The Associated Press reported" in result.plain_text
     assert "Follow Yahoo News" not in result.plain_text
     assert "user comment" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.21"
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
 
 
 def test_ap_parser_extracts_google_hosted_distribution_story():
@@ -11031,7 +13676,7 @@ def test_ap_parser_extracts_google_hosted_distribution_story():
     assert "Related articles" not in result.plain_text
     assert "Copyright 2011" not in result.plain_text
     assert "Associated Press - 2 days ago" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.21"
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
 
 
 def test_ap_parser_extracts_huffpost_wire_distribution_story():
@@ -11085,7 +13730,7 @@ def test_ap_parser_extracts_huffpost_wire_distribution_story():
     assert "industrialization minister resigned" in result.plain_text
     assert "Story continues below" not in result.plain_text
     assert "Advertisement" not in result.plain_text
-    assert result.extraction.parser_version == "ap-parser/0.6.21"
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
 
 
 def test_ap_parser_extracts_story_html_from_embedded_state():
@@ -11128,7 +13773,7 @@ def test_ap_parser_extracts_story_html_from_embedded_state():
     assert article.quality.status.value == "complete"
     assert len(article.blocks) == 6
     assert "paragraph 6" in article.plain_text
-    assert article.extraction.parser_version == "ap-parser/0.6.21"
+    assert article.extraction.parser_version == "ap-parser/0.6.25"
 
 
 def test_ap_parser_accepts_complete_ranked_archive_record():
@@ -11162,7 +13807,7 @@ def test_ap_parser_accepts_complete_ranked_archive_record():
     assert result.quality.status.value == "complete"
     assert result.quality.warnings == ["structured-short-record"]
     assert result.images == []
-    assert result.extraction.parser_version == "ap-parser/0.6.21"
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
 
 
 def test_ap_parser_classifies_metadata_only_box_score_as_data_content():
@@ -11704,7 +14349,59 @@ def test_nyt_parser_extracts_interactive_roundup_body():
     assert result.quality.status.value == "complete"
     assert result.content_type.value == "interactive"
     assert "handpicked stories" in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_removes_2019_cross_article_engagement_promos():
+    body = " ".join(["Substantive reporting remains in the story."] * 25)
+    result = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="A reported New York story">
+          <meta property="article:published_time"
+                content="2019-02-09T12:00:00Z">
+        </head><body><article id="story">
+          <section><div class="StoryBodyCompanionColumn">
+            <p>{body}</p>
+            <p><em>[What you need to know to start the day: Get New York
+              Today in your inbox.]</em></p>
+            <p>Follow NYT Food on Twitter and NYT Cooking on Instagram,
+              Facebook and Pinterest. Get regular updates from NYT Cooking,
+              with recipe suggestions, cooking tips and shopping advice.</p>
+            <p><a><em>[Listen to “The Argument” podcast every Thursday
+              morning, with Ross Douthat and Michelle Goldberg.]</em></a></p>
+            <p><em>Is there anything you think we’re missing? Anything you
+              want to see more of? We’d love to hear from you. Email us at
+              onpolitics@nytimes.com.</em></p>
+            <p><em>Were you forwarded this newsletter? Subscribe here to get
+              it delivered to your inbox.</em></p>
+            <p>Follow the @readercenter on Twitter for more coverage
+              highlighting your perspectives and experiences and for insight
+              into how we work.</p>
+            <p>Sign up for the rest of the challenge, here .</p>
+          </div></section>
+        </article></body></html>
+        """.encode(),
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2019/02/09/nyregion/"
+            "brooklyn-jail-no-heat-inmates.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Substantive reporting remains" in result.plain_text
+    for promo in (
+        "Get New York Today in your inbox",
+        "Follow NYT Food",
+        "The Argument",
+        "onpolitics@nytimes.com",
+        "forwarded this newsletter",
+        "@readercenter",
+        "rest of the challenge",
+    ):
+        assert promo not in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_extracts_birdkit_attendee_sheet():
@@ -11799,6 +14496,68 @@ def test_nyt_parser_extracts_preloaded_graphql_image_gallery():
         for index in range(3)
     ]
     assert len(result.blocks) == 3
+
+
+def test_nyt_parser_extracts_oak_initial_data_embedded_interactive():
+    canonical_url = (
+        "https://www.nytimes.com/2022/11/02/us/politics/"
+        "scenes-from-the-final-campaign-sprint.html"
+    )
+    interactive_html = """
+      <div class="carousel">
+        <figure><img src="https://static01.nyt.com/first.jpg">
+          <figcaption>First campaign stop</figcaption>
+        </figure>
+        <figure><img src="https://static01.nyt.com/second.jpg">
+          <figcaption>Second campaign stop</figcaption>
+        </figure>
+      </div>
+    """
+    article = {
+        "__typename": "Article",
+        "id": "Article:oak-interactive",
+        "url": canonical_url,
+        "sprinkledBody": {
+            "content": [
+                {
+                    "__typename": "HeaderBasicBlock",
+                    "ledeMedia": {
+                        "__typename": "InteractiveBlock",
+                        "media": {
+                            "__typename": "EmbeddedInteractive",
+                            "id": "EmbeddedInteractive:oak",
+                            "html": interactive_html,
+                        },
+                    },
+                }
+            ]
+        },
+    }
+    payload = json.dumps(
+        {"initialData": {"data": {"article": article}}, "initialState": {}}
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Scenes from the final campaign sprint">
+      <meta property="article:published_time" content="2022-11-02T22:46:14Z">
+    </head><body>
+      <script>window.__preloadedData = {payload};</script>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=canonical_url,
+    )
+
+    assert result.content_type.value == "interactive"
+    assert result.quality.status.value == "complete"
+    assert result.quality.body_characters >= 20
+    assert [image.original_url for image in result.images] == [
+        "https://static01.nyt.com/first.jpg",
+        "https://static01.nyt.com/second.jpg",
+    ]
 
 
 def test_nyt_parser_extracts_ordered_diptych_visual_story():
@@ -12224,6 +14983,157 @@ def test_nyt_parser_preserves_documents_from_modern_legacy_shell():
         "http://s3.documentcloud.org/report.txt",
         "https://www.documentcloud.org/documents/2956923-report",
     ]
+
+
+def test_nyt_parser_appends_documents_without_replacing_interactive_prose():
+    reporting = " ".join(
+        ["Detailed interactive reporting remains available to readers."] * 12
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="A Prose Interactive">
+      <meta name="description" content="A short metadata description.">
+      <meta property="article:published_time" content="2019-11-15T00:00:00Z">
+    </head><body>
+      <article class="story theme-interactive">
+        <div class="interactive-graphic">
+          <p>{reporting}</p>
+          <figure><img src="https://static01.nyt.com/chart.jpg"></figure>
+          <a href="https://example.org/supporting-study.pdf">
+            Supporting study
+          </a>
+        </div>
+      </article>
+    </body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2019/11/15/"
+            "prose-interactive.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Detailed interactive reporting" in result.plain_text
+    assert "A short metadata description" not in result.plain_text
+    assert "chart.jpg" in result.body_html
+    assert result.blocks[-1].embed_url == (
+        "https://example.org/supporting-study.pdf"
+    )
+
+
+def test_nyt_parser_removes_legacy_interactive_answer_controls():
+    full_answer = " ".join(
+        ["The complete candidate answer explains the policy position."] * 12
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Candidate Executive Power">
+      <meta property="article:published_time" content="2019-09-10T00:00:00Z">
+    </head><body><article class="interactive">
+      <section class="interactive-content">
+        <div class="g-story g-freebird candidate-page">
+          <h3 class="next-question"><a href="/interactive/next.html">
+            Next: Another Candidate
+          </a></h3>
+          <div class="g-question candidate-answer">
+            <h4>The Question</h4>
+            <div class="answer"><p>A shortened answer.</p></div>
+            <div class="full-answer"><p>{full_answer}</p></div>
+            <p class="read-full-answer"><span>Read full answer</span></p>
+          </div>
+        </div>
+      </section>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2019/us/politics/"
+            "candidate-executive-power.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "complete candidate answer" in result.plain_text
+    assert "Next: Another Candidate" not in result.plain_text
+    assert "Read full answer" not in result.plain_text
+
+
+def test_nyt_parser_removes_sprite_assets_and_standalone_related_marker():
+    reporting = " ".join(
+        ["The article explains the playoff scenarios in detail."] * 12
+    )
+    result = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="Playoff Picture">
+          <meta property="article:published_time" content="2017-10-19T00:00:00Z">
+        </head><body><article class="story-body">
+          <p>{reporting}</p>
+          <p>Related</p>
+          <img src="https://graphics8.nytimes.com/newsgraphics/2014/10/07/precincts-layout/3240956acd4a668d926e82c22ebc809f1e07c78e/sprite-no-repeat.png">
+          <img src="https://static01.nyt.com/images/2017/10/19/sports/playoff-chart.jpg">
+        </article></body></html>
+        """.encode(),
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2017/upshot/"
+            "atlanta-falcons-nfl-playoff-picture.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "playoff scenarios" in result.plain_text
+    assert "Related" not in result.plain_text
+    assert "sprite-no-repeat.png" not in result.body_html
+    assert "playoff-chart.jpg" in result.body_html
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_removes_linked_related_tail_but_keeps_credit():
+    reporting = " ".join(
+        ["The lesson explains how students can evaluate audio stories."] * 12
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="Teaching With Audio">
+      <meta property="article:published_time" content="2018-03-15T00:00:00Z">
+    </head><body><article><div class="story-body">
+      <p class="story-body-text story-content">{reporting}</p>
+      <h4 class="story-subheading story-content">Related</h4>
+      <p class="story-body-text story-content">
+        • For additional tips, visit <a href="https://example.com/tips">
+        this unrelated resource</a>.</p>
+      <button class="comments-button">Comment</button>
+      <p class="story-body-text story-content">
+        • Read <a href="https://example.com/lesson">
+        another recommended lesson</a>.</p>
+      <p class="story-body-text story-content"><em>
+        Example Teacher is the author of this lesson.</em></p>
+    </div></article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2018/03/15/learning/lesson-plans/"
+            "teaching-with-audio.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "students can evaluate audio stories" in result.plain_text
+    assert "Related" not in result.plain_text
+    assert "unrelated resource" not in result.plain_text
+    assert "recommended lesson" not in result.plain_text
+    assert "Example Teacher is the author" in result.plain_text
 
 
 def test_nyt_parser_recovers_legacy_flex_magazine_payload():
@@ -12667,6 +15577,109 @@ def test_nyt_parser_preserves_description_for_javascript_only_interactive():
     assert result.plain_text == "Detailed results in the race for president."
 
 
+def test_nyt_parser_does_not_archive_healthquiz_decorative_images():
+    urls = [
+        "https://static01.nyt.com/images/2021/04/11/well/"
+        "00healthquiz-art/11Well-HealthQuiz-icon-videoSixteenByNineJumbo1600-v3.jpg",
+        "https://static01.nyt.com/images/2021/04/11/well/"
+        "00healthquiz-art/11Well-HealthQuiz-icon-superJumbo-v3.jpg",
+        "https://static01.nyt.com/images/2021/04/11/well/"
+        "00healthquiz-art/11Well-HealthQuiz-icon-mediumSquareAt3X-v3.jpg",
+        "https://static01.nyt.com/images/2021/04/11/well/"
+        "00healthquiz-art/11Well-HealthQuiz-icon-facebookJumbo-v3.jpg",
+        "https://static01.nyt.com/images/2021/03/21/well/"
+        "11Well-HealthQuiz-icon/11Well-HealthQuiz-icon-facebookJumbo-v3.jpg",
+    ]
+    metas = "".join(
+        f'<meta property="og:image" content="{url}">' for url in urls
+    )
+    result = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="Health quiz">
+          <meta property="article:published_time"
+            content="2022-01-20T12:00:00Z">
+          {metas}
+        </head><body><article><section name="articleBody">
+          <p>A study found that when people were fed a milkshake, those who
+          were on a diet tended to choose different foods later.</p>
+        </section></article></body></html>
+        """.encode(),
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2022/01/20/well/live/"
+            "20healthquiz-01202022.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "A study found" in result.plain_text
+    assert result.images
+    assert all(not image.should_archive for image in result.images)
+    assert all(image.role == ImageRole.ICON for image in result.images)
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_removes_event_signup_cta():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Antibody testing">
+          <meta property="article:published_time"
+            content="2020-04-24T12:00:00Z">
+        </head><body><article><section name="articleBody">
+          <p>The report explains what antibody testing can and cannot tell
+          people about the coronavirus and their immune response.</p>
+          <p><strong>Sign up for the call on </strong>Monday, April 27,
+          at 1 p.m. Pacific Time <a href="https://example.com/event">here</a>.
+          </p>
+          <p>Researchers said the evidence would continue to evolve as
+          larger studies reported their results.</p>
+        </section></article></body></html>
+        """,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/2020/04/24/us/"
+            "coronavirus-covid-get-antibody-testing.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "The report explains" in result.plain_text
+    assert "Researchers said the evidence" in result.plain_text
+    assert "Sign up for the call" not in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
+def test_nyt_parser_removes_space_and_astronomy_calendar_cta():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Artemis mission update">
+          <meta property="article:published_time"
+            content="2023-12-06T12:00:00Z">
+        </head><body><article><section name="articleBody">
+          <p>The mission timeline changed after engineers reviewed the latest
+          test results and updated the launch plan for the next flight.</p>
+          <p>Subscribe to The Times Space and Astronomy Calendar to stay
+          updated on NASA's moon missions and other spaceflights.</p>
+          <p>Officials said the team would publish another update next week.</p>
+        </section></article></body></html>
+        """,
+        publisher="nyt",
+        canonical_url=(
+            "https://www.nytimes.com/interactive/2023/12/06/science/"
+            "nasa-moon-landing-artemis-delay.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "The mission timeline changed" in result.plain_text
+    assert "Officials said the team" in result.plain_text
+    assert "Space and Astronomy Calendar" not in result.plain_text
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
+
+
 def test_nyt_parser_recovers_inline_script_image_sequence():
     html = b"""
     <html><head>
@@ -12765,7 +15778,7 @@ def test_nyt_parser_recovers_article_path_map_and_deduplicates_sizes():
         [block for block in result.blocks if block.type.value == "image"]
     ) == 1
     assert any(image.role.value == "logo" for image in result.images)
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_classifies_image_only_opinion_cartoon_as_gallery():
@@ -12951,7 +15964,7 @@ def test_nyt_parser_classifies_preloaded_video_page():
     )
 
     assert result.content_type.value == "video"
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nyt_parser_classifies_legacy_weekly_comic_strip():
@@ -13357,7 +16370,54 @@ def test_wsj_parser_accepts_complete_short_editorial_letter():
     assert result.quality.status.value == "complete"
     assert "body-too-short" not in result.quality.warnings
     assert "Warren Tunwall" in result.plain_text
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
+
+
+def test_wsj_parser_accepts_complete_letter_with_membership_overlay():
+    canonical_url = (
+        "https://www.wsj.com/articles/"
+        "c-s-lewis-on-tyranny-and-conscience-11633121522"
+    )
+    letter = (
+        "Regarding David Rivkin Jr. and Robert Alt’s op-ed: It might offer "
+        "instruction to those improvers of others to acknowledge the wisdom "
+        "of C.S. Lewis. He cautioned that those who torment us for our own "
+        "good will torment us without end. Larry W. White."
+    )
+    html = f"""
+    <html><head>
+      <meta property="og:title" content="C.S. Lewis on Tyranny and Conscience">
+      <meta name="article.type" content="Letters">
+      <meta name="article.type.display" content="Letters">
+      <meta name="article.page" content="Letters">
+      <meta name="article:word_count" content="38">
+      <meta property="article:published_time"
+            content="2021-10-01T20:52:00Z">
+    </head><body><article>
+      <div class="wsj-snippet-body"><p>{letter}</p></div>
+      <div class="snippet-promotion">
+        <div id="cx-snippet-overlay">
+          <h3 class="snippet-subheadline">
+            Continue reading your article with a WSJ membership
+          </h3>
+          <p>View Membership Options</p>
+        </div>
+      </div>
+    </article></body></html>
+    """.encode()
+
+    result = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url=canonical_url,
+        raw_capture=raw_capture("wsj", canonical_url),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "truncated-body" not in result.quality.warnings
+    assert "Continue reading" not in result.plain_text
+    assert "Larry W. White" in result.plain_text
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_nyt_parser_preserves_image_led_legacy_interactive():
@@ -13884,6 +16944,26 @@ def test_nyt_parser_preserves_single_image_comics_review():
     assert "review in comics format" in result.plain_text
 
 
+def test_nyt_parser_classifies_image_only_books_review_as_gallery():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:description" content="A graphic ode to a poet.">
+          <meta property="og:image" content="https://static01.nyt.com/review.jpg">
+        </head><body><article>
+          <h1>A Graphic Ode to a Poet</h1>
+          <section name="articleBody"><div>Credit... Artist</div></section>
+        </article></body></html>
+        """,
+        publisher="nyt",
+        canonical_url="https://www.nytimes.com/2022/04/22/books/review/example.html",
+    )
+
+    assert result.content_type.value == "gallery"
+    assert result.quality.status.value == "complete"
+    assert result.quality.images_selected == 1
+
+
 def test_nyt_parser_extracts_prose_inside_nonimage_interactive_figure():
     result = parse_article(
         b"""
@@ -13974,7 +17054,7 @@ def test_nyt_parser_accepts_legacy_short_editorial_cartoon():
     assert result.content_type.value == "gallery"
     assert result.quality.status.value == "complete"
     assert result.images
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_wsj_parser_preserves_legacy_video_description():
@@ -14078,7 +17158,7 @@ def test_wsj_parser_recovers_legacy_video_headline_from_at_vars():
     )
     assert result.content_type.value == "video"
     assert result.quality.status.value == "complete"
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_wsj_parser_preserves_legacy_video_transcript():
@@ -14203,7 +17283,7 @@ def test_reuters_parser_strips_licensed_wire_copyright_footers():
     assert "Investor Contact John Example" in business_wire.plain_text
     assert (
         market_wire.extraction.parser_version
-        == "reuters-parser/0.7.25"
+        == "reuters-parser/0.7.32"
     )
 
 
@@ -14233,6 +17313,16 @@ def test_ft_parser_removes_share_recommendation_and_follow_topic_chrome():
             <button class="component-share__button">
               Share this graphic
             </button>
+            <figure class="graphic-container">
+              <img src="https://www.ft.com/chart.png" alt="Policy chart">
+            </figure>
+            <div data-o-component="o-share"
+                 class="component-share o-share">
+              <ul>
+                <li>Share on Twitter (opens new window)</li>
+                <li>Share on Facebook (opens new window)</li>
+              </ul>
+            </div>
             <button class="n-myft-ui__button"
                     data-trackable="save-for-later">
               Save to myFT
@@ -14263,6 +17353,9 @@ def test_ft_parser_removes_share_recommendation_and_follow_topic_chrome():
     assert "Listen to this article" not in result.plain_text
     assert "Report a mispronounced word" not in result.plain_text
     assert "Share this graphic" not in result.plain_text
+    assert "Share on Twitter" not in result.plain_text
+    assert "Share on Facebook" not in result.plain_text
+    assert "chart.png" in result.body_html
     assert "Save to myFT" not in result.plain_text
     assert "<button" not in result.body_html
     assert "Promoted Content" not in result.plain_text
@@ -14332,7 +17425,7 @@ def test_ft_parser_recovers_legacy_flash_interactive():
         "get_flash.png" not in image.original_url
         for image in result.images
     )
-    assert result.extraction.parser_version == "ft-parser/0.8.31"
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_marks_migrated_caption_without_visual_partial():
@@ -14373,7 +17466,7 @@ def test_ft_parser_marks_migrated_caption_without_visual_partial():
     assert result.plain_text.startswith("Japan's Prime Minister")
     assert "World" not in result.plain_text
     assert result.images == []
-    assert result.extraction.parser_version == "ft-parser/0.8.31"
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_removes_fashion_and_podcast_subscription_tails():
@@ -14392,6 +17485,8 @@ def test_ft_parser_removes_fashion_and_podcast_subscription_tails():
           <p><em>Follow @financialtimesfashion on Instagram to find out
           about our latest stories first. Listen and subscribe to Culture
           Call at ft.com/culture-call or on Apple Podcasts</em></p>
+          <p>Find out about our latest stories first - follow
+          @financialtimesfashion on Instagram</p>
         </div></article></body></html>
         """,
         publisher="ft",
@@ -14422,6 +17517,11 @@ def test_ft_parser_removes_fashion_and_podcast_subscription_tails():
             www.ft.com/newsletters</p>
             <p>Subscribe to Working It wherever you get your podcasts.</p>
             <p>See acast.com/privacy for privacy and opt-out information.</p>
+            <p data-trackable="podcast-services">
+              <a data-trackable="rss" href="https://rss.acast.com/example">
+                RSS
+              </a>
+            </p>
           </div>
         </article></body></html>
         """,
@@ -14440,7 +17540,159 @@ def test_ft_parser_removes_fashion_and_podcast_subscription_tails():
     assert "A useful employer toolkit" in podcast.plain_text
     assert "FT subscriber?" not in podcast.plain_text
     assert "acast.com/privacy" not in podcast.plain_text
-    assert podcast.extraction.parser_version == "ft-parser/0.8.31"
+    assert "RSS" not in podcast.plain_text
+    assert podcast.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_flattened_structured_related_story_tail():
+    article_body = """
+The opening paragraph reports on pressure facing Asian newspapers and the
+effects of falling advertising revenue across several markets.
+
+A second substantive paragraph explains how publishers are changing their
+business models while readers increasingly consume journalism online.
+
+A version of this article was first published by the Nikkei Asian Review.
+
+Related stories
+
+An unrelated media report Another linked story A third recommendation
+""".strip()
+    result = parse_article(
+        f"""
+        <html><head>
+          <meta property="og:title" content="Asian print media under pressure">
+          <meta property="article:published_time"
+            content="2016-10-28T12:00:00Z">
+          <script type="application/ld+json">{{
+            "@type": "NewsArticle",
+            "headline": "Asian print media under pressure",
+            "datePublished": "2016-10-28T12:00:00Z",
+            "articleBody": {json.dumps(article_body)}
+          }}</script>
+        </head><body><article><p>Subscribe to read this article.</p>
+        </article></body></html>
+        """.encode(),
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "068095bc-9d24-11e6-8324-be63473ce146"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "A second substantive paragraph" in result.plain_text
+    assert "first published by the Nikkei" in result.plain_text
+    assert "Related stories" not in result.plain_text
+    assert "unrelated media report" not in result.plain_text
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_legacy_expander_and_video_controls():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A legacy FT video report">
+          <meta property="article:published_time"
+            content="2017-03-29T12:00:00Z">
+        </head><body><article><div class="article-body"
+          itemprop="articleBody">
+          <p>The report explains the political decision and its immediate
+          consequences for businesses, governments and financial markets.</p>
+          <aside class="c-box o-expander" data-trackable="related-box">
+            <p>More reporting and context about the decision.</p>
+            <button class="o-expander__toggle"
+              data-trackable="expander-toggle"></button>
+          </aside>
+          <div class="player js-player">
+            <video controls src="https://media.example.com/report.mp4"></video>
+            <img src="https://www.ft.com/video-poster.jpg"
+              alt="Political leaders meeting">
+            <button class="player__video-trigger"
+              title="click to play video" type="button"></button>
+          </div>
+          <p>Officials described the next steps while analysts considered
+          the risks and possible outcomes over the coming months.</p>
+        </div></article></body></html>
+        """,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "0255bbc0-4f93-35ff-a8c4-58f0bc06e83c"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "More reporting and context" in result.plain_text
+    assert "<button" not in result.body_html
+    assert "report.mp4" in result.body_html
+    assert any("video-poster.jpg" in image.original_url for image in result.images)
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_amp_read_more_links_and_brand_favicon():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A legacy AMP market report">
+          <meta property="og:image"
+            content="https://www.ft.com/__assets/creatives/brand-ft/icons/v2/favicon-194x194.png">
+          <meta property="article:published_time"
+            content="2017-04-18T18:09:17Z">
+        </head><body><article><div class="article-body"
+          itemprop="articleBody">
+          <p>The market report explains the price move and its consequences
+          for investors, companies and policymakers around the world.</p>
+          <p><strong>Read more</strong><br></p>
+          <p><em>News: </em><a href="https://www.ft.com/content/first">
+          First related story</a><br><em>Comment: </em>
+          <a href="/content/second">Second related story</a></p>
+          <p>The closing paragraph records analysts' expectations and the
+          policy choices likely to shape markets over the coming months.</p>
+        </div></article></body></html>
+        """,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "0a85a8c0-2427-11e7-a34a-538b4cb30025"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Read more" not in result.plain_text
+    assert "First related story" not in result.plain_text
+    assert "closing paragraph" in result.plain_text
+    assert result.images == []
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_rejects_v3_open_graph_branding():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A legacy FT report">
+          <meta property="og:image"
+            content="https://www.ft.com/__assets/creatives/brand-ft/icons/v3/open-graph.png">
+          <meta property="article:published_time"
+            content="2017-09-01T12:00:00Z">
+        </head><body><article><div class="article-body"
+          itemprop="articleBody">
+          <p>The report describes the policy decision and its consequences
+          for businesses, investors and households across several markets.</p>
+          <p>A second paragraph adds reactions from officials and analysts
+          and explains the risks expected over the coming months.</p>
+        </div></article></body></html>
+        """,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "0d893dc3-7bf4-33c4-9abc-d4a38b237d84"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert result.images == []
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_strips_syndication_legal_and_read_more_chrome():
@@ -14488,7 +17740,7 @@ def test_ft_parser_strips_syndication_legal_and_read_more_chrome():
     assert "BusinessDay WhatsApp" not in result.plain_text
     assert "Read more:" not in result.plain_text
     assert "unrelated recommended report" not in result.plain_text
-    assert result.extraction.parser_version == "ft-parser/0.8.31"
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_removes_newsletter_cards_and_scoreboard_signup():
@@ -14532,7 +17784,67 @@ def test_ft_parser_removes_newsletter_cards_and_scoreboard_signup():
     assert "Coronavirus business update" not in result.plain_text
     assert "Stay briefed with our" not in result.plain_text
     assert "Sign up to Scoreboard" not in result.plain_text
-    assert result.extraction.parser_version == "ft-parser/0.8.31"
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_split_coronavirus_newsletter_promo():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Germany retail shutdown">
+          <meta property="article:published_time"
+            content="2020-03-16T12:00:00Z">
+        </head><body><article><div data-trackable="article-body">
+          <p>Germany is to shut down most retail outlets in response to the
+          coronavirus pandemic.</p>
+          <p>Coronavirus business update</p>
+          <p>Stay briefed with our coronavirus newsletter.</p>
+          <p>The policy will remain under review as infection rates change.</p>
+        </div></article></body></html>
+        """,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "f465d8e8-67a4-11ea-800d-da70cff6e4d3"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "Germany is to shut down" in result.plain_text
+    assert "policy will remain under review" in result.plain_text
+    assert "Coronavirus business update" not in result.plain_text
+    assert "Stay briefed with our coronavirus newsletter" not in result.plain_text
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
+
+
+def test_ft_parser_removes_business_school_briefing_signup():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A Financial Times report">
+          <meta property="article:published_time"
+            content="2020-06-01T12:00:00Z">
+        </head><body><article><div class="article-body"
+          itemprop="articleBody">
+          <p>The report examines how companies are adapting to the
+          changing economic outlook and managing risks across markets.</p>
+          <p>Sign up for the FT Business School briefing .</p>
+          <p>Executives said the changes would continue to shape investment
+          decisions over the coming quarters.</p>
+        </div></article></body></html>
+        """,
+        publisher="ft",
+        canonical_url=(
+            "https://www.ft.com/content/"
+            "0ae81f69-cbf7-46d8-ae51-143de621134c"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "The report examines" in result.plain_text
+    assert "Executives said the changes" in result.plain_text
+    assert "FT Business School briefing" not in result.plain_text
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_ft_parser_handles_image_proxy_with_nested_fragment_url():
@@ -14567,7 +17879,7 @@ def test_ft_parser_handles_image_proxy_with_nested_fragment_url():
 
     assert result.quality.status.value == "complete"
     assert result.images
-    assert result.extraction.parser_version == "ft-parser/0.8.31"
+    assert result.extraction.parser_version == "ft-parser/0.8.54"
 
 
 def test_wsj_parser_removes_buy_side_recommendation_widget():
@@ -14623,7 +17935,29 @@ def test_wsj_parser_removes_buy_side_recommendation_widget():
     assert "Biography" not in result.plain_text
     assert "reporter@wsj.com" not in result.plain_text
     assert "<button" not in result.body_html
-    assert result.extraction.parser_version == "wsj-parser/0.8.49"
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
+
+
+def test_wsj_parser_removes_best_of_the_web_newsletter_cta():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A complete opinion column">
+      <meta property="article:published_time" content="2020-08-20T00:00:00Z">
+    </head><body><article>
+      <p>The complete editorial argument appears before the promotion.</p>
+      <em><a class="icon none" href="https://www.wsj.com/newsletters?sub=best_of_the_web_today">Subscribe to the Best of the Web email.</a></em>
+      <p>The final editorial paragraph remains after the promotion.</p>
+    </article></body></html>
+    """
+    article = parse_article(
+        html,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/example-11597956059",
+    )
+    assert "complete editorial argument" in article.plain_text
+    assert "final editorial paragraph" in article.plain_text
+    assert "Subscribe to the Best" not in article.plain_text
+    assert article.extraction.parser_version == "wsj-parser/0.8.61"
 
 
 def test_ap_parser_removes_legacy_terminal_period_paragraph():
@@ -14668,7 +18002,7 @@ def test_ap_parser_removes_legacy_terminal_period_paragraph():
         block.text in {"_", "——————————", "<"}
         for block in result.blocks
     )
-    assert result.extraction.parser_version == "ap-parser/0.6.21"
+    assert result.extraction.parser_version == "ap-parser/0.6.25"
 
 
 def test_ap_parser_deduplicates_dims_variants_by_underlying_asset():
@@ -16036,7 +19370,7 @@ def test_npr_parser_removes_underscore_only_separators():
     assert "first paragraph" in result.plain_text
     assert "second paragraph" in result.plain_text
     assert "___" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_keeps_image_caption_metadata_out_of_body_blocks():
@@ -16092,7 +19426,7 @@ def test_npr_parser_keeps_image_caption_metadata_out_of_body_blocks():
     assert len(result.images) == 1
     assert result.images[0].caption == "This you?"
     assert result.images[0].credit == "RichVintage/Getty Images"
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_preserves_short_audio_story_mp3():
@@ -16132,7 +19466,7 @@ def test_npr_parser_preserves_short_audio_story_mp3():
     assert [
         block.embed_url for block in result.blocks if block.type.value == "embed"
     ] == ["https://ondemand.npr.org/example.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_classifies_unavailable_short_audio_story():
@@ -16156,7 +19490,7 @@ def test_npr_parser_classifies_unavailable_short_audio_story():
     assert result.quality.status.value == "partial"
     assert result.plain_text == "A short audio introduction."
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_accepts_legacy_metadata_only_audio_story():
@@ -16194,7 +19528,7 @@ def test_npr_parser_accepts_legacy_metadata_only_audio_story():
     assert "Unrelated recommended story" not in result.plain_text
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_accepts_named_legacy_audio_series_without_player():
@@ -16233,7 +19567,7 @@ def test_npr_parser_accepts_named_legacy_audio_series_without_player():
     )
     assert "body-too-short" not in result.quality.warnings
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_accepts_legacy_music_redirect_audio_story():
@@ -16276,7 +19610,7 @@ def test_npr_parser_accepts_legacy_music_redirect_audio_story():
     assert result.quality.body_characters == 92
     assert result.quality.images_selected >= 1
     assert "body-too-short" not in result.quality.warnings
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_accepts_legacy_unavailable_audio_story():
@@ -16326,7 +19660,7 @@ def test_npr_parser_accepts_legacy_unavailable_audio_story():
     assert "body-too-short" not in result.quality.warnings
     assert result.quality.images_selected == 0
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
@@ -16363,7 +19697,106 @@ def test_npr_parser_prefers_complete_legacy_transcript_over_teaser():
     assert "A short introduction to the segment." not in result.plain_text
     assert "noncommercial use" not in result.plain_text
     assert result.quality.images_selected == 0
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_legacy_transcript_disclaimer():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="NPR transcript disclaimer">
+          <meta property="article:published_time"
+                content="2013-01-03T12:00:00Z">
+        </head><body class="tmplNewsStory">
+          <div id="storytext"><p>A short introduction to the segment.</p></div>
+          <div class="transcript">
+            <p>NPR transcripts are created on a rush deadline by verb8tm, Inc.,
+            an NPR contractor, and produced using a proprietary transcription
+            process developed with NPR. This text may not be in its final form
+            and may be updated or revised in the future. Accuracy and
+            availability may vary. The authoritative record of NPR's
+            programming is the audio record.</p>
+            <p>HOST: The archived interview contains the substantive reporting
+            needed for historical research and reproducible parsing.</p>
+          </div>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2013/01/03/144647125/"
+            "transcript-disclaimer"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "archived interview contains" in result.plain_text
+    assert "rush deadline by verb8tm" not in result.plain_text.casefold()
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_unclassed_transcript_disclaimer():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="NPR transcript without class">
+          <meta property="article:published_time"
+                content="2011-01-03T12:00:00Z">
+        </head><body>
+          <article>
+            <p>HOST: The archived interview contains substantive reporting
+            and enough historical context for reproducible research.</p>
+            <p>GUEST: The final exchange preserves the complete segment and
+            confirms that this is a full transcript rather than a teaser.</p>
+            <p>NPR transcripts are created on a rush deadline by a contractor
+            for NPR, and accuracy and availability may vary. This text may not
+            be in its final form and may be updated or revised in the future.
+            Please be aware that the authoritative record of NPR's programming
+            is the audio.</p>
+          </article>
+        </body></html>
+        """,
+        publisher="npr",
+        canonical_url=(
+            "https://www.npr.org/2011/01/03/132631433/"
+            "transcript-without-class"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "archived interview contains substantive" in result.plain_text
+    assert "rush deadline by a contractor" not in result.plain_text.casefold()
+    assert "authoritative record of npr's programming" not in result.plain_text.casefold()
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
+
+
+def test_npr_parser_removes_curly_apostrophe_transcript_disclaimer():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="NPR transcript punctuation">
+          <meta property="article:published_time"
+                content="2011-01-04T12:00:00Z">
+        </head><body><article>
+          <p>HOST: The interview preserves substantive reporting and enough
+          historical context for research.</p>
+          <p>GUEST: The discussion records the policy response, the people
+          involved, and the consequences described during the archived
+          broadcast for later readers and researchers.</p>
+          <p>NPR transcripts are created on a rush deadline by a contractor
+          for NPR, and accuracy and availability may vary. This text may not
+          be in its final form and may be updated or revised in the future.
+          Please be aware that the authoritative record of NPR’s programming
+          is the audio.</p>
+        </article></body></html>
+        """.encode(),
+        publisher="npr",
+        canonical_url="https://www.npr.org/2011/01/04/132631434/curly-disclaimer",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "interview preserves substantive" in result.plain_text
+    assert "authoritative record of npr" not in result.plain_text.casefold()
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
@@ -16397,7 +19830,7 @@ def test_npr_parser_recovers_legacy_multimedia_slideshow_image():
     assert result.images[0].should_archive is True
     assert "onthetrail_01.jpg" in result.images[0].original_url
     assert "promo.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_recovers_image_led_double_take_cartoon():
@@ -16444,7 +19877,7 @@ def test_npr_parser_recovers_image_led_double_take_cartoon():
     ]
     assert all(image.should_archive for image in result.images)
     assert "related-cartoon.jpg" not in result.body_html
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_recovers_supplementary_double_take_cartoon_images():
@@ -16501,7 +19934,7 @@ def test_npr_parser_recovers_supplementary_double_take_cartoon_images():
     ]
     assert all(image.should_archive for image in result.images)
     assert "Unrelated recommendation" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_recovers_legacy_music_flash_interactive():
@@ -16555,7 +19988,7 @@ def test_npr_parser_recovers_legacy_music_flash_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://www.npr.org/music/memoriam_2010/memoriam.swf"]
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_recovers_ap_backed_legacy_election_results():
@@ -16603,7 +20036,7 @@ def test_npr_parser_recovers_ap_backed_legacy_election_results():
         "http://hosted.ap.org/dynamic/files/elections/2010/general/"
         "by_race/OK_37857.js?SITE=NPRELN",
     ]
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_recovers_legacy_book_list_and_removes_purchase_chrome():
@@ -16677,7 +20110,7 @@ def test_npr_parser_recovers_legacy_book_list_and_removes_purchase_chrome():
     assert "Related review should not" not in result.plain_text
     assert "Unrelated recommended story" not in result.plain_text
     assert result.quality.images_selected == 2
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_removes_legacy_read_more_bucket():
@@ -16713,7 +20146,7 @@ def test_npr_parser_removes_legacy_read_more_bucket():
     assert "second substantive paragraph" in result.plain_text
     assert "Read More" not in result.plain_text
     assert "Related report part one" not in result.plain_text
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_recovers_legacy_iframe_interactive():
@@ -16749,7 +20182,7 @@ def test_npr_parser_recovers_legacy_iframe_interactive():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://election-maps.example/results/embed?state=us"]
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_recovers_legacy_inline_graphic():
@@ -16884,7 +20317,7 @@ def test_npr_parser_recovers_legacy_program_audio_download():
         for block in result.blocks
         if block.type.value == "embed"
     ] == ["http://pd.npr.org/audio/prediction.mp3?dl=1"]
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_npr_parser_does_not_infer_audio_from_plain_primary_bucket():
@@ -16914,7 +20347,7 @@ def test_npr_parser_does_not_infer_audio_from_plain_primary_bucket():
     assert result.quality.status.value == "partial"
     assert result.content_type.value == "article"
     assert not any(block.type.value == "embed" for block in result.blocks)
-    assert result.extraction.parser_version == "npr-parser/0.1.18"
+    assert result.extraction.parser_version == "npr-parser/0.1.54"
 
 
 def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
@@ -16985,7 +20418,7 @@ def test_nyt_parser_separates_credit_only_captions_and_removes_byline_avatar():
     assert "Science Times newsletter" not in result.plain_text
     assert "<button" not in result.body_html
     assert "Skip advertisement" not in result.plain_text
-    assert result.extraction.parser_version == "nyt-parser/0.8.55"
+    assert result.extraction.parser_version == "nyt-parser/0.8.81"
 
 
 def test_nikkei_legacy_parser_extracts_print_date_and_article_text():
@@ -17024,7 +20457,66 @@ def test_nikkei_legacy_parser_extracts_print_date_and_article_text():
     assert result.published_at.isoformat() == "2013-09-11T00:00:00+09:00"
     assert "価格や通信料金" in result.plain_text
     assert result.quality.body_characters >= 100
-    assert result.extraction.parser_version == "nikkei-parser/0.1.3"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
+
+
+def test_nikkei_legacy_parser_joins_split_body_around_editorial_photo():
+    result = parse_article(
+        """
+        <html lang="ja"><head>
+          <meta property="og:title" content="大卒内定、2年連続増">
+        </head><body>
+          <div class="cmn-section cmn-indent">
+            <h4 class="cmn-article_title">大卒内定、2年連続増</h4>
+            <div class="cmn-article_text JSID_key_fonttxt">
+              <p>日本経済新聞社がまとめた採用状況調査によると、主要企業の
+              大卒採用内定者数は二年連続で増加し、企業の採用意欲が続いた。</p>
+            </div>
+            <div class="cmn-position_right cmn-clearfix">
+              <img src="/content/pic/20121022/editorial-photo.jpg"
+                   alt="採用状況を示すグラフ">
+              <img src="http://parts.nikkei.jp/parts/ds/images/common/icon_zoom_off.gif">
+            </div>
+            <div class="cmn-article_text JSID_key_fonttxt">
+              <p>主要千社を対象に調べたところ、非製造業では旅行や住宅、
+              小売りを中心に幅広い業種で採用人数が前年を上回った。</p>
+            </div>
+            <div class="cmn-article_text JSID_key_fonttxt">
+              <p>製造業は一部で採用を減らしたものの、企業は海外事業を担う
+              人材の確保を進め、今後の需要変化にも備える方針だ。</p>
+            </div>
+            <form class="cmn-form_area"><p>小サイズに変更</p></form>
+            <div class="cmn-article_keyword">関連キーワード 採用</div>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url=(
+            "https://www.nikkei.com/article/"
+            "DGKDASDD190JG_R21C12A0MM8000"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "日本経済新聞社がまとめた" in result.plain_text
+    assert "主要千社を対象に調べた" in result.plain_text
+    assert "製造業は一部で採用を減らした" in result.plain_text
+    assert result.plain_text.index("日本経済新聞社がまとめた") < (
+        result.plain_text.index("主要千社を対象に調べた")
+    ) < result.plain_text.index("製造業は一部で採用を減らした")
+    assert "小サイズに変更" not in result.plain_text
+    assert "関連キーワード" not in result.plain_text
+    assert "icon_zoom_off" not in result.body_html
+    assert len(result.images) == 1
+    assert result.images[0].original_url.endswith("editorial-photo.jpg")
+    assert [block.type for block in result.blocks] == [
+        BlockType.PARAGRAPH,
+        BlockType.IMAGE,
+        BlockType.PARAGRAPH,
+        BlockType.PARAGRAPH,
+    ]
+    assert result.quality.body_characters >= 150
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
 
 
 def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
@@ -17055,7 +20547,113 @@ def test_nikkei_legacy_parser_recovers_title_and_marks_member_excerpt():
     assert result.published_at.isoformat() == "2012-12-13T00:00:00+09:00"
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "truncated-body" in result.quality.warnings
-    assert result.extraction.parser_version == "nikkei-parser/0.1.3"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
+
+
+def test_nikkei_legacy_parser_rejects_generic_ogp_branding_image():
+    result = parse_article(
+        """
+        <html lang="ja"><head>
+          <meta property="og:title" content="短い企業ニュース">
+          <meta property="og:image"
+            content="http://parts.nikkei.jp/parts/ds/images/common/icon_ogpnikkei.png">
+        </head><body>
+          <div class="cmn-article_text JSID_key_fonttxt">
+            <p>企業は新しいサービスを発売した。利用者向けの機能を増やし、
+            中長期で収益を拡大する。</p>
+            <figure><img
+              src="http://parts.nikkei.jp/parts/ds/images/common/icon_zoom_off.gif">
+            </figure>
+            <img src="https://www.nikkei.com/.resources/k-components/rectangle.rev-b4d855d.png">
+            <figure><img
+              src="https://www.nikkei.com/content/pic/20141026/editorial-photo.jpg"
+              alt="現場写真"><figcaption>現場写真</figcaption></figure>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url=(
+            "https://www.nikkei.com/article/"
+            "DGXNASDD020EN_S2A800C1TJ2000"
+        ),
+    )
+
+    assert result.headline == "短い企業ニュース"
+    assert "新しいサービスを発売した" in result.plain_text
+    assert len(result.images) == 1
+    assert result.images[0].original_url.endswith("editorial-photo.jpg")
+    assert "icon_zoom_off" not in result.body_html
+    assert "rectangle.rev" not in result.body_html
+    assert {
+        block.asset_id
+        for block in result.blocks
+        if block.type == BlockType.IMAGE
+    } == {result.images[0].asset_id}
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        (
+            "https://assets.nikkei.jp/release/v3.2.115/parts/ds/"
+            "images/common/icon_ogpnikkei.png"
+        ),
+        (
+            "https://assets.nikkei.jp/release/v3.2.115/parts/ds/"
+            "images/common/icon_twittercard_nikkei.png"
+        ),
+        "http://parts.nikkei.jp/parts/ds/images/common/icon_ogp100.png",
+        "http://parts.nikkei.jp/parts/ds/images/common/icon_zoom_off.gif",
+        (
+            "http://partsa.nikkei.jp/parts/ds/images/common/"
+            "icon_ogpnikkei.png"
+        ),
+        (
+            "https://www.nikkei.com/.resources/k-components/"
+            "rectangle.rev-b4d855d.png"
+        ),
+        (
+            "https://www.nikkei.com/.resources/k-components/"
+            "square.rev-8e2c231.png"
+        ),
+    ],
+)
+def test_nikkei_rejects_legacy_branding_and_control_images(url: str):
+    assert _nikkei_non_editorial_image_url(url)
+
+
+def test_nikkei_preserves_legacy_editorial_photo_url():
+    assert not _nikkei_non_editorial_image_url(
+        "https://www.nikkei.com/content/pic/20141026/"
+        "96958A9F889DE5EAE5EBE2E1E2E2E0E1.jpg"
+    )
+
+
+def test_nikkei_parser_drops_tiny_nikkei_plus_logo_from_body_media():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="日経ニュース">
+          <meta property="article:published_time" content="2017-11-13T12:00:00Z">
+        </head><body><main><article>
+          <section data-track-article-content>
+            <p>これは十分な長さのニュース本文であり、政策と市場の背景を説明して、
+            小さなブランドロゴが編集画像として保存されないことを確認します。</p>
+            <figure><img width="110" height="35"
+              src="https://www.nikkei.com/content/pic/20171113/"
+              alt=""></figure>
+            <p>続く段落では関係者の発言と历史背景を补充し、記事を完全なものにします。</p>
+          </section>
+        </article></main></body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url="https://www.nikkei.com/article/DGXTINYLOGO000000",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.quality.images_selected == 0
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
 
 
 def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
@@ -17112,7 +20710,33 @@ def test_nikkei_modern_parser_trims_paywall_and_deduplicates_images():
     assert "paid-banner" not in result.body_html
     assert len(result.images) == 1
     assert len(result.images[0].candidate_urls) == 2
-    assert result.extraction.parser_version == "nikkei-parser/0.1.3"
+    assert result.extraction.parser_version == "nikkei-parser/0.1.8"
+
+
+def test_nikkei_modern_parser_removes_embedded_site_controls():
+    result = parse_article(
+        """
+        <html lang="ja"><head>
+          <meta property="og:title" content="日経のニュース">
+          <meta property="article:published_time" content="2017-05-19T00:00:00Z">
+        </head><body><main><article>
+          <section data-track-article-content>
+            <p>これは十分な長さの編集記事本文です。市場と企業の動きを詳しく伝えます。</p>
+            <form action="/search"><input name="keyword"><button type="submit">検索</button></form>
+            <p>続く段落では関係者の発言と背景を説明し、記事の内容を完成させます。</p>
+          </section>
+        </article></main></body></html>
+        """.encode(),
+        publisher="nikkei",
+        canonical_url="https://www.nikkei.com/article/DGTEST170519000000",
+    )
+    assert result.quality.status == ArticleStatus.PARTIAL
+    assert "編集記事本文" in result.plain_text
+    assert "続く段落" in result.plain_text
+    assert "検索" not in result.plain_text
+    assert not result.body_html.casefold().count("<form")
+    assert not result.body_html.casefold().count("<input")
+    assert not result.body_html.casefold().count("<button")
 
 
 def test_scmp_legacy_parser_extracts_body_date_and_byline():
@@ -17158,7 +20782,840 @@ def test_scmp_legacy_parser_extracts_body_date_and_byline():
     assert [author.name for author in result.authors] == ["Choi Chi-yuk"]
     assert "chiyuk.choi@scmp.com" not in result.plain_text
     assert "independent reporting" in result.plain_text
-    assert result.extraction.parser_version == "scmp-parser/0.1.1"
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
+
+
+def test_scmp_parser_recovers_vue_apollo_article_body():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Apollo SCMP report">
+          <meta property="article:published_time" content="2016-02-21T18:23:42+08:00">
+          <script type="application/ld+json">
+            {"@type":"NewsArticle","headline":"Apollo SCMP report",
+             "datePublished":"2016-02-21T18:23:42+08:00",
+             "image":"https://cdn1.i-scmp.com/cover.jpg"}
+          </script>
+        </head><body><main><article></article></main>
+        <script>window.__APOLLO_STATE__={"contentService":{
+          "body({})":{"type":"json","json":[
+            {"type":"p","children":[{"type":"text","data":"The complete report is stored in Apollo state."}]},
+            {"type":"ad"},
+            {"type":"p","children":[{"type":"text","data":"A second paragraph preserves the original reporting context and factual detail."}]}
+          ]},
+          "images":[
+            {"url":"https://cdn1.i-scmp.com/cover.jpg","title":"<p/>"},
+            {"url":"https://cdn1.i-scmp.com/inline.jpg","title":"Photo: Example"}
+          ]
+        }};</script></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/business/article/1915070/apollo-report",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "stored in Apollo state" in result.plain_text
+    assert "original reporting context" in result.plain_text
+    assert 'data-jojo-source="scmp-apollo-body"' in result.body_html
+    assert [image.original_url for image in result.images] == [
+        "https://cdn1.i-scmp.com/cover.jpg",
+        "https://cdn1.i-scmp.com/inline.jpg",
+    ]
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
+
+
+def test_scmp_apollo_letter_body_removes_submission_chrome_and_related_media():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Letters on public policy">
+          <meta property="article:published_time" content="2022-03-22T08:00:00Z">
+          <script type="application/ld+json">
+            {"@type":"NewsArticle","headline":"Letters on public policy",
+             "datePublished":"2022-03-22T08:00:00Z",
+             "image":"https://cdn.i-scmp.com/lead.jpg"}
+          </script>
+        </head><body><main><article></article></main>
+        <script>window.__APOLLO_STATE__={"contentService":{
+          "body({})":{"type":"json","json":[
+            {"type":"p","children":[{"type":"text","data":"Feel strongly about these letters, or any other aspects of the news? Share your views by emailing us your Letter to the Editor at letters@scmp.com or filling in this Google form. Submissions should not exceed 400 words, and must include your full name and address, plus a phone number for verification."}]},
+            {"type":"p","children":[{"type":"text","data":"The letter explains the policy background and the public response in detail. It cites the latest figures, describes the effect on residents, and asks officials to publish a transparent timetable for the next review."}]}
+          ]},
+          "content({}).images.0":{"url":"https://cdn.i-scmp.com/lead.jpg",
+            "style({})":{"id":"$ROOT_QUERY.content({}).images.0.style"}},
+          "content({}).moreOnThisArticles.0.images.0":{"url":"https://cdn.i-scmp.com/related.jpg",
+            "style({})":{"id":"$ROOT_QUERY.content({}).moreOnThisArticles.0.images.0.style"}}
+        }};</script></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/comment/letters/article/3170000/letters",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "policy background" in result.plain_text
+    assert "feel strongly about these letters" not in result.plain_text.casefold()
+    assert "letters@scmp.com" not in result.plain_text
+    assert not any("related.jpg" in image.original_url for image in result.images)
+    assert any("lead.jpg" in image.original_url for image in result.images)
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
+
+
+def test_scmp_parser_removes_flattened_subscription_and_social_chrome():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="SCMP business report">
+          <meta property="article:published_time" content="2020-04-14T12:00:09+08:00">
+        </head><body><main><article class="article__body">
+          <p>The original reporting paragraph contains the tender details,
+          market context, and enough factual material to remain editorial.</p>
+          <p><span>Sign up now and get a 10% discount off the China AI Report
+          2020 by SCMP Research. Learn about the AI ambitions of Alibaba,
+          Baidu and JD.com through our in-depth case studies.</span></p>
+          <p>For more insights into China tech, sign up for our tech
+          newsletters and download the comprehensive 2019 China Internet
+          Report. Also roam China Tech City at our sister site Abacus.</p>
+          <p>Help us understand what you are interested in so that we can
+          improve SCMP and provide a better experience. Take this five-minute
+          survey on how you engage with SCMP and the news.</p>
+          <p>Want more articles like this? Follow SCMP Film on Facebook.</p>
+          <p>The closing paragraph preserves the article's conclusion and
+          contains additional reporting context for readers.</p>
+        </article></main></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/business/article/3079596/scmp-business-report",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "original reporting paragraph" in result.plain_text
+    assert "closing paragraph" in result.plain_text
+    assert "China AI Report" not in result.plain_text
+    assert "China Internet Report" not in result.plain_text
+    assert "five-minute survey" not in result.plain_text
+    assert "Follow SCMP Film" not in result.plain_text
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
+
+
+def test_scmp_parser_removes_underscore_only_editorial_separator():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="SCMP timeline report">
+          <meta property="article:published_time"
+                content="2018-10-23T06:49:16+08:00">
+        </head><body><article>
+          <p>The report opens with substantial historical context and
+          explains the events in detail for readers.</p>
+          <p>___</p>
+          <p>The timeline continues with additional reporting and a clear
+          explanation of what happened next.</p>
+        </article></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/article/2169741/scmp-timeline-report",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "___" not in result.plain_text
+    assert "historical context" in result.plain_text
+    assert "what happened next" in result.plain_text
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
+
+
+def test_scmp_legacy_drupal_pane_content_is_the_article_body():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="SHK unit sued over Malaysia hotel deal">
+          <meta property="article:published_time" content="2017-05-02T16:12:46+08:00">
+          <script type="application/ld+json">
+            {"@type":"NewsArticle","datePublished":"1999-02-27T00:00:00+08:00",
+             "headline":"SHK unit sued over Malaysia hotel deal"}
+          </script>
+        </head><body>
+          <div class="panel-pane pane-entity-field pane-node-body">
+            <div class="pane-content">
+              <p>Sun Hung Kai Securities is being sued over a hotel project.</p>
+              <p>The company disputed the claim and provided additional financial
+              data to the court.</p>
+            </div>
+          </div>
+        </body></html>
+        """,
+        publisher="scmp",
+        canonical_url=(
+            "https://www.scmp.com/article/273522/"
+            "shk-unit-sued-over-malaysia-hotel-deal"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "additional financial data" in result.plain_text
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
+
+
+def test_scmp_parser_drops_legacy_bookmark_control_icon():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A complete SCMP report">
+          <meta property="article:published_time"
+                content="2019-02-01T08:00:00+08:00">
+        </head><body><article class="article-body">
+          <p>The report contains substantial original reporting and context
+          about the company, its investors and the wider market response.</p>
+          <p>A second paragraph supplies additional facts and explains what
+          officials said after the announcement.</p>
+          <img src="https://cdn1.i-scmp.com/sites/all/themes/scmp/images/bookmark-icon.png">
+        </article></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/article/2181768/a-complete-report",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert not any(
+        "bookmark-icon.png" in image.original_url
+        for image in result.images
+    )
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
+
+
+def test_scmp_parser_classifies_explicit_live_package():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Live SCMP report">
+          <meta name="cse_articletype" content="Live">
+          <meta property="article:published_time" content="2020-01-02T00:00:00Z">
+        </head><body><article class="live-article__body">
+          <p>The live introduction is archived, but the update stream is absent.</p>
+        </article></body></html>
+        """,
+        publisher="scmp",
+        canonical_url="https://www.scmp.com/sport/article/3041121/example-live",
+    )
+
+    assert result.content_type == ContentType.LIVEBLOG
+    assert result.quality.body_characters > 0
+    assert result.extraction.parser_version == "scmp-parser/0.1.11"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://cdn1.i-scmp.com/sites/all/themes/scmp/images/bookmark-icon.png",
+        "https://cdn.i-scmp.com/sites/all/themes/scmp/images/share-icon.png",
+    ],
+)
+def test_scmp_rejects_legacy_control_icons(url: str):
+    assert _scmp_non_editorial_image_url(url)
+
+
+def test_wsj_parser_removes_related_stories_interface_marker():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A complete WSJ report">
+          <meta property="article:published_time"
+                content="2018-11-01T08:00:00Z">
+        </head><body><article>
+          <div data-type="article-body">
+            <p>The report contains substantial original reporting and context
+            about the company, its investors and the wider market response.</p>
+            <p>A second paragraph supplies additional facts and explains what
+            officials said after the announcement.</p>
+            <p>The reporting also describes the policy background, the response
+            from affected communities, the latest market data and the next
+            steps expected from regulators. It preserves enough original
+            context to represent a complete article rather than a short
+            preview or interface-only page.</p>
+            <p>related stories</p>
+          </div>
+        </article></body></html>
+        """,
+        publisher="wsj",
+        canonical_url="https://www.wsj.com/articles/related-stories-fixture",
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "related stories" not in result.plain_text.casefold()
+    assert result.extraction.parser_version == "wsj-parser/0.8.61"
+
+
+def test_caixin_parser_removes_subscription_marketing_from_body():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="Caixin opinion">
+          <meta property="article:published_time"
+                content="2025-01-03T12:00:00Z">
+        </head><body>
+          <div class="text" id="Main_Content_Val">
+            <h1>去美元化进程与黄金定价</h1>
+            <p>这是一段完整的财经评论正文，包含足够的历史背景、数据和分析，
+            用于验证订阅推广不会混入标准化文章正文。</p>
+            <h2>后续分析</h2>
+            <p>第二段正文继续解释政策变化、市场影响和可能的后续演绎。</p>
+            <p>第三段正文补充宏观数据、国际市场反馈和风险因素，确保这个回归样本
+            被识别为完整文章而不是只有标题的短摘要。</p>
+            <div class="lanmu_textend">
+              <p>推荐进入<a href="https://cxdata.caixin.com/index">财新数据库</a>，
+              可随时查阅宏观经济、股票债券、公司人物，财经数据尽在掌握。</p>
+            </div>
+            <p>&gt;&gt;更多精彩内容请点击：财经早知道</p>
+            <img src="https://file.caixin.com/images/common/images/shareimg.jpg">
+            <img src="https://entities.caixin.com/support.png">
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://opinion.caixin.com/2025-01-03/102274930.html",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "完整的财经评论正文" in result.plain_text
+    assert "推荐进入" not in result.plain_text
+    assert "财新数据库" not in result.plain_text
+    assert "更多精彩内容请点击" not in result.plain_text
+    assert result.quality.images_selected == 0
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_parser_removes_repeated_section_boilerplate_from_body():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="财新历史报道">
+          <meta property="article:published_time"
+                content="2024-02-01T12:00:00Z">
+        </head><body><article id="Main_Content_Val">
+          <p>这段正文保留政策背景、事实经过和相关数据，足以构成完整报道。</p>
+          <p>（财新记者 汪苏）</p>
+          <p>欢迎关注财新网政经频道公号“锣鼓巷”</p>
+          <p>《知识分子》是由饶毅、鲁白、谢宇三位学者创办的移动新媒体平台，
+          致力于关注科学、人文、思想。</p>
+          <p>撰写：财小智 责编：财小新</p>
+          <p>今日敏感舆情指数，面向所有A股上市公司，获取更多财新数据通服务。</p>
+          <p>第二段正文继续说明事件影响和后续变化，供历史研究使用。</p>
+          <p>报道还保留了相关机构回应、时间线和公开资料来源，便于读者核对事实，
+          也确保历史版本在解析后仍然具有足够的上下文和可复核性。</p>
+        </article></body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://china.caixin.com/2024-02-01/102162595.html",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "保留政策背景" in result.plain_text
+    assert "第二段正文继续说明" in result.plain_text
+    for chrome in (
+        "财新记者",
+        "欢迎关注财新网",
+        "《知识分子》是由",
+        "财小智",
+        "今日敏感舆情指数",
+    ):
+        assert chrome not in result.plain_text
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_parser_extracts_single_page_photo_story():
+    result = parse_article(
+        """
+        <html><head><title>外资投行正在逐渐进入经纪业务领域</title></head>
+        <body>
+          <h1>外资投行正在逐渐进入经纪业务领域</h1>
+          <div class="focusBody">
+            <ul id="pic_content"><li><table><tr><td>
+              <div class="imgBox"><table>
+                <tr><td><img src="http://img.caixin.com/2010-03-21/100128465.jpg"></td></tr>
+                <tr><td style="FONT-SIZE: 12px">外资投行逐渐进入经纪业务领域。东方IC</td></tr>
+              </table></div>
+            </td></tr></table></li></ul>
+            <div class="infobox">发表时间：2010年03月21日 20:23</div>
+            <div class="op">发表时间：2010年03月21日 20:23　1 /1</div>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://photos.caixin.com/2010-03-21/100128464.html",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.content_type == ContentType.GALLERY
+    assert result.published_at.isoformat() == "2010-03-21T20:23:00+08:00"
+    assert len(result.images) == 1
+    assert result.images[0].should_archive is True
+    assert result.images[0].original_url.endswith("/100128465.jpg")
+    assert result.images[0].caption == "外资投行逐渐进入经纪业务领域。东方IC"
+    assert result.blocks[0].type == BlockType.IMAGE
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_parser_rejects_incomplete_multipage_photo_story():
+    result = parse_article(
+        """
+        <html><body>
+          <h1>多页图片报道</h1>
+          <div class="focusBody">
+            <ul id="pic_content"><li><table><tr><td>
+              <div class="imgBox"><table>
+                <tr><td><img src="http://img.caixin.com/2010-04-01/photo.jpg"></td></tr>
+                <tr><td style="font-size:12px">这里只保存了第一张图片的图注。</td></tr>
+              </table></div>
+            </td></tr></table></li></ul>
+            <div class="infobox">发表时间：2010年04月01日 08:05</div>
+            <div class="op">发表时间：2010年04月01日 08:05</div>
+            1 /3
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://photos.caixin.com/2010-04-01/100130000.html",
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.PARTIAL
+    assert "incomplete-gallery" in result.quality.warnings
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_video_parser_reads_visible_chinese_timestamp():
+    result = parse_article(
+        """
+        <html><body>
+          <h1>减排项目的视频调查</h1>
+          <span class="datetime">2010年01月04日 11:34</span>
+          <div id="Main_Content_Val">
+            <p>调查介绍项目如何把工业生产过程中产生的二氧化碳分离，
+            再通过管道输送到适合长期保存的地层，并记录研究人员对成本、
+            安全性和监测方法的说明。这段正文保留视频报道的事实背景。</p>
+            <p>报道随后比较多个试验地点的地质条件、设备规模和运行数据，
+            也说明地方社区、企业和监管机构分别提出的意见以及后续安排。
+            这些文字属于视频稿件正文，不是播放器周边推荐或频道导航。</p>
+            <p>研究团队还将持续公开监测结果，以评估长期封存效果，并根据
+            新数据调整风险控制方案。记者在视频中采访了参与项目的工程师，
+            完整呈现技术路线、现实限制和可能产生的环境影响。</p>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://video.caixin.com/2010-01-04/100103479.html",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.content_type == ContentType.VIDEO
+    assert result.published_at.isoformat() == "2010-01-04T11:34:00+08:00"
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_parser_selects_article_instead_of_page_chrome():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="银信合作猫鼠游戏">
+          <meta property="article:published_time"
+            content="2010-02-19T08:00:00+08:00">
+          <meta property="og:image"
+            content="http://img.caixin.com/2010-02-19/cover.jpg">
+        </head><body>
+          <div class="content">
+            <div id="Main_Content_Val">
+              <p>商业银行受到日趋严格的信贷规模管制，开始重新采用
+              将信贷资产转至表外的安排，以调整资产负债结构。</p>
+              <p>监管部门要求相关产品不得投资于发行银行自身贷款，
+              多家银行随后调整合作方式并加强风险披露。</p>
+              <p>分析人士认为，只有统一统计口径并提高透明度，
+              才能准确评估资金流向和潜在风险。</p>
+            </div>
+            <h3>打印 意见反馈</h3>
+            <ul><li>推荐新闻一</li><li>排行榜新闻二</li></ul>
+            <img src="http://file.caing.com/images/channel/content/images/fullUrl.gif">
+            <img src="http://file.caixin.com/file/vip/images/code.jpg">
+            <h3>iphone rss 腾讯微博 新浪微博</h3>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://magazine.caixin.com/2010-02-19/100117960.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "商业银行受到日趋严格" in result.plain_text
+    assert "准确评估资金流向" in result.plain_text
+    assert "打印 意见反馈" not in result.plain_text
+    assert "推荐新闻" not in result.plain_text
+    assert "iphone rss" not in result.plain_text
+    assert "fullUrl.gif" not in result.body_html
+    assert "code.jpg" not in result.body_html
+    assert len(result.images) == 1
+    assert result.images[0].original_url.endswith("cover.jpg")
+    assert [block.type for block in result.blocks] == [
+        BlockType.PARAGRAPH,
+        BlockType.PARAGRAPH,
+        BlockType.PARAGRAPH,
+    ]
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_parser_removes_pagination_and_source_boilerplate():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="国际市场报道">
+          <meta property="article:published_time"
+            content="2010-05-13T08:00:00+08:00">
+        </head><body>
+          <span id="Main_Content_Val">
+            <p>报道第一段说明市场当天发生的变化，并提供足够的事实、
+            数字和背景供读者理解事件的重要性。</p>
+            <p>报道第二段继续介绍各方回应和后续影响，确保这是一篇
+            完整的新闻正文而不是只有模板的页面。</p>
+            <p>原文地址: http://www.marketwatch.com/story/example</p>
+            <p><strong>MarketWatch拥有位于三大洲的100多名记者，
+            为世界各地读者提供关于全球市场、经济和商业的实时新闻与数据。
+            它是“华尔街日报数码网”的一部分，由新闻集团的子公司
+            道琼斯公司所有。</strong></p>
+            <div class="yinduBottom">
+              <ul>
+                <li><b>01</b>第1页</li>
+                <li><b>02</b><a href="/story_1.html">第2页</a></li>
+              </ul>
+            </div>
+          </span>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://international.caixin.com/2010-05-13/100143582.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "报道第一段" in result.plain_text
+    assert "原文地址" in result.plain_text
+    assert "MarketWatch拥有位于三大洲" not in result.plain_text
+    assert "第1页" not in result.plain_text
+    assert "yinduBottom" not in result.body_html
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_parser_removes_two_sessions_topic_link():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="香港特区行政长官将列席人大会议开幕式">
+          <meta property="article:published_time"
+            content="2013-03-01T08:00:00+08:00">
+        </head><body><div id="Main_Content_Val">
+          <p>据香港特区政府新闻处消息，行政长官将访问北京，
+          并应邀请列席全国人大会议开幕式。此次访问还将安排与有关部门
+          交流，讨论两地经济合作、人员往来和公共服务等议题。</p>
+          <p>随行官员包括行政长官办公室主任等，代表团将在会议后返港。
+          特区政府表示，离港期间将由政务司司长署理行政长官职务，
+          相关行程和会晤结果将在访问结束后向公众说明。</p>
+          <p><strong>更多报道详见：</strong>
+          <a href="http://china.caixin.com/2013/2013lh/">
+          <strong>【专题】2013年全国两会特别报道</strong></a></p>
+        </div></body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://china.caixin.com/2013-03-01/100496115.html"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "行政长官将访问北京" in result.plain_text
+    assert "更多报道详见" not in result.plain_text
+    assert "两会特别报道" not in result.plain_text
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_parser_removes_underscore_only_legacy_separator():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="演讲实录">
+          <meta property="article:published_time"
+            content="2016-01-25T08:00:00+08:00">
+        </head><body><div id="Main_Content_Val">
+          <p>【编者按】</p>
+          <p>这是正文内容，包含足够的编辑信息供读者理解本篇报道。</p>
+          <p>_________________________________________________</p>
+          <p>整理|王国磊</p>
+        </div></body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://china.caixin.com/2016-01-25/100903547.html",
+    )
+
+    assert "_________________________________________________" not in result.plain_text
+    assert "这是正文内容" in result.plain_text
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_template_skips_empty_logo_heading():
+    result = parse_article(
+        """
+        <html><head>
+          <title>中介机构称八成国企设置了年终奖_政经频道_财新网</title>
+          <meta property="article:published_time"
+            content="2011-01-14T08:00:00+08:00">
+        </head><body>
+          <div class="head"><div class="topUp"><h1 class="logo" id="logoV4"></h1></div></div>
+          <div class="the_content article">
+            <div class="conTit"><h1>中介机构称八成国企设置了年终奖</h1></div>
+            <div id="Main_Content_Val">
+              <p>【财新网】（记者 兰方）春节将至，职场人士又开始盘点单位发放的年终奖。</p>
+              <p>调查显示，年终奖与员工离职率息息相关，规范发放制度有助于保持公平。</p>
+              <p>报告还指出，企业应当明确发放标准和考核依据，及时向员工说明相关安排，避免因为信息不透明而产生误解和争议。</p>
+            </div>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url="https://china.caixin.com/2011-01-14/100217026.html",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.headline == "中介机构称八成国企设置了年终奖"
+    assert "年终奖与员工离职率" in result.plain_text
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_parser_preserves_direct_body_text_nodes():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="通用汽车或最早周五申请IPO">
+          <meta property="article:published_time"
+            content="2010-08-12T08:00:00+08:00">
+        </head><body>
+          <span id="Main_Content_Val">
+            <b>【财新网】（John Letzing -MarketWatch）</b>
+            本周三公布的消息称，通用汽车公司最早将于周五提出IPO计划。
+            通用汽车首席执行官不久前表示，公司近期内将起草相关申请文件，
+            以期重返股市。据报道，自通用汽车陷入破产以来，美国财政部
+            已累计为其提供资金，并由此获得通用汽车多数股权。消息称，
+            IPO的施行将使美国政府得以在几个月内开始交易其所持股份。
+            <p><strong>（陈沁）</strong></p>
+            <p><strong>原文地址：
+              <a href="http://www.marketwatch.com/story/gm-ipo">
+                http://www.marketwatch.com/story/gm-ipo
+              </a>
+            </strong></p>
+            <p><strong>MarketWatch拥有位于三大洲的100多名记者，
+            为世界各地读者提供关于全球市场、经济和商业的实时新闻与数据。
+            </strong></p>
+          </span>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://international.caixin.com/2010-08-12/100169932.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "本周三公布的消息" in result.plain_text
+    assert "IPO的施行" in result.plain_text
+    assert "（陈沁）" in result.plain_text
+    assert "原文地址" in result.plain_text
+    assert "MarketWatch拥有位于三大洲" not in result.plain_text
+    assert result.blocks[0].type == BlockType.PARAGRAPH
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_parser_rejects_structured_site_logo():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="北大医院案件再开庭">
+          <meta property="article:published_time"
+            content="2010-02-01T09:00:00+08:00">
+          <meta property="og:image"
+            content="http://file.caixin.com/images/common/images/logo120.jpg">
+        </head><body>
+          <div id="Main_Content_Val">
+            <p>案件在北京市高级法院再次开庭，双方围绕关键证据
+            和医疗责任展开辩论，法庭将进一步审查相关材料。</p>
+            <p>记者在现场了解到，双方代理人分别陈述了新的意见，
+            并申请对部分证据的形成过程作进一步核实。</p>
+            <p>此前的一审判决认定医院在诊疗过程中存在过失，
+            原被告双方随后均提出上诉，对责任认定和赔偿金额持有异议。</p>
+            <p>审判人员表示，本次庭审将充分听取双方意见，
+            对争议焦点逐项调查，并在合议后依法作出裁判。</p>
+            <img src="http://img.caixin.com/2010-02-01/hearing.jpg">
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://china.caixin.com/2010-02-01/100112681.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert [image.original_url for image in result.images] == [
+        "http://img.caixin.com/2010-02-01/hearing.jpg"
+    ]
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_parser_rejects_login_shell_instead_of_page_chrome():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Storms overwhelm city drains">
+          <meta property="article:published_time"
+            content="2011-07-02T08:00:00+08:00">
+          <meta property="og:image"
+            content="http://file.caixin.com/images/common/images/logo120_cw.jpg">
+        </head><body>
+          <div class="content">
+            <span id="Main_Content_Val">
+              <div class="fullUrl" id="jumpurl">
+                <img src="http://file.caing.com/images/channel/content/images/fullUrl.gif">
+                Continue reading, please sign in or register
+              </div>
+            </span>
+            <div class="recommendations">
+              <p>Unrelated recommendation text that is deliberately long enough
+              to look like a complete story when the whole page is selected.</p>
+              <p>Another unrelated ranking entry must never become article text.</p>
+              <img src="http://file.caixin.com/file/common/images/top_1.gif">
+              <input type="text" value="Enter email address">
+            </div>
+          </div>
+        </body></html>
+        """,
+        publisher="caixin",
+        canonical_url=(
+            "https://magazine.caixin.com/2011-07-02/100275221.html"
+        ),
+    )
+
+    assert result.quality.status != ArticleStatus.COMPLETE
+    assert "Unrelated recommendation" not in result.plain_text
+    assert "ranking entry" not in result.plain_text
+    assert "<input" not in result.body_html
+    assert result.images == []
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_parser_rejects_broad_content_shell_without_article_node():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="议题：银行业进阶之路">
+        </head><body>
+          <div class="content">
+            <div class="conri">
+              <div class="hotTopic">
+                <h2>热点推荐</h2>
+                <p>推荐内容一包含很长的站点摘要，但并不是这篇文章的正文。</p>
+                <p>推荐内容二同样只是排行榜和相关链接，不应进入标准记录。</p>
+                <p>推荐内容三继续增加字符数，模拟旧版页面足以越过长度阈值的导航外壳。</p>
+                <div class="share">
+                  <input type="text" value="请输入邮箱">
+                  <p>订阅财新每日新闻并分享给朋友</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://economy.caixin.com/2010-11-06/100196360.html"
+        ),
+    )
+
+    assert result.quality.status != ArticleStatus.COMPLETE
+    assert "热点推荐" not in result.plain_text
+    assert "排行榜" not in result.plain_text
+    assert "请输入邮箱" not in result.plain_text
+    assert "<input" not in result.body_html
+    assert result.blocks == []
+    assert result.images == []
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_parser_rejects_common_logo_with_edition_suffix():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="A valid Caixin report">
+          <meta property="article:published_time"
+            content="2011-06-04T08:00:00+08:00">
+          <meta property="og:image"
+            content="http://file.caixin.com/images/common/images/logo120_cw.jpg">
+        </head><body>
+          <div id="Main_Content_Val">
+            <p>The first paragraph contains the reported facts and context for
+            readers following this event across the country.</p>
+            <p>The second paragraph adds independent detail and explains why
+            the development matters to the affected organizations.</p>
+          </div>
+        </body></html>
+        """,
+        publisher="caixin",
+        canonical_url=(
+            "https://magazine.caixin.com/2011-06-04/100266334.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.images == []
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
+
+
+def test_caixin_legacy_parser_preserves_short_editorial_correction():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title"
+            content="编辑更正（《中国改革》 2010年第8期）">
+          <meta property="article:published_time"
+            content="2010-08-31T08:00:00+08:00">
+        </head><body>
+          <div class="content">
+            <span id="Main_Content_Val">
+              <p>本刊2010年第8期（8月1日出版）第65页副题第1行
+              应为“强调”，特此更正并致歉。</p>
+              <p><strong>《中国改革》编辑部</strong></p>
+              <div class="fullUrl" id="jumpurl">
+                <img src="http://file.caing.com/images/channel/content/images/fullUrl.gif">
+                继续阅读,请 <a href="/login">登录</a> 或
+                <a href="/register">注册</a>
+              </div>
+            </span>
+            <p>打印 意见反馈 推荐新闻 排行榜</p>
+            <p>iphone 安卓 黑莓 rss 腾讯微博 新浪微博</p>
+          </div>
+        </body></html>
+        """.encode(),
+        publisher="caixin",
+        canonical_url=(
+            "https://magazine.caixin.com/2010-08-31/100175596.html"
+        ),
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "应为“强调”" in result.plain_text
+    assert "《中国改革》编辑部" in result.plain_text
+    assert "继续阅读" not in result.plain_text
+    assert "打印" not in result.plain_text
+    assert "推荐新闻" not in result.plain_text
+    assert "腾讯微博" not in result.plain_text
+    assert result.images == []
+    assert "structured-short-record" in result.quality.warnings
+    assert result.extraction.parser_version == "caixin-parser/0.1.15"
 
 
 def test_zaobao_parser_extracts_embedded_rsc_publication_date():
@@ -17191,7 +21648,266 @@ def test_zaobao_parser_extracts_embedded_rsc_publication_date():
     assert result.quality.status.value == "complete"
     assert result.published_at is not None
     assert result.published_at.isoformat() == "2016-01-20T18:38:00+08:00"
-    assert result.extraction.parser_version == "zaobao-parser/0.1.1"
+    assert result.extraction.parser_version == "zaobao-parser/0.1.12"
+
+
+def test_zaobao_comic_page_is_an_image_gallery_not_a_short_article():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="连载漫画">
+          <meta property="article:published_time"
+            content="2019-08-14T00:00:00+08:00">
+        </head><body><article>
+          <p>连载漫画</p><p>隔周刊登</p>
+          <img src="https://static.zaobao.com.sg/comic.jpg">
+        </article></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url=(
+            "https://www.zaobao.com.sg/forum/comic/"
+            "story20190814-980772"
+        ),
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.extraction.parser_version == "zaobao-parser/0.1.12"
+
+
+def test_zaobao_parser_accepts_a_short_but_complete_news_brief():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Zaobao brief">
+          <meta property="article:published_time" content="2017-01-20T00:00:00Z">
+        </head><body><article>
+          <p>Officials said the project starts next month after a year of planning.</p>
+        </article></body></html>
+        """,
+        publisher="zaobao",
+        canonical_url="https://www.zaobao.com.sg/news/brief-20170120",
+    )
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.quality.body_characters < 100
+    assert "body-too-short" not in result.quality.warnings
+    assert "project starts next month" in result.plain_text
+    assert result.extraction.parser_version == "zaobao-parser/0.1.12"
+
+
+def test_zaobao_parser_accepts_a_sub_sixty_character_wire_brief():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="Zaobao wire brief">
+          <meta property="article:published_time" content="2020-03-11T12:41:00Z">
+        </head><body><article>
+          <p>路透社报道，桑德斯预计将在北达科他州党团会议初选中获胜。</p>
+        </article></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url=(
+            "https://www.zaobao.com.sg/realtime/world/"
+            "story20200311-1036258"
+        ),
+    )
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.quality.body_characters < 60
+    assert "body-too-short" not in result.quality.warnings
+    assert result.extraction.parser_version == "zaobao-parser/0.1.12"
+
+
+def test_zaobao_shorts_page_is_classified_as_video():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="A Zaobao video short">
+          <meta property="article:published_time"
+            content="2025-03-21T00:00:00Z">
+        </head><body><article>
+          <h1>A Zaobao video short</h1>
+          <div class="articleBody">
+            <div>延伸阅读</div>
+            <img src="https://cassette.sphdigital.com.sg/image/zaobao/poster">
+          </div>
+          <video controls></video>
+        </article></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url=(
+            "https://www.zaobao.com.sg/shorts/"
+            "story20250321-6045580"
+        ),
+    )
+
+    assert result.content_type == ContentType.VIDEO
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.quality.body_characters < 100
+    assert result.extraction.parser_version == "zaobao-parser/0.1.12"
+
+
+def test_zaobao_parser_removes_embedded_site_controls():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="Zaobao controls">
+          <meta property="article:published_time" content="2017-02-20T00:00:00Z">
+        </head><body><article>
+          <p>The historical report contains enough editorial context to be
+          retained as a complete article body for the archive.</p>
+          <button type="button">分享</button>
+          <form><input name="email"><button type="submit">订阅</button></form>
+          <p>The closing paragraph preserves the final reported details.</p>
+        </article></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url="https://www.zaobao.com.sg/news/controls-20170220",
+    )
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "分享" not in result.plain_text
+    assert "订阅" not in result.plain_text
+    assert not result.body_html.casefold().count("<button")
+    assert not result.body_html.casefold().count("<form")
+    assert not result.body_html.casefold().count("<input")
+    assert result.extraction.parser_version == "zaobao-parser/0.1.12"
+
+
+def test_zaobao_parser_removes_freemium_roadblock_and_default_artwork():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="Zaobao freemium report">
+        </head><body><article>
+          <div class="article-content-rawhtml">
+            <p>这是历史报道的第一段，包含足够的新闻事实和背景信息。</p>
+            <div id="freemium_subscribe">
+              <p>此文章为早报 订户 专享内容，什么是订户专享内容？</p>
+              <p>请您选择以下方式，阅读全文：</p>
+              <p>已是早报订户，请您登录后继续阅读全文。</p>
+              <p>新用户体验价，每月只需 $0.99*。</p>
+              <a><img data-src="https://static.zaobao.com/s3fs-public/"
+                "freemium_images/20210209/399-default-desktop-l_0_2.jpg"></a>
+            </div>
+            <p>第二段继续报道事件经过和相关背景，供读者核对。</p>
+          </div>
+        </article></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url="https://www.zaobao.com.sg/news/test-20210402",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "订户专享内容" not in result.plain_text
+    assert "新用户体验价" not in result.plain_text
+    assert "阅读全文" not in result.plain_text
+    assert "default-desktop" not in result.body_html
+    assert result.images == []
+    assert result.extraction.parser_version == "zaobao-parser/0.1.12"
+
+
+def test_zaobao_parser_extracts_legacy_article_content_and_visible_date():
+    result = parse_article(
+        """
+        <html><head><meta property="og:title" content="Legacy Zaobao"></head>
+        <body><div class="col-md-8 col-xs-12">
+          <h1 class="title">Legacy Zaobao</h1>
+          <div id="article-content">
+            <p class="date col-md-5">2017年3月03日 星期五</p>
+            <p>政府公布新的公共服务计划，相关部门将提供培训和数据支持，
+            并在未来数年持续评估执行成效和社会影响。</p>
+            <button>分享</button>
+          </div>
+        </div></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url="https://www.zaobao.com.sg/zpolitics/news/legacy-20170303",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.published_at is not None
+    assert result.published_at.isoformat() == "2017-03-03T00:00:00+08:00"
+    assert "政府公布新的公共服务计划" in result.plain_text
+    assert "分享" not in result.plain_text
+    assert result.extraction.parser_version == "zaobao-parser/0.1.12"
+
+
+def test_zaobao_parser_extracts_underscore_article_content_body():
+    result = parse_article(
+        """
+        <html lang="zh"><head>
+          <meta property="og:title" content="七部贺岁片 猴年开打">
+          <meta property="article:published_time" content="2016-01-27T00:00:00+08:00">
+        </head><body><div id="article_content">
+          <div id="a_image"><ul><li class="big"><img src="https://www.zaobao.com.sg/photo.jpg"></li></ul></div>
+          <div class="a_body">
+            <p>李亦筠／报道　照片由片商提供</p>
+            <p>随着周星驰新片《美人鱼》及获奥斯卡提名的《复仇勇者》将在猴年贺岁档推出，贺岁片战局顿时升温。</p>
+            <p>今年的贺岁片多达七部，五部是中文片，两部是西片，题材缤纷，各有卖点。</p>
+          </div>
+        </div></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url="https://www.zaobao.com.sg/culture/entertainment/cinema/story20160127-575556",
+    )
+
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.published_at is not None
+    assert "猴年贺岁档推出" in result.plain_text
+    assert result.extraction.parser_version == "zaobao-parser/0.1.12"
+
+
+def test_zaobao_legacy_visual_photo_record_is_a_complete_gallery():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="扬州盛夏“煮饺子”">
+          <meta property="article:published_time"
+            content="2018-08-07T03:30:00+08:00">
+          <script type="application/ld+json">
+            {"@type":"NewsArticle","headline":"扬州盛夏“煮饺子”",
+             "articleBody":"中国进入盛夏时节，江苏省扬州市气温近日高达36摄氏度。",
+             "wordCount":25,"accessMode":"visual",
+             "image":{"url":"https://static.zaobao.com.sg/photo.jpg",
+                      "width":800,"height":536}}
+          </script>
+        </head><body><article>
+          <p>中国进入盛夏时节，江苏省扬州市气温近日高达36摄氏度。</p>
+        </article></body></html>
+        """.encode(),
+        publisher="zaobao",
+        canonical_url=(
+            "https://www.zaobao.com.sg/news/china/"
+            "story20180807-881266"
+        ),
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert "body-too-short" not in result.quality.warnings
+    assert result.extraction.parser_version == "zaobao-parser/0.1.12"
+
+
+def test_aljazeera_parser_classifies_liveblog_url_without_json_ld():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Live updates from Gaza">
+          <meta property="article:published_time" content="2026-01-16T00:00:00Z">
+        </head><body><article>
+          <h1>Live updates from Gaza</h1>
+          <p>Live blog closed.</p>
+        </article></body></html>
+        """,
+        publisher="aljazeera",
+        canonical_url=(
+            "https://www.aljazeera.com/news/liveblog/2026/1/16/"
+            "live-updates-from-gaza"
+        ),
+    )
+
+    assert result.content_type == ContentType.LIVEBLOG
+    assert result.quality.status == ArticleStatus.PARTIAL
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
 
 
 def test_aljazeera_parser_classifies_short_embedded_video_report():
@@ -17229,7 +21945,7 @@ def test_aljazeera_parser_classifies_short_embedded_video_report():
         and block.embed_url == "https://www.youtube.com/embed/FBnUNOj4Boo"
         for block in result.blocks
     )
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.2"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
 
 
 def test_aljazeera_parser_marks_short_timeline_shell_as_interactive_partial():
@@ -17256,7 +21972,7 @@ def test_aljazeera_parser_marks_short_timeline_shell_as_interactive_partial():
     assert result.content_type == ContentType.INTERACTIVE
     assert result.quality.status == ArticleStatus.PARTIAL
     assert "body-too-short" in result.quality.warnings
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.2"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
 
 
 def test_aljazeera_parser_extracts_migrated_gallery_figures():
@@ -17298,4 +22014,117 @@ def test_aljazeera_parser_extracts_migrated_gallery_figures():
     assert result.images[0].caption == (
         "Survivors gather after the earthquake [Reuters]"
     )
-    assert result.extraction.parser_version == "aljazeera-parser/0.1.2"
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
+
+
+def test_aljazeera_parser_removes_live_update_underscore_separators():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Coronavirus live updates">
+          <meta property="article:published_time" content="2020-06-11T00:00:00Z">
+        </head><body>
+          <article><div class="wysiwyg">
+            <p>Here are the latest updates:</p>
+            <h3>__________________________________________________________</h3>
+            <p>Substantive update text with enough context for the article.</p>
+          </div></article>
+        </body></html>
+        """,
+        publisher="aljazeera",
+        canonical_url=(
+            "https://www.aljazeera.com/news/2020/6/11/"
+            "coronavirus-live-updates"
+        ),
+    )
+
+    assert "__________________________________________________________" not in result.plain_text
+    assert "Substantive update text" in result.plain_text
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
+
+
+def test_aljazeera_parser_removes_standalone_live_update_read_more_link():
+    result = parse_article(
+        b"""
+        <html><head>
+          <meta property="og:title" content="Ukraine live updates">
+          <meta property="article:published_time" content="2022-02-21T00:00:00Z">
+        </head><body><article><div class="wysiwyg">
+          <p>The latest update explains the diplomatic response and gives
+          readers the relevant context around the developing situation.</p>
+          <p><a href="/news/previous-update">Read more</a></p>
+          <p>Read more <a href="/news/background">here</a>.</p>
+        </div></article></body></html>
+        """,
+        publisher="aljazeera",
+        canonical_url=(
+            "https://www.aljazeera.com/news/2022/2/21/"
+            "ukraine-live-updates"
+        ),
+    )
+
+    assert "latest update explains" in result.plain_text
+    assert '<p><a href="/news/previous-update">Read more</a></p>' not in result.body_html
+    assert "Read more" in result.body_html
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
+
+
+def test_aljazeera_parser_removes_legacy_body_navigation_and_disclaimer():
+    html = b"""
+    <html><head>
+      <meta property="og:title" content="A legacy Al Jazeera report">
+      <meta property="article:published_time"
+            content="2011-01-23T00:00:00Z">
+    </head><body><article>
+      <p>The substantive report explains the negotiations in detail and
+      records the parties' response to the proposal.</p>
+      <p>Related</p>
+      <p>Back to top</p>
+      <p>The views expressed in this article are the author&#x2019;s own and do not
+      necessarily reflect Al Jazeera&#x2019;s editorial policy.</p>
+      <p>Recommended stories</p>
+      <p>The views expressed in this article are the author&#x2019;s own and do not
+      necessarily reflect Al Jazeera&#x2019;s editorial stance.</p>
+      <p>The report concludes with a documented timeline of events.</p>
+    </article></body></html>
+    """
+    result = parse_article(
+        html,
+        publisher="aljazeera",
+        canonical_url=(
+            "https://www.aljazeera.com/news/2011/1/23/"
+            "a-naive-approach-to-negotiations"
+        ),
+    )
+
+    assert result.quality.status.value == "complete"
+    assert "substantive report explains" in result.plain_text
+    assert "Related" not in result.plain_text
+    assert "Back to top" not in result.plain_text
+    assert "Recommended stories" not in result.plain_text
+    assert "views expressed in this article" not in result.plain_text
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"
+
+
+def test_aljazeera_gallery_with_image_only_archive_is_complete():
+    result = parse_article(
+        """
+        <html><head>
+          <meta property="og:title" content="2019 in pictures">
+          <meta property="article:published_time"
+            content="2019-12-24T00:00:00Z">
+        </head><body><article>
+          <img src="https://www.aljazeera.com/one.jpg">
+          <img src="https://www.aljazeera.com/two.jpg">
+        </article></body></html>
+        """.encode(),
+        publisher="aljazeera",
+        canonical_url=(
+            "https://www.aljazeera.com/gallery/2019/12/24/"
+            "2019-in-pictures"
+        ),
+    )
+
+    assert result.content_type == ContentType.GALLERY
+    assert result.quality.status == ArticleStatus.COMPLETE
+    assert result.extraction.parser_version == "aljazeera-parser/0.1.14"

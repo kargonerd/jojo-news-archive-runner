@@ -151,7 +151,7 @@ def test_holdout_audit_rejects_overlap_missing_exclusion_and_short_target(
     assert "2020:missing-prior-exclusions" in result["issues"]
 
 
-def test_holdout_audit_rejects_empty_previous_union(tmp_path: Path):
+def test_holdout_audit_accepts_empty_previous_probe(tmp_path: Path):
     previous_path = tmp_path / "empty.sqlite3"
     current_path = tmp_path / "current.sqlite3"
     previous = _state(previous_path)
@@ -179,5 +179,162 @@ def test_holdout_audit_rejects_empty_previous_union(tmp_path: Path):
         to_year=2020,
     )
 
-    assert result["passed"] is False
-    assert "2020:no-previous-evaluated-samples" in result["issues"]
+    assert result["passed"] is True
+    assert result["issues"] == []
+
+
+def test_holdout_audit_allows_first_cohort_without_previous_state(
+    tmp_path: Path,
+):
+    current_path = tmp_path / "first-holdout.sqlite3"
+    current = _state(current_path)
+    try:
+        _config(current, year=2014, version="caixin-parser/0.1.9")
+        current.execute(
+            "UPDATE parser_validation_config SET target_size=1 "
+            "WHERE sample_year=2014"
+        )
+        _sample(
+            current,
+            url="https://magazine.caixin.com/2014-01-02/100600001.html",
+            year=2014,
+            version="caixin-parser/0.1.9",
+        )
+        current.commit()
+    finally:
+        current.close()
+
+    result = audit_holdout(
+        previous_states=(),
+        current_state=current_path,
+        publisher="caixin",
+        expected_parser_version="caixin-parser/0.1.9",
+        from_year=2014,
+        to_year=2014,
+        target_per_year=1,
+        require_complete=True,
+        allow_empty_previous=True,
+    )
+
+    assert result["passed"] is True
+    year = result["years"]["2014"]
+    assert year["previousUniqueEvaluated"] == 0
+    assert year["priorCohortOverlap"] == 0
+    assert year["missingPriorExclusions"] == 0
+
+
+def test_holdout_audit_ignores_failed_and_reserve_attempts(tmp_path: Path):
+    previous_path = tmp_path / "previous.sqlite3"
+    current_path = tmp_path / "current.sqlite3"
+    previous = _state(previous_path)
+    current = _state(current_path)
+    accepted = "https://www.nytimes.com/2020/01/01/world/accepted.html"
+    failed = "https://www.nytimes.com/2020/01/02/world/failed.html"
+    reserve = "https://www.nytimes.com/2020/01/03/world/reserve.html"
+    current_url = "https://www.nytimes.com/2020/01/04/world/current.html"
+    try:
+        _config(previous, year=2020, version="nyt-parser/0.8.54")
+        previous.execute(
+            "UPDATE parser_validation_config SET target_size=1 "
+            "WHERE sample_year=2020"
+        )
+        _config(current, year=2020, version="nyt-parser/0.8.55")
+        for priority, url, qa_pass in (
+            ("001", accepted, 1),
+            ("002", failed, 0),
+            ("003", reserve, 1),
+        ):
+            _sample(
+                previous,
+                url=url,
+                year=2020,
+                version="nyt-parser/0.8.54",
+            )
+            previous.execute(
+                "UPDATE parser_validation_samples SET sample_priority=? "
+                "WHERE canonical_url=?",
+                (priority, url),
+            )
+            previous.execute(
+                "UPDATE parser_validation_results SET qa_pass=? "
+                "WHERE canonical_url=?",
+                (qa_pass, url),
+            )
+        _sample(current, url=current_url, year=2020, version=None)
+        current.execute(
+            """
+            INSERT INTO parser_validation_exclusions(
+                canonical_url, source_cohort, excluded_at
+            ) VALUES (?, 'validation-v1', '2026-08-10T00:00:00Z')
+            """,
+            (accepted,),
+        )
+        previous.commit()
+        current.commit()
+    finally:
+        previous.close()
+        current.close()
+
+    result = audit_holdout(
+        previous_states=(("validation-v1", previous_path),),
+        current_state=current_path,
+        publisher="nyt",
+        expected_parser_version="nyt-parser/0.8.55",
+        from_year=2020,
+        to_year=2020,
+    )
+
+    assert result["passed"] is True
+    assert result["years"]["2020"]["previousUniqueEvaluated"] == 1
+
+
+def test_holdout_audit_normalizes_caixin_pagination_variants(
+    tmp_path: Path,
+):
+    previous_path = tmp_path / "previous.sqlite3"
+    current_path = tmp_path / "current.sqlite3"
+    previous = _state(previous_path)
+    current = _state(current_path)
+    base = "https://magazine.caixin.com/2010-02-07/100116568"
+    try:
+        _config(previous, year=2010, version="caixin-parser/0.1.0")
+        _config(current, year=2010, version="caixin-parser/0.1.1")
+        _sample(
+            previous,
+            url=base + "_all.html",
+            year=2010,
+            version="caixin-parser/0.1.0",
+        )
+        _sample(
+            current,
+            url=(
+                "https://magazine.caixin.com/2010-02-08/100116999.html"
+            ),
+            year=2010,
+            version=None,
+        )
+        current.execute(
+            """
+            INSERT INTO parser_validation_exclusions(
+                canonical_url, source_cohort, excluded_at
+            ) VALUES (?, 'preflight-v1', '2026-08-10T00:00:00Z')
+            """,
+            (base + ".html",),
+        )
+        previous.commit()
+        current.commit()
+    finally:
+        previous.close()
+        current.close()
+
+    result = audit_holdout(
+        previous_states=(("preflight-v1", previous_path),),
+        current_state=current_path,
+        publisher="caixin",
+        expected_parser_version="caixin-parser/0.1.1",
+        from_year=2010,
+        to_year=2010,
+    )
+
+    assert result["passed"] is True
+    assert result["years"]["2010"]["missingPriorExclusions"] == 0

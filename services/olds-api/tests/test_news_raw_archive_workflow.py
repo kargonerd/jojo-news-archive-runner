@@ -5,6 +5,13 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "news-raw-archive.yml"
 
 
+def test_sitemap_mode_supports_axios_official_monthly_archive() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "ap|bloomberg|nyt|ft|axios|aljazeera|zaobao" in workflow
+    assert "FT, Axios, Al Jazeera" in workflow
+
+
 def test_live_raw_checkpoints_cannot_block_archive_workers() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     catalog_section = workflow[
@@ -75,11 +82,11 @@ def test_catalog_only_wayback_keeps_expanding_after_capture_ready() -> None:
     assert '"${wayback_catalog_args[@]}"' in wayback_section
 
 
-def test_npr_axios_and_nikkei_merge_common_crawl_without_duplicate_raw_root() -> None:
+def test_common_crawl_supplements_merge_without_duplicate_raw_root() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     merge_section = workflow[
         workflow.index(
-            "- name: Merge NPR, Axios, or Nikkei Common Crawl supplemental manifest"
+            "- name: Merge Common Crawl supplemental manifest"
         ) :
         workflow.index("- name: Checkpoint discovery")
     ]
@@ -87,6 +94,11 @@ def test_npr_axios_and_nikkei_merge_common_crawl_without_duplicate_raw_root() ->
     assert "inputs.publisher == 'npr'" in merge_section
     assert "inputs.publisher == 'axios'" in merge_section
     assert "inputs.publisher == 'nikkei'" in merge_section
+    assert "inputs.publisher == 'reuters'" in merge_section
+    assert "inputs.publisher == 'scmp'" in merge_section
+    assert "inputs.publisher == 'caixin'" in merge_section
+    assert "inputs.publisher == 'aljazeera'" in merge_section
+    assert "inputs.manifest_mode == 'sitemap-wayback'" in merge_section
     assert "inputs.manifest_mode == 'wayback-urlkey'" in merge_section
     assert "commoncrawl-prefix" in merge_section
     assert "merge_archive_manifests.py" in merge_section
@@ -120,7 +132,7 @@ def test_ap_raw_archive_merges_legacy_manifest_without_duplicate_raw_root() -> N
     ]
 
     assert "inputs.publisher == 'ap'" in merge_section
-    assert "inputs.manifest_mode == 'wayback-urlkey'" in merge_section
+    assert "inputs.manifest_mode == 'sitemap-wayback'" in merge_section
     assert "legacy-archive" in merge_section
     assert "merge_archive_manifests.py" in merge_section
     assert '--input "$supplemental"' in merge_section
@@ -211,3 +223,18 @@ def test_validation_only_archive_chain_releases_runner_at_ready_gate() -> None:
         '-f stop_when_validation_ready="${{ inputs.stop_when_validation_ready }}"'
         in continuation_section
     )
+
+
+def test_zero_discovery_pages_refreshes_only_manifest_sidecar() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    catalog_section = workflow[
+        workflow.index("run_catalog() {") : workflow.index(
+            'if [ "$MANIFEST_MODE" = "sitemap-wayback" ]; then',
+            workflow.index("run_catalog() {"),
+        )
+    ]
+
+    assert 'if [ "$MAX_DISCOVERY_PAGES" = "0" ]; then' in catalog_section
+    assert "Manifest-sidecar refresh requires an existing manifest." in catalog_section
+    assert 'echo "complete=true"' in catalog_section
+    assert 'echo "should_continue=false"' in catalog_section

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 import hashlib
@@ -84,6 +85,7 @@ _EXACT_NOISE_TEXT = {
     "advertisement",
     "advertiser content",
     "sponsored content",
+    "trending stories",
 }
 _NYT_ATTENDEE_RE = re.compile(
     r'name:"((?:\\.|[^"\\])*)",caption:"((?:\\.|[^"\\])*)"'
@@ -133,6 +135,7 @@ def parse_article(
     )
     body = None
     structured_image_gallery_selected = False
+    caixin_legacy_gallery_selected = False
     nyt_interactive_body_selected = False
     ft_crossword_selected = False
     npr_legacy_transcript_selected = False
@@ -262,6 +265,16 @@ def parse_article(
             < len(preloaded_body.get_text(" ", strip=True))
         ):
             body = preloaded_body
+        embedded_interactive_body = _nyt_preloaded_embedded_interactive_body(
+            soup,
+        )
+        if embedded_interactive_body is not None and (
+            body is None
+            or len(embedded_interactive_body.get_text(" ", strip=True))
+            > len(body.get_text(" ", strip=True))
+        ):
+            body = embedded_interactive_body
+            nyt_interactive_body_selected = True
         adventure_body = _nyt_adventure_resource_body(
             soup,
             dependent_resources=dependent_resources or {},
@@ -277,6 +290,57 @@ def parse_article(
             structured_image_gallery_selected = True
     if body is None:
         body = _select_body(soup, spec)
+    if body is None and spec.publisher == "wsj":
+        # A subset of legacy WSJ captures contains malformed HTML that
+        # Python's built-in ``html.parser`` treats as an unclosed comment.
+        # The same bytes are recoverable with lxml, and losing the article
+        # entirely is worse than using the optional tolerant parser here.
+        try:
+            fallback_soup = BeautifulSoup(html_bytes, "lxml")
+        except Exception:
+            fallback_soup = None
+        if fallback_soup is not None:
+            fallback_body = _select_body(fallback_soup, spec)
+            if fallback_body is not None:
+                soup = fallback_soup
+                body = fallback_body
+    if spec.publisher == "scmp":
+        # The Vue-era SCMP pages frequently put the complete article in the
+        # Apollo cache while the visible DOM contains only an empty shell.
+        # Prefer that structured body when it is longer than the selected DOM
+        # node; this keeps modern/legacy DOM extraction authoritative whenever
+        # it already contains the full story.
+        apollo_body = _scmp_apollo_body(soup)
+        if apollo_body is not None and (
+            body is None
+            or len(apollo_body.get_text(" ", strip=True))
+            > len(body.get_text(" ", strip=True))
+        ):
+            body = apollo_body
+    if spec.publisher == "caixin":
+        legacy_gallery = _caixin_legacy_gallery_body(soup)
+        if legacy_gallery is not None:
+            body = legacy_gallery
+            structured_image_gallery_selected = True
+            caixin_legacy_gallery_selected = True
+        else:
+            legacy_body = soup.select_one("#Main_Content_Val")
+        if legacy_gallery is None and isinstance(legacy_body, Tag):
+            # Legacy subscription snapshots can leave only a short login
+            # roadblock in the real article node.  Falling back to the much
+            # broader ``.content`` wrapper then turns recommendations, live
+            # tickers, rankings and share controls into a false complete
+            # article.  Keep the authoritative node even when it is short;
+            # Caixin chrome cleanup will remove the roadblock and quality
+            # assessment will correctly reject the empty capture.
+            body = legacy_body
+    if spec.publisher == "nikkei":
+        legacy_body = _nikkei_legacy_article_body(
+            soup,
+            selected_body=body,
+        )
+        if legacy_body is not None:
+            body = legacy_body
     if spec.publisher == "aljazeera":
         gallery_body = _aljazeera_gallery_body(
             soup,
@@ -357,7 +421,20 @@ def parse_article(
             canonical_url=canonical_url,
         )
         if interactive_documents is not None:
-            body = interactive_documents
+            body_text = (
+                _clean_text(body.get_text(" ", strip=True))
+                if body is not None
+                else ""
+            )
+            if body is None or len(body_text) < 2 * _MINIMUM_BODY_CHARACTERS:
+                body = interactive_documents
+            else:
+                # A source-document link supplements a prose interactive; it
+                # must not replace the complete narrative with its short meta
+                # description. Append only the linked document embeds because
+                # the description is already represented by the real body.
+                for embed in list(interactive_documents.select("iframe")):
+                    body.append(embed)
         inline_interactive = _nyt_inline_interactive_media(
             soup,
             canonical_url=canonical_url,
@@ -519,8 +596,16 @@ def parse_article(
     if spec.publisher == "nikkei":
         _trim_nikkei_paywall_tail(clean_body)
         _remove_nikkei_body_chrome(clean_body)
+    if spec.publisher == "zaobao":
+        _remove_zaobao_body_chrome(clean_body)
+    if spec.publisher == "caixin":
+        _remove_caixin_body_chrome(clean_body)
+    if spec.publisher == "axios":
+        _remove_axios_body_chrome(clean_body)
     if spec.publisher == "npr":
         _remove_npr_body_chrome(clean_body)
+    if spec.publisher == "scmp":
+        _remove_scmp_body_chrome(clean_body)
     _remove_noise(clean_body, spec)
     if spec.publisher == "wsj":
         inset_tables = _wsj_inset_table_body(soup)
@@ -560,6 +645,11 @@ def parse_article(
             else None
         ),
         _string_or_none(nyt_preloaded_metadata.get("headline")),
+        (
+            _string_or_none(axios_next_story.get("headline"))
+            if axios_next_story is not None
+            else None
+        ),
         _ap_structured_headline(news_article)
         if spec.publisher == "ap"
         else (
@@ -579,6 +669,9 @@ def parse_article(
         else None,
         _nikkei_legacy_headline(soup)
         if spec.publisher == "nikkei"
+        else None,
+        _caixin_legacy_headline(soup)
+        if spec.publisher == "caixin"
         else None,
         _meta_content(soup, "property", "og:title"),
         _meta_content(soup, "name", "twitter:title"),
@@ -663,6 +756,11 @@ def parse_article(
                 "analyticsAttributes.articleDate",
             ),
             _meta_content(soup, "name", "sailthru.date"),
+            (
+                _meta_content(soup, "name", "date")
+                if spec.publisher == "npr"
+                else None
+            ),
             _ap_hosted_published_at(soup)
             if spec.publisher == "ap"
             else None,
@@ -691,6 +789,11 @@ def parse_article(
             (
                 _zaobao_embedded_published_at(soup)
                 if spec.publisher == "zaobao"
+                else None
+            ),
+            (
+                _caixin_legacy_published_at(soup)
+                if spec.publisher == "caixin"
                 else None
             ),
             _tag_attribute(
@@ -728,6 +831,12 @@ def parse_article(
     )
     language = _document_language(soup, default=spec.default_language)
     content_type = _content_type(news_article, canonical_url)
+    if spec.publisher == "scmp" and _scmp_live_article(soup):
+        # SCMP marks its legacy live-sport pages with a ``cse_articletype``
+        # metadata value even when JSON-LD still says ``NewsArticle``. Keep
+        # the semantic type so validation can distinguish a missing replayed
+        # update stream from a broken text-article extraction.
+        content_type = ContentType.LIVEBLOG
     npr_audio_url: str | None = None
     if any(
         value.get("@type") == "LiveBlogPosting"
@@ -880,6 +989,21 @@ def parse_article(
         ):
             continue
         if (
+            spec.publisher == "zaobao"
+            and _zaobao_non_editorial_image_url(url)
+        ):
+            continue
+        if (
+            spec.publisher == "caixin"
+            and _caixin_non_editorial_image_url(url)
+        ):
+            continue
+        if (
+            spec.publisher == "scmp"
+            and _scmp_non_editorial_image_url(url)
+        ):
+            continue
+        if (
             spec.publisher == "bloomberg"
             and (
                 _bloomberg_author_avatar_url(url)
@@ -916,7 +1040,22 @@ def parse_article(
                 continue
             if (
                 spec.publisher == "nikkei"
-                and _nikkei_non_editorial_image_url(image.original_url)
+                and _nikkei_non_editorial_image_candidate(image)
+            ):
+                continue
+            if (
+                spec.publisher == "zaobao"
+                and _zaobao_non_editorial_image_url(image.original_url)
+            ):
+                continue
+            if (
+                spec.publisher == "caixin"
+                and _caixin_non_editorial_image_url(image.original_url)
+            ):
+                continue
+            if (
+                spec.publisher == "scmp"
+                and _scmp_non_editorial_image_url(image.original_url)
             ):
                 continue
             if (
@@ -965,6 +1104,18 @@ def parse_article(
             for block in blocks:
                 if block.asset_id == image.asset_id:
                     block.asset_id = existing.asset_id
+        selected_asset_ids = {
+            image.asset_id for image in images_by_url.values()
+        }
+        blocks = [
+            block
+            for block in blocks
+            if not (
+                block.type == BlockType.IMAGE
+                and block.asset_id
+                and block.asset_id not in selected_asset_ids
+            )
+        ]
         blocks = _deduplicate_blocks(
             blocks,
             deduplicate_contained_pull_quotes=spec.publisher == "ft",
@@ -1007,6 +1158,22 @@ def parse_article(
             blocks,
             allow_uncaptioned=spec.publisher == "ft",
         )
+        or (
+            spec.publisher == "zaobao"
+            and "/forum/comic/" in canonical_url.casefold()
+            and (
+                any(block.type == BlockType.IMAGE for block in blocks)
+                or len(images_by_url) >= 1
+            )
+        )
+        or (
+            spec.publisher == "aljazeera"
+            and "/gallery/" in canonical_url.casefold()
+            and (
+                sum(block.type == BlockType.IMAGE for block in blocks) >= 1
+                or len(images_by_url) >= 1
+            )
+        )
     ):
         content_type = ContentType.GALLERY
     plain_text = "\n\n".join(
@@ -1023,6 +1190,16 @@ def parse_article(
             plain_text=plain_text,
             blocks=blocks,
         )
+    if (
+        spec.publisher == "zaobao"
+        and content_type == ContentType.ARTICLE
+        and _zaobao_visual_short_record(
+            news_article,
+            body_characters=len(plain_text),
+            images=images,
+        )
+    ):
+        content_type = ContentType.GALLERY
     if (
         spec.publisher == "ft"
         and content_type == ContentType.ARTICLE
@@ -1044,6 +1221,38 @@ def parse_article(
         and (
             image_block_count >= 1
             or (spec.publisher in {"nyt", "ft"} and len(images) >= 1)
+            or (
+                spec.publisher == "zaobao"
+                and len(images) >= 1
+                and (
+                    "/forum/comic/" in canonical_url.casefold()
+                    or _zaobao_visual_short_record(
+                        news_article,
+                        body_characters=len(plain_text),
+                        images=images,
+                    )
+                )
+            )
+            or (
+                spec.publisher == "aljazeera"
+                and "/gallery/" in canonical_url.casefold()
+                and len(images) >= 1
+            )
+        )
+    )
+    # A small set of NYT visual features (notably T Magazine) is published
+    # as one or two figures plus captions and only a short editorial dek.  It
+    # is still a recoverable image-led article: the figure/caption payload is
+    # the body, rather than an empty interactive shell.  Do not manufacture
+    # prose, but do allow the preserved image/caption record to pass the
+    # short-body gate.
+    nyt_image_led_editorial = (
+        spec.publisher == "nyt"
+        and content_type == ContentType.ARTICLE
+        and _nyt_image_led_editorial(
+            soup,
+            body=clean_body,
+            canonical_url=canonical_url,
         )
     )
     embedded_nontext_content = bool(
@@ -1082,6 +1291,16 @@ def parse_article(
                     canonical_url=canonical_url,
                 )
             )
+            # Standalone legacy interactives advertise their page type in
+            # metadata even when the archived shell contains only a lede and
+            # an external graphic bundle. Preserve that package as a valid
+            # non-text record instead of reporting an extraction failure.
+            or (
+                spec.publisher == "nyt"
+                and content_type == ContentType.INTERACTIVE
+                and len(plain_text) < _MINIMUM_BODY_CHARACTERS
+                and _nyt_has_interactive_metadata(soup)
+            )
             # NPR's pre-HTML5 story template represented some intentionally
             # short radio segments with only the editorial description in
             # #storytext and an explicit ``medium=audio`` marker.  The player
@@ -1119,22 +1338,38 @@ def parse_article(
             spec.publisher == "wsj"
             and _wsj_is_editorial_letter(soup)
         )
+        # Zaobao carries short wire briefs whose complete Chinese body can
+        # legitimately be under sixty characters; keep a small floor above
+        # an empty shell while accepting those fully reported briefs.
+        else 20
+        if (
+            spec.publisher == "zaobao"
+            and content_type == ContentType.ARTICLE
+        )
         else 500
         if (
             spec.publisher == "wsj"
             and content_type == ContentType.ARTICLE
         )
+        # Al Jazeera publishes legitimate short briefs and image-led
+        # explainers; use the parser's normal 100-character floor for those,
+        # while retaining the stricter floor for sparse interactive shells.
+        else _MINIMUM_BODY_CHARACTERS
+        if (
+            spec.publisher == "aljazeera"
+            and content_type == ContentType.ARTICLE
+        )
         else 500
         if (
             spec.publisher == "aljazeera"
-            and content_type
-            in {ContentType.ARTICLE, ContentType.INTERACTIVE}
+            and content_type == ContentType.INTERACTIVE
         )
         else _MINIMUM_BODY_CHARACTERS
     )
     if (
         len(plain_text) < minimum_body_characters
         and not image_led_gallery
+        and not nyt_image_led_editorial
         and not embedded_nontext_content
         and not publisher_notice
         and not structured_short_record
@@ -1151,6 +1386,11 @@ def parse_article(
     if structured_short_newsletter:
         warnings.append("structured-short-newsletter")
     if spec.publisher == "ft" and _ft_explicit_truncation_notice(soup):
+        warnings.append("truncated-body")
+    if (
+        spec.publisher == "ft"
+        and _ft_infini_access_shell(soup)
+    ):
         warnings.append("truncated-body")
     if (
         spec.publisher == "nikkei"
@@ -1302,6 +1542,12 @@ def parse_article(
         and content_type == ContentType.GALLERY
         and soup.select_one(".slideshow-article")
         and sum(image.should_archive for image in images) < 3
+    ):
+        warnings.append("incomplete-gallery")
+    if (
+        caixin_legacy_gallery_selected
+        and _caixin_legacy_gallery_expected_images(soup)
+        > sum(image.should_archive for image in images)
     ):
         warnings.append("incomplete-gallery")
     if (
@@ -2748,6 +2994,293 @@ def _select_body(soup: BeautifulSoup, spec: PublisherSpec) -> Tag | None:
     return None
 
 
+def _scmp_apollo_body(soup: BeautifulSoup) -> Tag | None:
+    """Render article paragraphs retained in SCMP's Apollo state cache.
+
+    Around 2016--2021 SCMP captures often contain a complete ``body`` JSON
+    tree in ``window.__APOLLO_STATE__`` but no server-rendered article node.
+    Ads and recommendation rows are intentionally ignored; the raw capture
+    remains available for any future structured-field expansion.
+    """
+
+    decoder = json.JSONDecoder()
+    body_arrays: list[list[Any]] = []
+    apollo_images: list[dict[str, Any]] = []
+    for script in soup.find_all("script"):
+        value = script.string or script.get_text()
+        if "__APOLLO_STATE__" not in value or "body(" not in value:
+            continue
+        for match in re.finditer(
+            r"window\.__APOLLO_STATE__\s*=\s*(?=\{)",
+            value,
+        ):
+            try:
+                payload, _ = decoder.raw_decode(value[match.end() :])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            for key, node in _scmp_apollo_walk_items(payload):
+                key_text = str(key)
+                if not key_text.startswith("body("):
+                    if key == "images" and isinstance(node, list):
+                        apollo_images.extend(
+                            item
+                            for item in node
+                            if isinstance(item, dict)
+                            and _string_or_none(item.get("url"))
+                        )
+                    elif re.search(r"\.images\.\d+$", key_text) and isinstance(
+                        node, dict
+                    ):
+                        if _string_or_none(node.get("url")):
+                            apollo_images.append(node)
+                    continue
+                if isinstance(node, dict):
+                    body_json = node.get("json")
+                    if isinstance(body_json, list):
+                        body_arrays.append(body_json)
+    if not body_arrays:
+        return None
+
+    document = BeautifulSoup(
+        "<article data-jojo-source='scmp-apollo-body'></article>",
+        "html.parser",
+    )
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+
+    def append_value(parent: Tag, value: Any) -> None:
+        if isinstance(value, str):
+            parent.append(value)
+            return
+        if isinstance(value, list):
+            for child in value:
+                append_value(parent, child)
+            return
+        if not isinstance(value, dict):
+            return
+        node_type = _string_or_none(value.get("type"))
+        if node_type == "text":
+            append_value(parent, value.get("data"))
+            return
+        if node_type in {"ad", "ad2", "newsletter", "more-on-this"} or (
+            node_type and node_type.startswith("outstream")
+        ):
+            return
+        if node_type in {"image", "img", "photo"}:
+            source = _first_text(
+                _string_or_none(value.get("url")),
+                _string_or_none(value.get("src")),
+                _string_or_none(value.get("imageUrl")),
+            )
+            if source:
+                figure = document.new_tag("figure")
+                image = document.new_tag("img", src=source)
+                figure.append(image)
+                caption = _first_text(
+                    _string_or_none(value.get("caption")),
+                    _string_or_none(value.get("alt")),
+                )
+                if caption:
+                    figcaption = document.new_tag("figcaption")
+                    figcaption.string = caption
+                    figure.append(figcaption)
+                parent.append(figure)
+            return
+        tag_name = {
+            "paragraph": "p",
+            "heading": "h2",
+            "quote": "blockquote",
+            "list": "ul",
+            "list-item": "li",
+        }.get(node_type or "", node_type or "")
+        if tag_name not in {"p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "ul", "ol", "li", "table", "tr", "td", "th"}:
+            tag_name = "span"
+        element = document.new_tag(tag_name)
+        append_value(element, value.get("children", value.get("content")))
+        if element.get_text(" ", strip=True) or element.find("img"):
+            parent.append(element)
+
+    for body_json in body_arrays:
+        for node in body_json:
+            append_value(article, node)
+    # SCMP's Apollo body tree often omits inline photos even though the
+    # article object retains them in its direct ``images`` list.  The cache
+    # also contains queue/more-on-this images; those are not part of the
+    # article and were previously appended as body media.  When Apollo gives
+    # us normalized ``content(...).images`` references, keep only those
+    # article-scoped images.  Older fixtures expose an unscoped list, for
+    # which retaining everything after the cover preserves the legacy path.
+    scoped_article_images = [
+        item for item in apollo_images
+        if _scmp_apollo_article_image(item)
+    ]
+    selected_images = (
+        scoped_article_images
+        if scoped_article_images
+        else apollo_images[1:]
+    )
+    seen_images: set[str] = set()
+    for item in selected_images:
+        source = _string_or_none(item.get("url"))
+        if not source:
+            continue
+        identity = _image_identity(source)
+        if identity in seen_images:
+            continue
+        seen_images.add(identity)
+        figure = document.new_tag("figure")
+        figure.append(document.new_tag("img", src=source))
+        title = _string_or_none(item.get("title"))
+        caption = (
+            _clean_text(BeautifulSoup(title, "html.parser").get_text(" ", strip=True))
+            if title
+            else None
+        )
+        if caption:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = caption
+            figure.append(figcaption)
+        article.append(figure)
+    return article if article.get_text(" ", strip=True) or article.find("img") else None
+
+
+def _scmp_apollo_article_image(item: dict[str, Any]) -> bool:
+    """Identify images referenced by the current Apollo article object."""
+
+    pending: list[Any] = [item]
+    has_article_reference = False
+    has_related_reference = False
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            for key, child in value.items():
+                for text in (
+                    key if isinstance(key, str) else "",
+                    child if isinstance(child, str) else "",
+                ):
+                    if ".content(" in text:
+                        has_article_reference = True
+                    if ".moreOnThisArticles" in text:
+                        has_related_reference = True
+                if isinstance(child, (dict, list)):
+                    pending.append(child)
+        elif isinstance(value, list):
+            pending.extend(value)
+    return has_article_reference and not has_related_reference
+
+
+def _scmp_apollo_walk_items(value: Any) -> Iterable[tuple[Any, Any]]:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield key, child
+            yield from _scmp_apollo_walk_items(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _scmp_apollo_walk_items(child)
+
+
+def _nikkei_legacy_article_body(
+    soup: BeautifulSoup,
+    *,
+    selected_body: Tag | None,
+) -> Tag | None:
+    """Join split legacy print-story paragraphs and their inline photos."""
+
+    legacy_nodes = [
+        node
+        for node in soup.select(".cmn-article_text")
+        if isinstance(node, Tag)
+        and not any(
+            isinstance(parent, Tag)
+            and "cmn-article_text" in (parent.get("class") or [])
+            for parent in node.parents
+        )
+    ]
+    groups: dict[int, tuple[Tag, list[Tag]]] = {}
+    for node in legacy_nodes:
+        parent = node.parent
+        if not isinstance(parent, Tag):
+            continue
+        group = groups.setdefault(id(parent), (parent, []))[1]
+        group.append(node)
+
+    candidates = [group for group in groups.values() if len(group[1]) >= 2]
+    if not candidates:
+        return None
+
+    selected_group = next(
+        (
+            group
+            for group in candidates
+            if selected_body is not None
+            and any(node is selected_body for node in group[1])
+        ),
+        None,
+    )
+    if selected_group is None:
+        if selected_body is not None and all(
+            any(node is descendant for descendant in selected_body.descendants)
+            for _, nodes in candidates
+            for node in nodes
+        ):
+            return None
+        selected_group = max(
+            candidates,
+            key=lambda group: sum(
+                len(_clean_text(node.get_text(" ", strip=True)))
+                for node in group[1]
+            ),
+        )
+
+    parent, nodes = selected_group
+    direct_children = [
+        child for child in parent.children if isinstance(child, Tag)
+    ]
+    node_ids = {id(node) for node in nodes}
+    text_positions = [
+        index
+        for index, child in enumerate(direct_children)
+        if id(child) in node_ids
+    ]
+    if len(text_positions) < 2:
+        return None
+
+    document = BeautifulSoup(
+        "<article data-jojo-source='nikkei-legacy-split-body'></article>",
+        "html.parser",
+    )
+    wrapper = document.select_one("article")
+    if not isinstance(wrapper, Tag):
+        return None
+
+    first_text = text_positions[0]
+    last_text = text_positions[-1]
+    for index, child in enumerate(direct_children):
+        if id(child) in node_ids:
+            wrapper.append(copy.deepcopy(child))
+            continue
+        if not first_text < index < last_text:
+            continue
+        if any(
+            urls
+            and any(
+                not _nikkei_non_editorial_image_url(url)
+                for url in urls
+            )
+            for image in child.select("img")
+            if (
+                urls := _image_urls(
+                    image,
+                    base_url="https://www.nikkei.com/",
+                )
+            )
+        ):
+            wrapper.append(copy.deepcopy(child))
+
+    return wrapper if wrapper.get_text(" ", strip=True) else None
+
+
 def _nyt_story_body_companions(soup: BeautifulSoup) -> Tag | None:
     nodes = [
         node
@@ -3185,6 +3718,7 @@ def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
         story_text = _clean_text(story.get_text(" ", strip=True))
         if len(story_sections) >= 2 and len(story_text) >= 400:
             return story
+    candidates: list[Tag] = []
     for selector in (
         ".g-story.g-freebird",
         ".interactive-graphic",
@@ -3207,12 +3741,23 @@ def _nyt_interactive_body(soup: BeautifulSoup) -> Tag | None:
             ):
                 quiz_body = _nyt_interactive_quiz_body(candidate)
                 if quiz_body is not None:
-                    return quiz_body
+                    candidates.append(quiz_body)
+                    continue
                 div_body = _nyt_div_only_interactive_body(candidate)
                 if div_body is not None:
-                    return div_body
-                return candidate
-    return None
+                    candidates.append(div_body)
+                    continue
+                candidates.append(candidate)
+    if not candidates:
+        return None
+    # Modern interactive pages can contain a short navigation/result panel
+    # followed by the real article body.  Selecting the first matching
+    # ``.interactive-body`` silently collapses the prose to the short panel;
+    # retain the most substantive rendered body instead.
+    return max(
+        candidates,
+        key=lambda candidate: len(candidate.get_text(" ", strip=True)),
+    )
 
 
 def _nyt_escaped_legacy_interactive_body(
@@ -3782,6 +4327,26 @@ def _wsj_subscription_truncation(
     """Reject metered WSJ previews while retaining substantial recovered copy."""
     if content_type != ContentType.ARTICLE:
         return False
+    # WSJ's snippet template is also used for short, complete items such as
+    # Letters.  Those pages retain the generic membership overlay even when
+    # the extracted body reaches the publisher-declared word count.  Check
+    # that explicit completeness signal before treating the overlay as a
+    # truncation marker; a real preview with a larger declared count still
+    # falls through to the existing deficit checks below.
+    declared_word_count = _wsj_declared_word_count(soup)
+    extracted_word_count = len(
+        re.findall(
+            r"[A-Za-z0-9]+(?:['’.-][A-Za-z0-9]+)*",
+            plain_text,
+        )
+    )
+    declared_copy_is_complete = bool(
+        declared_word_count is not None
+        and extracted_word_count >= max(
+            1,
+            int(declared_word_count * 0.85),
+        )
+    )
     if soup.select_one("[class*='ArticleRoadblock' i]") or any(
         _clean_text(node.get_text(" ", strip=True))
         .casefold()
@@ -3805,22 +4370,11 @@ def _wsj_subscription_truncation(
         # preview paragraphs before an explicit membership overlay. Their
         # extracted text may exceed the generic 1,000-character safety
         # threshold even though the article ends at the paywall.
-        return True
+        return not declared_copy_is_complete
     if len(plain_text) >= 1_000:
         return False
-    declared_word_count = _wsj_declared_word_count(soup)
-    extracted_word_count = len(
-        re.findall(
-            r"[A-Za-z0-9]+(?:['’.-][A-Za-z0-9]+)*",
-            plain_text,
-        )
-    )
     if (
-        declared_word_count is not None
-        and extracted_word_count >= max(
-            1,
-            int(declared_word_count * 0.85),
-        )
+        declared_copy_is_complete
     ):
         return False
     if (
@@ -3879,14 +4433,35 @@ def _wsj_declared_word_count(soup: BeautifulSoup) -> int | None:
 def _wsj_unsupported_media_gallery(soup: BeautifulSoup) -> Tag | None:
     """Recover the synopsis when an old slideshow app cannot be replayed."""
     shell = soup.select_one(".wsj-snippet-body, .wsj-snippet-login")
-    if not isinstance(shell, Tag):
-        return None
-    shell_text = shell.get_text(" ", strip=True).casefold()
-    if (
-        "media that is not currently supported" not in shell_text
-        or soup.select_one(".slideshow-article") is None
-    ):
-        return None
+    if isinstance(shell, Tag):
+        shell_text = shell.get_text(" ", strip=True).casefold()
+        if (
+            "media that is not currently supported" not in shell_text
+            or soup.select_one(".slideshow-article") is None
+        ):
+            return None
+    else:
+        # Infini-News sometimes materializes an old WSJ photo story as a tiny
+        # derived document.  It has no replayable slide payload and its body
+        # consists solely of the explicit unsupported-media notice followed by
+        # subscription/navigation chrome.  Returning an empty article keeps
+        # the record as a gallery shell while preventing interface prose from
+        # entering the canonical body.
+        derived = soup.select_one(
+            "article[data-jojo-representation='derived-infini-news']"
+        )
+        if not isinstance(derived, Tag):
+            return None
+        derived_text = derived.get_text(" ", strip=True).casefold()
+        if (
+            "article not supported" not in derived_text
+            or "media that is not currently supported" not in derived_text
+            or "to read the full story" not in derived_text
+        ):
+            return None
+        document = BeautifulSoup("<article></article>", "html.parser")
+        article = document.article
+        return article if isinstance(article, Tag) else None
     description = _first_text(
         _meta_content(soup, "name", "description"),
         _meta_content(soup, "property", "og:description"),
@@ -4535,7 +5110,66 @@ def _string_list(value: Any) -> list[str]:
 def _nyt_preloaded_state(soup: BeautifulSoup) -> dict[str, Any]:
     payload = _nyt_preloaded_payload(soup)
     state = payload.get("initialState")
-    return state if isinstance(state, dict) else {}
+    if isinstance(state, dict) and state:
+        return state
+
+    # Newer NYT Oak pages serialize the GraphQL result under
+    # ``initialData.data.article`` while leaving ``initialState`` empty.  The
+    # older parser helpers intentionally operate on a normalized reference
+    # map, so index the nested GraphQL objects and expose the sprinkled body
+    # blocks under the same key shape used by the legacy payload.
+    initial_data = payload.get("initialData")
+    article = (
+        initial_data.get("data", {}).get("article")
+        if isinstance(initial_data, dict)
+        and isinstance(initial_data.get("data"), dict)
+        else None
+    )
+    if not isinstance(article, dict):
+        return {}
+    normalized: dict[str, Any] = {}
+
+    def index(value: Any) -> None:
+        if isinstance(value, list):
+            for child in value:
+                index(child)
+            return
+        if not isinstance(value, dict):
+            return
+        identifier = value.get("id")
+        if isinstance(identifier, str):
+            normalized[identifier] = value
+        for child in value.values():
+            index(child)
+
+    index(article)
+    article_id = article.get("id")
+    if isinstance(article_id, str):
+        normalized[article_id] = article
+    sprinkled = article.get("sprinkledBody")
+    content = sprinkled.get("content") if isinstance(sprinkled, dict) else None
+    if isinstance(article_id, str) and isinstance(content, list):
+        for index_value, block in enumerate(content):
+            if isinstance(block, dict):
+                block_path = (
+                    f"{article_id}.sprinkledBody.content.{index_value}"
+                )
+
+                def index_block(value: Any, path: str) -> None:
+                    if isinstance(value, list):
+                        for child_index, child in enumerate(value):
+                            index_block(child, f"{path}.{child_index}")
+                        return
+                    if not isinstance(value, dict):
+                        return
+                    if "__typename" in value:
+                        normalized[path] = value
+                    for key, child in value.items():
+                        if isinstance(child, (dict, list)):
+                            index_block(child, f"{path}.{key}")
+
+                index_block(block, block_path)
+    return normalized
 
 
 def _nyt_preloaded_payload(soup: BeautifulSoup) -> dict[str, Any]:
@@ -4778,6 +5412,44 @@ def _nyt_should_select_gallery_body(
         len(substantive) < 2
         or sum(len(text) for text in substantive) < 300
     )
+
+
+def _nyt_image_led_editorial(
+    soup: BeautifulSoup,
+    *,
+    body: BeautifulSoup,
+    canonical_url: str,
+) -> bool:
+    """Recognize short NYT visual features whose figures are the body.
+
+    These pages are ordinary ``ARTICLE`` records rather than NYT galleries:
+    the HTML contains a short dek followed by figure/caption blocks.  Keep
+    the rule deliberately narrow so an unhydrated interactive shell cannot
+    satisfy the short-body exemption.
+    """
+    if "/interactive/" in canonical_url.casefold():
+        return False
+    article_body = body.select_one(
+        "[name='articleBody'], section[name='articleBody'], article"
+    )
+    if not isinstance(article_body, Tag):
+        article_body = soup.select_one(
+            "[name='articleBody'], section[name='articleBody'], article"
+        )
+    if not isinstance(article_body, Tag):
+        return False
+    figures = article_body.select("figure")
+    if not figures:
+        return False
+    captions = [
+        _clean_text(caption.get_text(" ", strip=True))
+        for caption in article_body.select("figure figcaption")
+    ]
+    caption_characters = sum(len(value) for value in captions)
+    has_media = article_body.select_one(
+        "figure img[src], figure source[srcset], figure [data-testid='lazy-image']"
+    ) is not None
+    return has_media and caption_characters >= 60
 
 
 def _nyt_legacy_slideshow_json_rows(
@@ -6095,7 +6767,14 @@ def _nyt_preloaded_article_body(
     )
     if not isinstance(target, dict):
         return None
-    body = _nyt_state_reference(state, target.get("body"))
+    # Legacy pages expose the article body as ``body`` while older Oak
+    # payloads use the richer ``sprinkledBody`` field.  The latter is often
+    # an inline document rather than a reference, so preserve it as a
+    # fallback when ``body`` is absent.
+    body = _nyt_state_reference(
+        state,
+        target.get("body") or target.get("sprinkledBody"),
+    )
     if body is None:
         return None
     references = next(
@@ -6162,6 +6841,71 @@ def _nyt_preloaded_article_body(
         paragraph.string = text
         article.append(paragraph)
     return article
+
+
+def _nyt_preloaded_embedded_interactive_body(
+    soup: BeautifulSoup,
+) -> Tag | None:
+    """Recover Oak embedded interactives serialized only in GraphQL state."""
+    state = _nyt_preloaded_state(soup)
+    html_values = [
+        value.get("html")
+        for value in state.values()
+        if isinstance(value, dict)
+        and value.get("__typename") == "EmbeddedInteractive"
+        and isinstance(value.get("html"), str)
+    ]
+    if not html_values:
+        return None
+    document = BeautifulSoup("<article></article>", "html.parser")
+    article = document.article
+    if not isinstance(article, Tag):
+        return None
+    seen_urls: set[str] = set()
+    for raw_html in html_values:
+        fragment = BeautifulSoup(raw_html, "html.parser")
+        fragment_root = fragment.body or fragment
+        text = _clean_text(fragment_root.get_text(" ", strip=True))
+        image_urls: list[str] = []
+        for match in re.finditer(
+            r"(?i)(?:https?:)?//(?:graphics\d*|static\d*)"
+            r"\.(?:nytimes|nyt)\.com/[^\"'<>\s]+?"
+            r"\.(?:jpe?g|png|gif)(?:\?[^\"'<>\s]*)?",
+            raw_html.replace("\\/", "/"),
+        ):
+            url = match.group(0)
+            if url.startswith("//"):
+                url = f"https:{url}"
+            identity = _image_identity(url)
+            if identity in seen_urls:
+                continue
+            seen_urls.add(identity)
+            image_urls.append(url)
+        if not text and not image_urls:
+            continue
+        wrapper = document.new_tag("div")
+        wrapper["data-jojo-embedded-interactive"] = "true"
+        for child in list(fragment_root.contents):
+            wrapper.append(child)
+        article.append(wrapper)
+        captions = [
+            _tag_text(node)
+            for node in fragment.select("figcaption")
+            if _tag_text(node)
+        ]
+        for index, url in enumerate(image_urls):
+            figure = document.new_tag("figure")
+            image = document.new_tag("img")
+            image["src"] = url
+            if index < len(captions):
+                image["alt"] = captions[index]
+            figure.append(image)
+            if index < len(captions):
+                caption = document.new_tag("figcaption")
+                caption.string = captions[index]
+                figure.append(caption)
+            article.append(figure)
+    return article if article.select_one("p, figure, img, iframe") else None
 
 
 def _nyt_preloaded_article_metadata(
@@ -6281,6 +7025,16 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
         for child in list((parsed.body or parsed).children):
             article.append(child)
 
+    # Axios quote cards store the quote in ``blockquote`` and its complete
+    # editorial attribution in an adjacent ``cite`` element. The generic
+    # block extractor intentionally does not treat every page-level citation
+    # as prose, so normalize only this publisher-owned structured body shape
+    # into a paragraph. Otherwise a complete short quote card is measured
+    # from the quote alone and incorrectly classified as truncated.
+    for attribution in article.select("blockquote + cite"):
+        attribution.name = "p"
+        attribution["data-jojo-role"] = "quote-attribution"
+
     structured_blocks = story.get("blocks", {}).get("blocks", [])
     if not isinstance(structured_blocks, list):
         structured_blocks = []
@@ -6293,11 +7047,17 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
             article.append(child)
 
     existing_text = _clean_text(article.get_text(" ", strip=True)).casefold()
+    existing_tokens = _axios_text_tokens(existing_text)
     existing_images = {
         _string_or_none(node.get("src"))
         for node in article.select("img[src]")
     }
     existing_images.discard(None)
+    existing_embeds = {
+        _string_or_none(node.get("src"))
+        for node in article.select("iframe[src]")
+    }
+    existing_embeds.discard(None)
     has_rendered_text = bool(existing_text)
 
     for block in structured_blocks:
@@ -6338,11 +7098,25 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
                 if embed_html
                 else ""
             )
+            embed_sources = (
+                {
+                    _string_or_none(node.get("src"))
+                    for node in BeautifulSoup(
+                        embed_html, "html.parser"
+                    ).select("iframe[src]")
+                }
+                if embed_html
+                else set()
+            )
+            embed_sources.discard(None)
+            if embed_sources and embed_sources.issubset(existing_embeds):
+                continue
             if embed_html and (
                 not embed_text
                 or embed_text.casefold() not in existing_text
             ):
                 append_fragment(embed_html)
+                existing_embeds.update(embed_sources)
                 existing_text = _clean_text(
                     article.get_text(" ", strip=True)
                 ).casefold()
@@ -6352,7 +7126,12 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
                     article.append(document.new_tag("iframe", src=source))
             continue
 
-        if text and (not has_rendered_text or text.casefold() not in existing_text):
+        block_tokens = _axios_text_tokens(text)
+        if text and (
+            not has_rendered_text
+            or not block_tokens
+            or block_tokens not in existing_tokens
+        ):
             tag_name = (
                 "blockquote"
                 if "quote" in block_type
@@ -6366,12 +7145,185 @@ def _axios_next_story_body(story: dict[str, Any]) -> Tag | None:
             node.string = text
             article.append(node)
             existing_text = f"{existing_text} {text.casefold()}".strip()
+            existing_tokens = _axios_text_tokens(existing_text)
+
+    image_only = _axios_image_only_story(story)
+    if image_only is not None and not article.select_one("img[src]"):
+        source, alt, caption = image_only
+        figure = document.new_tag("figure")
+        image = document.new_tag("img", src=source)
+        if alt:
+            image["alt"] = alt
+        figure.append(image)
+        if caption:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = caption
+            figure.append(figcaption)
+        article.append(figure)
 
     if article.select_one(
         "p, h2, h3, h4, h5, h6, blockquote, li, table, iframe, img[src]"
     ):
         return article
     return None
+
+
+def _axios_text_tokens(value: str) -> str:
+    """Normalize rendered and Draft.js text for containment comparisons."""
+
+    return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def _remove_axios_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove publisher recirculation labels embedded in Axios story HTML."""
+
+    for text_node in list(soup.find_all(string=True)):
+        if (
+            isinstance(text_node, NavigableString)
+            and _clean_text(str(text_node)).casefold() == "go deeper"
+        ):
+            text_node.extract()
+    for node in list(soup.select("p, li, h2, h3, h4, h5, h6")):
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        # Older Axios Draft.js exports split the linked word ``here`` at the
+        # anchor boundary (``h`` + ``ere``).  This leaves a newsletter/site
+        # navigation CTA in the normalized prose unless the two forms are
+        # compared after repairing that presentation artifact.
+        compact_interface_text = re.sub(r"\bh\s+ere\b", "here", text)
+        newsletter_signup = node.select_one(
+            "a[href*='link.axios.com/join/'], a[href*='/newsletter-signup']"
+        )
+        if (
+            text.startswith("sign up for our axios ")
+            and " newsletter" in text
+        ) or (
+            re.match(r"^sign up for (?:the )?axios\b", text) is not None
+            and " newsletter" in text
+        ) or (
+            re.match(r"^sign up for (?:the )?(?:new )?axios\b", text)
+            is not None
+            and " newsletter" in text
+        ) or (
+            text.startswith("subscribe to the axios ")
+            and " newsletter" in text
+        ) or text.startswith("subscribe to axios ") or (
+            text.startswith("sign up for ")
+            and " newsletter" in text
+            and (
+                newsletter_signup is not None
+                or re.fullmatch(
+                    r"sign up for the daily [a-z0-9&'’ .-]+ "
+                    r"financial newsletter here\s*\.?",
+                    text,
+                )
+                is not None
+            )
+        ) or (
+            text.startswith("subscribe to ")
+            and " podcast" in text
+        ) or re.fullmatch(
+            r"subscribe to our youtube(?: channel)?\s*[.!]?", text
+        ) or compact_interface_text in {
+            "subscribe to our newsletters here and check out our news stream here.",
+            "subscribe to our newsletters here and check out our news stream here",
+        }:
+            node.decompose()
+            continue
+        if text not in {
+            "read more",
+            "read more:",
+            "go deeper",
+            "go deeper:",
+            "more from axios",
+            "more from axios:",
+        } and not text.startswith("go deeper:"):
+            continue
+        following = node.find_next_sibling()
+        if (
+            text in {"read more", "read more:", "go deeper", "go deeper:"}
+            and isinstance(following, Tag)
+            and following.name in {"ul", "ol"}
+        ):
+            following.decompose()
+        node.decompose()
+    for listing in list(soup.select("ul, ol")):
+        items = [
+            _clean_text(item.get_text(" ", strip=True)).casefold()
+            for item in listing.select(":scope > li")
+        ]
+        if items and all(
+            item.startswith("go deeper:")
+            or (
+                item.startswith("subscribe to ")
+                and " podcast" in item
+            )
+            for item in items
+        ):
+            listing.decompose()
+
+
+def _axios_image_only_story(
+    story: dict[str, Any] | None,
+) -> tuple[str, str | None, str | None] | None:
+    """Return publisher-authored media for a proven image-only Axios item."""
+
+    if not isinstance(story, dict) or _axios_empty_newsletter_story(story):
+        return None
+    try:
+        wordcount = int(story.get("wordcount"))
+    except (TypeError, ValueError):
+        return None
+    blocks = story.get("blocks")
+    values = blocks.get("blocks") if isinstance(blocks, dict) else None
+    if wordcount != 0 or values != []:
+        return None
+    body_html = story.get("bodyHtml")
+    fragments = (
+        [body_html]
+        if isinstance(body_html, str)
+        else [
+            value
+            for value in body_html.values()
+            if isinstance(value, str)
+        ]
+        if isinstance(body_html, dict)
+        else []
+    )
+    if _clean_text(
+        BeautifulSoup("".join(fragments), "html.parser").get_text(
+            " ", strip=True
+        )
+    ):
+        return None
+    primary = story.get("primary_image")
+    if not isinstance(primary, dict):
+        return None
+    source = _string_or_none(primary.get("base_image_url"))
+    if source is None:
+        crops = primary.get("crops")
+        if isinstance(crops, dict):
+            preferred = crops.get("16x9") or next(iter(crops.values()), None)
+            if isinstance(preferred, dict):
+                source = _string_or_none(preferred.get("url"))
+    if source is None or not source.startswith(("http://", "https://")):
+        return None
+    alt = _string_or_none(primary.get("alt_text"))
+    caption_data = primary.get("caption")
+    caption_blocks = (
+        caption_data.get("blocks") if isinstance(caption_data, dict) else None
+    )
+    caption = (
+        _clean_text(
+            " ".join(
+                str(block.get("text") or "")
+                for block in caption_blocks
+                if isinstance(block, dict)
+            )
+        )
+        if isinstance(caption_blocks, list)
+        else None
+    )
+    return source, alt, caption or None
 
 
 def _axios_empty_newsletter_story(story: dict[str, Any] | None) -> bool:
@@ -6477,6 +7429,8 @@ def _axios_next_story_content_type(
         story
     ):
         return ContentType.NEWSLETTER
+    if _axios_image_only_story(story) is not None:
+        return ContentType.GALLERY
     if not isinstance(story, dict):
         return None
     blocks = story.get("blocks")
@@ -6807,7 +7761,48 @@ def _npr_legacy_flash_interactive_body(
     *,
     canonical_url: str,
 ) -> Tag | None:
-    """Normalize NPR Music's pre-HTML5 Flash interactive packages."""
+    """Normalize NPR's pre-HTML5 Flash interactive and live-video pages."""
+    story = soup.select_one("#storytext")
+    supplemental = soup.select_one(
+        "#supplementarycontent .bucketwrap.statichtml"
+    )
+    legacy_embed = (
+        supplemental.select_one("object embed[src], embed[src]")
+        if isinstance(supplemental, Tag)
+        else None
+    )
+    story_characters = len(
+        _clean_text(story.get_text(" ", strip=True))
+        if isinstance(story, Tag)
+        else ""
+    )
+    if (
+        isinstance(story, Tag)
+        and isinstance(legacy_embed, Tag)
+        and 20 <= story_characters <= 500
+    ):
+        swf_url = _normalized_url(
+            str(legacy_embed.get("src") or ""),
+            base_url=canonical_url,
+        )
+        if swf_url:
+            document = BeautifulSoup(
+                "<article data-jojo-source='npr-legacy-flash-video'></article>",
+                "html.parser",
+            )
+            article = document.article
+            if isinstance(article, Tag):
+                for child in list(story.contents):
+                    copy = BeautifulSoup(str(child), "html.parser").find()
+                    if isinstance(copy, Tag):
+                        article.append(copy)
+                iframe = document.new_tag("iframe")
+                iframe["src"] = swf_url
+                iframe["title"] = "Archived NPR live video"
+                iframe["data-interactive-provider"] = "npr-flash-video"
+                article.append(iframe)
+                return article
+
     body_classes = (
         {
             str(value).casefold()
@@ -7067,6 +8062,19 @@ def _npr_non_editorial_image_url(url: str) -> bool:
         "/chrome/news/nprlogo" in path
         or "/chrome/news/pbs_logo" in path
         or "/images/zag.gif" in path
+        or "/include/images/facebook-default-wide" in path
+        or "/chrome/news/video_generic_" in path
+        or "/music/calendar/concert_calendar_" in path
+        # Life Kit playlist artwork is a product/UI icon, not an image from
+        # the story itself.  NPR occasionally exposes it through the article
+        # image metadata (for example the 2024 "Boring Phone" story), where
+        # the generic asset filters above cannot distinguish it from editorial
+        # photography.
+        or (
+            "lifekit" in path
+            and "playlist" in path
+            and "icon" in path
+        )
     )
 
 
@@ -7093,12 +8101,143 @@ def _remove_npr_body_chrome(soup: BeautifulSoup) -> None:
         )
     ):
         node.decompose()
+    # NPR's 2010-era story wrapper nests player menus, embed-code dialogs,
+    # podcast subscription buttons and retailer forms alongside the prose.
+    # Preserve editorial audio/book copy, but never serialize browser controls
+    # into the canonical article body.
+    for node in list(
+        soup.select(
+            ".audio-module-tools, .audio-embed-overlay, .audiotools, "
+            "li.subscribe, .bucketwrap.ecommerce, .ecommerce, .ecomm_body, "
+            "form, button, input"
+        )
+    ):
+        node.decompose()
+    for add_control in list(
+        soup.select("a[href*='NPR.Player.Action.ADD_TO_PLAYLIST']")
+    ):
+        # Some 2010 templates omit the ``audiotools`` class.  Their otherwise
+        # anonymous list contains only Add/Download/Transcript player actions.
+        tool_list = add_control.find_parent("ul")
+        if isinstance(tool_list, Tag):
+            tool_list.decompose()
+        else:
+            add_control.decompose()
+    # Older NPR story wrappers place podcast subscription links in list items
+    # (and, in a few captures, an otherwise empty div) rather than paragraphs.
+    # Inspect those leaf-like containers too so interface CTAs cannot survive
+    # into the canonical article body.
+    for node in list(soup.select("p, li, span, div, h3, a")):
+        text = _clean_text(node.get_text(" ", strip=True)).casefold()
+        if text == "read more" or (
+            text == "read more:"
+            and not (
+                node.name in {"h3", "strong"}
+                and node.find_parent(class_="container") is not None
+            )
+        ) or (
+            node.name in {"p", "li", "span"}
+            and text.startswith("copyright ©")
+            and "npr. all rights reserved" in text
+        ) or text.startswith(
+            "listen to yesterday's song of the day"
+        ) or (
+            text.startswith("sign up for the all songs considered newsletter")
+            and "new music features" in text
+        ) or text.startswith(
+            "register with the npr.org community"
+        ) or text.startswith(
+            "contact us with your questions and comments"
+        ) or text.startswith(
+            "all rights reserved. no part of this excerpt may be reproduced"
+        ) or (
+            node.name in {"p", "li", "span"}
+            and
+            text.startswith(
+                "npr transcripts are created on a rush deadline by verb8tm"
+            )
+            and "authoritative record of npr" in text
+        ) or text.startswith(
+            "sign up for our limited-run newsletter to receive more tips on sleep"
+        ) or re.fullmatch(
+            r"sign up for the dry january newsletter series here\b.*",
+            text,
+        ) or text == "terms and conditions may apply" or re.fullmatch(
+            r"subscribe to (?:the )?.+ podcast\s*[.!?]?",
+            text,
+        ) or (
+            text.startswith("subscribe to our show on ")
+            and ("podcast" in text or "npr one" in text)
+        ) or re.fullmatch(
+            r"subscribe to (?:the )?npr(?: .+)? newsletter\s*[.!?]?",
+            text,
+        ) or re.fullmatch(
+            r"subscribe to (?:the )?(?:newsletter|podcast)\b.*",
+            text,
+        ) or re.fullmatch(
+            r"subscribe to (?:the |our )?newsletter\b.*",
+            text,
+        ) or re.fullmatch(
+            r"subscribe to (?:the |our )?.*?\bpodcast"
+            r"(?:\s+here)?\s*[.!?]?",
+            text,
+        ) or (
+            text.startswith("subscribe to the podcast")
+            and any(
+                marker in text
+                for marker in (
+                    "like us on facebook",
+                    "follow us on twitter",
+                    "sign up to our newsletter",
+                )
+            )
+        ) or re.fullmatch(
+            r"sign up for (?:the )?.+\bchallenge\b.*",
+            text,
+        ) or re.fullmatch(
+            r"sign up for the newsletter\b.*\bsubscribe here\s*[.!?]?",
+            text,
+        ) or re.fullmatch(
+            r"sign up for (?:our|the) newsletter(?: here)?\s*[.!?]?",
+            text,
+        ) or re.fullmatch(
+            r"sign up for the planet money newsletter\b.*",
+            text,
+        ) or re.fullmatch(
+            r"subscribe to the life kit newsletter\b.*",
+            text,
+        ) or re.fullmatch(
+            r"sign up for the pod club newsletter\b.*",
+            text,
+        ) or (
+            text.startswith("sign up for our ")
+            and " newsletter" in text
+            and "share it with a friend" in text
+        ):
+            node.decompose()
+    # A modern NPR audio-story template can place a bare ``RELATED`` marker
+    # inside ``#storytext`` followed by a related-program card and the show's
+    # subscription/music chrome.  It has no class or heading hook, so the
+    # generic container cleanup above cannot see it.  Once this exact marker
+    # appears in the story body, everything after it is presentation chrome,
+    # not part of the article transcript.
+    for marker in list(soup.select("#storytext > p")):
+        if _clean_text(marker.get_text(" ", strip=True)).casefold() != "related":
+            continue
+        for sibling in list(marker.find_next_siblings()):
+            sibling.decompose()
+        marker.decompose()
     for container in list(soup.select(".container")):
         header = container.select_one(":scope > .conheader")
         header_text = _clean_text(
             header.get_text(" ", strip=True) if header is not None else ""
         ).casefold()
-        if header_text in {"read more:", "related npr stories"}:
+        if header_text in {
+            "read more",
+            "read more:",
+            "related stories",
+            "related npr stories",
+        }:
             container.decompose()
 
 
@@ -7257,6 +8396,19 @@ def _npr_story_audio_url(
     return None
 
 
+def _nyt_has_interactive_metadata(soup: BeautifulSoup) -> bool:
+    metadata = " ".join(
+        value
+        for value in (
+            _meta_content(soup, "name", "typ"),
+            _meta_content(soup, "name", "template"),
+            _tag_attribute(soup.select_one("html[class]"), "class"),
+        )
+        if value
+    )
+    return "interactive" in metadata.casefold()
+
+
 def _nyt_media_content_type(
     soup: BeautifulSoup,
     *,
@@ -7266,6 +8418,32 @@ def _nyt_media_content_type(
 ) -> ContentType:
     if structured_image_gallery_selected:
         return ContentType.GALLERY
+    if _nyt_has_interactive_metadata(soup):
+        return ContentType.INTERACTIVE
+    # A subset of NYT Books Review visual essays is intentionally a single
+    # illustration with a credit line.  The archived shell has no prose
+    # article body, but its structured description and lead image are the
+    # complete editorial record; classify it as a gallery instead of marking
+    # the parser partial.
+    if "/books/review/" in canonical_url.casefold():
+        description = _first_text(
+            _meta_content(soup, "name", "description"),
+            _meta_content(soup, "property", "og:description"),
+        )
+        article_body = soup.select_one(
+            "section[name='articleBody'], .meteredContent"
+        )
+        body_text = (
+            _clean_text(article_body.get_text(" ", strip=True))
+            if isinstance(article_body, Tag)
+            else ""
+        )
+        if (
+            description
+            and len(body_text) < 100
+            and soup.select_one("meta[property='og:image']")
+        ):
+            return ContentType.GALLERY
     if (
         soup.find(
             string=lambda value: isinstance(value, Comment)
@@ -7564,6 +8742,23 @@ def _is_structured_short_record(
             and page_text.count("axios on facebook") >= 2
             and "go deeper" in page_text
             and not re.search(r"(?:\.\.\.|…)\s*$", plain_text)
+        )
+    if spec.publisher == "caixin":
+        legacy_body = soup.select_one("#Main_Content_Val")
+        return bool(
+            isinstance(legacy_body, Tag)
+            and 30 <= len(plain_text) < _MINIMUM_BODY_CHARACTERS
+            and (
+                re.match(r"^(?:编辑更正|休刊启事)", headline)
+                or (
+                    "特此更正" in plain_text
+                    and re.search(r"(?:编辑部|杂志社)\s*$", plain_text)
+                )
+            )
+            and not re.search(
+                r"(?:继续阅读|登录|注册|订阅)\s*$",
+                plain_text,
+            )
         )
     if spec.publisher == "reuters":
         combined = f"{headline}\n{plain_text}".casefold()
@@ -7964,15 +9159,54 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
     for selector in (*COMMON_REMOVE_SELECTORS, *spec.remove_selectors):
         for node in soup.select(selector):
             node.decompose()
-    for node in soup.select("p, div, span"):
+    for node in soup.select(
+        "p, li, div, span, h1, h2, h3, h4, h5, h6"
+    ):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
         if text in _EXACT_NOISE_TEXT:
             node.decompose()
+        elif spec.publisher == "aljazeera" and text in {
+            "related",
+            "back to top",
+            "read more",
+            "read more:",
+            "recommended stories",
+        }:
+            # Legacy Al Jazeera article wrappers expose these navigation
+            # labels as ordinary paragraphs inside the story body. Live
+            # update captures also emit a standalone link to the preceding
+            # update; keep linked ``Read more here`` prose, but drop the
+            # label-only block.
+            node.decompose()
         elif (
-            spec.publisher in {"npr", "wsj"}
+            spec.publisher == "aljazeera"
+            and text.startswith(
+                "the views expressed in this article are the author’s own"
+            )
+            and "al jazeera" in text
+            and (
+                "editorial policy" in text
+                or "editorial stance" in text
+            )
+        ):
+            # Opinion pages repeat this site disclaimer in the body; it is
+            # publisher chrome rather than reporting.
+            node.decompose()
+        elif (
+            spec.publisher in {
+                "aljazeera",
+                "ap",
+                "axios",
+                "caixin",
+                "ft",
+                "npr",
+                "scmp",
+                "wsj",
+            }
             and len(text) >= 2
             and set(text) == {"_"}
         ):
+            # Al Jazeera live-update pages, Axios/Caixin/SCMP legacy pages,
             # NPR legacy/transcript pages and WSJ press-release feeds use
             # underscore-only paragraphs as visual rules. They are interface
             # separators, not article copy, and otherwise survive as ordinary
@@ -7980,17 +9214,42 @@ def _remove_noise(soup: BeautifulSoup, spec: PublisherSpec) -> None:
             node.decompose()
         elif (
             spec.publisher == "npr"
-            and "disclaimer" in {
-                str(value).casefold()
-                for value in (node.get("class") or [])
-            }
-            and "for personal, noncommercial use only" in text
+            and (
+                (
+                    "disclaimer" in {
+                        str(value).casefold()
+                        for value in (node.get("class") or [])
+                    }
+                    and "for personal, noncommercial use only" in text
+                )
+                or (
+                    text.startswith(
+                        "npr transcripts are created on a rush deadline"
+                    )
+                    and "authoritative record of npr's programming is the audio"
+                    in text.replace("’", "'").replace("‘", "'")
+                )
+            )
         ):
             node.decompose()
         elif (
             spec.publisher == "bloomberg"
             and text == "share this article"
         ):
+            node.decompose()
+        elif (
+            spec.publisher == "reuters"
+            and text in {
+                "subscribe to gift this article",
+                "gift 5 articles to anyone you choose each month when you subscribe.",
+                "already a subscriber?",
+                "read more",
+                "fetching latest articles",
+            }
+        ):
+            # Syndicated Reuters copies on AFR and similar partners can keep
+            # a short paywall/recirculation tail after the licensed story.
+            # Remove only the standalone UI blocks; preserve article prose.
             node.decompose()
         elif (
             spec.publisher == "bloomberg"
@@ -10782,6 +12041,73 @@ def _remove_bloomberg_promos(soup: BeautifulSoup) -> None:
 
 def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     """Remove NYT sponsorship, subscription and standardized engagement UI."""
+    # First-party articles syndicated to partner sites can include the
+    # partner's entire recommendation feed inside the selected article node.
+    # The explicit attribution is a reliable editorial boundary. Preserve a
+    # following NYT copyright/credit paragraph, then remove the partner tail.
+    for attribution in list(soup.select("p")):
+        if _clean_text(
+            attribution.get_text(" ", strip=True)
+        ).casefold() != "this article originally appeared in the new york times.":
+            continue
+        boundary = attribution
+        following = attribution.find_next("p")
+        if isinstance(following, Tag):
+            following_text = _clean_text(
+                following.get_text(" ", strip=True)
+            ).casefold()
+            if "the new york times" in following_text and (
+                "copyright" in following_text or "©" in following_text
+            ):
+                boundary = following
+        # Syndication templates often put the recommendation feed in a
+        # different wrapper, so sibling-only traversal misses it. Everything
+        # after the explicit attribution/credit boundary is partner chrome.
+        for node in list(boundary.find_all_next()):
+            if node.parent is not None:
+                node.decompose()
+    # Canonical records are static. Legacy interactive pages can contain
+    # hundreds of radio inputs whose adjacent labels already preserve every
+    # readable team/outcome name. Retain those labels and explanatory prose,
+    # but never serialize dead browser controls after scripts are removed.
+    for control in list(soup.select("input, select, textarea")):
+        control.decompose()
+
+    # Candidate questionnaires and other legacy interactives expose collapsed
+    # answers in static HTML. Preserve the complete answer, but remove browser
+    # expansion controls and navigation to a different candidate/page.
+    for control in list(
+        soup.select(".read-full-answer, .next-question")
+    ):
+        control.decompose()
+
+    # Reader callouts and legacy interactives often wrap useful explanatory
+    # copy, figures and field labels in a form. The controls are dead in a
+    # static archive, but deleting the whole form would also delete that
+    # editorial context. Remove only the interactive container.
+    for label in list(soup.select("form label")):
+        if _clean_text(label.get_text(" ", strip=True)):
+            label.name = "p"
+        else:
+            label.decompose()
+    for form in list(soup.select("form")):
+        form.unwrap()
+
+    # Responsive NYT newsgraphics use sprite sheets as CSS image sources.
+    # They are implementation assets rather than figures and otherwise appear
+    # as giant, meaningless images in the normalized article body.
+    for image in list(soup.select("img[src]")):
+        source = str(image.get("src") or "")
+        if re.search(
+            r"/newsgraphics/.*/[^/]*sprite[^/]*\.(?:jpe?g|png)"
+            r"|/projects/assets/oscars_2013/images/2013/"
+            r"[^/]*sprite[^/]*\.(?:jpe?g|png)"
+            r"(?:[?#].*)?$",
+            source,
+            flags=re.IGNORECASE,
+        ):
+            image.decompose()
+
     for button in list(
         soup.select(
             "button[aria-label='expand or collapse modal'], "
@@ -10808,6 +12134,53 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
     for button in list(soup.select("button")):
         button.decompose()
 
+    # Some syndicated legacy NYT pages flatten the subscription control to a
+    # bare anchor inside the selected story body.  It is interface chrome, not
+    # article prose; only remove an anchor whose complete visible label is the
+    # standalone control word so that ordinary editorial links remain intact.
+    for anchor in list(soup.select("a")):
+        if _clean_text(anchor.get_text(" ", strip=True)).casefold() != "subscribe":
+            continue
+        parent = anchor.parent
+        parent_text = (
+            _clean_text(parent.get_text(" ", strip=True)).casefold()
+            if isinstance(parent, Tag)
+            else ""
+        )
+        if parent_text == "subscribe":
+            parent.decompose()
+        else:
+            anchor.decompose()
+
+    # Learning Network articles can append a small recirculation list inside
+    # the broad story body, immediately before the contributor credit. Remove
+    # only an exact ``Related`` heading followed by linked bullet paragraphs;
+    # ordinary editorial uses of the word and the following credit remain.
+    for heading in list(soup.select("h2, h3, h4, h5, h6")):
+        if (
+            _clean_text(heading.get_text(" ", strip=True)).casefold()
+            != "related"
+        ):
+            continue
+        related_items: list[Tag] = []
+        sibling = heading.find_next_sibling()
+        while isinstance(sibling, Tag):
+            next_sibling = sibling.find_next_sibling()
+            text = _clean_text(sibling.get_text(" ", strip=True))
+            if (
+                sibling.name == "p"
+                and text.startswith(("•", "·"))
+                and sibling.select_one("a[href]") is not None
+            ):
+                related_items.append(sibling)
+                sibling = next_sibling
+                continue
+            break
+        if related_items:
+            for item in related_items:
+                item.decompose()
+            heading.decompose()
+
     for node in list(
         soup.select("figure.byline, figure[data-testid='byline']")
     ):
@@ -10824,6 +12197,26 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
             r"the briefing)\b"
         ),
         re.compile(
+            r"(?i)^sign up for the campaign reporter\b.*"
+            r"\bget messages from our politics correspondent\b.*"
+            r"\bwhat(?:'|’)s at stake\.?$"
+        ),
+        # Some archived variants flatten the CTA to only its opening phrase,
+        # without the explanatory copy used by the longer pattern above.
+        re.compile(r"(?i)^sign up for the campaign reporter\b.*$"),
+        re.compile(r"(?i)^sign up for the campaign reporter\.?$"),
+        re.compile(
+            r"(?i)^sign up for the rest of the challenge\b.*$"
+        ),
+        re.compile(
+            r"(?i)^sign up for the call on .+\bhere\s*\.?$"
+        ),
+        re.compile(r"(?i)^subscribe to (?:the )?.+ newsletter\b.*$"),
+        re.compile(r"(?i)^sign up for our virtual events\b.*$"),
+        re.compile(
+            r"(?i)^subscribe to the times space and astronomy calendar\b.*$"
+        ),
+        re.compile(
             r"(?i)^if you are not a subscriber to this newsletter\b"
         ),
         re.compile(r"(?i)^browse our full range of times newsletters\b"),
@@ -10837,6 +12230,8 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         re.compile(r"(?i)^for newspaper delivery questions\b"),
         re.compile(r"^_{2,}$"),
         re.compile(r"(?i)^read more:?$"),
+        re.compile(r"(?i)^related$"),
+        re.compile(r"(?i)^next:\s+.+$"),
         re.compile(
             r"(?i)^\[?\s*(?:enjoying this article\?\s*)?"
             r"sign up for (?:our|the) .*newsletter\b"
@@ -10864,8 +12259,36 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^sign up for weekly updates on .+ from the times\.?$"
         ),
+        re.compile(
+            r"(?i)^\[?what you need to know to start the day:\s*"
+            r"get new york today in your inbox\s*\.?\s*\]?$"
+        ),
+        re.compile(
+            r"(?i)^follow nyt food on twitter and nyt cooking on instagram"
+            r"\b.*get regular updates from nyt cooking\b"
+        ),
+        re.compile(
+            r"(?i)^\[?\s*listen to [“\"]the argument[”\"] podcast\b"
+        ),
+        re.compile(
+            r"(?i)^is there anything you think we[’']re missing\?.*"
+            r"email us at onpolitics@nytimes\.com\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^we want to hear from our readers\..*"
+            r"email us at onpolitics@nytimes\.com\s*\.?$"
+        ),
+        re.compile(
+            r"(?i)^were you forwarded this newsletter\?\s*"
+            r"subscribe here to get it delivered to your inbox\.?$"
+        ),
+        re.compile(
+            r"(?i)^follow the @readercenter on twitter for more coverage\b"
+        ),
     )
-    for node in list(soup.select("p, li, span")):
+    for node in list(
+        soup.select("p, li, span, em, h1, h2, h3, h4, h5, h6")
+    ):
         text = _clean_text(node.get_text(" ", strip=True))
         if any(pattern.search(text) for pattern in patterns):
             node.decompose()
@@ -10873,11 +12296,16 @@ def _remove_nyt_promos(soup: BeautifulSoup) -> None:
 
 def _remove_reuters_promos(soup: BeautifulSoup) -> None:
     """Remove Reuters registration UI and licensed-partner subscription tails."""
+    # Reuters statbox/live-score templates occasionally leave a form control
+    # inside the article body. It is interface chrome, not editorial content.
+    for node in list(soup.select("input")):
+        node.decompose()
     for node in list(
         soup.select(
             ".rich-share, [data-testid='rich-share'], "
             ".Image_expand-button, .Slideshow_expand-button, "
-            "[aria-label='Expand Image Slideshow']"
+            "[aria-label='Expand Image Slideshow'], "
+            ".share-icon-container, #jMore-PopUp"
         )
     ):
         node.decompose()
@@ -10925,11 +12353,16 @@ def _remove_reuters_promos(soup: BeautifulSoup) -> None:
 
     for node in list(soup.select("p, h2, h3, h4, h5, h6")):
         text = _clean_text(node.get_text(" ", strip=True)).casefold()
-        if text.startswith(
+        if text in {"share this article", "whatsapp print pdf"}:
+            node.decompose()
+        elif text.startswith(
             "register now for free unlimited access to reuters.com"
         ) or text.startswith(
             "the company and law firm names shown above are generated "
             "automatically based on the text of the article"
+        ) or re.fullmatch(
+            r"subscribe to our channels on youtube\s*,\s*telegram\s*&\s*whatsapp\s*[.!]?",
+            text,
         ):
             node.decompose()
 
@@ -11009,7 +12442,12 @@ def _trim_wsj_roadblock_tail(soup: BeautifulSoup) -> None:
                 for node in soup.select("p, h2, h3, h4")
                 if _clean_text(node.get_text(" ", strip=True))
                 .casefold()
-                .startswith("to read the full story")
+                .startswith(
+                    (
+                        "to read the full story",
+                        "continue reading your article with",
+                    )
+                )
             ),
             None,
         )
@@ -11033,8 +12471,22 @@ def _trim_wsj_roadblock_tail(soup: BeautifulSoup) -> None:
 
 def _remove_wsj_promos(soup: BeautifulSoup) -> None:
     """Remove metered-view controls, copyright footers and coupon modules."""
+    for newsletter_link in list(
+        soup.select("a[href*='/newsletters'][href*='sub=best_of_the_web']")
+    ):
+        # Best of the Web columns append this inline subscription CTA in an
+        # otherwise unclassified ``em`` node inside the article body.
+        newsletter_link.decompose()
     for button in list(soup.select("button")):
         button.decompose()
+    for form in list(soup.select("form")):
+        # Reader questionnaires and share-by-email dialogs are interactive
+        # controls, not article copy. Removing the whole form also drops its
+        # field labels and consent boilerplate instead of leaving a flattened
+        # pseudo-paragraph in the archived body.
+        form.decompose()
+    for control in list(soup.select("input, select, textarea")):
+        control.decompose()
     for tagline in list(soup.select("p.articleTagLine")):
         if re.fullmatch(
             r"[_=—–-]+",
@@ -11051,10 +12503,20 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             strap.decompose()
     for rich_text in list(soup.select(".media-object-rich-text")):
         heading = rich_text.select_one("h2, h3, h4, h5, h6")
+        heading_text = (
+            _clean_text(heading.get_text(" ", strip=True)).casefold()
+            if isinstance(heading, Tag)
+            else ""
+        )
         if (
             isinstance(heading, Tag)
-            and _clean_text(heading.get_text(" ", strip=True)).casefold()
-            == "share your thoughts"
+            and (
+                heading_text in {"read more", "share your thoughts"}
+                or (
+                    heading_text in {"more", "related"}
+                    and rich_text.select_one("ul.articleList") is not None
+                )
+            )
         ):
             rich_text.decompose()
     for paragraph in list(soup.select("p")):
@@ -11068,10 +12530,76 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
         ):
             paragraph.decompose()
 
+    # Older WSJ captures flatten newsletter and recirculation cards into
+    # ordinary paragraphs/headings inside the article wrapper.  Their
+    # classes vary by template, so selector-only cleanup misses them.  Keep
+    # this list deliberately narrow and operate only on standalone text
+    # blocks; normal reporting sentences that merely mention a newsletter or
+    # a related topic must remain in the body.
+    wsj_interface_patterns = (
+        re.compile(r"^related(?: stories)?$", re.IGNORECASE),
+        re.compile(r"^read more:?$", re.IGNORECASE),
+        re.compile(
+            r"^subscribe to (?:our morning newsletter|the best of the web "
+            r"email)\b.*$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^write to .+? at [\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\.?$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^related(?: coverage| video)$", re.IGNORECASE),
+        re.compile(r"^in other news$", re.IGNORECASE),
+        re.compile(r"^number of the day$", re.IGNORECASE),
+        re.compile(r"^quotable$", re.IGNORECASE),
+        re.compile(r"^best of the rest$", re.IGNORECASE),
+        re.compile(
+            r"^here(?:'|’)s your morning roundup of the biggest marketing, "
+            r"advertising and media industry news and happenings\.?$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^sign up:\s*with one click, get this newsletter delivered "
+            r"to your inbox\.?$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^click to read story$", re.IGNORECASE),
+        re.compile(
+            r"^sign up for the wsj book club here\.?$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^corrections?\s*&\s*amplifications$", re.IGNORECASE),
+        re.compile(
+            r"^today[’']s top supply chain and logistics news from wsj$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^cmo insights and analysis from deloitte$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^content from our sponsor$", re.IGNORECASE),
+        re.compile(
+            r"^follow us on twitter:\s*@.+$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^please note:\s*the wall street journal news department "
+            r"was not involved in the creation of the content above\.?$",
+            re.IGNORECASE,
+        ),
+    )
+    for node in list(soup.select("p, h2, h3, h4, h5, h6")):
+        if node.parent is None:
+            continue
+        text = _clean_text(node.get_text(" ", strip=True))
+        if any(pattern.fullmatch(text) for pattern in wsj_interface_patterns):
+            node.decompose()
+
     for node in list(
         soup.select(
             ".coupon-list, [class*='SavingsUnited' i], "
             "[class*='SnippetSignIn' i], .author-links, .author-info, "
+            ".webui-newsletter-inset, #webui_newsletter_inset, "
             "[class*='mobile-modal-author' i], .byline-wrap, "
             ".article__byline, .module.automated-news, "
             ".module.editors-picks, .share-bottom, .printSummary, "
@@ -11137,6 +12665,19 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
             and "sign up here" in text
         ):
             node.decompose()
+    for prompt in list(soup.select("p, h2, h3, h4, h5, h6")):
+        text = _clean_text(prompt.get_text(" ", strip=True)).casefold()
+        if text in {"- wsj news exclusive", "wsj news exclusive"}:
+            prompt.decompose()
+            continue
+        if text != "share your thoughts":
+            continue
+        followup = prompt.find_next_sibling()
+        if isinstance(followup, Tag) and "join the conversation" in (
+            _clean_text(followup.get_text(" ", strip=True)).casefold()
+        ):
+            followup.decompose()
+        prompt.decompose()
     text_nodes = list(soup.select("p, h2, h3, h4, h5, h6"))
     for index, node in enumerate(text_nodes):
         if node.parent is None:
@@ -11206,6 +12747,8 @@ def _remove_wsj_promos(soup: BeautifulSoup) -> None:
 
 def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
     """Remove Next-era sharing, recirculation and follow-topic UI."""
+    for button in list(soup.select("button")):
+        button.decompose()
     for component in list(soup.select(".flashcomponent")):
         link = component.select_one("a.flashlink[href]")
         if not isinstance(link, Tag):
@@ -11229,14 +12772,119 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             ".o-message__content-main, "
             ".story-package[data-track-comp-name='moreOn'], "
             ".insideArticleShare, "
+            "[data-trackable='podcast-services'], "
             ".ftlabsaudioplayerholder, "
+            ".component-share, "
             ".component-share__button, "
+            ".article__save, "
+            ".article__share, "
+            ".share, "
+            "section.article-list, "
+            "form.n-myft-ui, "
+            "form[class*='n-myft-ui'], "
+            "[data-component-id='myft-preferences-modal'], "
+            "[class*='n-myft-ui'], "
+            ".video__placeholder__up-next, "
+            ".o-video__play-button, "
+            ".player__video-trigger, "
+            "button[data-trackable='expander-toggle'], "
             "button[data-trackable='save-for-later']"
         )
     ):
         node.decompose()
+    # The legacy How To Spend It template placed topic tags in an unmarked
+    # section headed ``See also`` inside the broad article wrapper.
+    for heading in list(soup.select("h2, h3, h4")):
+        if (
+            _clean_text(heading.get_text(" ", strip=True)).casefold()
+            != "see also"
+        ):
+            continue
+        section = heading.find_parent("section")
+        if isinstance(section, Tag) and section.select_one(".tag-list"):
+            section.decompose()
+    for aside in list(soup.select("aside")):
+        if any(
+            _clean_text(node.get_text(" ", strip=True)).casefold()
+            in {"read more", "continue reading"}
+            for node in aside.select("a, p")
+        ):
+            aside.decompose()
     for node in list(soup.select("p")):
         text = _clean_text(node.get_text(" ", strip=True))
+        folded_text = text.casefold()
+        if re.fullmatch(r"_{2,}", text):
+            node.decompose()
+            continue
+        # Very old Lex pages flatten the column's contact/subscription
+        # boilerplate into the article body. These paragraphs are template
+        # chrome, not reporting, and otherwise trigger the interface-noise
+        # audit through their separator line.
+        if folded_text.startswith("to e-mail the lex team "):
+            node.decompose()
+            continue
+        if folded_text.startswith("the lex column is now on twitter"):
+            node.decompose()
+            continue
+        if (
+            folded_text.startswith("lex is the ft")
+            and "agenda-setting column" in folded_text
+        ):
+            node.decompose()
+            continue
+        if (
+            folded_text.startswith("related links:")
+            and len(node.select("a[href]")) >= 2
+        ):
+            node.decompose()
+            continue
+        if folded_text == "subscribe now":
+            node.decompose()
+            continue
+        if folded_text.startswith(
+            "if you have questions or comments, please e-mail help@ft.com"
+        ):
+            node.decompose()
+            continue
+        # Recent FT podcast, survey, and channel pages flatten promotional
+        # calls-to-action into the article body. They are interface chrome,
+        # not reporting, and otherwise contaminate parser QA samples.
+        if (
+            folded_text.startswith(
+                "subscribe to the rachman review wherever you get your "
+                "podcasts"
+            )
+            or folded_text == "sign up for the survey!"
+            or (
+                folded_text.startswith("sign up for the britain")
+                and "healthiest workplace survey" in folded_text
+            )
+            or folded_text.startswith(
+                "sign up for the financial times markets news channel"
+            )
+            or re.match(
+                r"^sign up for the ft(?:'|’)s due diligence newsletter\b",
+                folded_text,
+            )
+        ):
+            node.decompose()
+            continue
+        if re.fullmatch(
+            r"(?:us and canada|asia|uk, europe and rest of the world)\s*:\s*"
+            r"\+?[\d ()-]+"
+            r"(?:\s+(?:asia|uk, europe and rest of the world)\s*:\s*"
+            r"\+?[\d ()-]+)*",
+            folded_text,
+        ):
+            node.decompose()
+            continue
+        if text.casefold() in {
+            "sign in",
+            "subscribe",
+            "already a member? sign in",
+        }:
+            node.decompose()
+            continue
         if re.fullmatch(
             r"(?i)see acast\.com/privacy for privacy and "
             r"opt-out information\.?",
@@ -11247,10 +12895,11 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
         if re.match(r"(?i)^recommended\s*\*", text):
             node.decompose()
             continue
-        if re.match(
-            r"(?i)^follow @financialtimesfashion on instagram\b",
-            text,
-        ):
+        if "follow @financialtimesfashion on instagram" in text.casefold():
+            # Infini-News sometimes flattens the same fashion call-to-action
+            # with the lead-in before the handle (rather than starting with
+            # ``Follow``).  Both forms are publisher chrome, not article
+            # prose, and should be removed before block extraction.
             node.decompose()
             continue
         if re.match(
@@ -11259,21 +12908,42 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
             text,
         ):
             node.decompose()
+            continue
+        if re.fullmatch(
+            r"(?i)email the lex team at lex@ft\.com\.?",
+            text,
+        ):
+            node.decompose()
+            continue
+        if re.fullmatch(
+            r"(?i)the most thought-provoking online contributions may be "
+            r"published in the financial times newspaper\.?",
+            text,
+        ):
+            node.decompose()
+
+    _remove_ft_subscription_offer_chrome(soup)
 
     for marker in list(soup.select("p, h2, h3, h4")):
-        if (
-            _clean_text(marker.get_text(" ", strip=True)).casefold()
-            != "read more:"
+        if not re.fullmatch(
+            r"read more:?",
+            _clean_text(marker.get_text(" ", strip=True)).casefold(),
         ):
             continue
         sibling = marker.find_next_sibling()
         while isinstance(sibling, Tag):
             next_sibling = sibling.find_next_sibling()
             text = _clean_text(sibling.get_text(" ", strip=True))
+            linked_ft_stories = sibling.select(
+                "a[href*='ft.com/content/'], a[href^='/content/']"
+            )
             if sibling.name in {"ul", "ol"} or (
                 sibling.name == "p"
-                and len(text) <= 300
-                and text.startswith(("-", "–", "—", "−"))
+                and len(text) <= 500
+                and (
+                    text.startswith(("-", "–", "—", "−"))
+                    or len(linked_ft_stories) >= 2
+                )
             ):
                 sibling.decompose()
                 sibling = next_sibling
@@ -11304,6 +12974,10 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
                 )
                 and " newsletter" in text
             )
+            or text in {
+                "letter in response to this article:",
+                "letter in response to this report:",
+            }
         ):
             tail_markers.append(node)
     if not tail_markers:
@@ -11335,6 +13009,82 @@ def _remove_ft_body_chrome(soup: BeautifulSoup) -> None:
     marker.decompose()
 
 
+def _remove_ft_subscription_offer_chrome(soup: BeautifulSoup) -> None:
+    """Remove modern FT subscription offers flattened into article bodies.
+
+    Wayback captures of FT pages can retain the article together with the
+    current subscription conversion UI. The offer is not consistently wrapped
+    in one stable class, but its short CTA copy is stable enough to remove
+    without touching ordinary reporting that discusses subscriptions.
+    Prefer a marked offer container; otherwise remove only the individual
+    block containing the CTA.
+    """
+    markers = (
+        "subscribe to unlock this article",
+        "try unlimited access",
+        "only $1 for ",
+        "then $75 per month",
+        "complete digital access",
+        "explore more offers",
+    )
+
+    def is_offer_text(value: str) -> bool:
+        folded = _clean_text(value).casefold()
+        return any(
+            folded.startswith(marker) or folded == marker.rstrip()
+            for marker in markers
+        )
+
+    # Newer FT templates usually expose an offer/upsell wrapper. Keep the
+    # selector deliberately narrow and never decompose the article root.
+    for container in list(
+        soup.select(
+            "[class*='paywall' i], [id*='paywall' i], "
+            "[class*='subscription' i], [id*='subscription' i], "
+            "[class*='upsell' i], [id*='upsell' i], "
+            "[class*='offer' i], [id*='offer' i], "
+            "[data-testid*='paywall' i], "
+            "[data-testid*='subscription' i], "
+            "[data-component*='paywall' i], "
+            "[data-component*='subscription' i]"
+        )
+    ):
+        if container.name in {"article", "main", "body", "html"}:
+            continue
+        if is_offer_text(container.get_text(" ", strip=True)):
+            container.decompose()
+
+    # Older captures flatten the offer as ordinary paragraphs/headings. Do
+    # not match arbitrary mentions of subscriptions inside long prose.
+    for node in list(
+        soup.select("p, li, h2, h3, h4, h5, h6, button, a, span")
+    ):
+        if not is_offer_text(node.get_text(" ", strip=True)):
+            continue
+        target = node
+        if node.name in {"a", "button", "span"}:
+            parent = node.find_parent(
+                ("p", "li", "h2", "h3", "h4", "h5", "h6")
+            )
+            if isinstance(parent, Tag):
+                target = parent
+        if target.name not in {"article", "main", "body", "html"}:
+            target.decompose()
+
+
+def _ft_infini_access_shell(soup: BeautifulSoup) -> bool:
+    """Detect Infini-derived FT access shells with no article prose."""
+    if soup.select_one(
+        "article[data-jojo-representation='derived-infini-news']"
+    ) is None:
+        return False
+    text = _clean_text(soup.get_text(" ", strip=True)).casefold()
+    return (
+        "new to the financial times?" in text
+        and "enjoy 7 days of free access" in text
+    ) or "to read: financial times" in text
+
+
 def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
     """Remove newsletter cards flattened into FT syndication body paragraphs."""
     for card in list(soup.select("experimental")):
@@ -11346,6 +13096,18 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
         text = _clean_text(
             paragraph.get_text(" ", strip=True)
         ).casefold()
+        if text == "coronavirus business update":
+            sibling = paragraph.find_next_sibling()
+            sibling_text = (
+                _clean_text(sibling.get_text(" ", strip=True)).casefold()
+                if isinstance(sibling, Tag)
+                else ""
+            )
+            if "coronavirus newsletter" in sibling_text:
+                paragraph.decompose()
+                if isinstance(sibling, Tag):
+                    sibling.decompose()
+                continue
         if (
             text.startswith("sign up to ")
             and "must-read weekly briefing" in text
@@ -11353,6 +13115,13 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
                 "a[href*='ep.ft.com']"
                 "[href*='newsletter'][href*='subscribe']"
             )
+        ):
+            paragraph.decompose()
+            continue
+        if (
+            text.startswith("sign up for our ")
+            and " newsletter" in text
+            and len(text) <= 300
         ):
             paragraph.decompose()
     for heading in list(soup.select("h2, h3, h4, h5, h6")):
@@ -11365,6 +13134,25 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
         if isinstance(sibling, Tag) and sibling.name in {"ul", "ol"}:
             sibling.decompose()
         heading.decompose()
+    # JSON-LD ``articleBody`` has no semantic heading tags. Some archived FT
+    # pages append a recirculation heading plus one flattened paragraph of
+    # story titles, which therefore arrives here as two ordinary ``p`` tags.
+    # Treat the exact standalone marker as a tail boundary only when it has a
+    # following sibling; prose that merely mentions related stories remains.
+    for marker in list(soup.select("p")):
+        if (
+            _clean_text(marker.get_text(" ", strip=True)).casefold()
+            != "related stories"
+        ):
+            continue
+        sibling = marker.find_next_sibling()
+        if not isinstance(sibling, Tag):
+            continue
+        while isinstance(sibling, Tag):
+            next_sibling = sibling.find_next_sibling()
+            sibling.decompose()
+            sibling = next_sibling
+        marker.decompose()
     for heading in list(soup.select("h2, h3, h4")):
         heading_text = _clean_text(
             heading.get_text(" ", strip=True)
@@ -11430,6 +13218,9 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
         ),
         re.compile(r"(?i)^follow .+ with\s*myft and on\s*twitter\b"),
         re.compile(r"(?i)^sign up to our .+ newsletter\b"),
+        re.compile(
+            r"(?i)^sign up for the ft business school briefing\b.*"
+        ),
         re.compile(r"(?i)^for more, sign up for our .+ newsletter\b"),
         re.compile(r"(?i)^ft premium subscribers can sign up here\b"),
         re.compile(r"(?i)^lex publishes two popular newsletters\b"),
@@ -11446,6 +13237,10 @@ def _remove_ft_newsletter_promos(soup: BeautifulSoup) -> None:
         re.compile(
             r"(?i)^coronavirus business update\s+sign up here "
             r"for our newsletter\b"
+        ),
+        re.compile(
+            r"(?i)^subscribe to the financial times chatbot here\.?\s*"
+            r"it[’']s best viewed on a mobile device\.?$"
         ),
     )
     for node in list(soup.select("p")):
@@ -11526,8 +13321,41 @@ def _remove_ap_body_promos(soup: BeautifulSoup) -> None:
         node.decompose()
     for node in list(soup.select("[data-ap-readmore]")):
         node.decompose()
+    for node in list(soup.select("form, input, select, textarea")):
+        node.decompose()
     for button in list(soup.select("button")):
         button.decompose()
+
+    # Some AP live-update/gallery stories include a plain ``Read more:``
+    # paragraph followed by a run of related-story links and an ``___``
+    # separator.  Those links are navigation chrome, not part of the wire
+    # copy.  Remove the complete contiguous module while retaining the next
+    # live-update heading and its substantive paragraphs.
+    for marker in list(soup.select("p")):
+        if _clean_text(marker.get_text(" ", strip=True)).casefold() != (
+            "read more:"
+        ):
+            continue
+        sibling = marker.find_next_sibling()
+        marker.decompose()
+        while isinstance(sibling, Tag):
+            next_sibling = sibling.find_next_sibling()
+            text = _clean_text(sibling.get_text(" ", strip=True))
+            sibling.decompose()
+            if text == "___":
+                break
+            sibling = next_sibling
+
+    # AP's syndicated legacy body uses inline ``RELATED`` link labels as
+    # navigation chrome.  Keep the linked headline that follows, but remove
+    # the standalone interface marker from the normalized prose.
+    for marker in list(soup.select(".LinkEnhancement")):
+        if _clean_text(marker.get_text(" ", strip=True)).rstrip(":").casefold() != "related":
+            continue
+        parent = marker.parent
+        marker.decompose()
+        if isinstance(parent, Tag) and not _clean_text(parent.get_text(" ", strip=True)):
+            parent.decompose()
 
     patterns = (
         re.compile(
@@ -11762,6 +13590,13 @@ def _trim_nikkei_paywall_tail(soup: BeautifulSoup) -> None:
 def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
     """Remove modern Nikkei article controls that wrap ordinary text nodes."""
 
+    # Modern snapshots can place the site-wide search, sharing and newsletter
+    # controls inside the broad article wrapper. They are browser UI, not
+    # editorial content, and their form controls fail the normalized-body
+    # contract if left in the archived HTML.
+    for node in list(soup.select("form, input, select, textarea, button")):
+        node.decompose()
+
     for selector in (
         "k-image-viewer",
         "k-lock-banner",
@@ -11771,6 +13606,295 @@ def _remove_nikkei_body_chrome(soup: BeautifulSoup) -> None:
     ):
         for node in list(soup.select(selector)):
             node.decompose()
+
+    for image in list(soup.select("img")):
+        urls = _image_urls(
+            image,
+            base_url="https://www.nikkei.com/",
+        )
+        if not urls or not all(
+            _nikkei_non_editorial_image_url(url) for url in urls
+        ):
+            continue
+        figure = image.find_parent("figure")
+        image.decompose()
+        if (
+            isinstance(figure, Tag)
+            and not _clean_text(figure.get_text(" ", strip=True))
+        ):
+            figure.decompose()
+
+
+def _remove_scmp_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove recurring SCMP site chrome from recovered article bodies."""
+
+    # The Apollo ``articleBody`` for Letter to the Editor pages prepends a
+    # site-wide invitation to submit letters.  It is JSON-LD/Apollo chrome,
+    # not part of the recovered letter, and repeats across many unrelated
+    # captures.  Match the stable contact/submission wording rather than a
+    # broad ``letter`` selector so ordinary editorial prose is preserved.
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True)).casefold()
+        if (
+            text.startswith("feel strongly about these letters")
+            and "letters@scmp.com" in text
+            and "submissions should not exceed" in text
+        ):
+            paragraph.decompose()
+            continue
+
+        # Older SCMP JSON-LD/Apollo captures flatten promotional cards into
+        # ordinary ``p`` nodes.  These cards are especially common in the
+        # 2019--2020 business and technology corpus, where they can recur in
+        # hundreds of otherwise unrelated articles.  Require the stable
+        # campaign wording so that ordinary reporting that mentions a report,
+        # survey, or social network is retained.
+        is_china_ai_promo = (
+            "china ai report" in text
+            and (
+                "scmp research" in text
+                or text.startswith("purchase the china ai report")
+                or text.startswith("sign up now and get")
+            )
+        )
+        is_china_tech_promo = (
+            text.startswith("for more insights into china tech")
+            and ("china internet report" in text or "abacus" in text)
+        )
+        is_scmp_survey_cta = (
+            text.startswith("help us understand what you are interested in")
+            and "five-minute survey" in text
+        )
+        is_social_cta = text.startswith(
+            (
+                "want more articles like this? follow scmp film",
+                "want more stories like this? sign up here",
+                "connect with us on twitter and facebook",
+            )
+        )
+        if (
+            is_china_ai_promo
+            or is_china_tech_promo
+            or is_scmp_survey_cta
+            or is_social_cta
+        ):
+            paragraph.decompose()
+
+
+def _remove_zaobao_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove site-wide controls embedded in legacy Zaobao article wrappers."""
+
+    # Archived Zaobao pages commonly place share/follow and newsletter
+    # controls inside the same ``article`` node as the historical body.
+    # They are not editorial blocks and otherwise fail the normalized-body
+    # interactive-tag audit.
+    for node in list(soup.select("button, form, input, select, textarea")):
+        node.decompose()
+
+    # Freemium snapshots put the subscription roadblock and its generic
+    # fallback artwork inside the same article wrapper as the recovered
+    # paragraphs. Keep the editorial prose, but never archive the paywall UI
+    # or its repeated default images as article content.
+    for node in list(
+        soup.select(
+            "#freemium_subscribe, .freemium_subscribe, "
+            ".microtransaction-body, .microtransaction-option"
+        )
+    ):
+        node.decompose()
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True))
+        if (
+            text.startswith("此文章为早报")
+            and "专享内容" in text
+        ) or text in {
+            "请您选择以下方式，阅读全文：",
+            "已是早报订户，请您登录后继续阅读全文。",
+        } or text.startswith("新用户体验价"):
+            paragraph.decompose()
+    for image in list(soup.select("img")):
+        urls = _image_urls(image, base_url="https://www.zaobao.com.sg/")
+        if not urls or not all(
+            _zaobao_non_editorial_image_url(url) for url in urls
+        ):
+            continue
+        container = image.find_parent(("figure", "a"))
+        image.decompose()
+        if (
+            isinstance(container, Tag)
+            and not container.get_text(" ", strip=True)
+            and not container.select_one("img")
+        ):
+            container.decompose()
+
+
+def _remove_caixin_body_chrome(soup: BeautifulSoup) -> None:
+    """Remove legacy Caixin print controls and subscription QR images."""
+
+    legacy_body = soup.select_one("#Main_Content_Val")
+    if isinstance(legacy_body, Tag):
+        # Caixin's legacy CMS often emitted the lead or even the entire short
+        # report as a direct text node beside a bold byline. The common block
+        # extractor deliberately ignores loose text, so preserve these nodes
+        # in document order as ordinary paragraphs before block extraction.
+        for child in list(legacy_body.children):
+            if not isinstance(child, NavigableString) or isinstance(
+                child, Comment
+            ):
+                continue
+            text = _clean_text(str(child))
+            if len(text) < 2:
+                continue
+            paragraph = soup.new_tag("p")
+            paragraph.string = text
+            child.replace_with(paragraph)
+    for node in list(soup.select(".fullUrl, #jumpurl, .yinduBottom")):
+        node.decompose()
+    for paragraph in list(soup.select("p")):
+        text = _clean_text(paragraph.get_text(" ", strip=True)).casefold()
+        if re.fullmatch(r"[（(]\s*财新记者[^()（）]{1,120}[)）]", text):
+            # Older Caixin pages repeat the reporter credit as a standalone
+            # paragraph inside the article body. The canonical byline is
+            # already extracted from page metadata, so this is template
+            # chrome rather than reporting prose.
+            paragraph.decompose()
+            continue
+        if (
+            text.startswith("欢迎关注财新网")
+            and ("公号" in text or "公众号" in text)
+        ) or (
+            text.startswith("《知识分子》是由")
+            and "移动新媒体平台" in text
+        ) or (
+            text.startswith("撰写：财小智")
+            and "责编：财小新" in text
+        ) or (
+            text.startswith("今日敏感舆情指数")
+            and "财新数据" in text
+        ):
+            # These recurring paragraphs are account promotion or generated
+            # data-service notices embedded by Caixin's section templates.
+            paragraph.decompose()
+            continue
+        if (
+            text.startswith("推荐进入")
+            and "财新数据库" in text
+            and "可随时查阅" in text
+        ) or (
+            text.startswith("本文内容精选自财新高端订阅产品")
+            and "财新数据通" in text
+        ) or text.startswith(">>更多精彩内容请点击"):
+            # Current and legacy Caixin pages append subscription marketing
+            # inside the article wrapper. It is site chrome, not reporting.
+            container = paragraph.find_parent(
+                ("div", "aside"), class_=lambda value: value and "lanmu_textend" in value
+            )
+            if isinstance(container, Tag):
+                container.decompose()
+            else:
+                paragraph.decompose()
+            continue
+        if (
+            text.startswith("更多报道详见：")
+            and paragraph.select_one(
+                "a[href*='caixin.com/'][href*='/2013lh/']"
+            )
+        ):
+            # Legacy 2013 reports appended a cross-site Two Sessions topic
+            # link inside the broad article node. It is recirculation, not a
+            # sentence from the report.
+            paragraph.decompose()
+            continue
+        if text.startswith("marketwatch拥有位于三大洲的100多名记者"):
+            # Caixin appended the same corporate description to syndicated
+            # MarketWatch stories. Preserve the preceding original-URL
+            # attribution, but do not treat this publisher boilerplate as
+            # article prose.
+            paragraph.decompose()
+    for image in list(soup.select("img")):
+        urls = _image_urls(
+            image,
+            base_url="https://www.caixin.com/",
+        )
+        if not urls or not all(
+            _caixin_non_editorial_image_url(url) for url in urls
+        ):
+            continue
+        container = image.find_parent("figure")
+        image.decompose()
+        if (
+            isinstance(container, Tag)
+            and not _clean_text(container.get_text(" ", strip=True))
+        ):
+            container.decompose()
+
+
+def _caixin_legacy_gallery_body(soup: BeautifulSoup) -> Tag | None:
+    """Convert Caixin's table-based photo channel into semantic figures."""
+
+    source = soup.select_one("#pic_content")
+    if not isinstance(source, Tag):
+        return None
+    document = BeautifulSoup(
+        "<article data-jojo-source='caixin-legacy-gallery'></article>",
+        "html.parser",
+    )
+    wrapper = document.select_one("article")
+    if not isinstance(wrapper, Tag):
+        return None
+    for item in source.find_all("li", recursive=False):
+        if not isinstance(item, Tag):
+            continue
+        image = next(
+            (
+                node
+                for node in item.select(".imgBox img[src], img[src]")
+                if isinstance(node, Tag)
+                and not _caixin_non_editorial_image_url(
+                    _normalized_url(
+                        node.get("src"),
+                        base_url="https://photos.caixin.com/",
+                    )
+                    or ""
+                )
+            ),
+            None,
+        )
+        if not isinstance(image, Tag):
+            continue
+        figure = document.new_tag("figure")
+        copied_image = document.new_tag("img")
+        copied_image.attrs = dict(image.attrs)
+        figure.append(copied_image)
+        image_row = image.find_parent("tr")
+        caption_row = (
+            image_row.find_next_sibling("tr")
+            if isinstance(image_row, Tag)
+            else None
+        )
+        caption = (
+            _clean_text(caption_row.get_text(" ", strip=True))
+            if isinstance(caption_row, Tag)
+            else ""
+        )
+        if not caption:
+            caption = _clean_text(
+                _tag_text(item.select_one("#subhead, .title")) or ""
+            )
+        if caption:
+            figcaption = document.new_tag("figcaption")
+            figcaption.string = caption
+            figure.append(figcaption)
+        wrapper.append(figure)
+    return wrapper if wrapper.select_one("figure img") else None
+
+
+def _caixin_legacy_gallery_expected_images(soup: BeautifulSoup) -> int:
+    # The counter is a loose text node beside the controls in some snapshots,
+    # not a descendant of `.op`; inspect the complete editorial wrapper.
+    counter = _clean_text(_tag_text(soup.select_one(".focusBody")) or "")
+    matches = re.findall(r"(?<!\d)\d+\s*/\s*(\d+)(?!\d)", counter)
+    return max((int(value) for value in matches), default=1)
 
 
 def _extract_blocks(
@@ -12246,9 +14370,21 @@ def _image_from_tag(
             ],
         )
     )
+    noise_context = context
+    if spec.publisher == "npr":
+        # NPR asset directories can be named after a story subject (for
+        # example the film ``/avatar/``).  Only let the filename contribute
+        # URL noise signals so legitimate editorial images are not treated
+        # as author portraits.
+        image_filename = urlsplit(original_url).path.rpartition("/")[2]
+        if not re.search(
+            r"(?i)(?:^|[_.-])avatar(?:[_.-]|$)", image_filename
+        ):
+            image_filename = re.sub(r"(?i)avatar", "", image_filename)
+        noise_context = context.replace(original_url, image_filename)
     reasons = ["inside-article-body"]
     role = ImageRole.BODY
-    if _TRACKING_RE.search(context) or (
+    if _TRACKING_RE.search(noise_context) or (
         width is not None
         and height is not None
         and width <= 2
@@ -12269,14 +14405,14 @@ def _image_from_tag(
         # the site's metadata placeholder as the lead image.
         role = ImageRole.CHART
         reasons.append("axios-visual-fallback")
-    elif _NOISE_RE.search(context):
-        if re.search(r"(?i)(advert|sponsor|promo)", context):
+    elif _NOISE_RE.search(noise_context):
+        if re.search(r"(?i)(advert|sponsor|promo)", noise_context):
             role = ImageRole.ADVERTISEMENT
-        elif re.search(r"(?i)(recommend|related)", context):
+        elif re.search(r"(?i)(recommend|related)", noise_context):
             role = ImageRole.RECOMMENDATION
-        elif re.search(r"(?i)avatar", context):
+        elif re.search(r"(?i)avatar", noise_context):
             role = ImageRole.AUTHOR_AVATAR
-        elif re.search(r"(?i)logo", context):
+        elif re.search(r"(?i)logo", noise_context):
             role = ImageRole.LOGO
         else:
             role = ImageRole.ICON
@@ -12325,12 +14461,21 @@ def _image_candidate(
     if _is_placeholder_image_url(url):
         role = ImageRole.LOGO
         reasons = [*reasons, "generic-publisher-branding"]
+    if spec.publisher == "zaobao" and _zaobao_non_editorial_image_url(url):
+        role = ImageRole.LOGO
+        reasons = [*reasons, "zaobao-paywall-default-artwork"]
     if spec.publisher == "nyt" and _nyt_generic_branding_image(url):
         role = ImageRole.LOGO
         reasons = [*reasons, "generic-publisher-branding"]
     if spec.publisher == "nyt" and _nyt_author_avatar_image(url):
         role = ImageRole.AUTHOR_AVATAR
         reasons = [*reasons, "author-avatar-url"]
+    if spec.publisher == "nyt" and _nyt_interactive_sprite_image(url):
+        role = ImageRole.ICON
+        reasons = [*reasons, "interactive-sprite-asset"]
+    if spec.publisher == "nyt" and _nyt_non_editorial_image(url):
+        role = ImageRole.ICON
+        reasons = [*reasons, "social-or-author-icon-url"]
     identity = _image_identity(url)
     asset_id = (
         f"urlsha256:{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
@@ -12353,6 +14498,17 @@ def _image_candidate(
 def _image_identity(url: str) -> str:
     parts = urlsplit(url)
     host = (parts.hostname or "").casefold()
+    if host == "images.axios.com":
+        # Axios places a signing token, crop and resize instructions before a
+        # stable date/filename suffix. Different renditions of one editorial
+        # image must remain alternate URLs of one asset, not duplicate images.
+        axios_asset = re.search(
+            r"/(\d{4}/\d{2}/\d{2}/[^/]+)$",
+            parts.path,
+            flags=re.IGNORECASE,
+        )
+        if axios_asset is not None:
+            return f"axios-image:{axios_asset.group(1).casefold()}"
     if host == "dims.apnews.com":
         nested_match = re.search(
             r"(?:^|&)url=([^&]+)",
@@ -12533,13 +14689,103 @@ def _image_identity(url: str) -> str:
 
 
 def _nikkei_non_editorial_image_url(url: str) -> bool:
+    parts = urlsplit(url)
+    host = (parts.hostname or "").casefold()
+    path = unquote(parts.path).casefold()
+    if (
+        host
+        in {
+            "assets.nikkei.jp",
+            "parts.nikkei.jp",
+            "partsa.nikkei.jp",
+        }
+        and "/parts/ds/images/common/" in path
+        and re.search(r"/icon_(?:ogp|twittercard|zoom_)", path)
+    ):
+        return True
     decoded = unquote(url).casefold()
     return any(
         marker in decoded
         for marker in (
             "/.resources/k-components/icon/",
             "/.resources/k-components/banner/",
+            "/.resources/k-components/rectangle.rev-",
+            "/.resources/k-components/square.rev-",
             "paid-banner",
+        )
+    )
+
+
+def _nikkei_non_editorial_image_candidate(image: ImageCandidate) -> bool:
+    """Reject Nikkei chrome images whose legacy markup only exposes size."""
+    return _nikkei_non_editorial_image_url(image.original_url) or (
+        image.width is not None
+        and image.height is not None
+        and image.width <= 120
+        and image.height <= 50
+    )
+
+
+def _caixin_non_editorial_image_url(url: str) -> bool:
+    parts = urlsplit(url)
+    host = (parts.hostname or "").casefold()
+    path = unquote(parts.path).casefold()
+    return (
+        host == "file.caing.com"
+        and path.endswith("/images/channel/content/images/fullurl.gif")
+    ) or (
+        host == "file.caixin.com"
+        and (
+            path.endswith("/file/vip/images/code.jpg")
+            or path.endswith("/images/common/images/shareimg.jpg")
+        )
+    ) or (
+        host == "file.caixin.com"
+        and re.search(
+            r"/images/common/images/logo[^/]*\.(?:gif|jpe?g|png|webp)$",
+            path,
+        )
+        is not None
+    ) or (
+        host == "entities.caixin.com"
+        and path.endswith("/support.png")
+    )
+
+
+def _scmp_non_editorial_image_url(url: str) -> bool:
+    """Recognize legacy SCMP sharing/control icons, not editorial media."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").casefold()
+    path = unquote(parts.path).casefold()
+    return (
+        host in {"cdn1.i-scmp.com", "cdn.i-scmp.com", "www.scmp.com"}
+        and bool(
+            re.search(
+                r"/(?:bookmark-icon|share-icon|print-icon)(?:[-_][^/]*)?\."
+                r"(?:gif|jpe?g|png|webp)$",
+                path,
+                flags=re.IGNORECASE,
+            )
+        )
+    )
+
+
+def _zaobao_non_editorial_image_url(url: str) -> bool:
+    """Recognize Zaobao paywall/default artwork, not story media."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").casefold()
+    path = unquote(parts.path).casefold()
+    if host not in {"www.zaobao.com.sg", "static.zaobao.com"}:
+        return False
+    return bool(
+        re.search(
+            r"/themes/custom/zbsg2020/images/default-img\.png$|"
+            r"/dist/images/zbsg/default-image\.png$|"
+            r"/zbsg/zaobaosg-facebook-share\.png$|"
+            r"/freemium_images/[^/]+/[^/]*default[-_](?:desktop|mobile)[^/]*\.(?:gif|jpe?g|png|webp)$|"
+            r"/(?:11_mobile_updated_covid_19_0|desktop_covid_19_0)\.png$",
+            path,
+            flags=re.IGNORECASE,
         )
     )
 
@@ -12573,6 +14819,40 @@ def _nyt_author_avatar_image(url: str) -> bool:
     )
 
 
+def _nyt_interactive_sprite_image(url: str) -> bool:
+    """Recognize NYT interactive CSS sprites that are not editorial media."""
+    parts = urlsplit(url)
+    if (parts.hostname or "").casefold() != "static01.nyt.com":
+        return False
+    return bool(
+        re.search(
+            r"/projects/assets/oscars_2013/images/2013/"
+            r"[^/]*sprite[^/]*\.(?:gif|jpe?g|png|webp)$|"
+            r"/[^/]*sprite[^/]*\.(?:gif|jpe?g|png|webp)$",
+            parts.path,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _nyt_non_editorial_image(url: str) -> bool:
+    """Recognize NYT social/author icon renditions rather than story media."""
+    parts = urlsplit(url)
+    if (parts.hostname or "").casefold() != "static01.nyt.com":
+        return False
+    if "healthquiz-art/" in parts.path.casefold():
+        return True
+    return bool(
+        re.search(
+            # NYT has used both ``_icon`` and ``-icon`` directory names for
+            # social/quiz renditions (for example ``11Well-HealthQuiz-icon``).
+            r"(?:^|/)\d{1,4}[^/]*(?:[_-])icon/",
+            parts.path,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def _ft_image_led_article(
     article: dict[str, Any],
     *,
@@ -12598,6 +14878,27 @@ def _ft_image_led_article(
         and width >= 800
         and height >= 600
     )
+
+
+def _zaobao_visual_short_record(
+    article: dict[str, Any],
+    *,
+    body_characters: int,
+    images: list[ImageCandidate],
+) -> bool:
+    """Recognize old Zaobao photo-news records with caption-only bodies."""
+    if not article or not images:
+        return False
+    access_mode = _string_or_none(article.get("accessMode"))
+    if not access_mode or access_mode.casefold() != "visual":
+        return False
+    word_count = article.get("wordCount")
+    if not isinstance(word_count, int) or word_count > 120:
+        return False
+    article_body = _string_or_none(article.get("articleBody"))
+    if not article_body or not _clean_text(article_body):
+        return False
+    return body_characters < _MINIMUM_BODY_CHARACTERS
 
 
 def _ft_explicit_truncation_notice(soup: BeautifulSoup) -> bool:
@@ -12782,6 +15083,7 @@ def _is_placeholder_image_url(url: str) -> bool:
             "/default-social",
             "/defaultpromocrop.",
             "/rcom-default.png",
+            "/reuters-default.png",
             "/r-generic-hdr.png",
             "/images/reuters.jpg",
             "twitter_ms_fdnoir.png",
@@ -12792,13 +15094,23 @@ def _is_placeholder_image_url(url: str) -> bool:
             "yahoo_default_logo",
             "yahoo-finance-default-logo",
             "/m/img/social/og-ft-logo",
+            # Legacy FT article chrome: a 210x39 GIF reused across unrelated
+            # stories, not editorial artwork.
+            "bc1ec196-2767-11e2-8c4f-00144feabdc0.gif",
             "/__assets/creatives/open-graph/ft-v1.jpg",
+            "/__assets/creatives/open-graph/fastft-v1.jpg",
+            "/__assets/creatives/brand-ft/icons/v2/open-graph.png",
+            "/__assets/creatives/brand-ft/icons/v2/favicon-",
+            "/__assets/creatives/brand-ft/icons/v3/open-graph.png",
             "/img/meta/wsj-social-share.",
             "/img/wsj_logo_black_social.",
             "/img/wsj_profile_lg.",
             "/common/imgs/wsjsection.",
             "/img/social/opengraph/ij-social-default-",
             "axios-placeholder-",
+            "/social/breaking-news.png",
+            "/include/images/facebook-default.jpg",
+            "add-the-print-as-a-trusted-source-",
         )
     )
 
@@ -13011,7 +15323,17 @@ def _extract_authors(
 def _content_type(article: dict[str, Any], canonical_url: str) -> ContentType:
     article_type = article.get("@type") if article else None
     url = canonical_url.casefold()
-    if article_type == "LiveBlogPosting" or re.search(r"/live(?:/|$)", url):
+    if (
+        "zaobao.com.sg" in url
+        and "/shorts/" in url
+    ):
+        # Zaobao's modern shorts desk is video-first even when the archived
+        # JSON-LD incorrectly declares the package as a NewsArticle.
+        return ContentType.VIDEO
+    if article_type == "LiveBlogPosting" or re.search(
+        r"/(?:live|liveblog)(?:/|$)",
+        url,
+    ):
         return ContentType.LIVEBLOG
     if "newsletter" in url:
         return ContentType.NEWSLETTER
@@ -13030,6 +15352,23 @@ def _content_type(article: dict[str, Any], canonical_url: str) -> ContentType:
     if isinstance(article_type, str) and article_type == "ReportageNewsArticle":
         return ContentType.ARTICLE
     return ContentType.ARTICLE
+
+
+def _scmp_live_article(soup: BeautifulSoup) -> bool:
+    """Recognize SCMP's legacy live packages from explicit page metadata."""
+    article_type = _meta_content(soup, "name", "cse_articletype")
+    if article_type and article_type.casefold().strip() in {
+        "live",
+        "liveblog",
+        "live blog",
+    }:
+        return True
+    return bool(
+        soup.select_one(
+            "[class*='live-article__body'], "
+            "[class*='live-blog__body']"
+        )
+    )
 
 
 def _looks_like_gallery(
@@ -13238,6 +15577,30 @@ def _scmp_legacy_published_at(soup: BeautifulSoup) -> str | None:
     return None
 
 
+def _caixin_legacy_published_at(soup: BeautifulSoup) -> str | None:
+    value = _clean_text(
+        _tag_text(soup.select_one(".focusBody .infobox"))
+        or _tag_text(soup.select_one(".focusBody .op"))
+        or _tag_text(soup.select_one(".datetime"))
+        or ""
+    )
+    match = re.search(
+        r"(?:发表时间\s*[：:]\s*)?(?P<year>20\d{2})年"
+        r"(?P<month>\d{1,2})月(?P<day>\d{1,2})日"
+        r"(?:\s*(?P<hour>\d{1,2}):(?P<minute>\d{2}))?",
+        value,
+    )
+    if match is None:
+        return None
+    return (
+        f"{int(match.group('year')):04d}-"
+        f"{int(match.group('month')):02d}-"
+        f"{int(match.group('day')):02d}T"
+        f"{int(match.group('hour') or 0):02d}:"
+        f"{int(match.group('minute') or 0):02d}:00+08:00"
+    )
+
+
 def _nikkei_legacy_headline(soup: BeautifulSoup) -> str | None:
     """Recover old Nikkei headlines that only survive in ``<title>``."""
 
@@ -13250,6 +15613,21 @@ def _nikkei_legacy_headline(soup: BeautifulSoup) -> str | None:
         title,
     ).strip()
     return title or None
+
+
+def _caixin_legacy_headline(soup: BeautifulSoup) -> str | None:
+    """Skip the empty site-logo ``h1`` in Caixin's legacy template."""
+
+    # Older Caixin pages put an empty ``h1.logo`` before the real headline
+    # under ``.the_content``.  ``select_one('h1')`` therefore returns the
+    # logo and leaves an otherwise usable article without a headline.
+    for node in soup.select(".the_content h1, #Main_Content_Val h1, h1"):
+        if "logo" in (node.get("class") or []):
+            continue
+        value = _tag_text(node)
+        if value:
+            return value
+    return None
 
 
 def _nikkei_truncated_body(
@@ -13279,7 +15657,7 @@ def _nikkei_truncated_body(
 
 
 def _zaobao_embedded_published_at(soup: BeautifulSoup) -> str | None:
-    """Read the local publication timestamp from Zaobao's RSC payload."""
+    """Read publication time from RSC data or legacy visible date markup."""
     for script in soup.select("script"):
         value = script.string or script.get_text()
         if "publication_date" not in value.casefold():
@@ -13302,6 +15680,18 @@ def _zaobao_embedded_published_at(soup: BeautifulSoup) -> str | None:
         if not re.search(r"(?:Z|[+-]\d{2}:?\d{2})$", published_at):
             published_at += "+08:00"
         return published_at
+    for node in soup.select("p.date, .date"):
+        text = _clean_text(node.get_text(" ", strip=True))
+        match = re.search(
+            r"(?P<year>20\d{2})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日",
+            text,
+        )
+        if match is not None:
+            return (
+                f"{int(match.group('year')):04d}-"
+                f"{int(match.group('month')):02d}-"
+                f"{int(match.group('day')):02d}T00:00:00+08:00"
+            )
     return None
 
 

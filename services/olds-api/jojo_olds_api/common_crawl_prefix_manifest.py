@@ -23,6 +23,7 @@ from .common_crawl import (
 )
 from .news_models import CaptureCandidate, CaptureProvider
 from .news_parser import parse_article
+from .publisher_specs import publisher_spec
 from .wayback_manifest import (
     ARCHIVED_DATE_HYDRATION_PUBLISHERS,
     candidate_rank,
@@ -91,8 +92,7 @@ class CommonCrawlPrefixClient:
             self._client.close()
 
     def collections(self) -> tuple[PrefixCollection, ...]:
-        response = self._get(COLLECTION_INFO_URL)
-        payload = response.json()
+        payload = self._get_json(COLLECTION_INFO_URL)
         if not isinstance(payload, list):
             raise ValueError("Common Crawl collection list is not an array")
         result: list[PrefixCollection] = []
@@ -126,14 +126,13 @@ class CommonCrawlPrefixClient:
 
     def page_count(self, *, index_url: str, pattern: str) -> int:
         try:
-            response = self._get(
+            payload = self._get_json(
                 index_url,
                 params=_query_parameters(pattern, page_size=self.page_size)
                 + [("showNumPages", "true")],
             )
         except CommonCrawlNoCapturesError:
             return 0
-        payload = response.json()
         if not isinstance(payload, dict):
             raise ValueError("Common Crawl page count is not an object")
         pages = _optional_int(payload.get("pages"))
@@ -151,7 +150,7 @@ class CommonCrawlPrefixClient:
         if page < 0:
             raise ValueError("page must not be negative")
         try:
-            response = self._get(
+            lines = self._get_text_lines(
                 index_url,
                 params=_query_parameters(pattern, page_size=self.page_size)
                 + [("page", str(page))],
@@ -159,7 +158,7 @@ class CommonCrawlPrefixClient:
         except CommonCrawlNoCapturesError:
             return PrefixIndexPage(rows=())
         rows: list[dict[str, object]] = []
-        for line in response.text.splitlines():
+        for line in lines:
             if not line.strip():
                 continue
             value = json.loads(line)
@@ -173,10 +172,14 @@ class CommonCrawlPrefixClient:
         url: str,
         *,
         params: list[tuple[str, str]] | None = None,
+        attempts: int | None = None,
     ) -> httpx.Response:
+        request_attempts = self.attempts if attempts is None else attempts
+        if request_attempts < 1:
+            raise ValueError("attempts must be positive")
         last_status: int | None = None
         last_error: Exception | None = None
-        for attempt in range(self.attempts):
+        for attempt in range(request_attempts):
             self.rate_limiter.wait()
             try:
                 response = self._client.get(url, params=params)
@@ -196,13 +199,80 @@ class CommonCrawlPrefixClient:
                 return response
             except (httpx.HTTPError, RuntimeError, ValueError) as exc:
                 last_error = exc
-                if attempt + 1 >= self.attempts:
+                if attempt + 1 >= request_attempts:
                     break
                 time.sleep(min(30.0, 2.0**attempt))
         suffix = f" (last HTTP status {last_status})" if last_status else ""
         raise RuntimeError(
-            f"Common Crawl index query failed after {self.attempts} attempts"
+            f"Common Crawl index query failed after {request_attempts} attempts"
             f"{suffix}"
+        ) from last_error
+
+    def _get_json(
+        self,
+        url: str,
+        *,
+        params: list[tuple[str, str]] | None = None,
+    ) -> object:
+        """Fetch JSON while retrying successful-but-malformed responses."""
+        last_error: Exception | None = None
+        for attempt in range(self.attempts):
+            try:
+                response = self._get(url, params=params, attempts=1)
+                return response.json()
+            except CommonCrawlNoCapturesError:
+                raise
+            except (
+                json.JSONDecodeError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                last_error = exc
+                if attempt + 1 >= self.attempts:
+                    break
+                time.sleep(min(30.0, 2.0**attempt))
+        raise RuntimeError(
+            "Common Crawl JSON response could not be decoded after "
+            f"{self.attempts} attempts"
+        ) from last_error
+
+    def _get_text_lines(
+        self,
+        url: str,
+        *,
+        params: list[tuple[str, str]] | None = None,
+    ) -> tuple[str, ...]:
+        """Fetch and validate an NDJSON page before recording it."""
+        last_error: Exception | None = None
+        for attempt in range(self.attempts):
+            try:
+                response = self._get(url, params=params, attempts=1)
+                lines = tuple(
+                    line for line in response.text.splitlines() if line.strip()
+                )
+                for line in lines:
+                    value = json.loads(line)
+                    if not isinstance(value, dict):
+                        raise ValueError(
+                            "Common Crawl index row is not an object"
+                        )
+                return lines
+            except CommonCrawlNoCapturesError:
+                raise
+            except (
+                json.JSONDecodeError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                last_error = exc
+                if attempt + 1 >= self.attempts:
+                    break
+                time.sleep(min(30.0, 2.0**attempt))
+        raise RuntimeError(
+            "Common Crawl NDJSON response could not be decoded after "
+            f"{self.attempts} attempts"
         ) from last_error
 
 
@@ -222,6 +292,16 @@ def prefix_patterns(
         prefix = pattern[:-1]
         if prefix and prefix not in result:
             result.append(prefix)
+    if spec.publisher == "npr":
+        # NPR's pre-2010 CMS links remained widely captured after dated
+        # canonical URLs were introduced. Their storyId is stable, while the
+        # publication year must be recovered from archived article metadata.
+        for prefix in (
+            "www.npr.org/templates/story/story.php",
+            "npr.org/templates/story/story.php",
+        ):
+            if prefix not in result:
+                result.append(prefix)
     if not result:
         raise ValueError(
             f"publisher {spec.publisher!r} has no prefix-compatible pattern"
@@ -339,9 +419,54 @@ def initialize_prefix_schema(
         "SELECT value FROM prefix_metadata WHERE key='fingerprint'"
     ).fetchone()
     if existing is not None and str(existing[0]) != fingerprint:
-        raise ValueError(
-            "Common Crawl prefix state belongs to a different publisher, "
-            "date window, or pattern set"
+        previous_metadata = dict(
+            connection.execute(
+                """
+                SELECT key, value FROM prefix_metadata
+                WHERE key IN ('publisher', 'from_year', 'to_year')
+                """
+            ).fetchall()
+        )
+        previous_patterns = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT DISTINCT pattern FROM prefix_queries"
+            )
+        }
+        same_scope = previous_metadata == {
+            "publisher": spec.publisher,
+            "from_year": str(from_year),
+            "to_year": str(to_year),
+        }
+        if not same_scope or not previous_patterns < set(patterns):
+            raise ValueError(
+                "Common Crawl prefix state belongs to a different "
+                "publisher, date window, or pattern set"
+            )
+    hydration_parser_version = publisher_spec(spec.publisher).parser_version
+    previous_hydration_version = connection.execute(
+        "SELECT value FROM prefix_metadata "
+        "WHERE key='hydration_parser_version'"
+    ).fetchone()
+    if (
+        spec.publisher in ARCHIVED_DATE_HYDRATION_PUBLISHERS
+        and (
+            previous_hydration_version is None
+            or str(previous_hydration_version[0]) != hydration_parser_version
+        )
+    ):
+        # A parser may learn a legacy date field after an archived page was
+        # classified as no-date. Reopen only parser-dependent terminal rows;
+        # an out-of-window date remains authoritative across parser versions.
+        connection.execute(
+            """
+            UPDATE prefix_date_hydration
+            SET status='pending', attempts=0, published_at=NULL,
+                parser_status=NULL, body_characters=NULL, last_error=NULL,
+                updated_at=?
+            WHERE publisher=? AND status IN ('no-date', 'failed')
+            """,
+            (_now_iso(), spec.publisher),
         )
     metadata = {
         "schema_version": SCHEMA_VERSION,
@@ -349,6 +474,7 @@ def initialize_prefix_schema(
         "from_year": str(from_year),
         "to_year": str(to_year),
         "fingerprint": fingerprint,
+        "hydration_parser_version": hydration_parser_version,
     }
     connection.executemany(
         """
@@ -388,6 +514,19 @@ def next_prefix_query(
         WHERE status NOT IN ('complete', 'target-complete')
         ORDER BY
             attempts,
+            CASE
+                -- Reuters' modern CMS moved articles below section roots
+                -- (/world/, /business/, ...).  Probe those roots before the
+                -- legacy /article/<letter> families so a newly-added source
+                -- can contribute candidates without waiting for every old
+                -- prefix/collection pair to be exhausted.
+                WHEN pattern LIKE 'www.reuters.com/%/' THEN -3
+                WHEN pattern LIKE '%/templates/story/story.php'
+                  AND collection_id LIKE 'CC-MAIN-2018-%' THEN -2
+                WHEN pattern LIKE '%/templates/story/story.php' THEN -1
+                WHEN instr(pattern, '/20') > 0 THEN 0
+                ELSE 1
+            END,
             CAST(
                 substr(pattern, instr(pattern, '/20') + 1, 4)
                 AS INTEGER
@@ -470,7 +609,87 @@ def reconcile_prefix_year_targets(
                 """,
                 (_now_iso(), year),
             )
+        window = dict(
+            connection.execute(
+                "SELECT key, value FROM prefix_metadata "
+                "WHERE key IN ('from_year', 'to_year')"
+            )
+        )
+        configured_years = {
+            str(year)
+            for year in range(
+                int(window["from_year"]),
+                int(window["to_year"]) + 1,
+            )
+        }
+        if configured_years and configured_years.issubset(satisfied_years):
+            # Undated legacy URL families (currently NPR storyId links) can
+            # contribute to any configured year after HTML hydration. Once
+            # every year has reached its target, scanning them further is no
+            # longer useful; reopen them automatically if the target grows.
+            connection.execute(
+                """
+                UPDATE prefix_queries
+                SET status='target-complete', last_error=NULL, updated_at=?
+                WHERE status NOT IN ('complete', 'target-complete')
+                  AND instr(pattern, '/20')=0
+                """,
+                (_now_iso(),),
+            )
         return connection.total_changes - before
+
+
+def _prefix_year_targets_satisfied(
+    connection: sqlite3.Connection,
+    *,
+    target_articles_per_year: int | None = None,
+) -> bool:
+    """Return whether every configured publication year has its target.
+
+    Date hydration can leave a very large tail of undated candidates. Once
+    every configured year already has enough dated canonical URLs, that tail
+    cannot improve the validation catalog and should not keep an auto-resumed
+    source workflow alive.
+    """
+    if target_articles_per_year is None:
+        target_row = connection.execute(
+            "SELECT value FROM prefix_metadata "
+            "WHERE key='target_articles_per_year'"
+        ).fetchone()
+        if target_row is None:
+            return False
+        target_articles_per_year = int(target_row[0])
+    if target_articles_per_year < 1:
+        raise ValueError("target_articles_per_year must be positive")
+    window = dict(
+        connection.execute(
+            "SELECT key, value FROM prefix_metadata "
+            "WHERE key IN ('from_year', 'to_year')"
+        )
+    )
+    if "from_year" not in window or "to_year" not in window:
+        return False
+    configured_years = tuple(
+        str(year)
+        for year in range(int(window["from_year"]), int(window["to_year"]) + 1)
+    )
+    if not configured_years:
+        return False
+    counts = {
+        str(year): int(count)
+        for year, count in connection.execute(
+            """
+            SELECT substr(published_at, 1, 4),
+                   COUNT(DISTINCT canonical_url)
+            FROM prefix_candidates
+            GROUP BY substr(published_at, 1, 4)
+            """
+        )
+    }
+    return all(
+        counts.get(year, 0) >= target_articles_per_year
+        for year in configured_years
+    )
 
 
 def record_prefix_page_count(
@@ -757,6 +976,7 @@ def process_prefix_date_hydration(
     spec: ArchiveSourceSpec,
     archive_client: CommonCrawlClient,
     maximum: int,
+    target_articles_per_year: int | None = None,
     maximum_html_bytes: int = 15_000_000,
     maximum_attempts: int = 3,
 ) -> dict[str, object]:
@@ -768,18 +988,11 @@ def process_prefix_date_hydration(
         )
     if maximum < 1 or maximum_html_bytes < 1 or maximum_attempts < 1:
         raise ValueError("hydration limits must be positive")
-    rows = connection.execute(
-        """
-        SELECT canonical_url, attempts
-        FROM prefix_date_hydration
-        WHERE publisher=?
-          AND status IN ('pending', 'retry')
-          AND attempts < ?
-        ORDER BY attempts, updated_at, canonical_url
-        LIMIT ?
-        """,
-        (spec.publisher, maximum_attempts, maximum),
-    ).fetchall()
+    if (
+        target_articles_per_year is not None
+        and target_articles_per_year < 1
+    ):
+        raise ValueError("target_articles_per_year must be positive")
     window = dict(
         connection.execute(
             """
@@ -788,14 +1001,84 @@ def process_prefix_date_hydration(
             """
         )
     )
+    pending_rows = connection.execute(
+        """
+        WITH first_capture AS (
+            SELECT canonical_url, MIN(timestamp) AS first_timestamp
+            FROM prefix_undated_candidates
+            GROUP BY canonical_url
+        )
+        SELECT hydration.canonical_url, hydration.attempts
+        FROM prefix_date_hydration AS hydration
+        LEFT JOIN first_capture
+          ON first_capture.canonical_url=hydration.canonical_url
+        WHERE hydration.publisher=?
+          AND hydration.status IN ('pending', 'retry')
+          AND hydration.attempts < ?
+        ORDER BY
+            hydration.attempts,
+            CASE
+                WHEN substr(first_capture.first_timestamp, 1, 4)
+                     BETWEEN ? AND ? THEN 0
+                ELSE 1
+            END,
+            first_capture.first_timestamp,
+            hydration.updated_at,
+            hydration.canonical_url
+        """,
+        (
+            spec.publisher,
+            maximum_attempts,
+            str(int(window["from_year"])),
+            str(int(window["to_year"])),
+        ),
+    ).fetchall()
     start = f"{int(window['from_year']):04d}-01-01"
     end = f"{int(window['to_year']) + 1:04d}-01-01"
+    if spec.publisher == "npr":
+        target_story_ids = sorted(
+            story_id
+            for (canonical_url,) in connection.execute(
+                """
+                SELECT DISTINCT canonical_url FROM prefix_candidates
+                WHERE published_at >= ? AND published_at < ?
+                """,
+                (start, end),
+            )
+            if (story_id := _npr_story_id(str(canonical_url))) is not None
+        )
+        if target_story_ids:
+            lower = target_story_ids[len(target_story_ids) // 100]
+            upper = target_story_ids[len(target_story_ids) * 99 // 100]
+            midpoint = (lower + upper) // 2
+            pending_rows.sort(
+                key=lambda row: (
+                    int(row[1]),
+                    not (
+                        (story_id := _npr_story_id(str(row[0]))) is not None
+                        and lower <= story_id <= upper
+                    ),
+                    abs((story_id or 0) - midpoint),
+                    str(row[0]),
+                )
+            )
+    rows = pending_rows[:maximum]
     found = 0
     outside_window = 0
     no_date = 0
     failed = 0
+    attempted = 0
     errors: list[str] = []
     for canonical_url_value, prior_attempts in rows:
+        if (
+            target_articles_per_year is not None
+            and _prefix_year_targets_satisfied(
+                connection,
+                target_articles_per_year=target_articles_per_year,
+            )
+        ):
+            break
+        attempted += 1
         canonical_url = str(canonical_url_value)
         candidate_rows = connection.execute(
             """
@@ -904,6 +1187,14 @@ def process_prefix_date_hydration(
                     canonical_url=canonical_url,
                     published_at=published_at,
                 )
+        if (
+            target_articles_per_year is not None
+            and _prefix_year_targets_satisfied(
+                connection,
+                target_articles_per_year=target_articles_per_year,
+            )
+        ):
+            break
     remaining = int(
         connection.execute(
             """
@@ -916,7 +1207,7 @@ def process_prefix_date_hydration(
         ).fetchone()[0]
     )
     return {
-        "attempted": len(rows),
+        "attempted": attempted,
         "found": found,
         "outOfWindow": outside_window,
         "noDate": no_date,
@@ -924,6 +1215,14 @@ def process_prefix_date_hydration(
         "remaining": remaining,
         "errors": errors,
     }
+
+
+def _npr_story_id(value: str) -> int | None:
+    match = re.search(
+        r"(?i)(?:storyId=|/)(\d{6,})(?:[/?&#]|$)",
+        value,
+    )
+    return int(match.group(1)) if match is not None else None
 
 
 def _promote_undated_candidates(
@@ -1100,14 +1399,19 @@ def prefix_summary(connection: sqlite3.Connection) -> dict[str, object]:
         ).fetchone()[0]
     )
     hydration = prefix_date_hydration_summary(connection)
+    target_complete = _prefix_year_targets_satisfied(connection)
     result: dict[str, object] = {
         "formatVersion": SCHEMA_VERSION,
         "queryStatus": query_status,
         "articlesByYear": years,
         "queriesRemaining": remaining,
+        "targetComplete": target_complete,
         "shouldContinue": (
-            remaining > 0
-            or bool(hydration and hydration["remaining"] > 0)
+            not target_complete
+            and (
+                remaining > 0
+                or bool(hydration and hydration["remaining"] > 0)
+            )
         ),
     }
     if hydration is not None:

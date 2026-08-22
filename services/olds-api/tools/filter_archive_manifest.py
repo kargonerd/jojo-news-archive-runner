@@ -4,6 +4,7 @@ import argparse
 import gzip
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Iterable
 
@@ -12,6 +13,10 @@ SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
+from jojo_olds_api.archive_sources import (
+    archive_source_spec,
+    normalize_article_url,
+)
 from jojo_olds_api.wayback_manifest import infer_published_at
 
 
@@ -49,11 +54,14 @@ def filter_archive_manifest(
     end = f"{to_year + 1:04d}-01-01"
     seen = 0
     selected = 0
+    selected_before_collapse = 0
     missing_publication_date = 0
     corrected_publication_date = 0
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     opener = gzip.open if destination.suffix == ".gz" else open
+    caixin_rows: dict[str, dict[str, object]] = {}
+    source_spec = archive_source_spec(publisher)
     with opener(temporary, "wt", encoding="utf-8") as handle:
         for row in _read_jsonl(source):
             seen += 1
@@ -91,6 +99,7 @@ def filter_archive_manifest(
                 continue
             if not start <= published_at < end:
                 continue
+            selected_before_collapse += 1
             if published_at != manifest_published_at:
                 row = dict(row)
                 if "published_at" in row:
@@ -100,6 +109,31 @@ def filter_archive_manifest(
                 else:
                     row["publishedAt"] = published_at
                 corrected_publication_date += 1
+            if publisher.casefold() == "caixin":
+                normalized_url = normalize_article_url(
+                    source_spec,
+                    canonical_url,
+                )
+                if normalized_url is None:
+                    continue
+                row = dict(row)
+                row.pop("canonical_url", None)
+                row.pop("url", None)
+                row["canonicalUrl"] = normalized_url
+                existing = caixin_rows.get(normalized_url)
+                if existing is None:
+                    row["candidates"] = _sorted_caixin_candidates(
+                        _candidates(row)
+                    )
+                    caixin_rows[normalized_url] = row
+                else:
+                    existing["candidates"] = _sorted_caixin_candidates(
+                        [
+                            *_candidates(existing),
+                            *_candidates(row),
+                        ]
+                    )
+                continue
             handle.write(
                 json.dumps(
                     row,
@@ -109,6 +143,17 @@ def filter_archive_manifest(
                 + "\n"
             )
             selected += 1
+        if publisher.casefold() == "caixin":
+            for canonical_url in sorted(caixin_rows):
+                handle.write(
+                    json.dumps(
+                        caixin_rows[canonical_url],
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                    + "\n"
+                )
+            selected = len(caixin_rows)
     if selected == 0:
         temporary.unlink(missing_ok=True)
         raise ValueError(
@@ -121,10 +166,52 @@ def filter_archive_manifest(
         "toYear": to_year,
         "rowsSeen": seen,
         "rowsSelected": selected,
+        "rowsCollapsed": selected_before_collapse - selected,
         "rowsMissingPublicationDate": missing_publication_date,
         "rowsPublicationDateCorrected": corrected_publication_date,
         "output": str(destination),
     }
+
+
+def _candidates(row: dict[str, object]) -> list[dict[str, object]]:
+    values = row.get("candidates")
+    if not isinstance(values, list):
+        return []
+    return [value for value in values if isinstance(value, dict)]
+
+
+def _sorted_caixin_candidates(
+    candidates: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    unique: dict[tuple[str, ...], dict[str, object]] = {}
+    for candidate in candidates:
+        identity = tuple(
+            str(candidate.get(key) or "")
+            for key in (
+                "provider",
+                "snapshotUrl",
+                "sourceUrl",
+                "digest",
+                "warcFilename",
+                "warcOffset",
+                "warcLength",
+            )
+        )
+        unique.setdefault(identity, candidate)
+
+    def priority(candidate: dict[str, object]) -> int:
+        source = str(
+            candidate.get("snapshotUrl")
+            or candidate.get("sourceUrl")
+            or ""
+        ).casefold()
+        if re.search(r"_all\.html(?:[?#/]|$)", source):
+            return 0
+        if re.search(r"_\d+\.html(?:[?#/]|$)", source):
+            return 2
+        return 1
+
+    return sorted(unique.values(), key=priority)
 
 
 def _read_jsonl(path: Path) -> Iterable[dict[str, object]]:

@@ -32,6 +32,7 @@ def action_state(
             "retryErrors": False,
             "actionable": 1,
             "validationReady": False,
+            "parserValidation": {"years": []},
             "terminalUnresolved": 0,
             "shouldContinue": True,
         }
@@ -55,8 +56,10 @@ def action_state(
             (maximum_record_attempts,),
         ).fetchone()[0]
         validation_replays = 0
+        validation_capture_actionable: int | None = None
         validation_ready = False
         validation_target_reached = False
+        validation_by_year: list[dict[str, object]] = []
         validation_tables = {
             str(row[0])
             for row in connection.execute(
@@ -103,10 +106,44 @@ def action_state(
                 if has_qa_revision
                 else ""
             )
+            validation_capture_actionable = int(
+                connection.execute(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM parser_validation_samples AS sample
+                    JOIN parser_validation_config AS config
+                      ON config.sample_year=sample.sample_year
+                    JOIN captures AS capture
+                      ON capture.canonical_url=sample.canonical_url
+                    LEFT JOIN parser_validation_results AS result
+                      ON result.canonical_url=sample.canonical_url
+                     AND result.parser_version=config.parser_version
+                     {qa_result_join}
+                    WHERE result.canonical_url IS NULL
+                      AND (
+                        capture.status IN ('pending', 'downloading')
+                        OR (
+                          capture.status='error'
+                          AND capture.attempts < ?
+                        )
+                      )
+                    """,
+                    (maximum_record_attempts,),
+                ).fetchone()[0]
+            )
             unbound_expression = (
                 "COALESCE(SUM(result.source_capture_sha256 IS NULL), 0)"
                 if "source_capture_sha256" in result_columns
                 else "0"
+            )
+            article_result_expression = (
+                "NOT EXISTS ("
+                "SELECT 1 FROM json_each(result.issues_json) "
+                "WHERE value IN ("
+                "'empty-nontext-content','nonarticle-desk'"
+                "))"
+                if "issues_json" in result_columns
+                else "1"
             )
             readiness_columns = {
                 "canonical_url",
@@ -121,10 +158,17 @@ def action_state(
                     SELECT
                         config.sample_year,
                         config.target_size,
-                        COUNT(result.canonical_url) AS evaluated,
+                        config.parser_version,
+                        COALESCE(SUM(
+                            result.canonical_url IS NOT NULL
+                            AND {article_result_expression}
+                        ), 0) AS evaluated,
                         COALESCE(SUM(result.qa_pass), 0) AS qa_passed,
                         COALESCE(
-                            SUM(result.extraction_status='complete'),
+                            SUM(
+                                result.extraction_status='complete'
+                                AND {article_result_expression}
+                            ),
                             0
                         ) AS complete,
                         COALESCE(
@@ -145,15 +189,57 @@ def action_state(
                     ORDER BY config.sample_year
                     """
                 ).fetchall()
+                for (
+                    sample_year,
+                    target_size,
+                    parser_version,
+                    evaluated,
+                    qa_passed,
+                    complete,
+                    parser_errors,
+                    unbound_capture_inputs,
+                ) in readiness_rows:
+                    evaluated_int = int(evaluated)
+                    target_int = int(target_size)
+                    qa_passed_int = int(qa_passed)
+                    complete_int = int(complete)
+                    parser_errors_int = int(parser_errors)
+                    unbound_int = int(unbound_capture_inputs)
+                    validation_by_year.append(
+                        {
+                            "sampleYear": int(sample_year),
+                            "target": target_int,
+                            "parserVersion": str(parser_version),
+                            "evaluated": evaluated_int,
+                            "qaPassed": qa_passed_int,
+                            "complete": complete_int,
+                            "parserErrors": parser_errors_int,
+                            "unboundCaptureInputs": unbound_int,
+                            "qaPassRate": (
+                                round(qa_passed_int / evaluated_int, 4)
+                                if evaluated_int
+                                else 0.0
+                            ),
+                            "completeRate": (
+                                round(complete_int / evaluated_int, 4)
+                                if evaluated_int
+                                else 0.0
+                            ),
+                            "targetReached": (
+                                qa_passed_int >= target_int
+                                and unbound_int == 0
+                            ),
+                        }
+                    )
                 validation_ready = bool(readiness_rows) and all(
-                    int(evaluated) >= int(target_size)
-                    and int(complete) / int(evaluated) >= 0.95
-                    and int(qa_passed) / int(evaluated) >= 1.0
+                    int(qa_passed) >= int(target_size)
+                    and int(complete) >= int(target_size)
                     and int(parser_errors) == 0
                     and int(unbound_capture_inputs) == 0
                     for (
                         _sample_year,
                         target_size,
+                        _parser_version,
                         evaluated,
                         qa_passed,
                         complete,
@@ -162,15 +248,17 @@ def action_state(
                     ) in readiness_rows
                 )
                 validation_target_reached = bool(readiness_rows) and all(
-                    int(evaluated) >= int(target_size)
+                    int(qa_passed) >= int(target_size)
+                    and int(unbound_capture_inputs) == 0
                     for (
                         _sample_year,
                         target_size,
-                        evaluated,
-                        _qa_passed,
+                        _parser_version,
+                        _evaluated,
+                        qa_passed,
                         _complete,
                         _parser_errors,
-                        _unbound_capture_inputs,
+                        unbound_capture_inputs,
                     ) in readiness_rows
                 )
             validation_replays = int(
@@ -216,7 +304,11 @@ def action_state(
     pending = counts.get("pending", 0)
     downloading = counts.get("downloading", 0)
     unresolved = counts.get("error", 0)
-    actionable = pending + downloading + recoverable + validation_replays
+    actionable = (
+        validation_capture_actionable + validation_replays
+        if validation_capture_actionable is not None
+        else pending + downloading + recoverable
+    )
     return {
         "stateExists": True,
         "capturesByStatus": counts,
@@ -225,6 +317,7 @@ def action_state(
         "validationReplays": validation_replays,
         "validationReady": validation_ready,
         "validationTargetReached": validation_target_reached,
+        "parserValidation": {"years": validation_by_year},
         "terminalUnresolved": max(0, unresolved - recoverable),
         "shouldContinue": (
             actionable > 0

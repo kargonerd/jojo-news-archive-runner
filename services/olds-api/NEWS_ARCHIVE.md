@@ -294,6 +294,13 @@ The resulting capture is explicitly `derived-html`, never presented as original
 FT or partner HTML, and retains both source links. Failed or ambiguous mappings
 remain outside the parser validation sample.
 
+The direct FT Infini-News scan is not limited to URLs already present in the
+Wayback manifest. Strictly validated FT-origin rows may materialize a new
+pending capture with `derived-html` provenance; the normal capture worker, FT
+parser, and zero-overlap validation gate then process it exactly like any
+other manifest row. This lets the direct corpus fill sparse historical years
+instead of only adding a fallback to previously discovered URLs.
+
 Bloomberg discovery augments sparse canonical Wayback results with licensed
 partner copies. For 2017 onward, it searches Infini-News' CC-News index for the
 exact year-specific visible `©YYYY Bloomberg L.P.` statement and draws a

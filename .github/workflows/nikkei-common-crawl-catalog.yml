@@ -1,18 +1,23 @@
-name: Nikkei Common Crawl catalog
+name: Publisher Common Crawl catalog
 
 run-name: >-
-  nikkei-common-crawl-${{ inputs.from_year }}-${{ inputs.to_year }}
+  ${{ inputs.publisher }}-common-crawl-${{ inputs.from_year }}-${{ inputs.to_year }}
 
 on:
   workflow_dispatch:
     inputs:
+      publisher:
+        description: "Configured publisher identifier."
+        required: true
+        default: "nikkei"
+        type: string
       from_year:
-        description: "First Nikkei publication year to retain."
+        description: "First publication year to retain."
         required: true
         default: "2010"
         type: string
       to_year:
-        description: "Last Nikkei publication year to retain."
+        description: "Last publication year to retain."
         required: true
         default: "2015"
         type: string
@@ -26,6 +31,14 @@ on:
         required: true
         default: "2016"
         type: string
+      collection_order:
+        description: "Order in which Common Crawl collections are advanced."
+        required: true
+        default: "oldest"
+        type: choice
+        options:
+          - oldest
+          - newest
       max_pages:
         description: "Maximum Common Crawl index pages in this bounded run."
         required: true
@@ -41,6 +54,11 @@ on:
         required: true
         default: "200"
         type: string
+      target_articles_per_year:
+        description: "Stop catalog discovery after this many URLs per publication year."
+        required: true
+        default: "1200"
+        type: string
       auto_continue:
         description: "Dispatch the next bounded run after checkpointing."
         required: true
@@ -53,7 +71,7 @@ permissions:
 
 concurrency:
   group: >-
-    nikkei-common-crawl-${{ inputs.from_year }}-${{ inputs.to_year }}-${{ inputs.collection_from_year }}-${{ inputs.collection_to_year }}
+    ${{ inputs.publisher }}-common-crawl-${{ inputs.from_year }}-${{ inputs.to_year }}-${{ inputs.collection_from_year }}-${{ inputs.collection_to_year }}
   cancel-in-progress: false
 
 env:
@@ -62,13 +80,16 @@ env:
   B2_ARCHIVE_APPLICATION_KEY: ${{ secrets.B2_ARCHIVE_APPLICATION_KEY }}
   B2_ARCHIVE_BUCKET: ${{ secrets.B2_ARCHIVE_BUCKET }}
   B2_REMOTE: jojo-b2
+  PUBLISHER: ${{ inputs.publisher }}
   FROM_YEAR: ${{ inputs.from_year }}
   TO_YEAR: ${{ inputs.to_year }}
   COLLECTION_FROM_YEAR: ${{ inputs.collection_from_year }}
   COLLECTION_TO_YEAR: ${{ inputs.collection_to_year }}
+  COLLECTION_ORDER: ${{ inputs.collection_order }}
   MAX_PAGES: ${{ inputs.max_pages }}
   MAX_QUERIES: ${{ inputs.max_queries }}
   MAX_HYDRATIONS: ${{ inputs.max_hydrations }}
+  TARGET_ARTICLES_PER_YEAR: ${{ inputs.target_articles_per_year }}
   AUTO_CONTINUE: ${{ inputs.auto_continue }}
 
 jobs:
@@ -115,14 +136,28 @@ jobs:
             echo "Invalid publication or collection window." >&2
             exit 2
           fi
-          for value in "$MAX_PAGES" "$MAX_QUERIES" "$MAX_HYDRATIONS"; do
+          if ! [[ "$PUBLISHER" =~ ^[a-z][a-z0-9-]*$ ]]; then
+            echo "publisher must be a lowercase configured identifier." >&2
+            exit 2
+          fi
+          if [[ "$COLLECTION_ORDER" != "oldest" && \
+                "$COLLECTION_ORDER" != "newest" ]]; then
+            echo "collection_order must be oldest or newest." >&2
+            exit 2
+          fi
+          for value in "$MAX_PAGES" "$MAX_QUERIES" \
+              "$TARGET_ARTICLES_PER_YEAR"; do
             if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
               echo "All batch limits must be positive." >&2
               exit 2
             fi
           done
-          local_root="$RUNNER_TEMP/nikkei-common-crawl-${FROM_YEAR}-${TO_YEAR}"
-          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/nikkei/${FROM_YEAR}-${TO_YEAR}/commoncrawl-prefix"
+          if ! [[ "$MAX_HYDRATIONS" =~ ^[0-9]+$ ]]; then
+            echo "max_hydrations must be non-negative." >&2
+            exit 2
+          fi
+          local_root="$RUNNER_TEMP/${PUBLISHER}-common-crawl-${FROM_YEAR}-${TO_YEAR}"
+          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/${PUBLISHER}/${FROM_YEAR}-${TO_YEAR}/commoncrawl-prefix"
           mkdir -p "$local_root/catalog" "$local_root/state"
           {
             echo "local_root=$local_root"
@@ -146,26 +181,56 @@ jobs:
               > "$LOCAL_ROOT/catalog/discovery.sqlite3"
           fi
 
-      - name: Discover and hydrate bounded Nikkei batch
+      - name: Discover and hydrate bounded publisher batch
         id: discovery
         shell: bash
         env:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
+          # Some publishers encode the publication day in their canonical
+          # URL (for example WSJ's trailing epoch identifier, or Al
+          # Jazeera's legacy date path). They do not need a WARC-body date
+          # hydration pass, and the hydrator intentionally rejects them.
+          # Keep the shared workflow reusable while making those catalog
+          # runs discovery-only instead of failing after index collection.
+          effective_max_hydrations="$MAX_HYDRATIONS"
+          effective_max_pages="$MAX_PAGES"
+          effective_max_queries="$MAX_QUERIES"
+          effective_max_errors=4
+          case "$PUBLISHER" in
+            wsj|aljazeera|axios|nyt|ap|zaobao)
+              effective_max_hydrations=0
+              ;;
+          esac
+          if [ "$PUBLISHER" = "aljazeera" ] || \
+             [ "$PUBLISHER" = "scmp" ]; then
+            # These catalogs are sparse and have thousands of empty prefix
+            # advances. Keep each bounded checkpoint large enough to make
+            # progress without changing the resumable state or article cap.
+            effective_max_pages=32
+            effective_max_queries=32
+          fi
+          if [ "$PUBLISHER" = "aljazeera" ]; then
+            # A few historical Al Jazeera prefixes intermittently fail at the
+            # Common Crawl index. Allow the same bounded run to skip a larger
+            # error batch instead of auto-continuing after only four failures.
+            effective_max_errors=32
+          fi
           python services/olds-api/tools/build_common_crawl_prefix_manifest.py \
-            --publisher nikkei \
+            --publisher "$PUBLISHER" \
             --from-year "$FROM_YEAR" \
             --to-year "$TO_YEAR" \
             --collection-from-year "$COLLECTION_FROM_YEAR" \
             --collection-to-year "$COLLECTION_TO_YEAR" \
-            --collection-order oldest \
+            --collection-order "$COLLECTION_ORDER" \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
             --summary "$LOCAL_ROOT/state/summary.json" \
-            --max-pages "$MAX_PAGES" \
-            --max-queries "$MAX_QUERIES" \
-            --max-errors 4 \
-            --max-date-hydrations "$MAX_HYDRATIONS" \
+            --max-pages "$effective_max_pages" \
+            --max-queries "$effective_max_queries" \
+            --max-errors "$effective_max_errors" \
+            --target-articles-per-year "$TARGET_ARTICLES_PER_YEAR" \
+            --max-date-hydrations "$effective_max_hydrations" \
             --min-request-interval 3 \
             --data-min-request-interval 0.5 \
             --timeout 45 \
@@ -180,6 +245,14 @@ jobs:
           REMOTE_ROOT: ${{ steps.paths.outputs.remote_root }}
         run: |
           set -euo pipefail
+          # Keep the Common Crawl catalog usable by the parser watchdog. The
+          # discovery checkpoint is not itself a manifest-bound capacity
+          # proof, so publish the same per-year sidecar used by the primary
+          # archive workflows.
+          python services/olds-api/tools/summarize_archive_manifest.py \
+            --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
+            --publisher "$PUBLISHER" \
+            --output "$LOCAL_ROOT/catalog/manifest-summary.json"
           python services/olds-api/tools/checkpoint_capture_state.py \
             --state "$LOCAL_ROOT/catalog/discovery.sqlite3" \
             --output "$RUNNER_TEMP/discovery.sqlite3.gz"
@@ -192,6 +265,10 @@ jobs:
             "${REMOTE_ROOT}/catalog/manifest.jsonl.gz" \
             --retries 8 --low-level-retries 20
           rclone copyto \
+            "$LOCAL_ROOT/catalog/manifest-summary.json" \
+            "${REMOTE_ROOT}/catalog/manifest-summary.json" \
+            --retries 8 --low-level-retries 20
+          rclone copyto \
             "$LOCAL_ROOT/state/summary.json" \
             "${REMOTE_ROOT}/state/summary.json" \
             --retries 8 --low-level-retries 20
@@ -201,7 +278,7 @@ jobs:
           LOCAL_ROOT: ${{ steps.paths.outputs.local_root }}
         run: |
           {
-            echo "### Nikkei Common Crawl prefix catalog"
+            echo "### ${PUBLISHER} Common Crawl prefix catalog"
             echo
             echo '```json'
             cat "$LOCAL_ROOT/state/summary.json"
@@ -221,11 +298,20 @@ jobs:
         run: |
           gh workflow run nikkei-common-crawl-catalog.yml \
             --ref "$GITHUB_REF_NAME" \
+            -f publisher="$PUBLISHER" \
             -f from_year="$FROM_YEAR" \
             -f to_year="$TO_YEAR" \
             -f collection_from_year="$COLLECTION_FROM_YEAR" \
             -f collection_to_year="$COLLECTION_TO_YEAR" \
+            -f collection_order="$COLLECTION_ORDER" \
             -f max_pages="$MAX_PAGES" \
             -f max_queries="$MAX_QUERIES" \
             -f max_hydrations="$MAX_HYDRATIONS" \
+            -f target_articles_per_year="$TARGET_ARTICLES_PER_YEAR" \
             -f auto_continue=true
+
+      - name: Wake parser validation watchdog
+        if: ${{ always() && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/kick-parser-watchdog.sh

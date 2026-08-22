@@ -101,7 +101,10 @@ jobs:
             exit 2
           fi
           local_root="$RUNNER_TEMP/ap-legacy-${FROM_YEAR}-${TO_YEAR}"
-          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/ap/${FROM_YEAR}-${TO_YEAR}/legacy-archive"
+          # AP legacy supplements are merged from the canonical pre-2016
+          # source window by parser validation, regardless of the bounded
+          # publication range used for this discovery run.
+          remote_root="${B2_REMOTE}:${B2_ARCHIVE_BUCKET}/news-archive/v1/ap/2010-2015/legacy-archive"
           mkdir -p "$local_root/catalog" "$local_root/state"
           {
             echo "local_root=$local_root"
@@ -124,6 +127,10 @@ jobs:
             > "$LOCAL_ROOT/state/summary.json"
           gzip -t "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
           test -s "$LOCAL_ROOT/catalog/manifest.jsonl.gz"
+          python services/olds-api/tools/summarize_archive_manifest.py \
+            --manifest "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
+            --publisher ap \
+            --output "$LOCAL_ROOT/catalog/manifest-summary.json"
 
       - name: Publish manifest and summary
         shell: bash
@@ -135,6 +142,10 @@ jobs:
           rclone copyto \
             "$LOCAL_ROOT/catalog/manifest.jsonl.gz" \
             "${REMOTE_ROOT}/catalog/manifest.jsonl.gz" \
+            --retries 8 --low-level-retries 20
+          rclone copyto \
+            "$LOCAL_ROOT/catalog/manifest-summary.json" \
+            "${REMOTE_ROOT}/catalog/manifest-summary.json" \
             --retries 8 --low-level-retries 20
           rclone copyto \
             "$LOCAL_ROOT/state/summary.json" \

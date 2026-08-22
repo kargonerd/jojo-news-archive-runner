@@ -39,7 +39,7 @@ class PublisherSpec:
 PUBLISHER_SPECS = {
     "ap": PublisherSpec(
         publisher="ap",
-        parser_version="ap-parser/0.6.21",
+        parser_version="ap-parser/0.6.25",
         domains=(
             "apnews.com",
             "hosted.ap.org",
@@ -67,7 +67,7 @@ PUBLISHER_SPECS = {
     ),
     "wsj": PublisherSpec(
         publisher="wsj",
-        parser_version="wsj-parser/0.8.49",
+        parser_version="wsj-parser/0.8.61",
         domains=("wsj.com", "www.wsj.com"),
         default_language="en",
         edition="us",
@@ -75,6 +75,8 @@ PUBLISHER_SPECS = {
             "[data-type='article-body']",
             "[data-testid='article-body']",
             ".article-content",
+            "#articleTabs_panel_article .article.story",
+            "#articleTabs_panel_article",
             "article",
         ),
         remove_selectors=(
@@ -144,7 +146,7 @@ PUBLISHER_SPECS = {
     ),
     "nyt": PublisherSpec(
         publisher="nyt",
-        parser_version="nyt-parser/0.8.55",
+        parser_version="nyt-parser/0.8.81",
         domains=("nytimes.com", "www.nytimes.com"),
         default_language="en",
         edition="us",
@@ -174,7 +176,7 @@ PUBLISHER_SPECS = {
     ),
     "reuters": PublisherSpec(
         publisher="reuters",
-        parser_version="reuters-parser/0.7.25",
+        parser_version="reuters-parser/0.7.32",
         domains=("reuters.com", "www.reuters.com"),
         default_language="en",
         edition="global",
@@ -206,7 +208,7 @@ PUBLISHER_SPECS = {
     ),
     "ft": PublisherSpec(
         publisher="ft",
-        parser_version="ft-parser/0.8.31",
+        parser_version="ft-parser/0.8.54",
         domains=("ft.com", "www.ft.com"),
         default_language="en",
         edition="global",
@@ -224,7 +226,7 @@ PUBLISHER_SPECS = {
     ),
     "axios": PublisherSpec(
         publisher="axios",
-        parser_version="axios-parser/0.1.9",
+        parser_version="axios-parser/0.1.27",
         domains=("axios.com", "www.axios.com"),
         default_language="en",
         edition="us",
@@ -246,7 +248,7 @@ PUBLISHER_SPECS = {
     ),
     "npr": PublisherSpec(
         publisher="npr",
-        parser_version="npr-parser/0.1.18",
+        parser_version="npr-parser/0.1.54",
         domains=("npr.org", "www.npr.org"),
         default_language="en",
         edition="us",
@@ -256,7 +258,7 @@ PUBLISHER_SPECS = {
     ),
     "nikkei": PublisherSpec(
         publisher="nikkei",
-        parser_version="nikkei-parser/0.1.3",
+        parser_version="nikkei-parser/0.1.8",
         domains=("nikkei.com", "www.nikkei.com"),
         default_language="ja",
         edition="jp",
@@ -271,17 +273,23 @@ PUBLISHER_SPECS = {
     ),
     "zaobao": PublisherSpec(
         publisher="zaobao",
-        parser_version="zaobao-parser/0.1.1",
+        parser_version="zaobao-parser/0.1.12",
         domains=("zaobao.com.sg", "www.zaobao.com.sg"),
         default_language="zh",
         edition="sg",
-        body_selectors=(".field-name-body", ".article-content", "article"),
+        body_selectors=(
+            ".field-name-body",
+            ".article-content",
+            "#article_content .a_body",
+            "#article-content",
+            "article",
+        ),
         preferred_image_hosts=("www.zaobao.com.sg",),
         use_structured_article_body=True,
     ),
     "aljazeera": PublisherSpec(
         publisher="aljazeera",
-        parser_version="aljazeera-parser/0.1.2",
+        parser_version="aljazeera-parser/0.1.14",
         domains=("aljazeera.com", "www.aljazeera.com"),
         default_language="en",
         edition="global",
@@ -291,7 +299,7 @@ PUBLISHER_SPECS = {
     ),
     "scmp": PublisherSpec(
         publisher="scmp",
-        parser_version="scmp-parser/0.1.1",
+        parser_version="scmp-parser/0.1.11",
         domains=("scmp.com", "www.scmp.com"),
         default_language="en",
         edition="hk",
@@ -299,6 +307,7 @@ PUBLISHER_SPECS = {
             ".article__body",
             ".article-body",
             "[data-qa='article-body']",
+            ".pane-node-body .pane-content",
             ".pane-node-body .field-name-body",
             ".field-name-body",
             "article",
@@ -308,11 +317,17 @@ PUBLISHER_SPECS = {
     ),
     "caixin": PublisherSpec(
         publisher="caixin",
-        parser_version="caixin-parser/0.1.0",
+        parser_version="caixin-parser/0.1.15",
         domains=("caixin.com", "www.caixin.com", "magazine.caixin.com"),
         default_language="zh",
         edition="cn",
-        body_selectors=(".article-content", ".article_body", ".content", "article"),
+        # ``.content`` is a legacy page-layout wrapper on archived Caixin
+        # pages. When the real article node is absent it contains rankings,
+        # recommendations, sharing controls and subscription forms, which can
+        # be long enough to masquerade as a complete article. Only accept
+        # article-specific containers here; legacy stories use the explicit
+        # #Main_Content_Val override in news_parser.py.
+        body_selectors=(".article-content", ".article_body", "article"),
         preferred_image_hosts=("img.caixin.com", "file.caixin.com"),
         use_structured_article_body=True,
     ),

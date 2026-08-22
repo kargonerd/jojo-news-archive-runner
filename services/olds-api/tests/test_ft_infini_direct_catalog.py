@@ -103,6 +103,45 @@ def test_parquet_footer_row_count_uses_bounded_ranges():
     )
 
 
+def test_public_dataset_requests_back_off_after_rate_limit(monkeypatch):
+    class Response:
+        def __init__(self, status_code: int, retry_after: str | None = None):
+            self.status_code = status_code
+            self.headers = (
+                {"Retry-After": retry_after}
+                if retry_after is not None
+                else {}
+            )
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise AssertionError(f"unexpected HTTP {self.status_code}")
+
+    class Client:
+        def __init__(self):
+            self.responses = [Response(429, "0"), Response(200)]
+            self.calls = 0
+
+        def get(self, _url: str, **_kwargs):
+            response = self.responses[self.calls]
+            self.calls += 1
+            return response
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(catalog.time, "sleep", sleeps.append)
+    client = Client()
+
+    response = catalog._get_with_retries(
+        client,
+        "https://huggingface.co/test",
+        attempts=3,
+    )
+
+    assert response.status_code == 200
+    assert client.calls == 2
+    assert sleeps == [0.5]
+
+
 def test_year_catalog_skips_months_absent_from_partial_years():
     class Response:
         status_code = 404
@@ -194,6 +233,164 @@ def test_scan_accepts_only_provenance_safe_ft_rows(monkeypatch):
     assert articles[0]["canonicalUrl"] == canonical_url
     assert articles[0]["documentIndex"] == 10_000
     assert articles[0]["warcFilename"].startswith("CC-NEWS-")
+
+
+def test_scan_skips_generic_ft_subscription_titles(monkeypatch):
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "a604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    table = pa.table(
+        {
+            "url": [canonical_url],
+            "url_hostname": ["www.ft.com"],
+            "warc_filename": ["CC-NEWS-20161228120000-00001.warc.gz"],
+            "publish_date": ["2016-12-28"],
+            "title": ["Subscribe to FT.com"],
+            "text_length": [1200],
+            "language": ["eng_Latn"],
+        }
+    )
+
+    class OpenFile:
+        def open(self):
+            return self
+
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return None
+
+    import fsspec
+
+    monkeypatch.setattr(fsspec, "open", lambda *_args, **_kwargs: OpenFile())
+    monkeypatch.setattr(catalog.pq, "read_table", lambda *_args, **_kwargs: table)
+
+    articles = catalog._scan_parquet_file(
+        "data/year=2016/month=12/part-test.parquet",
+        global_offset=10_000,
+        year=2016,
+        capture_urls={canonical_url},
+    )
+
+    assert articles == []
+
+
+def test_scan_can_discover_new_ft_urls_without_manifest_filter(monkeypatch):
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "b604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    table = pa.table(
+        {
+            "url": [canonical_url],
+            "url_hostname": ["www.ft.com"],
+            "warc_filename": ["CC-NEWS-20160828120000-00001.warc.gz"],
+            "publish_date": ["2016-08-28"],
+            "title": ["A newly discovered Financial Times article"],
+            "text_length": [5000],
+            "language": ["eng_Latn"],
+        }
+    )
+
+    class OpenFile:
+        def open(self):
+            return self
+
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return None
+
+    import fsspec
+
+    monkeypatch.setattr(fsspec, "open", lambda *_args, **_kwargs: OpenFile())
+    monkeypatch.setattr(catalog.pq, "read_table", lambda *_args, **_kwargs: table)
+
+    articles = catalog._scan_parquet_file(
+        "data/year=2016/month=08/part-test.parquet",
+        global_offset=10_000,
+        year=2016,
+    )
+
+    assert len(articles) == 1
+    assert articles[0]["canonicalUrl"] == canonical_url
+
+
+def test_merge_materializes_direct_article_absent_from_manifest(tmp_path: Path):
+    connection, _canonical_url = _state(tmp_path)
+    canonical_url = (
+        "https://www.ft.com/content/"
+        "b604bc55-26a5-42ca-a707-e6537abe0c1d"
+    )
+    catalog._store_scanned_articles(
+        connection,
+        year=2016,
+        path="data/year=2016/month=08/part-test.parquet",
+        articles=[
+            {
+                "canonicalUrl": canonical_url,
+                "sourceUrl": canonical_url,
+                "publishedAt": "2016-08-28",
+                "expectedHeadline": "A newly discovered Financial Times article",
+                "documentIndex": 12345,
+                "textLength": 5000,
+                "warcFilename": "CC-NEWS-20160828120000-00001.warc.gz",
+                "parquetRowIndex": 3,
+                "samplePriority": "0" * 64,
+            }
+        ],
+    )
+
+    assert catalog.merge_ft_infini_direct_candidates(
+        connection,
+        year=2016,
+    ) == 1
+
+    row = connection.execute(
+        """
+        SELECT publisher, published_at, status, candidates_json
+        FROM captures
+        WHERE canonical_url=?
+        """,
+        (canonical_url,),
+    ).fetchone()
+    assert row is not None
+    publisher, published_at, status, candidates_json = row
+    assert publisher == "ft"
+    assert published_at == "2016-08-28T00:00:00+00:00"
+    assert status == "pending"
+    candidates = json.loads(candidates_json)
+    assert candidates[0]["provider"] == "infini-news"
+    assert candidates[0]["sourceUrl"] == canonical_url
+
+
+def test_ft_subscription_headline_filter_covers_paywall_variants():
+    assert catalog.is_ft_subscription_headline("Subscribe to FT.com")
+    assert catalog.is_ft_subscription_headline(
+        "Become an FT subscriber to read: Big Centamin investors"
+    )
+    assert catalog.is_ft_subscription_headline(
+        "Subscribe to read: Catch up on our 5 best weekend reads"
+    )
+    assert catalog.is_ft_subscription_headline(
+        "Purchase a Digital Trial subscription for"
+    )
+    assert catalog.is_ft_subscription_headline(
+        "All the benefits of Premium Digital, plus:"
+    )
+    assert catalog.is_ft_subscription_headline(
+        "All the benefits of Standard Digital, plus:"
+    )
+    assert catalog.is_ft_subscription_headline(
+        "You must be a Premium Subscriber to read: Financial Times"
+    )
+    assert catalog.is_ft_subscription_headline("Register to read: Financial Times")
+    assert not catalog.is_ft_subscription_headline(
+        "FT subscribers weigh in on the budget"
+    )
 
 
 def test_offsets_candidates_and_retry_state_are_persisted(tmp_path: Path):

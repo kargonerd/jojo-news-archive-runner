@@ -170,8 +170,8 @@ jobs:
             exit 2
           fi
           if [ "$MANIFEST_MODE" = "sitemap-wayback" ] &&
-             [[ ! "$PUBLISHER" =~ ^(ap|bloomberg|nyt|ft|aljazeera|zaobao)$ ]]; then
-            echo "sitemap-wayback supports AP, Bloomberg, NYT, FT, Al Jazeera, and Zaobao." >&2
+             [[ ! "$PUBLISHER" =~ ^(ap|bloomberg|nyt|ft|axios|aljazeera|zaobao)$ ]]; then
+            echo "sitemap-wayback supports AP, Bloomberg, NYT, FT, Axios, Al Jazeera, and Zaobao." >&2
             exit 2
           fi
           shard="${PUBLISHER}/${FROM_YEAR}-${TO_YEAR}/${MANIFEST_MODE}"
@@ -279,6 +279,19 @@ jobs:
             echo "Published live discovery checkpoint."
           }
           run_catalog() {
+            if [ "$MAX_DISCOVERY_PAGES" = "0" ]; then
+              # A sidecar-only checkpoint refreshes scheduling metadata for
+              # an existing manifest without rediscovering URLs or touching
+              # raw objects. This is intentionally bounded and resumable.
+              if [ ! -s "$manifest" ]; then
+                echo "Manifest-sidecar refresh requires an existing manifest." >&2
+                return 2
+              fi
+              echo "complete=true" >> "$GITHUB_OUTPUT"
+              echo "capture_ready=true" >> "$GITHUB_OUTPUT"
+              echo "should_continue=false" >> "$GITHUB_OUTPUT"
+              return 0
+            fi
             if [ "$MANIFEST_MODE" = "sitemap-wayback" ]; then
               python services/olds-api/tools/build_sitemap_manifest.py \
                 --publisher "$PUBLISHER" \
@@ -374,13 +387,18 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
-      - name: Merge NPR, Axios, or Nikkei Common Crawl supplemental manifest
+      - name: Merge Common Crawl supplemental manifest
         if: >-
           ${{
             (inputs.publisher == 'npr' ||
              inputs.publisher == 'axios' ||
-             inputs.publisher == 'nikkei') &&
-            inputs.manifest_mode == 'wayback-urlkey'
+             inputs.publisher == 'nikkei' ||
+             inputs.publisher == 'reuters' ||
+             inputs.publisher == 'scmp' ||
+             inputs.publisher == 'caixin') &&
+            inputs.manifest_mode == 'wayback-urlkey' ||
+            (inputs.publisher == 'aljazeera' &&
+             inputs.manifest_mode == 'sitemap-wayback')
           }}
         shell: bash
         env:
@@ -410,7 +428,7 @@ jobs:
         if: >-
           ${{
             inputs.publisher == 'ap' &&
-            inputs.manifest_mode == 'wayback-urlkey'
+            inputs.manifest_mode == 'sitemap-wayback'
           }}
         shell: bash
         env:
@@ -1005,6 +1023,12 @@ jobs:
           done
           echo "Unable to dispatch the next archive batch after 5 attempts." >&2
           exit 1
+
+      - name: Wake parser validation watchdog
+        if: ${{ always() && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/kick-parser-watchdog.sh
 
       - name: Propagate capture failure after checkpoint
         if: >-

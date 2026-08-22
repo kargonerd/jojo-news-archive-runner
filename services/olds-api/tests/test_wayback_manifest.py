@@ -7,9 +7,11 @@ from pathlib import Path
 import sqlite3
 
 import httpx
+import pytest
 
 from jojo_olds_api.archive_sources import (
     archive_source_spec,
+    article_deduplication_key,
     article_url_publication_year,
     normalize_article_url,
 )
@@ -792,6 +794,35 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         ap,
         "https://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST?SITE=AP",
     ) is None
+    # Partner catalogs retain Yahoo/Google/HuffPost URLs for historical AP
+    # wire copies. They must remain valid AP parser inputs so supplemental
+    # holdout capacity is not discarded by URL normalization.
+    assert normalize_article_url(
+        ap,
+        "http://news.yahoo.com/s/ap/20110111/ap_on_re_eu/iran_nuclear"
+        "?utm_source=test",
+    ) == "https://news.yahoo.com/s/ap/20110111/ap_on_re_eu/iran_nuclear"
+    assert normalize_article_url(
+        ap,
+        "https://www.google.com/hostednews/ap/article/ALeqM5example"
+        "?docId=123",
+    ) == "https://www.google.com/hostednews/ap/article/ALeqM5example"
+    assert normalize_article_url(
+        ap,
+        "https://www.huffingtonpost.com/huff-wires/20110111/example",
+    ) == "https://www.huffingtonpost.com/huff-wires/20110111/example"
+    assert normalize_article_url(
+        ap,
+        "https://news.yahoo.com/s/ap/20110111/not-an-ap-story",
+    ) is None
+    assert article_url_publication_year(
+        ap,
+        "https://news.yahoo.com/s/ap/20110111/ap_on_re_eu/iran_nuclear",
+    ) == 2011
+    assert article_url_publication_year(
+        ap,
+        "https://www.huffingtonpost.com/huff-wires/20101223/example",
+    ) == 2010
     assert article_url_publication_year(
         ap,
         "http://hosted.ap.org/dynamic/stories/A/AF_IVORY_COAST"
@@ -874,6 +905,41 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "business-151594900170",
     ) == 2020
 
+    nikkei = archive_source_spec("nikkei")
+    assert article_url_publication_year(
+        nikkei,
+        "https://www.nikkei.com/article/"
+        "DGXNASFS1102U_R10C13A9PP8000",
+    ) == 2013
+    assert article_url_publication_year(
+        nikkei,
+        "https://www.nikkei.com/article/"
+        "DGKKZO79997580R21C14A1NNJP00",
+    ) == 2014
+    assert article_url_publication_year(
+        nikkei,
+        "https://www.nikkei.com/article/"
+        "DGKDZO27658310Z20C11A4ML0000",
+    ) == 2011
+    assert article_url_publication_year(
+        nikkei,
+        "https://www.nikkei.com/article/"
+        "DGXBZO40155290U2A400C1000000",
+    ) is None
+    assert article_url_publication_year(
+        archive_source_spec("nyt"),
+        "https://www.nytimes.com/2018/04/24/world/example.html",
+    ) == 2018
+    assert article_url_publication_year(
+        archive_source_spec("nyt"),
+        "https://www.nytimes.com/interactive/2016/obituaries/"
+        "notable-deaths/garry-shandling",
+    ) == 2016
+    assert article_url_publication_year(
+        nikkei,
+        "https://www.nikkei.com/article/DGXZQOCD00001",
+    ) is None
+
     ft = archive_source_spec("ft")
     assert normalize_article_url(
         ft,
@@ -888,6 +954,15 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         "https://www.axios.com/2020/01/02/example?utm_source=test",
     ) == "https://www.axios.com/2020/01/02/example"
     assert normalize_article_url(
+        archive_source_spec("axios"),
+        "https://axios.com/2019/01/11/example-story--",
+    ) == "https://www.axios.com/2019/01/11/example-story"
+    for suffix in ("%5C", "%0A", "%20", "%5c%0a"):
+        assert normalize_article_url(
+            archive_source_spec("axios"),
+            "https://www.axios.com/2025/01/20/example-story" + suffix,
+        ) == "https://www.axios.com/2025/01/20/example-story"
+    assert normalize_article_url(
         archive_source_spec("npr"),
         "https://www.npr.org/2018/02/03/123456789/example",
     ) == "https://www.npr.org/2018/02/03/123456789/example"
@@ -899,6 +974,31 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         archive_source_spec("npr"),
         "https://www.npr.org/2018/04/03/598239092/example=",
     ) == "https://www.npr.org/2018/04/03/598239092/example"
+    assert normalize_article_url(
+        archive_source_spec("npr"),
+        "https://www.npr.org/2010/11/29/131667596/example&sc=fb&cc=fp",
+    ) == "https://www.npr.org/2010/11/29/131667596/example"
+    assert article_deduplication_key(
+        archive_source_spec("npr"),
+        "https://www.npr.org/2010/12/02/131356105/updated-slug",
+    ) == "npr:131356105"
+    legacy_npr = (
+        "https://www.npr.org/templates/story/story.php?storyId=131356105"
+    )
+    assert normalize_article_url(
+        archive_source_spec("npr"), legacy_npr
+    ) == legacy_npr
+    assert normalize_article_url(
+        archive_source_spec("npr"),
+        "https://npr.org/templates/story/story.php&storyId=131356105",
+    ) == legacy_npr
+    assert article_deduplication_key(
+        archive_source_spec("npr"), legacy_npr
+    ) == "npr:131356105"
+    assert normalize_article_url(
+        archive_source_spec("npr"),
+        "https://www.npr.org/templates/story/story.php",
+    ) is None
     assert normalize_article_url(
         archive_source_spec("npr"),
         "https://www.npr.org/2010/11/02/130682288/election-2010-florida-results",
@@ -987,6 +1087,52 @@ def test_source_url_normalization_accepts_articles_and_rejects_hubs():
         archive_source_spec("caixin"),
         "https://magazine.caixin.com/2010/cw385/?utm=1",
     ) == "https://magazine.caixin.com/2010/cw385"
+    assert normalize_article_url(
+        archive_source_spec("caixin"),
+        "https://magazine.caixin.com/2010-02-07/100116568_all.html",
+    ) == "https://magazine.caixin.com/2010-02-07/100116568.html"
+    assert normalize_article_url(
+        archive_source_spec("caixin"),
+        "https://magazine.caixin.com/2010-02-07/100116568_3.html",
+    ) == "https://magazine.caixin.com/2010-02-07/100116568.html"
+
+
+def test_caixin_wayback_patterns_shard_dated_www_paths_by_year():
+    patterns = archive_source_spec("caixin").expanded_wayback_patterns(
+        from_year=2010,
+        to_year=2011,
+    )
+
+    assert "www.caixin.com/*" in patterns
+    assert "www.caixin.com/2010-*" in patterns
+    assert "www.caixin.com/2010/*" in patterns
+    assert "www.caixin.com/2011-*" in patterns
+    assert "www.caixin.com/2011/*" in patterns
+    assert "china.caixin.com/2010-*" in patterns
+    assert "finance.caixin.com/2011-*" in patterns
+    assert "photos.caixin.com/2010-*" in patterns
+    assert "video.caixin.com/2010-*" in patterns
+
+
+def test_caixin_normalization_preserves_editorial_section_hosts():
+    spec = archive_source_spec("caixin")
+
+    assert normalize_article_url(
+        spec,
+        "http://finance.caixin.com/2010-12-22/100210230.html?from=nav",
+    ) == "https://finance.caixin.com/2010-12-22/100210230.html"
+    assert normalize_article_url(
+        spec,
+        "https://china.caixin.com/2010-04-06/100132332.html",
+    ) == "https://china.caixin.com/2010-04-06/100132332.html"
+    assert normalize_article_url(
+        spec,
+        "http://photos.caixin.com/2010-01-22/100110376_3.html",
+    ) == "https://photos.caixin.com/2010-01-22/100110376.html"
+    assert normalize_article_url(
+        spec,
+        "http://video.caixin.com/2010-01-04/100103479.html",
+    ) == "https://video.caixin.com/2010-01-04/100103479.html"
 
 
 def test_date_inference_and_candidate_ranking_prefers_after_publication():
@@ -1030,6 +1176,9 @@ def test_date_inference_and_candidate_ranking_prefers_after_publication():
     assert infer_published_at(
         "https://magazine.caixin.com/2010-01-08/100106588.html"
     ) == "2010-01-08T00:00:00+00:00"
+    assert infer_published_at(
+        "https://china.caixin.com/2010-04-06/100132332.html"
+    ) == "2010-04-06T00:00:00+00:00"
     assert infer_published_at(
         "https://www.zaobao.com.sg/news/singapore/story20240102-1234567"
     ) == "2024-01-02T00:00:00+00:00"
@@ -1389,6 +1538,49 @@ def test_urlkey_discovery_round_robins_patterns():
     assert next_pattern == "www.wsj.com/articles/b*"
 
 
+def test_urlkey_discovery_can_prioritize_a_publication_year():
+    spec = archive_source_spec("caixin")
+    connection = sqlite3.connect(":memory:")
+    initialize_discovery_schema(
+        connection,
+        spec=spec,
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+    connection.execute(
+        """
+        UPDATE discovery_queries
+        SET status='complete'
+        WHERE pattern LIKE '%/2010-%'
+           OR pattern LIKE '%/2010/%'
+        """
+    )
+    connection.execute(
+        """
+        UPDATE discovery_queries
+        SET status='pending'
+        WHERE pattern='culture.caixin.com/2010-*'
+        """
+    )
+
+    default_pattern, _ = next_discovery_query(connection)
+    prioritized_pattern, _ = next_discovery_query(
+        connection,
+        preferred_year=2010,
+    )
+
+    assert default_pattern != "culture.caixin.com/2010-*"
+    assert prioritized_pattern == "culture.caixin.com/2010-*"
+
+
+def test_urlkey_discovery_rejects_invalid_priority_year():
+    connection = sqlite3.connect(":memory:")
+
+    with pytest.raises(ValueError, match="preferred_year"):
+        next_discovery_query(connection, preferred_year=99)
+
+
 def test_pre_2014_wsj_discovery_prioritizes_legacy_article_urls():
     spec = archive_source_spec("wsj")
     connection = sqlite3.connect(":memory:")
@@ -1454,6 +1646,40 @@ def test_failed_urlkey_query_does_not_starve_healthy_patterns():
 
     assert failed_pattern == "www.wsj.com/articles/a*"
     assert next_pattern == "www.wsj.com/articles/b*"
+
+
+def test_initialize_discovery_schema_migrates_legacy_query_columns():
+    connection = sqlite3.connect(":memory:")
+    connection.execute(
+        """
+        CREATE TABLE discovery_queries (
+            pattern TEXT PRIMARY KEY,
+            resume_key TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            pages INTEGER NOT NULL DEFAULT 0,
+            rows_seen INTEGER NOT NULL DEFAULT 0,
+            rows_accepted INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+
+    initialize_discovery_schema(
+        connection,
+        spec=archive_source_spec("caixin"),
+        from_year=2010,
+        to_year=2015,
+        collapse="urlkey",
+    )
+
+    columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(discovery_queries)"
+        )
+    }
+    assert {"failures", "last_error"} <= columns
+    assert next_discovery_query(connection) is not None
 
 
 def test_successful_legacy_page_resets_failure_priority():

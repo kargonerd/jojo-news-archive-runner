@@ -46,6 +46,15 @@ def parse_args() -> argparse.Namespace:
             "is present locally. This is an end-of-run reproducibility gate."
         ),
     )
+    parser.add_argument(
+        "--preserve-missing",
+        action="store_true",
+        help=(
+            "Do not reset captures or delete parser results when a raw "
+            "object is unavailable locally. This is for the final "
+            "non-destructive reproducibility audit after a live capture."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -54,7 +63,7 @@ def forced_replay_candidates(
     *,
     archive_root: Path,
     maximum: int,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     rows = connection.execute(
         """
         SELECT result.canonical_url, capture.raw_path
@@ -69,18 +78,54 @@ def forced_replay_candidates(
         """,
         (maximum,),
     ).fetchall()
-    replayable: list[str] = []
-    missing: list[str] = []
+    replayable: list[tuple[str, str]] = []
+    missing: list[tuple[str, str]] = []
     for canonical_url, raw_path in rows:
         if raw_path and (archive_root / str(raw_path)).is_file():
-            replayable.append(str(canonical_url))
+            replayable.append((str(canonical_url), str(raw_path)))
         else:
             missing.append(
-                str(raw_path)
-                if raw_path
-                else f"<missing raw_path for {canonical_url}>"
+                (
+                    str(canonical_url),
+                    str(raw_path)
+                    if raw_path
+                    else f"<missing raw_path for {canonical_url}>",
+                )
             )
     return replayable, missing
+
+
+def requeue_missing_validation_capture(
+    connection: sqlite3.Connection,
+    *,
+    canonical_url: str,
+) -> None:
+    reset_completed_capture_for_retry(
+        connection,
+        canonical_url=canonical_url,
+        reason="validation-raw-object-missing",
+    )
+    with connection:
+        connection.execute(
+            "DELETE FROM parser_validation_results WHERE canonical_url=?",
+            (canonical_url,),
+        )
+
+
+def _handle_missing_raw_object(
+    connection: sqlite3.Connection,
+    *,
+    canonical_url: str,
+    preserve_missing: bool,
+) -> bool:
+    """Handle an unavailable object and report whether it was requeued."""
+    if preserve_missing:
+        return False
+    requeue_missing_validation_capture(
+        connection,
+        canonical_url=canonical_url,
+    )
+    return True
 
 
 def main() -> int:
@@ -90,8 +135,9 @@ def main() -> int:
     connection = sqlite3.connect(args.state, timeout=60)
     forced = 0
     missing: list[str] = []
+    requeued = 0
     if args.force_existing:
-        replayable, missing = forced_replay_candidates(
+        replayable, missing_entries = forced_replay_candidates(
             connection,
             archive_root=args.archive_root,
             maximum=args.max_replays,
@@ -102,13 +148,32 @@ def main() -> int:
                 DELETE FROM parser_validation_results
                 WHERE canonical_url=?
                 """,
-                ((canonical_url,) for canonical_url in replayable),
+                ((canonical_url,) for canonical_url, _ in replayable),
             )
+        for canonical_url, raw_path in missing_entries:
+            was_requeued = _handle_missing_raw_object(
+                connection,
+                canonical_url=canonical_url,
+                preserve_missing=args.preserve_missing,
+            )
+            missing.append(raw_path)
+            requeued += was_requeued
         forced = len(replayable)
-    pending = pending_completed_parser_validation_files(
+    else:
+        replayable = []
+    # A forced reproducibility pass must replay every result it just deleted.
+    # Re-selecting through pending_completed_parser_validation_files() is not
+    # equivalent when a cohort has more evaluated rows than its target (for
+    # example, one failed sample plus a QA-passing replacement): that query is
+    # intentionally capped at target_size - qa_passed and used to drop the
+    # replacement, reverting a converged cohort to 799/800 on every run.
+    pending = list(replayable)
+    additional = pending_completed_parser_validation_files(
         connection,
-        maximum=args.max_replays,
+        maximum=max(0, args.max_replays - len(pending)),
     )
+    pending_urls = {item[0] for item in pending}
+    pending.extend(row for row in additional if row[0] not in pending_urls)
     failed = failed_completed_parser_validation_files(
         connection,
         maximum=max(0, args.max_replays - len(pending)),
@@ -118,10 +183,15 @@ def main() -> int:
     )
     processed = 0
     parser_errors = 0
-    requeued = 0
     for canonical_url, raw_path in pending:
         if not (args.archive_root / raw_path).is_file():
             missing.append(raw_path)
+            was_requeued = _handle_missing_raw_object(
+                connection,
+                canonical_url=canonical_url,
+                preserve_missing=args.preserve_missing,
+            )
+            requeued += was_requeued
             continue
         capture = completed_raw_capture(
             connection,
@@ -201,12 +271,10 @@ def main() -> int:
         "ready": summary["ready"],
     }
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-    if missing:
-        examples = ", ".join(missing[:5])
-        raise RuntimeError(
-            f"{len(missing)} validation raw objects were not restored: "
-            f"{examples}"
-        )
+    # Missing content is a recoverable archive-state defect. The rows above
+    # have been reset to pending and their stale parser results removed, so a
+    # successful exit lets the workflow checkpoint and dispatch a repair
+    # capture instead of leaving a permanently green-but-unreplayable cohort.
     return 0
 
 

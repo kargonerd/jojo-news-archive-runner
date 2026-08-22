@@ -1,6 +1,9 @@
 import pytest
 
-from jojo_olds_api.parser_source_shards import parser_source_manifest_shard
+from jojo_olds_api.parser_source_shards import (
+    parser_source_manifest_shard,
+    parser_supplemental_manifest_shards,
+)
 
 
 @pytest.mark.parametrize(
@@ -49,3 +52,59 @@ def test_parser_source_manifest_shard_rejects_unsupported_cells(
 ):
     with pytest.raises(ValueError):
         parser_source_manifest_shard(publisher, year)
+
+
+@pytest.mark.parametrize(
+    ("publisher", "year", "expected"),
+    [
+        ("ap", 2012, ("ap/2010-2015/legacy-archive",)),
+        ("caixin", 2018, ("caixin/2018-2018/commoncrawl-prefix",)),
+        ("npr", 2010, ("npr/2010-2010/commoncrawl-prefix",)),
+        ("axios", 2025, ("axios/2017-2026/sitemap-wayback",)),
+        (
+            "npr",
+            2012,
+            (
+                "npr/2012-2012/commoncrawl-prefix",
+                "npr/2012-2016/commoncrawl-prefix",
+            ),
+        ),
+        (
+            "npr",
+            2016,
+            (
+                "npr/2016-2016/commoncrawl-prefix",
+                "npr/2012-2016/commoncrawl-prefix",
+                "npr/2013-2026/commoncrawl-prefix",
+            ),
+        ),
+        (
+            "npr",
+            2013,
+            (
+                "npr/2013-2013/commoncrawl-prefix",
+                "npr/2012-2016/commoncrawl-prefix",
+                "npr/2013-2026/commoncrawl-prefix",
+            ),
+        ),
+        (
+            "npr",
+            2020,
+            (
+                "npr/2020-2020/commoncrawl-prefix",
+                "npr/2013-2026/commoncrawl-prefix",
+            ),
+        ),
+        ("nikkei", 2014, ("nikkei/2010-2015/commoncrawl-prefix",)),
+        ("nikkei", 2024, ("nikkei/2016-2026/commoncrawl-prefix",)),
+        ("wsj", 2011, ("wsj/2010-2015/commoncrawl-prefix",)),
+        ("wsj", 2020, ("wsj/2016-2026/commoncrawl-prefix",)),
+        ("aljazeera", 2012, ("aljazeera/2010-2015/commoncrawl-prefix",)),
+        ("aljazeera", 2024, ("aljazeera/2016-2026/commoncrawl-prefix",)),
+        ("scmp", 2017, ("scmp/2016-2026/commoncrawl-prefix",)),
+        ("reuters", 2016, ("reuters/2016-2020/commoncrawl-prefix",)),
+        ("ft", 2020, ()),
+    ],
+)
+def test_parser_supplemental_manifest_shards(publisher, year, expected):
+    assert parser_supplemental_manifest_shards(publisher, year) == expected

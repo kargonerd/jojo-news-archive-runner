@@ -47,3 +47,60 @@ def parser_source_manifest_shard(publisher: str, year: int) -> str:
         window = "2010-2015" if year <= 2015 else "2016-2026"
         return f"{publisher}/{window}/wayback-urlkey"
     raise ValueError(f"unsupported parser publisher: {publisher}")
+
+
+def parser_supplemental_manifest_shards(
+    publisher: str,
+    year: int,
+) -> tuple[str, ...]:
+    """Return catalog-only sources merged into a validation cell."""
+    # Validate the cell and keep its supported-year semantics aligned with
+    # parser_source_manifest_shard before deriving supplemental paths.
+    parser_source_manifest_shard(publisher, year)
+    if publisher == "ap" and year <= 2015:
+        return ("ap/2010-2015/legacy-archive",)
+    if publisher == "reuters":
+        window = (
+            "2010-2015"
+            if year <= 2015
+            else "2016-2020"
+            if year <= 2020
+            else "2021-2026"
+        )
+        return (f"reuters/{window}/commoncrawl-prefix",)
+    if publisher == "npr":
+        shards = [f"npr/{year}-{year}/commoncrawl-prefix"]
+        # A completed broad NPR catalog covers 2012--2016 and contains
+        # substantially more dated candidates than the early per-year
+        # supplements. Keep both sources in the capacity union so a cell can
+        # reopen when that catalog is present without discarding the existing
+        # per-year checkpoint.
+        if 2012 <= year <= 2016:
+            shards.append("npr/2012-2016/commoncrawl-prefix")
+        # A second broad checkpoint scans newer Common Crawl collections. It
+        # remains separate so later collection growth can add genuinely new,
+        # zero-overlap candidates without rewriting the older checkpoint.
+        if 2013 <= year <= 2026:
+            shards.append("npr/2013-2026/commoncrawl-prefix")
+        return tuple(shards)
+    if publisher == "caixin":
+        return (f"caixin/{year}-{year}/commoncrawl-prefix",)
+    if publisher == "axios":
+        return ("axios/2017-2026/sitemap-wayback",)
+    if publisher == "nikkei":
+        window = "2010-2015" if year <= 2015 else "2016-2026"
+        return (f"nikkei/{window}/commoncrawl-prefix",)
+    if publisher == "wsj":
+        # The early URL-key catalog is thin for several years (notably
+        # 2010, 2011, and 2013).  Keep Common Crawl as an independent
+        # catalog-only supplement so those years can be reopened when the
+        # primary Wayback shard cannot supply 800 distinct articles.
+        window = "2010-2015" if year <= 2015 else "2016-2026"
+        return (f"wsj/{window}/commoncrawl-prefix",)
+    if publisher == "aljazeera":
+        window = "2010-2015" if year <= 2015 else "2016-2026"
+        return (f"aljazeera/{window}/commoncrawl-prefix",)
+    if publisher == "scmp":
+        window = "2010-2015" if year <= 2015 else "2016-2026"
+        return (f"scmp/{window}/commoncrawl-prefix",)
+    return ()

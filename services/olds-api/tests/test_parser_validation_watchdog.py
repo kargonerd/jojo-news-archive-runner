@@ -27,6 +27,11 @@ def _write_summary(
     parser_version: str | None = None,
     eligible_candidates: int | None = None,
     excluded_candidates: int | None = None,
+    screened_nonarticles: int = 0,
+    nonarticle_candidates: int | None = None,
+    capture_rows: int | None = None,
+    captures_by_status: dict[str, int] | None = None,
+    qa_passed: int | None = None,
 ) -> None:
     path = root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,10 +49,16 @@ def _write_summary(
                             "evaluated": evaluated,
                             "completeRate": complete_rate,
                             "qaPassRate": qa_rate,
+                            "qaPassed": (
+                                qa_passed
+                                if qa_passed is not None
+                                else round(evaluated * qa_rate)
+                            ),
                             "errors": errors,
                             "unboundCaptureInputs": (
                                 unbound_capture_inputs
                             ),
+                            "screenedNonArticles": screened_nonarticles,
                             "qaRevision": (
                                 qa_revision
                                 if qa_revision is not None
@@ -57,6 +68,8 @@ def _write_summary(
                     }
                 }
             }
+    if captures_by_status is not None:
+        payload["capturesByStatus"] = captures_by_status
     if eligible_candidates is not None:
         payload["parserValidation"]["years"][str(year)][
             "eligibleCandidates"
@@ -65,15 +78,62 @@ def _write_summary(
         payload["parserValidation"]["years"][str(year)][
             "excludedCandidates"
         ] = excluded_candidates
+    if nonarticle_candidates is not None:
+        payload["parserValidation"]["years"][str(year)][
+            "nonArticleCandidates"
+        ] = nonarticle_candidates
+    if capture_rows is not None:
+        payload["parserValidation"]["years"][str(year)][
+            "captureRows"
+        ] = capture_rows
     path.write_text(
         json.dumps(payload),
         encoding="utf-8",
     )
     if (
+        evaluated >= 800
+        and complete_rate >= 0.95
+        and (
+            qa_rate == 1.0
+            or (qa_passed is not None and qa_passed >= 800)
+        )
+        and errors == 0
+        and unbound_capture_inputs == 0
+    ):
+        content_audit_path = path.with_name("content-audit.json")
+        content_audit_path.write_text(
+            json.dumps(
+                {
+                    "formatVersion": (
+                        "jojo-parser-validation-content-audit/1"
+                    ),
+                    "publisher": publisher,
+                    "year": year,
+                    "target": 800,
+                    "audited": 800,
+                    "formalTargetReached": True,
+                    "configuredParserVersion": effective_parser_version,
+                    "parserVersion": effective_parser_version,
+                    "qaRevision": (
+                        qa_revision
+                        if qa_revision is not None
+                        else qa_policy_revision(publisher)
+                    ),
+                    "hardAnomalyCount": 0,
+                    "passesContentChecks": True,
+                    "passesHardChecks": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+    if (
         relative_path.startswith("holdout-v")
         and evaluated >= 800
         and complete_rate >= 0.95
-        and qa_rate == 1.0
+        and (
+            qa_rate == 1.0
+            or (qa_passed is not None and qa_passed >= 800)
+        )
         and errors == 0
         and unbound_capture_inputs == 0
     ):
@@ -171,14 +231,56 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
         "qaPassRate": 1.0,
         "errors": 0,
         "unboundCaptureInputs": 0,
+        "screenedNonArticles": 0,
         "qaRevision": 0,
-        "parserVersion": "ap-parser/0.6.21",
+        "parserVersion": "ap-parser/0.6.25",
         "requiredCohort": None,
         "selectedCohort": "source",
         "ready": True,
-        "active": False,
-        "capacityDeficient": False,
-    }
+            "active": False,
+            "capacityDeficient": False,
+            "captureStateExhausted": False,
+            "contentAuditFailed": False,
+        }
+
+
+def test_watchdog_ignores_failed_reserve_tail_after_target_audit(
+    tmp_path: Path,
+):
+    # The formal sample contains 800 QA-passing rows, but two reserve rows
+    # were also evaluated and failed. The completed target/content audit is
+    # authoritative for convergence; the reserve tail must not cause a
+    # duplicate holdout dispatch.
+    _write_summary(
+        tmp_path,
+        "holdout-v1/nyt/2014/state/summary.json",
+        publisher="nyt",
+        year=2014,
+        evaluated=802,
+        complete_rate=799 / 802,
+        qa_rate=800 / 802,
+        qa_passed=800,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["nyt"],
+        available_source_shards={"nyt/2010-2015/sitemap-wayback"},
+    )
+
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["publisher"] == "nyt" and row["year"] == 2014
+    )
+    assert plan["readyCells"] == 1
+    assert cell["ready"] is True
+    assert not any(
+        task["publisher"] == "nyt" and task["year"] == 2014
+        for task in plan["tasks"]
+    )
 
 
 def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
@@ -205,8 +307,10 @@ def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
     }
 
     assert plan["readyCells"] == 0
-    assert plan["activeCells"] == 1
-    assert ("ft", 2018) not in cells
+    assert plan["activeCells"] == 0
+    assert plan["activeCurrentRunCount"] == 0
+    assert plan["activeSupersededRunCount"] == 1
+    assert ("ft", 2018) in cells
     ft_2018 = next(
         row
         for row in plan["cellProgress"]
@@ -215,7 +319,46 @@ def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):
     assert ft_2018["evaluated"] == 0
     assert ft_2018["replayableEvaluated"] == 500
     assert ft_2018["parserVersion"] is None
-    assert ft_2018["active"] is True
+    assert ft_2018["active"] is False
+
+
+def test_watchdog_does_not_let_superseded_holdout_block_new_parser(
+    tmp_path: Path,
+):
+    _write_summary(
+        tmp_path,
+        "holdout-v214/ft/2012/state/summary.json",
+        publisher="ft",
+        year=2012,
+        evaluated=554,
+        parser_version="ft-parser/0.8.51",
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=["parser-holdout-v214-ft-2012"],
+        max_dispatch=1,
+        publishers=["ft"],
+    )
+
+    assert plan["activeCells"] == 0
+    assert plan["activeCurrentRunCount"] == 0
+    assert plan["activeSupersededRunCount"] == 1
+    assert plan["activeSupersededTitles"] == [
+        "parser-holdout-v214-ft-2012"
+    ]
+    assert plan["tasks"] == [
+        {
+            "publisher": "ft",
+            "year": 2012,
+            "sourceManifestShard": "ft/2010-2015/sitemap-wayback",
+            "runnerOs": "ubuntu-latest",
+            "currentEvaluated": 0,
+            "replayableEvaluated": 554,
+            "parserVersion": "ft-parser/0.8.54",
+            "cohort": "holdout-v215",
+        }
+    ]
 
 
 def test_watchdog_accepts_ready_holdout_and_tracks_active_holdout(
@@ -373,6 +516,112 @@ def test_watchdog_accepts_current_holdout_after_stale_cohorts(
     assert cell["requiredCohort"] == "holdout-v3"
     assert cell["selectedCohort"] == "holdout-v3"
     assert cell["ready"] is True
+
+
+def test_watchdog_requires_passing_content_audit_and_quarantines_failure(
+    tmp_path: Path,
+):
+    relative = "validation/axios/2022/state/summary.json"
+    _write_summary(
+        tmp_path,
+        relative,
+        publisher="axios",
+        year=2022,
+        evaluated=800,
+    )
+    audit_path = (tmp_path / relative).with_name("content-audit.json")
+    audit_path.unlink()
+
+    missing = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["axios"],
+        available_source_shards={"axios/2017-2026/wayback-urlkey"},
+    )
+    assert missing["readyCells"] == 0
+    assert missing["contentAuditFailedCells"] == 0
+    assert missing["tasks"][0]["year"] == 2022
+    missing_cell = next(
+        row
+        for row in missing["cellProgress"]
+        if row["publisher"] == "axios" and row["year"] == 2022
+    )
+    assert missing_cell["contentAuditFailed"] is False
+
+    _write_summary(
+        tmp_path,
+        relative,
+        publisher="axios",
+        year=2022,
+        evaluated=800,
+    )
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    audit["hardAnomalyCount"] = 1
+    audit["passesContentChecks"] = False
+    audit["passesHardChecks"] = False
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+
+    failed = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=10,
+        publishers=["axios"],
+        available_source_shards={"axios/2017-2026/wayback-urlkey"},
+    )
+    assert failed["readyCells"] == 0
+    assert failed["contentAuditFailedCells"] == 1
+    assert all(task["year"] != 2022 for task in failed["tasks"])
+    failed_cell = next(
+        row
+        for row in failed["cellProgress"]
+        if row["publisher"] == "axios" and row["year"] == 2022
+    )
+    assert failed_cell["contentAuditFailed"] is True
+
+    _write_summary(
+        tmp_path,
+        relative,
+        publisher="axios",
+        year=2022,
+        evaluated=800,
+    )
+    passed = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["axios"],
+        available_source_shards={"axios/2017-2026/wayback-urlkey"},
+    )
+    assert passed["readyCells"] == 1
+    assert passed["contentAuditFailedCells"] == 0
+
+
+def test_watchdog_rejects_content_audit_bound_to_wrong_parser(tmp_path: Path):
+    relative = "validation/caixin/2011/state/summary.json"
+    _write_summary(
+        tmp_path,
+        relative,
+        publisher="caixin",
+        year=2011,
+        evaluated=800,
+    )
+    audit_path = (tmp_path / relative).with_name("content-audit.json")
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    audit["parserVersion"] = "caixin-parser/stale"
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["caixin"],
+        available_source_shards={"caixin/2010-2015/wayback-urlkey"},
+    )
+
+    assert plan["readyCells"] == 0
+    assert plan["contentAuditFailedCells"] == 0
+    assert plan["tasks"][0]["year"] == 2011
 
 
 def test_watchdog_rotates_ready_holdout_with_missing_or_failed_audit(
@@ -573,7 +822,7 @@ def test_watchdog_prioritizes_nearly_complete_current_sample(
             "runnerOs": "ubuntu-latest",
             "currentEvaluated": 499,
             "replayableEvaluated": 499,
-            "parserVersion": "reuters-parser/0.7.25",
+            "parserVersion": "reuters-parser/0.7.32",
             "cohort": "validation",
         }
     ]
@@ -761,6 +1010,242 @@ def test_watchdog_uses_stale_holdout_capacity_as_conservative_upper_bound(
     assert expanded_cell["capacityDeficient"] is False
 
 
+def test_watchdog_does_not_count_loaded_alias_rows_as_source_growth(
+    tmp_path: Path,
+):
+    shard = "npr/2010-2015/wayback-urlkey"
+    _write_summary(
+        tmp_path,
+        "holdout-v202/npr/2010/state/summary.json",
+        publisher="npr",
+        year=2010,
+        evaluated=6,
+        eligible_candidates=10,
+        excluded_candidates=19176,
+        capture_rows=22520,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["npr"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2010: 21438}},
+    )
+
+    assert plan["tasks"] == []
+    assert plan["capacityDeficientCells"] == 1
+    cell = plan["cellProgress"][0]
+    assert cell["eligibleCandidateUpperBound"] == 10
+    assert cell["capacityDeficient"] is True
+
+
+def test_watchdog_dispatches_fresh_parser_cohort_before_old_capacity_gate(
+    tmp_path: Path,
+):
+    shard = "caixin/2010-2015/wayback-urlkey"
+    _write_summary(
+        tmp_path,
+        "holdout-v216/caixin/2010/state/summary.json",
+        publisher="caixin",
+        year=2010,
+        evaluated=75,
+        parser_version="caixin-parser/0.1.14",
+        eligible_candidates=574,
+        excluded_candidates=5665,
+        screened_nonarticles=499,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["caixin"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2010: 5996}},
+    )
+
+    assert plan["tasks"][0]["cohort"] == "holdout-v217"
+    cell = plan["cellProgress"][0]
+    assert cell["parserVersion"] is None
+    assert cell["eligibleCandidateUpperBound"] == 75
+    assert cell["capacityDeficient"] is False
+
+
+def test_watchdog_treats_screened_nonarticles_as_exhausted_capacity(
+    tmp_path: Path,
+):
+    shard = "scmp/2016-2026/wayback-urlkey"
+    _write_summary(
+        tmp_path,
+        "holdout-v217/scmp/2016/state/summary.json",
+        publisher="scmp",
+        year=2016,
+        evaluated=0,
+        eligible_candidates=27,
+        excluded_candidates=5841,
+        screened_nonarticles=27,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["scmp"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2016: 5868}},
+    )
+
+    assert plan["tasks"] == []
+    assert plan["capacityDeficientCells"] == 1
+    cell = plan["cellProgress"][0]
+    assert cell["eligibleCandidates"] == 27
+    assert cell["screenedNonArticles"] == 27
+    assert cell["eligibleCandidateUpperBound"] == 0
+    assert cell["capacityDeficient"] is True
+
+
+def test_watchdog_subtracts_unselected_nonarticle_source_tail(
+    tmp_path: Path,
+):
+    shard = "caixin/2010-2015/wayback-urlkey"
+    _write_summary(
+        tmp_path,
+        "holdout-v217/caixin/2010/state/summary.json",
+        publisher="caixin",
+        year=2010,
+        evaluated=538,
+        eligible_candidates=538,
+        excluded_candidates=5094,
+        nonarticle_candidates=954,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["caixin"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2010: 5996}},
+    )
+
+    assert plan["tasks"] == []
+    assert plan["capacityDeficientCells"] == 1
+    cell = plan["cellProgress"][0]
+    assert cell["eligibleCandidateUpperBound"] == 538
+    assert cell["capacityDeficient"] is True
+
+
+def test_watchdog_marks_terminal_capture_errors_as_exhausted_capacity(
+    tmp_path: Path,
+):
+    shard = "wsj/2016-2026/wayback"
+    _write_summary(
+        tmp_path,
+        "holdout-v196/wsj/2021/state/summary.json",
+        publisher="wsj",
+        year=2021,
+        evaluated=123,
+        eligible_candidates=2290,
+        excluded_candidates=3878,
+        captures_by_status={
+            "complete": 124,
+            "error": 1219,
+            "pending": 0,
+            "downloading": 0,
+        },
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["wsj"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2021: 6178}},
+    )
+
+    assert plan["tasks"] == []
+    assert plan["capacityDeficientCells"] == 1
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["year"] == 2021
+    )
+    assert cell["captureStateExhausted"] is True
+    assert cell["capacityDeficient"] is True
+
+
+def test_watchdog_keeps_inflight_capture_errors_schedulable(
+    tmp_path: Path,
+):
+    shard = "wsj/2016-2026/wayback"
+    _write_summary(
+        tmp_path,
+        "holdout-v196/wsj/2021/state/summary.json",
+        publisher="wsj",
+        year=2021,
+        evaluated=123,
+        eligible_candidates=2290,
+        excluded_candidates=3878,
+        captures_by_status={
+            "complete": 124,
+            "error": 1219,
+            "pending": 10,
+            "downloading": 2,
+        },
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["wsj"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2021: 6178}},
+    )
+
+    assert plan["tasks"][0]["year"] == 2021
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["year"] == 2021
+    )
+    assert cell["captureStateExhausted"] is False
+    assert cell["capacityDeficient"] is False
+
+
+def test_watchdog_reopens_screened_tail_after_source_growth(
+    tmp_path: Path,
+):
+    shard = "scmp/2016-2026/wayback-urlkey"
+    _write_summary(
+        tmp_path,
+        "holdout-v217/scmp/2016/state/summary.json",
+        publisher="scmp",
+        year=2016,
+        evaluated=0,
+        eligible_candidates=27,
+        excluded_candidates=5841,
+        screened_nonarticles=27,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["scmp"],
+        available_source_shards={shard},
+        source_year_capacities={shard: {2016: 7000}},
+    )
+
+    assert plan["tasks"][0]["year"] == 2016
+    cell = plan["cellProgress"][0]
+    assert cell["eligibleCandidateUpperBound"] == 1132
+    assert cell["capacityDeficient"] is False
+
+
 def test_watchdog_excludes_years_below_manifest_capacity(tmp_path: Path):
     shard = "caixin/2010-2015/wayback-urlkey"
     plan = plan_validation_dispatch(
@@ -792,6 +1277,84 @@ def test_watchdog_excludes_years_below_manifest_capacity(tmp_path: Path):
         ("caixin", 2013),
         ("caixin", 2014),
     }
+
+
+def test_watchdog_admits_year_with_sufficient_supplemental_capacity(
+    tmp_path: Path,
+):
+    primary = "caixin/2016-2026/wayback-urlkey"
+    supplemental = "caixin/2018-2018/commoncrawl-prefix"
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=10,
+        publishers=["caixin"],
+        available_source_shards={primary},
+        source_year_capacities={
+            primary: {2018: 258},
+            supplemental: {2018: 1501},
+        },
+    )
+
+    assert plan["targetCells"] == 1
+    assert plan["tasks"][0]["year"] == 2018
+
+
+def test_watchdog_reopens_incomplete_ap_cell_after_supplemental_growth(
+    tmp_path: Path,
+):
+    primary = "ap/2010-2015/sitemap-wayback"
+    supplemental = "ap/2010-2015/legacy-archive"
+    _write_summary(
+        tmp_path,
+        "holdout-v207/ap/2011/state/summary.json",
+        publisher="ap",
+        year=2011,
+        evaluated=0,
+        eligible_candidates=1,
+        excluded_candidates=1317,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["ap"],
+        available_source_shards={primary},
+        source_year_capacities={
+            primary: {2011: 1318},
+            supplemental: {2011: 134075},
+        },
+    )
+
+    assert plan["tasks"][0]["year"] == 2011
+    cell = plan["cellProgress"][0]
+    assert cell["eligibleCandidates"] == 1
+    assert cell["eligibleCandidateUpperBound"] >= 800
+    assert cell["capacityDeficient"] is False
+
+
+def test_watchdog_does_not_sum_subthreshold_sources_to_admit_year(
+    tmp_path: Path,
+):
+    primary = "caixin/2016-2026/wayback-urlkey"
+    supplemental = "caixin/2018-2018/commoncrawl-prefix"
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=10,
+        publishers=["caixin"],
+        available_source_shards={primary},
+        source_year_capacities={
+            primary: {2018: 500},
+            supplemental: {2018: 500},
+        },
+    )
+
+    assert plan["targetCells"] == 0
+    assert plan["tasks"] == []
 
 
 def test_watchdog_prioritizes_stale_corpus_for_parser_replay(

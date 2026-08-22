@@ -145,27 +145,64 @@ def import_selected_source_captures(
     reserve_per_year: int | None = None,
     maximum_record_attempts: int = 3,
     seed: str = DEFAULT_SEED,
+    reuse_target_plan: bool = False,
 ) -> dict[str, object]:
     initialize_capture_schema(
         target_connection,
         publisher=publisher,
         authorization_reference="user-provided-authorization",
     )
-    manifest_result = load_capture_manifest(
-        target_connection,
-        manifest_path=manifest_path,
-        publisher=publisher,
-    )
-    plan = ensure_parser_validation_plan(
-        target_connection,
-        publisher=publisher,
-        from_year=sample_year,
-        to_year=sample_year,
-        target_per_year=target_per_year,
-        reserve_per_year=reserve_per_year,
-        maximum_record_attempts=maximum_record_attempts,
-        seed=seed,
-    )
+    if reuse_target_plan:
+        config = target_connection.execute(
+            """
+            SELECT target_size, seed
+            FROM parser_validation_config
+            WHERE sample_year=?
+            """,
+            (sample_year,),
+        ).fetchone()
+        if config != (target_per_year, seed):
+            raise ValueError(
+                "existing parser-validation plan does not match the requested "
+                "year, target, and seed"
+            )
+        manifest_result = {"reusedTargetManifest": True}
+        plan = {"reusedTargetPlan": True}
+    else:
+        manifest_result = load_capture_manifest(
+            target_connection,
+            manifest_path=manifest_path,
+            publisher=publisher,
+        )
+        plan = ensure_parser_validation_plan(
+            target_connection,
+            publisher=publisher,
+            from_year=sample_year,
+            to_year=sample_year,
+            target_per_year=target_per_year,
+            reserve_per_year=reserve_per_year,
+            maximum_record_attempts=maximum_record_attempts,
+            seed=seed,
+        )
+    source_has_captures = source_connection.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type='table' AND name='captures'
+        """
+    ).fetchone()
+    if source_has_captures is None:
+        return {
+            "publisher": publisher,
+            "sampleYear": sample_year,
+            "selectedIncomplete": 0,
+            "sourceMatches": 0,
+            "imported": 0,
+            "rawPaths": [],
+            "skippedSourcePlaceholder": True,
+            "manifest": manifest_result,
+            "plan": plan,
+        }
     selected_urls = [
         str(row[0])
         for row in target_connection.execute(

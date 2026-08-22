@@ -78,7 +78,7 @@ WSJ_RSS_ENDPOINTS = (
 )
 PARSER_VALIDATION_CATALOG_MINIMUM_PER_YEAR = 750
 WSJ_LEGACY_DATE_HYDRATIONS_PER_RUN = 100
-ARCHIVED_DATE_HYDRATION_PUBLISHERS = {"nikkei", "scmp"}
+ARCHIVED_DATE_HYDRATION_PUBLISHERS = {"nikkei", "npr", "scmp"}
 ARCHIVED_DATE_HYDRATIONS_PER_RUN = 100
 
 
@@ -268,6 +268,19 @@ def initialize_discovery_schema(
             ON candidates(canonical_url, rank_score, timestamp);
         """
     )
+    query_columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(discovery_queries)")
+    }
+    if "failures" not in query_columns:
+        connection.execute(
+            "ALTER TABLE discovery_queries "
+            "ADD COLUMN failures INTEGER NOT NULL DEFAULT 0"
+        )
+    if "last_error" not in query_columns:
+        connection.execute(
+            "ALTER TABLE discovery_queries ADD COLUMN last_error TEXT"
+        )
     fingerprint = _spec_fingerprint(
         spec,
         from_year=from_year,
@@ -399,19 +412,6 @@ def initialize_wsj_legacy_date_schema(
             ON wsj_legacy_date_hydration(status, attempts, updated_at);
         """
     )
-    query_columns = {
-        str(row[1])
-        for row in connection.execute("PRAGMA table_info(discovery_queries)")
-    }
-    if "failures" not in query_columns:
-        connection.execute(
-            "ALTER TABLE discovery_queries "
-            "ADD COLUMN failures INTEGER NOT NULL DEFAULT 0"
-        )
-    if "last_error" not in query_columns:
-        connection.execute(
-            "ALTER TABLE discovery_queries ADD COLUMN last_error TEXT"
-        )
     undated_urls = [
         (str(row[0]), _now_iso())
         for row in connection.execute(
@@ -1849,13 +1849,28 @@ def _wsj_external_articles(
 
 def next_discovery_query(
     connection: sqlite3.Connection,
+    *,
+    preferred_year: int | None = None,
 ) -> tuple[str, str | None] | None:
+    if preferred_year is not None and not 1900 <= preferred_year <= 2099:
+        raise ValueError("preferred_year must be between 1900 and 2099")
+    dashed_year = f"/{preferred_year}-" if preferred_year is not None else ""
+    slashed_year = f"/{preferred_year}/" if preferred_year is not None else ""
     row = connection.execute(
         """
         SELECT pattern, resume_key
         FROM discovery_queries
         WHERE status != 'complete'
         ORDER BY
+            CASE
+                WHEN ? != ''
+                     AND (
+                         instr(pattern, ?) > 0
+                         OR instr(pattern, ?) > 0
+                     )
+                THEN 0
+                ELSE 1
+            END,
             CASE
                 WHEN pattern='online.wsj.com/article/*'
                      AND failures=0
@@ -1879,7 +1894,8 @@ def next_discovery_query(
             END,
             rowid
         LIMIT 1
-        """
+        """,
+        (dashed_year, dashed_year, slashed_year),
     ).fetchone()
     return (row[0], row[1]) if row else None
 
@@ -2508,7 +2524,7 @@ def infer_published_at(canonical_url: str) -> str | None:
         return ap_hosted_published.isoformat()
     hostname = (parsed.hostname or "").casefold().removeprefix("www.")
     patterns: list[str] = []
-    if hostname in {"caixin.com", "magazine.caixin.com"}:
+    if hostname == "caixin.com" or hostname.endswith(".caixin.com"):
         patterns.append(r"/(20\d{2})-(\d{2})-(\d{2})(?:/|$)")
     if hostname == "zaobao.com.sg":
         patterns.append(r"/story(20\d{2})(\d{2})(\d{2})(?:[-/]|$)")
