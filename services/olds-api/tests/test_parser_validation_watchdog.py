@@ -31,6 +31,7 @@ def _write_summary(
     nonarticle_candidates: int | None = None,
     capture_rows: int | None = None,
     captures_by_status: dict[str, int] | None = None,
+    qa_passed: int | None = None,
 ) -> None:
     path = root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,6 +49,11 @@ def _write_summary(
                             "evaluated": evaluated,
                             "completeRate": complete_rate,
                             "qaPassRate": qa_rate,
+                            "qaPassed": (
+                                qa_passed
+                                if qa_passed is not None
+                                else round(evaluated * qa_rate)
+                            ),
                             "errors": errors,
                             "unboundCaptureInputs": (
                                 unbound_capture_inputs
@@ -87,7 +93,10 @@ def _write_summary(
     if (
         evaluated >= 800
         and complete_rate >= 0.95
-        and qa_rate == 1.0
+        and (
+            qa_rate == 1.0
+            or (qa_passed is not None and qa_passed >= 800)
+        )
         and errors == 0
         and unbound_capture_inputs == 0
     ):
@@ -121,7 +130,10 @@ def _write_summary(
         relative_path.startswith("holdout-v")
         and evaluated >= 800
         and complete_rate >= 0.95
-        and qa_rate == 1.0
+        and (
+            qa_rate == 1.0
+            or (qa_passed is not None and qa_passed >= 800)
+        )
         and errors == 0
         and unbound_capture_inputs == 0
     ):
@@ -230,6 +242,45 @@ def test_watchdog_accepts_ready_full_or_accelerator_summary(
             "captureStateExhausted": False,
             "contentAuditFailed": False,
         }
+
+
+def test_watchdog_ignores_failed_reserve_tail_after_target_audit(
+    tmp_path: Path,
+):
+    # The formal sample contains 800 QA-passing rows, but two reserve rows
+    # were also evaluated and failed. The completed target/content audit is
+    # authoritative for convergence; the reserve tail must not cause a
+    # duplicate holdout dispatch.
+    _write_summary(
+        tmp_path,
+        "holdout-v1/nyt/2014/state/summary.json",
+        publisher="nyt",
+        year=2014,
+        evaluated=802,
+        complete_rate=799 / 802,
+        qa_rate=800 / 802,
+        qa_passed=800,
+    )
+
+    plan = plan_validation_dispatch(
+        state_root=tmp_path,
+        active_titles=[],
+        max_dispatch=1,
+        publishers=["nyt"],
+        available_source_shards={"nyt/2010-2015/sitemap-wayback"},
+    )
+
+    cell = next(
+        row
+        for row in plan["cellProgress"]
+        if row["publisher"] == "nyt" and row["year"] == 2014
+    )
+    assert plan["readyCells"] == 1
+    assert cell["ready"] is True
+    assert not any(
+        task["publisher"] == "nyt" and task["year"] == 2014
+        for task in plan["tasks"]
+    )
 
 
 def test_watchdog_ignores_old_parser_and_active_cell(tmp_path: Path):

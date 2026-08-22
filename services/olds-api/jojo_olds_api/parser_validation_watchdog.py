@@ -720,10 +720,27 @@ def _cohort_from_summary_path(
 def _quality_gates_ready(row: dict[str, object]) -> bool:
     evaluated = _integer(row.get("evaluated"))
     target = max(MINIMUM_SAMPLES, _integer(row.get("target")))
+    qa_pass_rate = float(row.get("qaPassRate") or 0)
+    qa_gate = qa_pass_rate >= MINIMUM_QA_PASS_RATE
+    if not qa_gate and _integer(row.get("qaPassed")) >= target:
+        # A validation checkpoint may evaluate a few reserve rows after the
+        # formal target has already been reached.  Those extra rows are not
+        # part of the independent 800-row sample; if the persisted formal
+        # content audit proves the target sample, a failing reserve tail must
+        # not make the completed cohort look unfinished and trigger another
+        # download cycle.
+        audit = row.get("_contentAudit")
+        qa_gate = bool(
+            isinstance(audit, dict)
+            and audit.get("formalTargetReached") is True
+            and _integer(audit.get("audited")) >= target
+            and audit.get("passesContentChecks") is True
+            and audit.get("passesHardChecks") is True
+        )
     return bool(
         evaluated >= target
         and float(row.get("completeRate") or 0) >= MINIMUM_COMPLETE_RATE
-        and float(row.get("qaPassRate") or 0) >= MINIMUM_QA_PASS_RATE
+        and qa_gate
         and _integer(row.get("errors")) == 0
         and _integer(row.get("unboundCaptureInputs")) == 0
     )
