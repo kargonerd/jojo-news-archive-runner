@@ -1573,6 +1573,26 @@ def record_parser_validation(
                 and article.quality.body_characters < 200
             ):
                 issues.append("nonarticle-desk")
+            # Older WSJ Wayback snapshots often preserve a real headline and
+            # a few preview paragraphs, followed by the explicit
+            # ``Get The Full Story / Subscribe or Log In`` roadblock. The
+            # parser correctly marks these bodies as truncated; they are
+            # useful raw provenance but cannot satisfy a complete text
+            # article holdout slot. Exclude them from the QA denominator so
+            # the scheduler can select a replacement from the same year.
+            if (
+                article.quality.status != ArticleStatus.COMPLETE
+                and "truncated-body" in article.quality.warnings
+                and (
+                    "get the full story" in raw_text
+                    or "available to wsj.com subscribers" in raw_text
+                )
+                and (
+                    "subscribe or log in" in raw_text
+                    or "subscribe or sign in" in raw_text
+                )
+            ):
+                issues.append("nonarticle-desk")
         # Some legacy NYT ``admin`` package pages survive in Wayback with
         # only a short teaser; their client-rendered listicle body is absent
         # from the archived HTML. Keep the raw capture, but do not count an

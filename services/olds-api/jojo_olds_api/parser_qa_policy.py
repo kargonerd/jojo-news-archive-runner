@@ -45,8 +45,12 @@ _QA_POLICY_REVISIONS = {
     # Supported" shell and related subscription chrome without the article
     # body. Keep those raw records but exclude them from text-article QA.
     # WSJ article paragraphs can contain an inline, parenthesized newsletter
-    # mention.  Only short standalone promo blocks count as interface noise.
-    "wsj": 3,
+    # mention. Only short standalone promo blocks count as interface noise.
+    # Legacy Wayback snapshots can also retain a short preview followed by
+    # "Get The Full Story / Subscribe or Log In". These are valid raw
+    # captures, but not complete article bodies; the QA screen now excludes
+    # them from the article denominator.
+    "wsj": 4,
     # Reuters press-release bodies can contain legitimate copyright language;
     # the interface-noise rule now limits legal-footer detection to short
     # standalone blocks.

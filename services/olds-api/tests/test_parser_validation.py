@@ -1526,7 +1526,7 @@ def test_qa_revision_change_replays_without_replacing_cohort(
     )
 
     assert refreshed["parserVersion"] == "wsj-parser/0.8.61"
-    assert refreshed["qaRevision"] == 3
+    assert refreshed["qaRevision"] == 4
     assert refreshed["years"]["2020"]["evaluated"] == 0
     assert refreshed["years"]["2020"]["refreshedForParserVersion"] == 0
     assert current == original
@@ -2880,6 +2880,83 @@ def test_nontext_interactive_is_not_a_false_article_body_failure(
     assert summary["years"]["2020"]["unsupported"] == 1
 
 
+def test_wsj_legacy_preview_roadblock_is_screened_from_article_cohort(
+    tmp_path: Path,
+):
+    canonical_url = (
+        "https://www.wsj.com/articles/legacy-preview-1413317966"
+    )
+    connection = sqlite3.connect(":memory:")
+    initialize_parser_validation_schema(connection)
+    connection.execute(
+        """
+        INSERT INTO parser_validation_config(
+            sample_year, target_size, seed, parser_version, qa_revision,
+            updated_at
+        ) VALUES (2014, 1, 'test', 'wsj-parser/0.8.61', 4, 'now')
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO parser_validation_samples(
+            canonical_url, sample_year, sample_priority, selected_at
+        ) VALUES (?, 2014, 'priority', 'now')
+        """,
+        (canonical_url,),
+    )
+    html = b"""
+    <html>
+      <head>
+        <title>Legacy Preview - WSJ</title>
+        <meta property="og:title" content="Legacy Preview">
+        <meta property="article:published_time"
+              content="2014-10-14T16:19:00Z">
+      </head>
+      <body>
+        <article>
+          <p>Companies are getting particular about where their data is stored.</p>
+          <p>The partners said they would deliver software over the Internet.</p>
+          <p>Get The Full Story</p>
+          <p>Subscribe or Log In</p>
+        </article>
+        <p>Copyright &copy;2014 Dow Jones &amp; Company, Inc.</p>
+      </body>
+    </html>
+    """
+    blob = store_raw_html(tmp_path, html)
+    capture = RawCapture(
+        article_id="wsj:" + ("w" * 64),
+        publisher="wsj",
+        canonical_url=canonical_url,
+        published_at=datetime(2014, 10, 14, tzinfo=timezone.utc),
+        selected_candidate=CaptureCandidate(
+            provider=CaptureProvider.WAYBACK,
+            snapshot_url=(
+                "https://web.archive.org/web/20141230152138id_/"
+                + canonical_url
+            ),
+        ),
+        retrieved_at=datetime.now(timezone.utc),
+        final_url=canonical_url,
+        http_status=200,
+        content_type="text/html",
+        quality_score=100,
+        raw_html=blob,
+    )
+
+    result = record_parser_validation(
+        connection,
+        capture=capture,
+        archive_root=tmp_path,
+    )
+    summary = parser_validation_summary(connection)
+
+    assert result["qaPass"] is False
+    assert result["issues"] == ["nonarticle-desk"]
+    assert summary["years"]["2014"]["evaluated"] == 0
+    assert summary["years"]["2014"]["screenedNonArticles"] == 1
+
+
 @pytest.mark.parametrize(
     "canonical_url,html,sample_year",
     [
@@ -3869,7 +3946,7 @@ def test_wsj_media_unsupported_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2018, 1, 'test', 'wsj-parser/0.8.61', 3, 'now')
+        ) VALUES (2018, 1, 'test', 'wsj-parser/0.8.61', 4, 'now')
         """
     )
     connection.execute(
@@ -3928,7 +4005,7 @@ def test_wsj_short_video_shell_is_excluded_from_article_cohort(
         INSERT INTO parser_validation_config(
             sample_year, target_size, seed, parser_version, qa_revision,
             updated_at
-        ) VALUES (2016, 1, 'test', 'wsj-parser/0.8.61', 3, 'now')
+        ) VALUES (2016, 1, 'test', 'wsj-parser/0.8.61', 4, 'now')
         """
     )
     connection.execute(
@@ -4588,7 +4665,7 @@ def test_validation_accepts_wsj_business_wire_source_attribution(
     assert result["qaPass"] is True
     assert result["issues"] == []
     assert summary["formatVersion"] == "jojo-parser-validation/2"
-    assert summary["years"]["2020"]["qaRevision"] == 3
+    assert summary["years"]["2020"]["qaRevision"] == 4
     assert summary["years"]["2020"]["qaPassed"] == 1
     assert summary["years"]["2020"]["issueCounts"] == {}
 
