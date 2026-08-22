@@ -617,11 +617,27 @@ jobs:
                 echo "Common Crawl catalog already complete: $title"
                 continue
               fi
-              gh workflow run caixin-common-crawl-catalog.yml \
+              # The generic publisher workflow is present on the default
+              # branch and accepts Caixin's year-scoped prefix catalog. The
+              # old caixin-only workflow exists only on this research branch,
+              # so dispatching it through the Actions API returns 404 when
+              # the branch is used as the watchdog ref.
+              collection_from_year="$year"
+              if [ "$collection_from_year" -lt 2012 ]; then
+                collection_from_year=2012
+              fi
+              gh workflow run nikkei-common-crawl-catalog.yml \
                 --ref "$DISPATCH_REF" \
-                -f year="$year" \
+                -f publisher=caixin \
+                -f from_year="$year" \
+                -f to_year="$year" \
+                -f collection_from_year="$collection_from_year" \
+                -f collection_to_year=2026 \
+                -f collection_order=newest \
                 -f max_pages=20 \
                 -f max_queries=80 \
+                -f max_hydrations=0 \
+                -f target_articles_per_year=3000 \
                 -f auto_continue=true
               echo "Dispatched supplemental Common Crawl catalog: $title"
               break
