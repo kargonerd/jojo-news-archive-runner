@@ -1643,9 +1643,20 @@ def record_parser_validation(
             # source-limited shell from the article denominator.
             nyt_soup = BeautifulSoup(html_bytes, "html.parser")
             story = nyt_soup.find("article", id="story")
-            if story is not None and not _normalize_text(
+            story_is_empty = story is not None and not _normalize_text(
                 story.get_text(" ", strip=True)
-            ):
+            )
+            nyt_raw_text = _normalize_text(
+                nyt_soup.get_text(" ", strip=True)
+            ).casefold()
+            opinion_footer_shell = (
+                article.quality.body_characters < 100
+                and "the times is committed to publishing a diversity of letters"
+                in nyt_raw_text
+                and "follow the new york times opinion section"
+                in nyt_raw_text
+            )
+            if story_is_empty or opinion_footer_shell:
                 issues.append("nonarticle-desk")
         if (
             capture.publisher == "aljazeera"
