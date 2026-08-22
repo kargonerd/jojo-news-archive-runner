@@ -57,6 +57,9 @@ def test_watchdog_recurs_and_reads_v2_validation_state() -> None:
     assert '-f max_hydrations="$hydrations"' in workflow
     assert "queries=8" in workflow
     assert "queries=32" in workflow
+    assert "pages=1" in workflow
+    assert "pages=32" in workflow
+    assert '-f max_pages="$pages"' in workflow
     assert '-f max_queries="$queries"' in workflow
     assert 'jq -r \'.collectionOrder // "oldest"\'' in workflow
     assert "Both standard parser slots are occupied" in workflow

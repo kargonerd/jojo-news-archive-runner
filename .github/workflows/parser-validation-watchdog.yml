@@ -613,6 +613,7 @@ jobs:
             # larger catalogs create a long, low-value date-hydration tail.
             hydrations=200
             queries=8
+            pages=1
             case "$publisher" in
               wsj|aljazeera|axios|nyt|ap|zaobao|caixin)
                 # These sources expose a publication date in the canonical
@@ -626,6 +627,7 @@ jobs:
               # collections. Scan a larger bounded slice so the catalog does
               # not spend dozens of runs exhausting empty legacy prefixes.
               queries=32
+              pages=32
             fi
             gh workflow run nikkei-common-crawl-catalog.yml \
               --ref "$DISPATCH_REF" \
@@ -635,7 +637,7 @@ jobs:
               -f collection_from_year="$(jq -r '.collectionFromYear' <<<"$task")" \
               -f collection_to_year="$(jq -r '.collectionToYear' <<<"$task")" \
               -f collection_order="$(jq -r '.collectionOrder // "oldest"' <<<"$task")" \
-              -f max_pages=1 \
+              -f max_pages="$pages" \
               -f max_queries="$queries" \
               -f max_hydrations="$hydrations" \
               -f target_articles_per_year=1200 \
