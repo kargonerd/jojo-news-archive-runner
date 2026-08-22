@@ -95,6 +95,20 @@ def _suspicious_selected_image(value: str) -> bool:
         )
     ):
         return False
+    # Older NYT On Politics pages put genuine section artwork in a directory
+    # whose name ends in ``-icon`` while the rendition filename itself does
+    # not.  Treat that family like the filename-based exception above; the
+    # directory name alone is not evidence that the selected asset is UI
+    # chrome.
+    if (
+        parsed.netloc.casefold() == "static01.nyt.com"
+        and re.search(
+            r"/onpolitics-[^/]*-icon/[^/]+\.(?:jpe?g|png|webp)$",
+            path,
+            flags=re.IGNORECASE,
+        )
+    ):
+        return False
     # NPR's legacy book-review pages use the ``icon`` directory for genuine
     # Baker & Taylor cover art.  It is editorial media, not a UI icon.
     if "/assets/bakertaylor/covers/" in path:

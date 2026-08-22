@@ -120,6 +120,11 @@ def test_suspicious_image_detector_distinguishes_movie_from_user_avatar() -> Non
         "onpolitics-2020-eyeballs-icon-videoSixteenByNineJumbo1600.jpg"
     )
     assert not _suspicious_selected_image(
+        "https://static01.nyt.com/images/2020/01/10/multimedia/"
+        "onpolitics-gavel-icon/"
+        "onpolitics-gavel-videoSixteenByNineJumbo1600-v3.jpg"
+    )
+    assert not _suspicious_selected_image(
         "https://www.aljazeera.com/wp-content/uploads/2024/08/"
         "2024-08-21T140803Z_769601242_RC2DK9AZISKK_RTRMADP_3_"
         "UKRAINE-CRISIS-RUSSIA-FIRE-ICON-1724250953.jpg"
